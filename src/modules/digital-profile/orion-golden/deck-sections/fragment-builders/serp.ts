@@ -132,6 +132,12 @@ export function clientLink(url: string | undefined, domain: string | undefined):
 const SERP_ENGINE_LABELS: Record<string, string> = { YANDEX: "Яндекс", GOOGLE: "Google" };
 const SERP_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
 
+/** Поисковик так, как его называет клиентский текст: «Google», «Яндекс». */
+export function serpEngineLabel(raw: string | undefined): string | null {
+  const engine = normalizeSerpEngine(raw);
+  return engine ? SERP_ENGINE_LABELS[engine] ?? engine : null;
+}
+
 /** Ярлык поисковика в том виде, в котором его можно показать клиенту. */
 export function normalizeSerpEngine(raw: string | undefined): string | null {
   const e = String(raw ?? "").toUpperCase();
@@ -487,7 +493,7 @@ export function buildSerpFragment(
   // подписана своим поисковиком и запросом.
   const pages: Array<{ title: string; rows: string[][]; refs: string[] }> = [];
   for (const table of tables) {
-    const label = table.engine ? SERP_ENGINE_LABELS[table.engine] ?? table.engine : null;
+    const label = serpEngineLabel(table.engine);
     const tableRows = table.displayed.map((x) => rowOf(x.group, x.rank));
     const tableRefs = table.displayed.map((x) => x.group.refs);
     const rowChunks = chunk(tableRows, maxRows);

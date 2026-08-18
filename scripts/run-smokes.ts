@@ -112,6 +112,13 @@ const SMOKES: Smoke[] = [
     about: "карточки матрицы рисков: нарисовано всё, потеря слышна (нужны Python-пакеты)",
   },
   {
+    name: "bullet-clip",
+    argv: ["PYTHON", "renderer/smoke_bullet_clip_keeps_head.py"],
+    tier: "full",
+    about:
+      "рендерер не печатает пустоту: ножницы буллета, телеметрия потери, карточки страницы проверки (нужны Python-пакеты)",
+  },
+  {
     name: "deck-raster-layout",
     argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
     tier: "full",

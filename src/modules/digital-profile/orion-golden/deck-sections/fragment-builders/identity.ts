@@ -12,6 +12,7 @@ import { pluralRu } from "../../analytics/finding-synthesizer";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import { formatRuDate } from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput } from "./shared";
+import { clientLink, serpEngineLabel } from "./serp";
 import {
   WIKIPEDIA_ADVICE_CONFIRM_OWNERSHIP,
   WIKIPEDIA_ADVICE_CONTROL,
@@ -78,25 +79,65 @@ function wikipediaSectionLabel(languages: string[]): string {
 }
 
 /**
- * Хвост «проверка выполнена <дата>» для проверок, названных в предложении.
+ * Значения, названные **каждой** проверкой, — или ничего.
  *
- * Дата у каждой записи своя, а предложение называет несколько разделов сразу,
- * поэтому дату первой записи приписать всем нельзя — это утверждение о работе,
- * которой в тот день не было. Даты называются все; если хотя бы у одной
- * проверки даты нет, хвост опускается целиком: назвать часть значило бы
- * отнести названные даты и к недатированной проверке.
+ * Предложение называет несколько языковых разделов сразу, поэтому приписать
+ * всем дату (или запрос) первой записи нельзя: это утверждение о работе,
+ * которой в тот день не было. Назвать часть тоже нельзя — названное отнеслось
+ * бы и к молчащей проверке. Отсюда правило «все или никто», общее для дат и
+ * запросов; повторы схлопываются.
  */
-function checkDatesClause(checks: Array<{ checkedAt?: string }>): string {
-  if (checks.length === 0) return "";
-  const dates: string[] = [];
-  for (const c of checks) {
-    const date = c.checkedAt ? formatRuDate(c.checkedAt) : null;
-    if (!date) return "";
-    if (!dates.includes(date)) dates.push(date);
+function namedByEveryCheck<T>(
+  checks: readonly T[],
+  value: (check: T) => string | null | undefined
+): string[] | null {
+  const named: string[] = [];
+  for (const check of checks) {
+    const item = String(value(check) ?? "").trim();
+    if (!item) return null;
+    if (!named.includes(item)) named.push(item);
   }
+  return named.length > 0 ? named : null;
+}
+
+/** Хвост «проверка выполнена <дата>» для проверок, названных в предложении. */
+function checkDatesClause(checks: Array<{ checkedAt?: string }>): string {
+  const dates = namedByEveryCheck(checks, (c) => (c.checkedAt ? formatRuDate(c.checkedAt) : null));
+  if (!dates) return "";
   return dates.length === 1
     ? `, проверка выполнена ${dates[0]}`
     : `, проверки выполнены ${enumerateRu(dates, dates.length)}`;
+}
+
+/**
+ * «(Google, позиция 1)» — чем и где увидена строка выдачи.
+ *
+ * Печатается только то, что сообщил поисковик: без позиции — один поисковик,
+ * без обоих — ничего. Приписать «позиция 1» строке, у которой позиции нет, —
+ * это утверждение о видимости, которого никто не наблюдал.
+ */
+function serpSourceParenthetical(row: { engine?: string; rank?: number }): string {
+  const parts = [
+    serpEngineLabel(row.engine),
+    typeof row.rank === "number" && row.rank > 0 ? `позиция ${row.rank}` : null,
+  ].filter((p): p is string => Boolean(p));
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+/**
+ * Хвост «запрос: „…“» для проверок, названных в предложении.
+ *
+ * Печатается дословно то, чем спрашивали: «статья не найдена» верно ровно про
+ * этот запрос. Запрос не записан (старый артефакт) — формула остаётся прежней,
+ * «по имени субъекта», без домысла.
+ */
+function checkQueriesClause(checks: Array<{ query?: string }>): string {
+  const queries = namedByEveryCheck(checks, (c) => c.query);
+  if (!queries) return "запрос выполнялся по имени субъекта";
+  const quoted = queries.map((q) => `«${q}»`);
+  return queries.length === 1
+    ? `запрос: ${quoted[0]}`
+    : `запросы: ${enumerateRu(quoted, quoted.length)}`;
 }
 
 /**
@@ -175,11 +216,92 @@ export function buildIdentityFragment(
    * одном документе соседствовали бы две разные шкалы дат.
    */
   const datesClause = checkDatesClause(wikiCheckEntries.map(([, e]) => e));
+  const queriesClause = checkQueriesClause(wikiCheckEntries.map(([, e]) => e));
   const methodSentence = wikiCheck
     ? `Наличие статьи о проверяемом лице проверено через официальный поисковый API Википедии${
         sectionLabel ? ` ${sectionLabel}` : ""
-      }; запрос выполнялся по имени субъекта${datesClause}.`
+      }; ${queriesClause}${datesClause}.`
     : "";
+
+  // Маркер «статья не найдена» — не строка выдачи: ни плиткой, ни в счёте.
+  // Какие ссылки маркерные, знает анализатор (он видел сниппет записи) — здесь
+  // читается его ответ, а не выводится второй по заголовку.
+  const emptyMarkerRefs = new Set(units.flatMap((u) => u.emptyMarkerRefs ?? []));
+  const identityRefs = [
+    ...new Set([
+      ...units.flatMap((u) => u.evidenceRefs).filter((r) => !emptyMarkerRefs.has(r)),
+      ...(checkRef ? [checkRef] : []),
+    ]),
+  ];
+
+  /*
+   * Наблюдение, которое спорит с результатом проверки.
+   *
+   * На прогоне 76 en-проверка ушла кириллическим запросом и вернула «нет», а
+   * `en.wikipedia.org/wiki/Viktor_Rashnikov` стоял первой строкой таблицы
+   * выдачи того же отчёта. Отрицать статью, которую документ сам показывает,
+   * нельзя — но и выводить наличие статьи из выдачи тоже (§1.4): называется
+   * дословное наблюдение с адресом и позицией, а не вывод из него.
+   *
+   * Ищется только в доказательствах этой страницы и только в разделе, который
+   * проверяли: статья другого языкового раздела результату проверки не
+   * противоречит.
+   */
+  const deniedDomains = new Set(
+    checkExists === false
+      ? wikiCheckEntries
+          .map(([, e]) =>
+            String(e.language ?? "")
+              .toLowerCase()
+              .split(/[-_]/u)[0]
+          )
+          .filter(Boolean)
+          .map((language) => `${language}.wikipedia.org`)
+      : []
+  );
+  const contradictingRows = identityRefs
+    .map((r) => scoped.evidenceIndex[r])
+    .filter(
+      (e) =>
+        e?.kind !== "wikipedia_check" &&
+        e?.subjectDecision === "SUBJECT_MATCH" &&
+        deniedDomains.has(String(e?.domain ?? "").toLowerCase()) &&
+        /\/wiki\//u.test(String(e?.url ?? ""))
+    );
+  const contradictingClause = contradictingRows.length
+    ? `; при этом в поисковой выдаче ${
+        contradictingRows.length === 1 ? "зафиксирована статья" : "зафиксированы статьи"
+      } ${enumerateRu(
+        contradictingRows.map(
+          (row) => `${clientLink(row!.url, row!.domain)}${serpSourceParenthetical(row!)}`
+        ),
+        contradictingRows.length
+      )}`
+    : "";
+
+  const articleTitle = wikiCheck?.[1].title ? `«${wikiCheck[1].title}»` : "";
+  const articleUrl = wikiCheck?.[1].url ? clientReadableUrl(wikiCheck[1].url) : "";
+  const articleName = [articleTitle, articleUrl].filter(Boolean).join(", ");
+  /*
+   * Результат проверки — один на все ветки страницы.
+   *
+   * При `exists=false` формула сужена до запроса: проверка отвечает за то, что
+   * не нашла по своему запросу, а не за отсутствие статьи вообще. Абсолютное
+   * «статья о проверяемом лице не найдена» стояло рядом с этой же статьёй в
+   * таблице выдачи того же отчёта.
+   */
+  const resultSentence =
+    checkExists === true
+      ? checkSubjectConfirmed
+        ? `Результат проверки: статья о проверяемом лице найдена${articleName ? ` — ${articleName}` : ""}.`
+        : `Результат проверки: найдена статья${articleTitle ? ` ${articleTitle}` : ""}${
+            articleUrl ? ` (${articleUrl})` : ""
+          }, заголовок которой совпадает с именем субъекта; принадлежность статьи проверяемому лицу не подтверждена.`
+      : checkExists === false
+        ? contradictingClause
+          ? `Проверка по этому запросу статью не нашла${contradictingClause}.`
+          : "Проверка по этому запросу статью не нашла. Это итог выполненной проверки, а не пропуск сбора."
+        : "Результат отдельной проверки наличия статьи в Википедии для этого контура в отчёте отсутствует, поэтому вывод о наличии или отсутствии статьи не делается.";
 
   if (collectedRows === 0 && checkExists === false) {
     return {
@@ -189,7 +311,7 @@ export function buildIdentityFragment(
           sectionId,
           templateId: "coverage-empty-state",
           content: {
-            narrative: `${methodSentence} Результат проверки: статья о проверяемом лице не найдена. Это итог выполненной проверки, а не пропуск сбора; энциклопедических материалов о субъекте в поисковой выдаче по этому контуру также не зафиксировано.`,
+            narrative: `${methodSentence} ${resultSentence} Энциклопедических материалов о субъекте в поисковой выдаче по этому контуру также не зафиксировано.`,
             bullets: [WIKIPEDIA_WHY_KNOWLEDGE_PANEL, WIKIPEDIA_WHY_NO_ARTICLE],
             whatToCheck: WIKIPEDIA_ADVICE_CREATE,
           },
@@ -229,16 +351,6 @@ export function buildIdentityFragment(
     };
   }
 
-  // Маркер «статья не найдена» — не строка выдачи: ни плиткой, ни в счёте.
-  // Какие ссылки маркерные, знает анализатор (он видел сниппет записи) — здесь
-  // читается его ответ, а не выводится второй по заголовку.
-  const emptyMarkerRefs = new Set(units.flatMap((u) => u.emptyMarkerRefs ?? []));
-  const identityRefs = [
-    ...new Set([
-      ...units.flatMap((u) => u.evidenceRefs).filter((r) => !emptyMarkerRefs.has(r)),
-      ...(checkRef ? [checkRef] : []),
-    ]),
-  ];
   // Encyclopedia rows actually captured (titles + domains) — shown to the
   // client even when none of them is adverse, so the page reflects reality
   // ("article exists, content neutral") instead of an empty claim list.
@@ -269,20 +381,6 @@ export function buildIdentityFragment(
   const hasAdverseRow = identityRefs.some((r) =>
     ADVERSE_PATTERNS.test(String(scoped.evidenceIndex[r]?.title ?? ""))
   );
-
-  const articleTitle = wikiCheck?.[1].title ? `«${wikiCheck[1].title}»` : "";
-  const articleUrl = wikiCheck?.[1].url ? clientReadableUrl(wikiCheck[1].url) : "";
-  const articleName = [articleTitle, articleUrl].filter(Boolean).join(", ");
-  const resultSentence =
-    checkExists === true
-      ? checkSubjectConfirmed
-        ? `Результат проверки: статья о проверяемом лице найдена${articleName ? ` — ${articleName}` : ""}.`
-        : `Результат проверки: найдена статья${articleTitle ? ` ${articleTitle}` : ""}${
-            articleUrl ? ` (${articleUrl})` : ""
-          }, заголовок которой совпадает с именем субъекта; принадлежность статьи проверяемому лицу не подтверждена.`
-      : checkExists === false
-        ? "Результат проверки: статья о проверяемом лице не найдена. Это итог выполненной проверки, а не пропуск сбора."
-        : "Результат отдельной проверки наличия статьи в Википедии для этого контура в отчёте отсутствует, поэтому вывод о наличии или отсутствии статьи не делается.";
 
   /*
    * Строки выдачи описываются один раз и здесь. Счётная строка «Показано N;
@@ -355,7 +453,11 @@ export function buildIdentityFragment(
             ? WIKIPEDIA_ADVICE_CONTROL
             : WIKIPEDIA_ADVICE_CONFIRM_OWNERSHIP
           : checkExists === false
-            ? WIKIPEDIA_ADVICE_CREATE
+            ? // Страница назвала статью из выдачи — советовать создать новую
+              // значило бы спорить с собственной оговоркой строкой выше.
+              contradictingRows.length > 0
+              ? WIKIPEDIA_ADVICE_CONFIRM_OWNERSHIP
+              : WIKIPEDIA_ADVICE_CREATE
             : WIKIPEDIA_ADVICE_UNKNOWN,
       statusNote: pageBlocks.statusNote,
       sourceNote: pageBlocks.sourceNote,
@@ -368,5 +470,5 @@ export function buildIdentityFragment(
       wikipediaCheckExists: checkExists === true ? 1 : checkExists === false ? 0 : -1,
     },
   });
-  return { slides: withContinuations(base, "wikipedia-knowledge"), status: "READY" };
+  return { slides: withContinuations(base, "wikipedia-check"), status: "READY" };
 }

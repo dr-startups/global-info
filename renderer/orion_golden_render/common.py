@@ -708,11 +708,21 @@ def _split_structured_bullet(text: str) -> list[str]:
     return [raw_core]
 
 
-def _clip_structured_bullet(text: str, max_chars: int) -> str:
-    """Keep whole structural lines only — never mid-cut a quote/phrase (PDF-45/46)."""
+def _structured_bullet_body(text: str) -> str:
+    """Текст буллета без обрубков модели — то, что ножницы будут резать бюджетом.
+
+    Выделено из `_clip_structured_bullet`, потому что на этот же вопрос отвечает
+    учёт потерь в `ctx.bullets`: чистка заглушек («Что делать:.») — не потеря
+    содержимого, и мерить её как срез значит поднимать CRITICAL там, где ничего
+    не пропало. Одна функция на оба ответа.
+    """
+    return "\n".join(_cleaned_structured_lines(text))
+
+
+def _cleaned_structured_lines(text: str) -> list[str]:
     lines = _split_structured_bullet(text)
     if not lines:
-        return ""
+        return []
     # Drop empty / broken GPT stubs («Что делать:.», «контекстом —.», «Где видно:.»).
     cleaned: list[str] = []
     for ln in lines:
@@ -731,7 +741,12 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
         if re.search(r"«[^»]*[,;:]\s*»", ln):
             continue
         cleaned.append(ln)
-    lines = cleaned
+    return cleaned
+
+
+def _clip_structured_bullet(text: str, max_chars: int) -> str:
+    """Keep whole structural lines only — never mid-cut a quote/phrase (PDF-45/46)."""
+    lines = _cleaned_structured_lines(text)
     if not lines:
         return ""
     if sum(len(ln) for ln in lines) + max(0, len(lines) - 1) <= max_chars:
@@ -750,10 +765,16 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
         # Quote / theme / meta: skip whole line rather than publish «…visa over».
         if _QUOTE_SOURCE_RE.match(ln) or ln.startswith("«") or _META_LINE_RE.match(ln):
             break
-        # Non-quote prose: only keep if a complete sentence fits.
-        punct = max(ln.rfind(". "), ln.rfind("! "), ln.rfind("? "))
-        if punct > 20 and punct + 1 <= room:
-            kept.append(ln[: punct + 1].strip())
+        # Non-quote prose: keep the head that fits.
+        #
+        # Граница предложения ищется **внутри** бюджета, и это единственное
+        # правило реза прозы — то же, которым режет `_clip_words`. Прежде
+        # `ln.rfind(". ")` искал границу по всей строке: у нарратива в 1387
+        # знаков последняя точка лежала за 900-м, условие «граница помещается»
+        # не выполнялось, и функция возвращала пустую строку. Страница 30
+        # живого отчёта пришла с двумя буллетами из трёх, а исчезнувший нёс
+        # метод проверки, дату и ссылку на статью.
+        kept.append(_clip_words(ln, room))
         break
     # Never fall back to a mid-word / mid-phrase slice of the first line.
     return _close_dangling_lead_in("\n".join(kept))
@@ -1202,17 +1223,43 @@ class _Ctx:
         rows = (len(items) + cols - 1) // cols
         return y + rows * chip_h + max(0, rows - 1) * gap
 
-    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 900) -> int:
+    def bullets(
+        self,
+        items: list[str],
+        y: int,
+        color: RGBColor = BODY_COLOR,
+        max_items: int = 8,
+        max_chars: int = 900,
+        bottom: int | None = None,
+    ) -> int:
+        """Нарисовать список буллетов; вернуть нижнюю Y.
+
+        `bottom` — граница, ниже которой рисовать нельзя: по умолчанию низ
+        полосы содержимого, но на странице, где под списком стоит ещё карточка,
+        её место обязан вычесть тот, кто эту карточку рисует. Иначе список
+        занимает лист целиком, а карточке остаётся ноль.
+        """
         dangling = re.compile(
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-|\()\s*$",
             re.I,
         )
         kept: list[str] = []
+        # Потеря содержимого на пути к листу считается здесь и только здесь:
+        # опустевший после ножниц буллет (`continue` ниже) молчал, и страница 30
+        # живого отчёта пришла без нарратива при чистой телеметрии.
+        emptied_bullets = 0
+        clipped_chars = 0
         for b in items[:max_items]:
             raw = _safe(b)
             if not raw:
                 continue
             clipped = _clip_structured_bullet(raw, max_chars)
+            # Считается ровно то, что срезал бюджет. Сравнение идёт с телом
+            # буллета без обрубков модели: чистка заглушек и снятие оборванного
+            # хвоста ниже убирают уже сломанное, и мерить их как потерю значило
+            # бы красить приёмку живого прогона там, где ничего не пропало.
+            if clipped:
+                clipped_chars += max(0, len(_structured_bullet_body(raw)) - len(clipped))
             # Drop incomplete trailing parentheticals from mid-clip
             # (e.g. «…спорах (в.» from «(в т.ч. материалы на …)»).
             clipped = re.sub(r"\s*\([^)\n]*$", "", clipped).rstrip(" :;")
@@ -1237,12 +1284,11 @@ class _Ctx:
                 clipped = "\n".join(lines).strip()
                 flat_tail = clipped.replace("\n", " ").rstrip()
             if not clipped:
+                emptied_bullets += 1
                 continue
             if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-", "(")):
                 raise RuntimeError(f"ORION bullet dangling on p{self.page}: {flat_tail[-48:]}")
             kept.append(clipped)
-        if not kept:
-            return y
         # PDF-46 I.2 — whole bullets only; never paint past CONTENT_BOTTOM.
         #
         # Мерка приведена к тому, что рисуется (шаг 16, 07.6). Прежняя мерила
@@ -1254,7 +1300,7 @@ class _Ctx:
         # Замер на финальном прогоне: оценка превышала факт в 1.7–1.8 раза, и
         # страница-продолжение, вмещающая три тематических блока, принимала два.
         # Отсюда пять страниц «Россия — резюме аудита», заполненных на 18–62 %.
-        page_avail = max(0, CONTENT_BOTTOM - y - 120_000)
+        page_avail = max(0, (CONTENT_BOTTOM if bottom is None else bottom) - y - 120_000)
         measure_slack = 1.08
 
         def _bullet_block_height(blocks: list[str]) -> int:
@@ -1283,7 +1329,7 @@ class _Ctx:
                     total += int((space_before + space_after) * EMU_PER_PT)
             return int(total * measure_slack) + 60_000
 
-        dropped_bullets = 0
+        dropped_bullets = emptied_bullets
         dropped_lines = 0
         while kept and _bullet_block_height(kept) > page_avail:
             if len(kept) == 1:
@@ -1302,10 +1348,18 @@ class _Ctx:
         # отчёта без следа: подали четыре — нарисовалось два, и узнать об этом
         # было неоткуда. Пагинация обязана резать по страницам сама, а этот
         # цикл — последний рубеж, о срабатывании которого надо знать.
-        if dropped_bullets or dropped_lines:
+        #
+        # Укороченный ножницами буллет — такая же потеря: до читателя не дошёл
+        # хвост. Он записывается тем же входом, но не считается выброшенным
+        # блоком: инспектор различает «блока нет вовсе» и «блок обрезан».
+        if dropped_bullets or dropped_lines or clipped_chars:
             record_text_layout(
                 page=self.page,
-                name=f"orion_bullets_dropped_p{self.page}",
+                name=(
+                    f"orion_bullets_dropped_p{self.page}"
+                    if dropped_bullets or dropped_lines
+                    else f"orion_bullets_clipped_p{self.page}"
+                ),
                 role="bullets",
                 font_family=FONT,
                 font_size_pt=FS_BODY,

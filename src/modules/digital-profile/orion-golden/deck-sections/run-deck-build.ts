@@ -227,6 +227,19 @@ export type RendererAssetEntry = {
   storageKey?: string;
 } & Record<string, unknown>;
 
+/**
+ * Макеты, которые рисуют поля карточками, а не одним склеенным абзацем.
+ *
+ * У них рекомендация печатается своей карточкой, поэтому во вклейку нарратива
+ * она не идёт (иначе «Мы предлагаем …» стоит на странице дважды), а буллеты
+ * остаются списком: фолд «нарратив первым буллетом» здесь и погубил страницу
+ * Википедии — 1387-символьный буллет ножницы рендерера превратили в пустоту.
+ */
+const CARD_STRUCTURED_TEMPLATES = new Set([
+  "orion_golden_no_data_compact",
+  "orion_golden_wikipedia_check",
+]);
+
 /** Convert the assembled model to the existing renderer's payload shape. */
 export function toRendererPayload(input: {
   deckManifest: ReportDeckManifest;
@@ -269,7 +282,7 @@ export function toRendererPayload(input: {
     const composedNarrative = [
       raw.narrative,
       composeFindingProse(
-        raw.template === "orion_golden_no_data_compact" ? { ...raw, whatToCheck: undefined } : raw
+        CARD_STRUCTURED_TEMPLATES.has(raw.template) ? { ...raw, whatToCheck: undefined } : raw
       ),
     ]
       .filter((part): part is string => Boolean(part && part.trim()))
@@ -342,7 +355,7 @@ export function toRendererPayload(input: {
     // (status narrative / why-bullets / recommendation / methodology), and the
     // no-data layout draws them as separate cards instead of one glued
     // paragraph on a 90%-empty page.
-    if (s.template === "orion_golden_no_data_compact") {
+    if (CARD_STRUCTURED_TEMPLATES.has(s.template)) {
       return {
         slideKey: s.slideKey,
         sectionKey: s.sectionKey,

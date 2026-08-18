@@ -24,6 +24,7 @@
     "complianceRowsNameTheirBases": true,
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,
+    "wikipediaCheckTextInPdf": true,
     "pageParity": true
   },
   "notes": [

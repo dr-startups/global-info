@@ -25,6 +25,7 @@ import {
   type V72PageInventoryItem,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
+import { normalizeForCompare } from "../src/modules/digital-profile/orion-golden/deck-sections/text-compare";
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import type {
   ExecutiveSummaryExtras,
@@ -523,6 +524,24 @@ async function main(): Promise<void> {
       emptyPages: unknown[];
     };
 
+    // Текст страниц PDF — тем же fitz, что и подсчёт страниц. Читается один
+    // раз: ворота сверяют по нему то, что действительно напечатано.
+    const pdfPageTexts: string[] = existsSync(pdfPath)
+      ? (JSON.parse(
+          execFileSync(
+            pythonInterpreter(),
+            [
+              "-X",
+              "utf8",
+              "-c",
+              "import fitz,sys,json;print(json.dumps([p.get_text() for p in fitz.open(sys.argv[1])]))",
+              pdfPath,
+            ],
+            { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+          )
+        ) as string[])
+      : [];
+
     // Content report: client-copy level facts across the assembled deck.
     const redMarkerRows = result.assembly.rendererSlides
       .flatMap((s) => s.table?.rows ?? [])
@@ -588,6 +607,12 @@ async function main(): Promise<void> {
         ),
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
+        // Методология страницы проверки доехала до листа, а не только до
+        // полезной нагрузки: этот зазор и пропустил регресс.
+        wikipediaCheckTextInPdf: wikipediaCheckTextInPdf(
+          result.assembly.rendererSlides,
+          (page) => pdfPageTexts[page - 1] ?? ""
+        ),
         pageParity: (() => {
           if (!existsSync(pdfPath)) return false;
           const pdfPages = Number(
@@ -699,6 +724,44 @@ export function riskMatrixTelemetryPresent(
       .map((e) => Number(e.page))
   );
   return riskPages.every((page) => reported.has(Number(page)));
+}
+
+/**
+ * Текст страницы проверки Википедии доехал до PDF.
+ *
+ * Ровно этот зазор «payload → PDF» пропустил регресс при 22 зелёных воротах:
+ * методология лежала в полезной нагрузке целиком, а на листе её не было —
+ * ножницы рендерера вернули на длинном буллете пустую строку. Сверяется голова
+ * нарратива слайда с текстом **той** страницы PDF, где он стоит.
+ *
+ * Сравнение — без пробелов и пунктуации: fitz рвёт строки и переносит слова, и
+ * подстрока «в лоб» дала бы ложный провал. Продолжения не проверяются: нарратив
+ * принадлежит первой странице блока, и требовать его голову с каждой страницы
+ * шаблона значило бы валить приёмку на здоровой деке с пятью строками выдачи.
+ */
+export function wikipediaCheckTextInPdf(
+  rendererSlides: ReadonlyArray<{
+    template?: string;
+    pageNumber?: number;
+    narrative?: string;
+    isContinuation?: boolean;
+  }>,
+  pageText: (pageNumber: number) => string
+): boolean {
+  const slides = rendererSlides.filter(
+    (s) => s.template === "orion_golden_wikipedia_check" && !s.isContinuation
+  );
+  if (slides.length === 0) return false;
+  return slides.every((s) => {
+    const head = String(s.narrative ?? "").split(/(?<=[.!?])\s/u)[0] ?? "";
+    if (head.length < 40) return false;
+    return compactForCompare(pageText(Number(s.pageNumber))).includes(compactForCompare(head));
+  });
+}
+
+/** Одна форма для сверки с текстом PDF: буквы и цифры, без пробелов. */
+function compactForCompare(text: string): string {
+  return normalizeForCompare(text).replace(/\s+/gu, "");
 }
 
 /**

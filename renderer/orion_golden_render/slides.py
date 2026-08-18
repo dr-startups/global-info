@@ -50,6 +50,7 @@ from .common import (
     _safe,
     _safe_preserve_breaks,
     _trim_dangling_tail,
+    record_text_layout,
 )
 from .executive import (
     _render_executive_dashboard,
@@ -99,6 +100,131 @@ def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
             shape.adjustments[0] = 0.5
         except Exception:  # noqa: BLE001
             pass
+
+
+#: Сколько места держится под рекомендацией и футнотом, когда над ними стоит
+#: список строк. Числа те же, которыми ограничена карточка «Что проверить» и
+#: подпись под ней: список не вправе занять их место — иначе рекомендация
+#: молча ужимается до обрубка, а методология не печатается вовсе.
+#:
+#: `FOOTNOTE_RESERVE` — замер: подпись 9 pt в 300 знаков (потолок клипа) занимает
+#: 363 697 EMU. Этой же величиной проверяется, есть ли место под футнот: пока
+#: резерв и порог были разными числами (360 000 и 400 000), футнот мог не
+#: напечататься на полном листе — и молча.
+ACTION_CARD_MAX_H = 1_100_000
+CARD_GAP = 110_000
+FOOTNOTE_RESERVE = 380_000
+
+
+def _render_status_cards(
+    ctx: _Ctx,
+    slide: dict[str, Any],
+    title: str,
+    narrative: str,
+    bullets: list[str],
+    *,
+    status_title: str,
+    bullets_as_card: bool,
+) -> None:
+    """Карточная страница: статус, содержимое, рекомендация, футнот методологии.
+
+    Один макет на два шаблона — пустое состояние поверхности и страницу
+    фактической проверки Википедии. Разница ровно одна: буллеты печатаются
+    карточкой «Что это означает» (пустое состояние объясняет, чем плохо
+    отсутствие материалов) или списком строк выдачи. Копии геометрии не
+    заводится намеренно: методология и рекомендация обязаны печататься на обеих
+    страницах, а два одинаковых макета расходятся с первой же правкой.
+    """
+    ctx.light_bg()
+    y = ctx.title(title, 320000, NAVY)
+    # Карточка с одним заголовком — это пустой озаглавленный блок, и приёмка
+    # считает его дефектом. На странице-продолжении нарратива нет по построению
+    # (он принадлежит первой странице блока), поэтому карточка там не рисуется.
+    if narrative:
+        # PDF-36 D.3 — cards height-fit with font step-down; no char starvation.
+        y = ctx.content_card(
+            title=status_title,
+            text=narrative,
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=380_000,
+            max_h=1_700_000,
+            tone="accent",
+            title_size=11,
+            body_size=FS_BODY,
+        )
+        y += CARD_GAP
+    actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
+    methodology = _safe(slide.get("methodologyNote") or "")
+    source_note = _safe(slide.get("sourceNote") or "")
+    footnote = " ".join(x for x in (methodology, source_note) if x)
+    if bullets and bullets_as_card:
+        y = ctx.content_card(
+            title="Что это означает",
+            text="\n".join(bullets[:4]),
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=360_000,
+            max_h=2_200_000,
+            tone="neutral",
+            title_size=11,
+            body_size=11,
+        )
+        y += CARD_GAP
+    elif bullets:
+        reserved = (ACTION_CARD_MAX_H + CARD_GAP if actions else 0) + (
+            FOOTNOTE_RESERVE if footnote else 0
+        )
+        y = ctx.bullets(bullets, y, max_items=8, bottom=CONTENT_BOTTOM - reserved)
+        y += CARD_GAP
+    if actions:
+        y = ctx.content_card(
+            title="Что проверить",
+            text=_safe(actions[0].get("label")),
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=320_000,
+            max_h=ACTION_CARD_MAX_H,
+            tone="warn",
+            title_size=11,
+            body_size=11,
+        )
+        y += CARD_GAP
+    if not footnote:
+        return
+    if y <= CONTENT_BOTTOM - FOOTNOTE_RESERVE:
+        ctx.body(
+            _clip_words(footnote, 300),
+            y,
+            max_h=CONTENT_BOTTOM - y - 60_000,
+            color=MUTED_COLOR,
+            font_size=9,
+        )
+        return
+    # Ненапечатанная методология — потеря содержимого, а не мелочь вёрстки: на
+    # странице проверки она и есть предмет страницы. На ветке со списком место
+    # под неё держит резерв, и сюда попасть нельзя; на карточной ветке карточки
+    # могут съесть лист — тогда об этом обязано быть слышно.
+    record_text_layout(
+        page=ctx.page,
+        name=f"orion_footnote_dropped_p{ctx.page}",
+        role="footnote",
+        font_family=FONT,
+        font_size_pt=9,
+        box_width=CONTENT_W,
+        box_height=0,
+        available_height=max(0, CONTENT_BOTTOM - y),
+        required_height=FOOTNOTE_RESERVE,
+        measured_lines=0,
+        text_length=len(footnote),
+        clipped=True,
+        measurement_uncertain=False,
+        dropped_lines=1,
+    )
+
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
     template = str(slide.get("template") or "")
@@ -571,64 +697,30 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_no_data_compact":
         # C.2 — honest empty state as a structured page: status card,
         # "what it means" card, recommendation card, methodology footnote.
-        ctx.light_bg()
-        y = ctx.title(title, 320000, NAVY)
-        status_text = narrative or "Для данного раздела недостаточно подтверждённых данных."
-        # PDF-36 D.3 — cards height-fit with font step-down; no char starvation.
-        y = ctx.content_card(
-            title="Статус сбора",
-            text=status_text,
-            x=MARGIN_X,
-            y=y,
-            width=CONTENT_W,
-            min_h=380_000,
-            max_h=1_700_000,
-            tone="accent",
-            title_size=11,
-            body_size=FS_BODY,
+        _render_status_cards(
+            ctx,
+            slide,
+            title,
+            narrative or "Для данного раздела недостаточно подтверждённых данных.",
+            bullets,
+            status_title="Статус сбора",
+            bullets_as_card=True,
         )
-        y += 110_000
-        if bullets:
-            why_text = "\n".join(bullets[:4])
-            y = ctx.content_card(
-                title="Что это означает",
-                text=why_text,
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=360_000,
-                max_h=2_200_000,
-                tone="neutral",
-                title_size=11,
-                body_size=11,
-            )
-            y += 110_000
-        actions_nd = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
-        if actions_nd:
-            y = ctx.content_card(
-                title="Что проверить",
-                text=_safe(actions_nd[0].get("label")),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=320_000,
-                max_h=1_100_000,
-                tone="warn",
-                title_size=11,
-                body_size=11,
-            )
-            y += 110_000
-        methodology = _safe(slide.get("methodologyNote") or "")
-        source_note = _safe(slide.get("sourceNote") or "")
-        footnote = " ".join(x for x in (methodology, source_note) if x)
-        if footnote and y < CONTENT_BOTTOM - 400_000:
-            ctx.body(
-                _clip_words(footnote, 300),
-                y,
-                max_h=CONTENT_BOTTOM - y - 60_000,
-                color=MUTED_COLOR,
-                font_size=9,
-            )
+        return
+
+    if template == "orion_golden_wikipedia_check":
+        # Страница фактической проверки: тот же карточный макет, что и у
+        # пустого состояния, но буллеты — строки поисковой выдачи, и печатаются
+        # они списком между результатом проверки и рекомендацией.
+        _render_status_cards(
+            ctx,
+            slide,
+            title,
+            narrative,
+            bullets,
+            status_title="Результат проверки",
+            bullets_as_card=False,
+        )
         return
 
     if template == "orion_golden_audit_dashboard":

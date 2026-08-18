@@ -302,6 +302,21 @@
       "measurementUncertain": false
     },
     {
+      "page": 25,
+      "name": "orion_text_body_p25",
+      "role": "text",
+      "fontFamily": "Inter",
+      "fontSizePt": 9,
+      "boxWidth": 10744320,
+      "boxHeight": 363697,
+      "availableHeight": 1847361,
+      "requiredHeight": 323697,
+      "measuredLines": 2,
+      "textLength": 196,
+      "clipped": false,
+      "measurementUncertain": false
+    },
+    {
       "page": 26,
       "name": "orion_text_body_p26",
       "role": "text",

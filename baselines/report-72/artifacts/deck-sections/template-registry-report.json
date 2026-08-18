@@ -293,6 +293,32 @@
       "legend": null
     },
     {
+      "templateId": "wikipedia-check",
+      "rendererTemplate": "orion_golden_wikipedia_check",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 900,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Результат проверки",
+        "Строки выдачи",
+        "Что проверить"
+      ],
+      "methodologyNote": "Наличие статьи проверяется прямым запросом к официальному API Википедии в каждом языковом разделе; строки поисковой выдачи приводятся отдельно от результата проверки.",
+      "legend": null
+    },
+    {
       "templateId": "ai-overview",
       "rendererTemplate": "orion_golden_surface_panel",
       "grid": "single-column",

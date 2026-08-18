@@ -21,7 +21,23 @@ export type WikipediaCheckInput = {
   lastChecked?: string | Date | null;
   /** e.g. "real:WIKIPEDIA" vs demo — prefer real when ranking. */
   checkedBy?: string | null;
+  /**
+   * Запрос, которым спрашивали языковой раздел. Страница проверки печатает его
+   * дословно: «статья не найдена» верно ровно про тот запрос, который ушёл в
+   * API. Поле поднимается из снимка ответа провайдера (`snapshot.raw.query`) —
+   * где именно оно лежит, знает только этот модуль.
+   */
+  query?: string | null;
+  /** Снимок ответа провайдера, как его записал агент проверки. */
+  snapshot?: unknown;
 };
+
+/** Запрос проверки из снимка ответа провайдера. */
+function queryOfSnapshot(snapshot: unknown): string | null {
+  const raw = (snapshot as { raw?: { query?: unknown } } | null)?.raw?.query;
+  const query = typeof raw === "string" ? raw.trim() : "";
+  return query || null;
+}
 
 /** Resolved screenshot ready to bind into p10 / p27. */
 export type RealSerpScreenshotInput = {
@@ -192,13 +208,15 @@ export async function loadWikipediaChecksFromPrisma(input: {
     orderBy: [{ lastChecked: "desc" }],
   });
   // Prefer real checks, then exists=true, keep stable order otherwise.
-  return [...rows].sort((a, b) => {
-    const realA = String(a.checkedBy ?? "").startsWith("real") ? 1 : 0;
-    const realB = String(b.checkedBy ?? "").startsWith("real") ? 1 : 0;
-    if (realA !== realB) return realB - realA;
-    if (Boolean(a.exists) !== Boolean(b.exists)) return a.exists ? -1 : 1;
-    return 0;
-  });
+  return [...rows]
+    .sort((a, b) => {
+      const realA = String(a.checkedBy ?? "").startsWith("real") ? 1 : 0;
+      const realB = String(b.checkedBy ?? "").startsWith("real") ? 1 : 0;
+      if (realA !== realB) return realB - realA;
+      if (Boolean(a.exists) !== Boolean(b.exists)) return a.exists ? -1 : 1;
+      return 0;
+    })
+    .map((row) => ({ ...row, query: row.query ?? queryOfSnapshot(row.snapshot) }));
 }
 
 export async function loadSerpScreenshotsFromPrisma(input: {

@@ -19,6 +19,7 @@ export type DeckTemplateId =
   | "suggestions"
   | "image-grid"
   | "wikipedia-knowledge"
+  | "wikipedia-check"
   | "ai-overview"
   | "related-queries"
   | "coverage-empty-state"
@@ -310,6 +311,38 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     maxBulletsPerSlide: 8,
     maxTableRowsPerSlide: 0,
     layout: layout("sidebar-right", { narrativeCharBudget: 480 }),
+  },
+  /*
+   * Страница фактической проверки Википедии.
+   *
+   * Отдельная запись, а не переиспользование `wikipedia-knowledge`: тот же
+   * шаблон обслуживает панель знаний (p18), у которой есть визуал, и
+   * перепрофилировать его нельзя. Макет — карточный, как у пустого состояния:
+   * статус проверки, строки выдачи, рекомендация и футнот методологии. Так
+   * методология печатается во всех состояниях страницы — полями, а не удачей
+   * длины текста: прозаический макет вливал нарратив в буллет, и на живом
+   * прогоне он исчез целиком.
+   */
+  "wikipedia-check": {
+    templateId: "wikipedia-check",
+    rendererTemplate: "orion_golden_wikipedia_check",
+    staticBlocks: ["Результат проверки", "Строки выдачи", "Что проверить"],
+    methodologyNote:
+      "Наличие статьи проверяется прямым запросом к официальному API Википедии в каждом языковом разделе; строки поисковой выдачи приводятся отдельно от результата проверки.",
+    /*
+     * Сколько строк выдачи влезает на лист — по замеру рендерера, а не на глаз.
+     *
+     * Первая страница несёт карточку статуса (до 1 700 000 EMU), карточку
+     * рекомендации (замер самой длинной — 845 202) и футнот методологии
+     * (363 697 по телеметрии). Под список остаётся 1 724 536, строка стоит
+     * 374 000 — то есть четыре. Шесть рендерер рисовал четырьмя и сообщал о
+     * потере двух: переполнение обязано уходить в продолжение, а не в
+     * телеметрию. На продолжении карточек нет, и места там на десяток строк.
+     */
+    maxBulletsPerSlide: 4,
+    maxBulletsPerContinuation: 10,
+    maxTableRowsPerSlide: 0,
+    layout: layout("single-column", { narrativeCharBudget: 900, itemCharBudget: 400 }),
   },
   "ai-overview": {
     templateId: "ai-overview",

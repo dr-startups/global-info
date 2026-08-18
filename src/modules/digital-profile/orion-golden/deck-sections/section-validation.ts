@@ -5,6 +5,7 @@ import { domainToASCII } from "node:url";
  */
 
 import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
+import { clientLink } from "./fragment-builders/serp";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {
@@ -28,6 +29,7 @@ const PAGE_SCOPED_TEMPLATES = new Set([
   "suggestions",
   "image-grid",
   "wikipedia-knowledge",
+  "wikipedia-check",
   "ai-overview",
   "related-queries",
   "serp-table",
@@ -247,7 +249,71 @@ export function validateSectionPack(input: {
     }
   }
 
+  // 13. Утверждение «не найдено» не спорит с собственными наблюдениями отчёта.
+  if (input.evidenceIndex) {
+    for (const slide of pack.slides) {
+      const issue = wikipediaDenialIssue(slide, input.evidenceIndex);
+      if (issue) issues.push(issue);
+    }
+  }
+
   return { fragmentKey: pack.fragmentKey, passed: issues.length === 0, issues };
+}
+
+/**
+ * Слайд, чья проверка Википедии ничего не нашла, обязан назвать статью,
+ * которая лежит в его же доказательствах.
+ *
+ * На прогоне 76 страница ОАЭ утверждала «статья в англоязычной Википедии не
+ * найдена», а `en.wikipedia.org/wiki/Viktor_Rashnikov` стоял первой строкой
+ * таблицы выдачи того же отчёта: проверка ушла кириллическим запросом. Признак
+ * — данные слайда, а не слова: строка о субъекте в том же языковом разделе,
+ * что и проверка. Проверяется независимо от построителя намеренно — ворота,
+ * повторяющие его вывод, подтверждают сами себя.
+ */
+function wikipediaDenialIssue(
+  slide: SectionPackV2["slides"][number],
+  evidenceIndex: ScopedEvidenceIndex
+): string | null {
+  const entries = slide.evidenceRefs.map((ref) => evidenceIndex[ref]);
+  const checks = entries.filter((e) => e?.kind === "wikipedia_check");
+  // Страница отрицает статью только там, где ни одна проверка её не нашла.
+  if (checks.length === 0 || checks.some((e) => e?.wikipediaExists === true)) return null;
+  const deniedDomains = new Set(
+    checks
+      .filter((e) => e?.wikipediaExists === false)
+      .map((e) =>
+        String(e?.language ?? "")
+          .toLowerCase()
+          .split(/[-_]/u)[0]
+      )
+      .filter(Boolean)
+      .map((language) => `${language}.wikipedia.org`)
+  );
+  if (deniedDomains.size === 0) return null;
+  const text = [
+    slide.content.narrative,
+    slide.content.whatWasFound,
+    slide.content.whyItMatters,
+    slide.content.whatToCheck,
+    slide.content.sourceNote,
+    ...(slide.content.bullets ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const unnamed = entries
+    .filter(
+      (e) =>
+        e?.kind !== "wikipedia_check" &&
+        e?.subjectDecision === "SUBJECT_MATCH" &&
+        deniedDomains.has(String(e?.domain ?? "").toLowerCase()) &&
+        /\/wiki\//u.test(String(e?.url ?? ""))
+    )
+    .map((e) => clientLink(e!.url, e!.domain))
+    .filter((link) => !text.includes(link));
+  return unnamed.length === 0
+    ? null
+    : `wikipedia denial contradicts page evidence on ${slide.slideId}: ${unnamed.join(", ")}`;
 }
 
 /** Одна форма домена для сверки: нижний регистр и punycode. */

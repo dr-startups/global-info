@@ -3,6 +3,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadDeckInputsFromAnalyticsDir } from "@/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
+import { loadWikipediaChecksFromPrisma } from "@/modules/digital-profile/services/evidence-supplement-adapter";
 
 /**
  * Дата проверки и принадлежность найденной статьи доезжают до строителя.
@@ -69,6 +70,21 @@ describe("проверка Википедии доезжает до входа �
     expect(entry!.subjectDecision).toBe("AMBIGUOUS");
   });
 
+  it("запрос проверки доезжает до индекса доказательств", () => {
+    const dir = analyticsDirWithSupplement({
+      id: "2",
+      exists: false,
+      language: "en",
+      lastChecked: "2026-08-17T12:00:00.000Z",
+      // Живой прогон: en-раздел спрашивали кириллицей, и страница обязана
+      // напечатать этот запрос дословно, а не обобщать «по имени субъекта».
+      query: "Рашников Виктор Филиппович",
+    });
+    const entry = loadDeckInputsFromAnalyticsDir(dir).evidenceIndex["inventory:wiki-2"];
+    expect(entry!.kind).toBe("wikipedia_check");
+    expect(entry!.query).toBe("Рашников Виктор Филиппович");
+  });
+
   it("проверка без даты поля не заводит", () => {
     const dir = analyticsDirWithSupplement({
       id: "2",
@@ -78,5 +94,47 @@ describe("проверка Википедии доезжает до входа �
     const entry = loadDeckInputsFromAnalyticsDir(dir).evidenceIndex["inventory:wiki-2"];
     expect(entry!.kind).toBe("wikipedia_check");
     expect(entry!.checkedAt).toBeUndefined();
+  });
+
+  it("старый артефакт без запроса поля не заводит", () => {
+    const dir = analyticsDirWithSupplement({ id: "2", exists: false, language: "ru" });
+    const entry = loadDeckInputsFromAnalyticsDir(dir).evidenceIndex["inventory:wiki-2"];
+    expect(entry!.query).toBeUndefined();
+  });
+});
+
+/**
+ * Запрос лежит в снимке ответа провайдера (`snapshot.raw.query`), а страница
+ * читает поле записи. Где именно он лежит, знает только писатель supplement —
+ * иначе это знание пришлось бы держать в двух местах.
+ */
+describe("писатель supplement поднимает запрос из снимка проверки", () => {
+  const prismaWithRow = (row: Record<string, unknown>) => ({
+    wikipediaCheck: { findMany: async () => [row] },
+  });
+
+  it("запрос снимка становится полем записи", async () => {
+    const rows = await loadWikipediaChecksFromPrisma({
+      prisma: prismaWithRow({
+        id: "w1",
+        exists: false,
+        language: "en",
+        checkedBy: "real:WIKIPEDIA",
+        snapshot: {
+          source: "REAL_WIKIPEDIA",
+          raw: { provider: "WIKIPEDIA", language: "en", query: "Рашников Виктор Филиппович" },
+        },
+      }) as never,
+      caseId: "case-1",
+    });
+    expect(rows[0]!.query).toBe("Рашников Виктор Филиппович");
+  });
+
+  it("снимок без запроса поля не выдумывает", async () => {
+    const rows = await loadWikipediaChecksFromPrisma({
+      prisma: prismaWithRow({ id: "w1", exists: false, language: "ru", snapshot: null }) as never,
+      caseId: "case-1",
+    });
+    expect(rows[0]!.query ?? null).toBeNull();
   });
 });

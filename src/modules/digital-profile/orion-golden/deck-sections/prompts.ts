@@ -91,7 +91,17 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   RU_SERP_SCREENSHOT: llmPrompt("ru-serp-screenshot-analysis", "анализ скриншота выдачи RU"),
   RU_SUGGESTIONS: llmPrompt("ru-suggestions-analysis", "анализ поисковых подсказок RU"),
   RU_IMAGES: llmPrompt("ru-images-analysis", "анализ изображений в выдаче RU"),
-  RU_IDENTITY_WIKIPEDIA: llmPrompt("ru-identity-analysis", "идентификация субъекта в Википедии/панелях знаний RU"),
+  /*
+   * Страницы фактических проверок модель не переписывает.
+   *
+   * Стадия копирайта переписывает ровно те поля, в которых у страницы
+   * Википедии лежат факты проверки, — и однажды выбросила из нарратива метод,
+   * дату и URL найденной статьи, хотя URL был в данных. Ценность этой страницы
+   * в дословности, а не в интонации; так же после шага F устроен комплаенс.
+   * Альтернатива «гвард, требующий от модели сохранить факты» отвергнута: это
+   * второе место, решающее, что обязано быть в тексте.
+   */
+  RU_IDENTITY_WIKIPEDIA: deterministicPrompt("ru-identity-analysis"),
   RU_KNOWLEDGE_AI: llmPrompt("ru-ai-analysis", "анализ AI-ответов поисковых систем RU"),
   RU_RELATED: llmPrompt("ru-related-analysis", "анализ связанных запросов RU"),
   UAE_SUMMARY: llmPrompt("uae-regional-summary", "региональный обзор UAE-поверхностей"),
@@ -100,7 +110,7 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   UAE_SERP_SCREENSHOT: llmPrompt("uae-serp-screenshot-analysis", "анализ скриншота выдачи UAE"),
   UAE_SUGGESTIONS: llmPrompt("uae-suggestions-analysis", "анализ поисковых подсказок UAE"),
   UAE_IMAGES: llmPrompt("uae-images-analysis", "анализ изображений в выдаче UAE"),
-  UAE_IDENTITY_WIKIPEDIA: llmPrompt("uae-identity-analysis", "идентификация субъекта в Википедии/панелях знаний UAE"),
+  UAE_IDENTITY_WIKIPEDIA: deterministicPrompt("uae-identity-analysis"),
   UAE_KNOWLEDGE_AI: llmPrompt("uae-ai-analysis", "анализ AI-ответов поисковых систем UAE"),
   UAE_RELATED: llmPrompt("uae-related-analysis", "анализ связанных запросов UAE"),
   COMPLIANCE_MAIN: deterministicPrompt("compliance-existing-content"),

@@ -22,9 +22,18 @@ type CheckInput = {
   url?: string;
   checkedAt?: string;
   subjectDecision?: string;
+  /** Запрос, которым выполнялась проверка (старые артефакты его не несут). */
+  query?: string;
 };
 
-type RowInput = { title: string; decision?: string; domain?: string };
+type RowInput = {
+  title: string;
+  decision?: string;
+  domain?: string;
+  url?: string;
+  rank?: number;
+  engine?: string;
+};
 
 type ScopedInput = {
   checks?: CheckInput[];
@@ -48,8 +57,10 @@ function wikiScoped(input: ScopedInput): ScopedFragmentInput {
       region,
       title: r.title,
       domain,
-      url: `https://${domain}/wiki/row${i}`,
+      url: r.url ?? `https://${domain}/wiki/row${i}`,
       subjectDecision: r.decision ?? "AMBIGUOUS",
+      rank: r.rank,
+      engine: r.engine,
     };
     return ref;
   });
@@ -70,6 +81,7 @@ function wikiScoped(input: ScopedInput): ScopedFragmentInput {
       title: c.title,
       url: c.url,
       checkedAt: c.checkedAt,
+      query: c.query,
       subjectDecision: c.subjectDecision,
       domain: `${language}.wikipedia.org`,
       region: language.startsWith("ru") ? "RU" : "UAE",
@@ -208,7 +220,7 @@ describe("страница Википедии: статьи нет", () => {
     const narrative = slide.content.narrative ?? "";
     expect(narrative).toContain("официальный поисковый API Википедии");
     expect(narrative).toContain("в русскоязычном разделе (ru.wikipedia.org)");
-    expect(narrative).toContain("статья о проверяемом лице не найдена");
+    expect(narrative).toContain("Проверка по этому запросу статью не нашла");
     expect(narrative).toContain("итог выполненной проверки");
     const bullets = slide.content.bullets ?? [];
     expect(bullets).toHaveLength(2);
@@ -223,9 +235,9 @@ describe("страница Википедии: статьи нет", () => {
       checks: [{ exists: false, language: "ru", checkedAt: "2026-07-01T12:00:00.000Z" }],
       rows: [{ title: "Однофамилец — биография", decision: "OTHER_SUBJECT" }],
     });
-    expect(slide.templateId).toBe("wikipedia-knowledge");
+    expect(slide.templateId).toBe("wikipedia-check");
     expect(slide.content.narrative ?? "").toContain("официальный поисковый API Википедии");
-    expect(slide.content.narrative ?? "").toContain("статья о проверяемом лице не найдена");
+    expect(slide.content.narrative ?? "").toContain("Проверка по этому запросу статью не нашла");
     expect(slide.content.whatToCheck ?? "").toMatch(/^Мы предлагаем рассмотреть создание/u);
   });
 });
@@ -341,13 +353,201 @@ describe("страница Википедии: результат проверк
 
   it("собранные строки без проверки статьи печатаются с прямым отказом от вывода", () => {
     const slide = build({ rows: [{ title: "Глинка (дворянский род)", decision: "AMBIGUOUS" }] });
-    expect(slide.templateId).toBe("wikipedia-knowledge");
+    expect(slide.templateId).toBe("wikipedia-check");
     const narrative = slide.content.narrative ?? "";
     expect(narrative).toContain("Результат отдельной проверки");
     expect(narrative).toContain("не делается");
     expect(narrative).toMatch(/принадлежность[^.]*не подтверждена/u);
     expect(pageText(slide)).not.toContain("о проверяемом субъекте");
     expect(slide.content.whatToCheck).toBe(COVERAGE_EMPTY_COPY["no-identity-data"]!.measuredCheck);
+  });
+});
+
+describe("метод называет запрос дословно", () => {
+  it("запрос проверки печатается как есть, а не пересказывается", () => {
+    const slide = build({
+      checks: [
+        {
+          exists: false,
+          language: "ru",
+          checkedAt: "2026-07-01T12:00:00.000Z",
+          query: "Рашников Виктор Филиппович",
+        },
+      ],
+      noUnit: true,
+    });
+    expect(slide.content.narrative ?? "").toContain(
+      "запрос: «Рашников Виктор Филиппович», проверка выполнена 01.07.2026"
+    );
+  });
+
+  it("старый артефакт без запроса печатает прежнюю формулу и ничего не выдумывает", () => {
+    const slide = build(ARTICLE_ABSENT);
+    const narrative = slide.content.narrative ?? "";
+    expect(narrative).toContain("запрос выполнялся по имени субъекта");
+    expect(narrative).not.toContain("запрос: «");
+  });
+
+  it("две проверки с разными запросами называют оба", () => {
+    const slide = build({
+      region: "UAE",
+      noUnit: true,
+      checks: [
+        { exists: false, language: "en", checkedAt: "2026-07-01T12:00:00.000Z", query: "Viktor Rashnikov" },
+        { exists: false, language: "ar", checkedAt: "2026-07-01T12:00:00.000Z", query: "Рашников" },
+      ],
+    });
+    expect(slide.content.narrative ?? "").toContain(
+      "запросы: «Viktor Rashnikov» и «Рашников»"
+    );
+  });
+});
+
+describe("результат проверки не шире наблюдения", () => {
+  /** Живое состояние стр. 48: en-проверка пуста, статья стоит в выдаче первой. */
+  const ARTICLE_IN_SERP = {
+    region: "UAE",
+    checks: [
+      {
+        exists: false,
+        language: "en",
+        checkedAt: "2026-08-17T12:00:00.000Z",
+        query: "Рашников Виктор Филиппович",
+      },
+    ],
+    rows: [
+      {
+        title: "Viktor Rashnikov",
+        domain: "en.wikipedia.org",
+        url: "https://en.wikipedia.org/wiki/Viktor_Rashnikov",
+        decision: "SUBJECT_MATCH",
+        rank: 1,
+        engine: "GOOGLE",
+      },
+    ],
+  } satisfies ScopedInput;
+
+  it("«не нашла» сказано о запросе, а не о лице", () => {
+    const slide = build({
+      checks: [
+        {
+          exists: false,
+          language: "ru",
+          checkedAt: "2026-07-01T12:00:00.000Z",
+          query: "Рашников Виктор Филиппович",
+        },
+      ],
+      noUnit: true,
+    });
+    const narrative = slide.content.narrative ?? "";
+    expect(narrative).toContain("Проверка по этому запросу статью не нашла");
+    expect(narrative).toContain("итог выполненной проверки, а не пропуск сбора");
+    expect(pageText(slide)).not.toContain("статья о проверяемом лице не найдена");
+  });
+
+  it("страница не отрицает статью, которая есть в её собственной выдаче", () => {
+    const slide = build(ARTICLE_IN_SERP);
+    const narrative = slide.content.narrative ?? "";
+    expect(narrative).toContain(
+      "Проверка по этому запросу статью не нашла; при этом в поисковой выдаче зафиксирована статья en.wikipedia.org/wiki/Viktor_Rashnikov (Google, позиция 1)"
+    );
+    expect(pageText(slide)).not.toContain("не найдена");
+    // Строки выдачи печатаются списком — читатель видит, о чём речь.
+    expect(slide.content.bullets ?? []).toContain("Viktor Rashnikov — en.wikipedia.org");
+  });
+
+  it("рядом с названной статьёй не советуют создать новую", () => {
+    // «Зафиксирована статья en.wikipedia.org/wiki/…» и «рассмотреть создание
+    // нейтральной статьи» на одной странице спорят друг с другом: данные
+    // позволяют посоветовать подтвердить принадлежность найденной.
+    const slide = build(ARTICLE_IN_SERP);
+    expect(slide.content.whatToCheck ?? "").toMatch(/^Мы предлагаем сначала подтвердить принадлежность/u);
+    expect(pageText(slide)).not.toMatch(/рассмотреть создание нейтральной/u);
+  });
+
+  it("без противоречащей строки совет остаётся прежним — создать статью", () => {
+    const slide = build({
+      checks: [
+        { exists: false, language: "ru", checkedAt: "2026-07-01T12:00:00.000Z", query: "Рашников" },
+      ],
+      noUnit: true,
+    });
+    expect(slide.content.whatToCheck ?? "").toMatch(/^Мы предлагаем рассмотреть создание/u);
+  });
+
+  it("строки выдачи без статьи о субъекте оговорки не порождают", () => {
+    const slide = build({
+      ...ARTICLE_IN_SERP,
+      rows: [
+        {
+          title: "Магнитогорский металлургический комбинат",
+          domain: "en.wikipedia.org",
+          url: "https://en.wikipedia.org/wiki/Magnitogorsk_Iron_and_Steel_Works",
+          decision: "AMBIGUOUS",
+          rank: 4,
+          engine: "GOOGLE",
+        },
+      ],
+    });
+    const narrative = slide.content.narrative ?? "";
+    expect(narrative).toContain("Проверка по этому запросу статью не нашла");
+    expect(narrative).not.toContain("при этом в поисковой выдаче зафиксирована статья");
+  });
+
+  it("статья другого языкового раздела не выдаётся за противоречие", () => {
+    const slide = build({
+      ...ARTICLE_IN_SERP,
+      rows: [
+        {
+          title: "Виктор Рашников",
+          domain: "ru.wikipedia.org",
+          url: "https://ru.wikipedia.org/wiki/Рашников,_Виктор_Филиппович",
+          decision: "SUBJECT_MATCH",
+          rank: 2,
+          engine: "GOOGLE",
+        },
+      ],
+    });
+    expect(slide.content.narrative ?? "").not.toContain(
+      "при этом в поисковой выдаче зафиксирована статья"
+    );
+  });
+
+  it("статья названа и тогда, когда разделов проверяли несколько", () => {
+    // Построитель и валидатор смотрят на один и тот же набор разделов: пока
+    // построитель называл строку только по выбранной проверке, а валидатор
+    // требовал её по любой, третий язык в конфигурации ронял бы сборку секции.
+    const slide = build({
+      ...ARTICLE_IN_SERP,
+      checks: [
+        { exists: false, language: "en", checkedAt: "2026-08-17T12:00:00.000Z", query: "Viktor Rashnikov" },
+        { exists: false, language: "ar", checkedAt: "2026-08-17T12:00:00.000Z", query: "Viktor Rashnikov" },
+      ],
+      rows: [
+        {
+          title: "فيكتور راشنيكوف",
+          domain: "ar.wikipedia.org",
+          url: "https://ar.wikipedia.org/wiki/Viktor_Rashnikov",
+          decision: "SUBJECT_MATCH",
+          rank: 3,
+          engine: "GOOGLE",
+        },
+      ],
+    });
+    expect(slide.content.narrative ?? "").toContain(
+      "зафиксирована статья ar.wikipedia.org/wiki/Viktor_Rashnikov (Google, позиция 3)"
+    );
+  });
+
+  it("без результата проверки оговорка не печатается вовсе", () => {
+    const slide = build({
+      region: "UAE",
+      rows: ARTICLE_IN_SERP.rows,
+    });
+    const narrative = slide.content.narrative ?? "";
+    expect(narrative).toContain("Результат отдельной проверки");
+    expect(narrative).not.toContain("при этом в поисковой выдаче зафиксирована статья");
+    expect(narrative).not.toContain("не нашла");
   });
 });
 

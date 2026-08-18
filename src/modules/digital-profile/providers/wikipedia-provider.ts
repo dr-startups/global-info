@@ -8,6 +8,7 @@
  */
 
 import { getProviderAvailability, providerConfig } from "./config";
+import { hasCyrillic, transliterateRuToEn } from "../search-surfaces/orion-query-plan";
 import type { AvailabilityStatus, ProviderError } from "./types";
 
 export interface WikipediaCandidate {
@@ -99,6 +100,34 @@ export function pickWikipediaCandidate<T extends { title: string }>(
     if (!best || score > best.score) best = { c, score };
   }
   return best?.c ?? null;
+}
+
+/**
+ * Термы субъекта: как его пишут, и как его пишут латиницей.
+ *
+ * Латинские варианты строит планировщик запросов (`transliterateRuToEn`) — той
+ * же функцией собраны запросы контура ОАЭ, и шестой транслитерации в проекте не
+ * заводится. Повторы схлопываются: в живой проверке один и тот же терм пришёл
+ * дважды (имя субъекта заодно числилось псевдонимом).
+ */
+function subjectTerms(subjectFullName: string, aliases: string[]): string[] {
+  const given = [subjectFullName, ...aliases].map((t) => String(t ?? "").trim()).filter(Boolean);
+  const latin = given.filter(hasCyrillic).map((t) => transliterateRuToEn(t).trim());
+  return [...new Set([...given, ...latin])].filter(Boolean);
+}
+
+/**
+ * Языковой раздел спрашивают на его языке.
+ *
+ * en-проверка кириллическим запросом вернула «статьи нет» при существующей
+ * статье `en.wikipedia.org/wiki/Viktor_Rashnikov`, и отчёт напечатал «не
+ * найдена» рядом с той же статьёй в таблице выдачи. Русский раздел спрашивается
+ * как прежде — первым термом, остальные — первым латинским; латиницы нет вовсе
+ * (у субъекта нерусское имя без транслитерации) — остаётся первый терм.
+ */
+function queryForLanguage(language: string, terms: string[]): string {
+  if (String(language ?? "").toLowerCase().startsWith("ru")) return terms[0] ?? "";
+  return terms.find((t) => !hasCyrillic(t)) ?? terms[0] ?? "";
 }
 
 // --- rate-limit hook -------------------------------------------------------
@@ -207,7 +236,7 @@ export class WikipediaProvider {
     language: string,
     terms: string[]
   ): Promise<WikipediaLanguageResult> {
-    const query = terms[0] ?? "";
+    const query = queryForLanguage(language, terms);
     const searchUrl =
       `https://${language}.wikipedia.org/w/api.php?action=query&list=search` +
       `&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json`;
@@ -279,9 +308,7 @@ export class WikipediaProvider {
       };
     }
 
-    const terms = [params.subjectFullName, ...params.aliases]
-      .map((t) => t.trim())
-      .filter(Boolean);
+    const terms = subjectTerms(params.subjectFullName, params.aliases);
 
     const languages: WikipediaLanguageResult[] = [];
     let failures = 0;

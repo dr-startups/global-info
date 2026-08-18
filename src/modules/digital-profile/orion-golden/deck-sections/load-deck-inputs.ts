@@ -611,6 +611,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           language?: string | null;
           pageTitle?: string | null;
           lastChecked?: string | null;
+          query?: string | null;
         }>;
         serpScreenshots?: Array<{
           id?: string;
@@ -634,6 +635,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           // Дата самой проверки: страница Википедии печатает её словами, и
           // подставлять вместо неё дату сборки отчёта было бы неточностью.
           checkedAt: w.lastChecked ?? existing.checkedAt,
+          // Запрос проверки — тем же полем, что и у строк выдачи: вопрос
+          // «каким запросом это получено» на всём индексе один.
+          query: w.query ?? existing.query,
           region: lang.startsWith("ru") ? "RU" : lang ? "UAE" : existing.region,
         };
         knownEvidenceRefs.add(ref);
