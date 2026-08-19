@@ -107,6 +107,13 @@ import type { FilterLossMatrix } from "../contracts/filter-loss-matrix";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
+  /**
+   * Идентификатор составного набора — чеканка слияния (`composite-<unifiedJobId>`).
+   * Обязателен: пайплайн его наследует во все свои артефакты, а не выводит свой.
+   * Пока он выводился здесь, дека и привязка джобы носили разные идентификаторы,
+   * и повторный рендер платил за полную пересборку.
+   */
+  datasetId: string;
   /** The run whose inventory is being analyzed (canonical lineage anchor). */
   inventoryReportRunId: string;
   items: RawInventoryItem[];
@@ -378,6 +385,7 @@ export async function runOrionAnalyticsPipeline(
   const orphanEnrichmentItems = enrichmentItemsAll.length - enrichmentItems.length;
   const composite = buildAnalyticsCompositeDataset({
     caseId: input.caseId,
+    datasetId: input.datasetId,
     baseItems,
     enrichmentItems,
     binding: input.binding,

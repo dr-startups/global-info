@@ -306,6 +306,20 @@ function preferRisk(a: string | null | undefined, b: string | null | undefined):
   return rank(a) >= rank(b) ? a ?? null : b ?? null;
 }
 
+/**
+ * Чеканка идентификатора составного набора — одна на систему.
+ *
+ * Идентификатор отвечает на вопрос происхождения: «принадлежит ли артефакт
+ * текущему набору этой джобы». Пока у набора была вторая чеканка — по
+ * содержимому, в аналитике, — дека и привязка джобы носили разные
+ * идентификаторы, и повторный рендер платил за полную пересборку. Содержательный
+ * отпечаток набора живёт отдельно, полем `sourceHashes`: это данные, а не
+ * идентичность.
+ */
+export function compositeDatasetIdFor(unifiedJobId: string): string {
+  return `composite-${unifiedJobId}`;
+}
+
 export async function mergeCompositeSerp(input: {
   prisma?: PrismaClient | null;
   manifest: BaseCollectionManifest;
@@ -678,7 +692,7 @@ export async function mergeCompositeSerp(input: {
   }
 
   const observations = [...map.values()];
-  const compositeDatasetId = `composite-${input.manifest.unifiedJobId}`;
+  const compositeDatasetId = compositeDatasetIdFor(input.manifest.unifiedJobId);
   const baseCount = input.manifest.baseCount;
   if (observations.length < Math.min(baseCount, observations.length) && baseCount > 0) {
     // soft check — hard fail is in report-ready gates when compositeBaseCount < baseCount

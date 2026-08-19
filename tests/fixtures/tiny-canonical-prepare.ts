@@ -8,10 +8,15 @@
  * оркестратор, поэтому проверка говорит о боевом пути, а не о выдуманном.
  */
 
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CanonicalPrepareInput } from "@/modules/digital-profile/services/canonical-report-prepare";
 import {
   compositeObservationsToInventory,
   observationSurfaceBucket,
+  runCanonicalReportPrepare,
+  stampAcceptedAssembly,
 } from "@/modules/digital-profile/services/canonical-report-prepare";
 import { runOrionAnalyticsPipeline } from "@/modules/digital-profile/orion-golden/analytics/run-analytics-pipeline";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
@@ -20,12 +25,13 @@ import type { ClassifierSubjectProfile } from "@/modules/digital-profile/orion-g
 import type { CompositeObservation } from "@/modules/digital-profile/services/composite-serp-merge";
 import {
   buildReportDataBinding,
+  compositeDatasetIdFor,
   mergeCompositeSerp,
 } from "@/modules/digital-profile/services/composite-serp-merge";
 import type { BaseCollectionManifest } from "@/modules/digital-profile/services/unified-collection-types";
 
 export const TINY_CASE_ID = "case-tiny-prepare";
-const TINY_JOB_ID = "unified-tiny-prepare";
+export const TINY_JOB_ID = "unified-tiny-prepare";
 const TINY_BASE_RUN_ID = "base-tiny-prepare";
 
 /** Адрес первой публикации: по нему тесты цепляют вердикты и оверрайды. */
@@ -115,6 +121,7 @@ function tinyCoverageRows(): Parameters<typeof runOrionAnalyticsPipeline>[0]["co
 export async function runTinyAnalytics(artifactsDir: string) {
   return await runOrionAnalyticsPipeline({
     caseId: TINY_CASE_ID,
+    datasetId: compositeDatasetIdFor(TINY_JOB_ID),
     inventoryReportRunId: TINY_BASE_RUN_ID,
     items: tinyInventory(),
     binding: null,
@@ -170,4 +177,106 @@ export async function tinyPrepareInput(
     gptCaller: null,
     ...extra,
   };
+}
+
+/** Запись телеметрии страницы, на которой ворота потерь молчат. */
+export const CLEAN_TELEMETRY_ENTRY = {
+  page: 1,
+  name: "orion_text_body_p1",
+  role: "text",
+  requiredHeight: 197_815,
+  availableHeight: 1_100_000,
+  clipped: false,
+  measurementUncertain: false,
+};
+
+/**
+ * Рендерер, который ведёт себя как настоящий: кладёт клиентские файлы на диск и
+ * отчитывается телеметрией. Офлайн-фейк (`fake-*`) воротами потерь не судится,
+ * поэтому проверять их — и считать настоящие рендеры — можно только таким.
+ */
+export function renderAdapterWithTelemetry(
+  entries: Array<Record<string, unknown>> | null
+): { adapter: DeckRenderAdapter; calls: () => number } {
+  let calls = 0;
+  const adapter: DeckRenderAdapter = async (input) => {
+    calls += 1;
+    mkdirSync(input.outputRoot, { recursive: true });
+    const pptx = join(input.outputRoot, "rendered-client.pptx");
+    const pdf = join(input.outputRoot, "rendered-client.pdf");
+    writeFileSync(pptx, "pptx", "utf8");
+    writeFileSync(pdf, "pdf", "utf8");
+    const telemetryPath = join(input.outputRoot, "layout-telemetry.json");
+    if (entries) {
+      writeFileSync(
+        telemetryPath,
+        JSON.stringify({ version: "orion-layout-telemetry-v1", entries }, null, 2),
+        "utf8"
+      );
+    } else {
+      rmSync(telemetryPath, { force: true });
+    }
+    return {
+      pdf,
+      pptx,
+      pageCount: input.deckManifest.pageCount,
+      renderer: "http:orion/render-golden",
+    };
+  };
+  return { adapter, calls: () => calls };
+}
+
+/**
+ * Каталог `deck/` с годной сборкой — снятый с настоящей подготовки.
+ *
+ * Годность деки складывается из её собственных полей и штампа приёмки, который
+ * ставят ворота сборки. Слепив такой каталог литералами, тест закрепил бы
+ * формат артефактов, а не поведение загрузчика: первая же правда о годности
+ * разошлась бы с ним молча. Идентификаторы переписываются поверх копии — они в
+ * отпечаток укладки не входят, поэтому сборка остаётся согласованной.
+ */
+export async function seedAssembledDeckDir(input: {
+  artifactsDir: string;
+  caseId?: string;
+  datasetId?: string;
+}): Promise<{ caseId: string; datasetId: string }> {
+  const source = await tinySeededDeckDir();
+  const deckDir = join(input.artifactsDir, "deck");
+  rmSync(deckDir, { recursive: true, force: true });
+  mkdirSync(input.artifactsDir, { recursive: true });
+  cpSync(source, deckDir, { recursive: true });
+  const caseId = input.caseId ?? TINY_CASE_ID;
+  const datasetId = input.datasetId ?? TINY_COMPOSITE_DATASET_ID;
+  patchJson(join(deckDir, "assembled-deck.json"), {
+    caseId,
+    datasetId,
+    sourceDatasetId: datasetId,
+  });
+  const manifestPath = join(deckDir, "report-deck-manifest.json");
+  patchJson(manifestPath, { caseId, sourceDatasetId: datasetId });
+  // Переписанные идентификаторы — другие байты, а штамп приёмки ключён именно
+  // ими: деку заново штампует та же функция, что и подготовка.
+  stampAcceptedAssembly(deckDir, JSON.parse(readFileSync(manifestPath, "utf8")));
+  return { caseId, datasetId };
+}
+
+function patchJson(path: string, patch: Record<string, unknown>): void {
+  const current = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  writeFileSync(path, JSON.stringify({ ...current, ...patch }, null, 2), "utf8");
+}
+
+/** Идентификатор набора фикстуры — тот, что чеканит слияние. */
+export const TINY_COMPOSITE_DATASET_ID = compositeDatasetIdFor(TINY_JOB_ID);
+
+let seededDeckDir: Promise<string> | null = null;
+
+/** Одна настоящая подготовка на файл тестов: копии деки снимаются с неё. */
+function tinySeededDeckDir(): Promise<string> {
+  seededDeckDir ??= (async () => {
+    const root = mkdtempSync(join(tmpdir(), "tiny-seeded-deck-"));
+    const res = await runCanonicalReportPrepare(await tinyPrepareInput(root));
+    if (!res.ok) throw new Error("tiny prepare failed while seeding a deck");
+    return join(root, "deck");
+  })();
+  return seededDeckDir;
 }

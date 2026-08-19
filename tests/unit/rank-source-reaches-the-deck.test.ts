@@ -67,6 +67,7 @@ describe("rankSource доезжает от слияния до деки", () => 
 
   it("строка analytics несёт источник позиции и переживает контракт", () => {
     const built = buildAnalyticsCompositeDataset({
+      datasetId: "composite-unified-rank-source",
       caseId: "case-rank-source",
       baseItems: inventoryOf([observation({})]),
       enrichmentItems: [],
@@ -81,6 +82,7 @@ describe("rankSource доезжает от слияния до деки", () => 
 
   it("наблюдение без позиции источника не выдумывает", () => {
     const built = buildAnalyticsCompositeDataset({
+      datasetId: "composite-unified-rank-source",
       caseId: "case-rank-source",
       baseItems: inventoryOf([
         observation({ rank: undefined, rankSource: undefined, key: "no-rank|GOOGLE|UAE|organic|x.ru" }),

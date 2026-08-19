@@ -204,6 +204,15 @@ function toRow(
 
 export function buildAnalyticsCompositeDataset(input: {
   caseId: string;
+  /**
+   * Идентификатор набора, отчеканенный при слиянии (`composite-<unifiedJobId>`).
+   * Параметр обязателен намеренно: пока у набора была вторая чеканка — здесь, —
+   * дека несла один идентификатор, а привязка джобы другой, и реюз собранной
+   * деки не срабатывал никогда. Значение по умолчанию воскресило бы второй
+   * ответ. Содержательный отпечаток набора при этом не потерян: он живёт
+   * отдельным полем `sourceHashes` ниже — это данные, а не идентичность.
+   */
+  datasetId: string;
   baseItems: RawInventoryItem[];
   enrichmentItems: RawInventoryItem[];
   binding: ArsenkinReportBindingV2 | null;
@@ -300,11 +309,6 @@ export function buildAnalyticsCompositeDataset(input: {
     warnings.push(`INVARIANT_VIOLATION base=${baseCount} composite=${compositeCount}`);
   }
 
-  const datasetId = `composite-${input.caseId}-${createHash("sha256")
-    .update([...rows.keys()].sort().join("\n"))
-    .digest("hex")
-    .slice(0, 12)}`;
-
   const sourceHashes = [
     `sha256:${createHash("sha256")
       .update(JSON.stringify(observations.map((o) => o.observationKey).sort()))
@@ -314,7 +318,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const dataset: CompositeDataset = CompositeDatasetSchema.parse({
     schemaVersion: COMPOSITE_DATASET_SCHEMA_VERSION,
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     sourceHashes,
     evidenceRefs: observations.slice(0, 50).flatMap((o) => o.evidenceRefs.slice(0, 1)),
     baseReportRunId: input.baseReportRunId,
@@ -329,7 +333,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const provenance: CompositeSerpProvenance = {
     schemaVersion: "composite-serp-provenance-v1",
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     baseReportRunId: input.baseReportRunId,
     enrichmentRunIds,
     baseCount,
@@ -343,7 +347,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const providerDelta: ProviderDelta = {
     schemaVersion: "provider-delta-v1",
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     baseCount,
     arsenkinObservationCount: input.enrichmentItems.length,
     duplicateCount,

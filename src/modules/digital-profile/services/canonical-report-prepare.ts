@@ -22,6 +22,7 @@ import { runOrionAnalyticsPipeline } from "../orion-golden/analytics/run-analyti
 import {
   runDeckBuildWithGptCopy,
   runDeckGptCopyRetry,
+  type GptDeckBuildResult,
   type GptDeckLayer,
 } from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
@@ -38,7 +39,10 @@ import {
   CANONICAL_SLOT_IDS,
 } from "../orion-golden/deck-sections/canonical-slots";
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
-import type { RendererSlide } from "../orion-golden/deck-sections/deck-assembler";
+import {
+  assembledDeckHashOf,
+  type RendererSlide,
+} from "../orion-golden/deck-sections/deck-assembler";
 import {
   publishRenderedClientArtifacts,
   renderCanonicalDeck,
@@ -46,6 +50,10 @@ import {
   type DeckRenderAdapter,
 } from "./render-deck-artifacts";
 import { judgeRenderTelemetry } from "./render-telemetry-gate";
+import {
+  ASSEMBLED_DECK_ARTIFACT,
+  staleMarkerFileName,
+} from "./unified-downstream-invalidation";
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 import type { ReportDataBinding } from "./unified-collection-types";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
@@ -426,8 +434,160 @@ export type AssembledDeckReuse = {
   datasetId: string;
 };
 
-function hashFile(path: string): string {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
+/**
+ * Годная сборка либо названная причина отказа — третьего ответа нет.
+ *
+ * Прежний `null` означал сразу пять разных вещей, и наверху все они молча
+ * превращались в полную пересборку с обоими проходами GPT: «повторный рендер»
+ * стоил столько же, сколько «Пересобрать отчёт», и понять почему было неоткуда.
+ *
+ * Причины перечислены типом: от точного написания зависят фильтр предупреждений
+ * прогона и раздел §8 `ENGINEERING.md`, а называться они обязаны в одном месте —
+ * включая ту, которую выносит вызыватель (`binding-missing`: сверять не с чем,
+ * привязки джобы нет).
+ */
+export type AssembledDeckRefusal =
+  | "missing-files"
+  | "binding-missing"
+  | "stale-marker"
+  | "dataset-missing"
+  | "coverage-incomplete"
+  | "deck-manifest-mismatch"
+  | "not-accepted"
+  | `corrupt:${"unreadable" | "no-slides" | "no-page-count"}`
+  | `case-mismatch deck=${string} expected=${string}`
+  | `dataset-mismatch deck=${string} expected=${string}`;
+
+export type AssembledDeckReuseResult =
+  | { reused: AssembledDeckReuse; refusedReason: null }
+  | { reused: null; refusedReason: AssembledDeckRefusal };
+
+const refused = (reason: AssembledDeckRefusal): AssembledDeckReuseResult => ({
+  reused: null,
+  refusedReason: reason,
+});
+
+/**
+ * Стоп-маркер инвалидации: `<имя>.stale.json` с `doNotReuse: true` пишется
+ * после дозагрузки наблюдений (`unified-downstream-invalidation.ts`) и лежит в
+ * корне каталога прогона, а не рядом с самим файлом деки. Имя приходит от
+ * писателя — чеканить его здесь второй раз значило бы развести две стороны
+ * молча.
+ */
+function deckStaleMarkerPath(artifactsDir: string): string {
+  return join(artifactsDir, staleMarkerFileName(ASSEMBLED_DECK_ARTIFACT));
+}
+
+function deckIsMarkedStale(artifactsDir: string): boolean {
+  const marker = deckStaleMarkerPath(artifactsDir);
+  if (!existsSync(marker)) return false;
+  // Нечитаемый маркер — всё равно объявление «этой деке верить нельзя».
+  const parsed = readJsonSafe<{ doNotReuse?: boolean }>(marker);
+  return parsed ? parsed.doNotReuse === true : true;
+}
+
+/**
+ * Предупреждение о том, что стоп-маркер остался лежать.
+ *
+ * Незамеченный отказ уборки закрывает прогону дешёвый повтор навсегда: маркер
+ * никуда не делся, каждый следующий реюз отбивается им, и «повторный рендер»
+ * снова платит за аналитику и обе стадии GPT — ровно тот исход, который уборка
+ * и должна предотвращать.
+ */
+export const DECK_STALE_MARKER_NOT_CLEARED_WARNING = "deck-stale-marker-not-cleared";
+
+/**
+ * Маркер снимается пересборкой: он говорил о деке, которой больше нет.
+ *
+ * Иначе одна дозагрузка наблюдений закрывала бы прогону дешёвый повторный
+ * рендер навсегда — маркер никто не удаляет, и каждый следующий реюз отбивался
+ * бы им уже после того, как дека пересобрана по новым данным.
+ */
+function clearDeckStaleMarker(artifactsDir: string): string | null {
+  const marker = deckStaleMarkerPath(artifactsDir);
+  if (!existsSync(marker)) return null;
+  try {
+    unlinkSync(marker);
+    return null;
+  } catch {
+    return DECK_STALE_MARKER_NOT_CLEARED_WARNING;
+  }
+}
+
+/**
+ * Штамп приёмки сборки — рядом с декой, о которой он говорит.
+ *
+ * Лежит в `deck/`, а стоп-маркер той же деки — в корне каталога прогона:
+ * маркеры пишет `writeUnifiedArtifact`, а он о подкаталогах не знает. Рядом
+ * друг с другом их искать бесполезно.
+ */
+const ASSEMBLY_ACCEPTANCE_FILE = "assembly-accepted.json";
+
+/** Файлы, чей байтовый хэш и есть «эта сборка»: сама дека и её манифест. */
+function assemblyFilePaths(deckDir: string): [string, string] {
+  return [join(deckDir, ASSEMBLED_DECK_ARTIFACT), join(deckDir, "report-deck-manifest.json")];
+}
+
+/**
+ * Ворота сборки приняли деку, лежащую в `deckDir`: поставить штамп и вернуть
+ * байтовый хэш принятой пары файлов (`null` — файлы не прочитались).
+ *
+ * `runDeckBuild` пишет деку на диск раньше, чем подготовка её судит, поэтому
+ * забракованная сборка остаётся лежать целой и структурно неотличимой от
+ * принятой: ворота качества текста говорят о словах на безупречных страницах.
+ * Отличить их можно только вердиктом, и записывает его тот, кто его вынес.
+ * Штамп положительный намеренно: прогон, умерший между записью деки и судом,
+ * не оставил бы отрицательной отметки, и его деку реюз принял бы несудимой.
+ *
+ * Ключ штампа — **байтовый** хэш пары файлов, а не отпечаток укладки: укладка
+ * слов не видит, и пересборка с теми же страницами и другим текстом унаследовала
+ * бы приёмку предыдущей — то есть ровно то, что ворота и забраковали.
+ */
+export function stampAcceptedAssembly(
+  deckDir: string,
+  deckManifest: ReportDeckManifest
+): string | null {
+  const assemblyHash = hashAssemblyFiles(assemblyFilePaths(deckDir));
+  if (!assemblyHash) return null;
+  writeFileSync(
+    join(deckDir, ASSEMBLY_ACCEPTANCE_FILE),
+    `${JSON.stringify(
+      {
+        version: "deck-assembly-accepted-v1",
+        caseId: deckManifest.caseId,
+        reportRunId: deckManifest.reportRunId,
+        datasetId: deckManifest.sourceDatasetId,
+        assemblyHash,
+        baseSlotCoverage: deckManifest.baseSlotCoverage,
+        pageCount: deckManifest.pageCount,
+        acceptedAt: new Date().toISOString(),
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  return assemblyHash;
+}
+
+/**
+ * Байтовый хэш пары файлов сборки или `null`, если их не удалось прочитать.
+ *
+ * Между проверкой существования и чтением файл может исчезнуть, а загрузчик
+ * обязан ответить причиной, а не исключением: его зовут из ветки резюме и из
+ * ручки восстановления, и исключение оттуда — это упавший прогон вместо
+ * пересборки.
+ */
+function hashAssemblyFiles(paths: string[]): string | null {
+  try {
+    const hash = createHash("sha256");
+    for (const path of paths) {
+      hash.update(createHash("sha256").update(readFileSync(path)).digest("hex"));
+    }
+    return hash.digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 /** Load and validate assembled deck artifacts for render-only resume. */
@@ -435,40 +595,181 @@ export function loadReusableAssembledDeck(input: {
   artifactsDir: string;
   caseId: string;
   expectedDatasetId: string;
-}): AssembledDeckReuse | null {
+}): AssembledDeckReuseResult {
   const deckDir = join(input.artifactsDir, "deck");
-  const assembledPath = join(deckDir, "assembled-deck.json");
-  const manifestPath = join(deckDir, "report-deck-manifest.json");
-  if (!existsSync(assembledPath) || !existsSync(manifestPath)) return null;
-  try {
-    const assembled = JSON.parse(readFileSync(assembledPath, "utf8")) as {
-      caseId?: string;
-      reportRunId?: string;
-      datasetId?: string;
-      sourceDatasetId?: string;
-      slides?: RendererSlide[];
-    };
-    const deckManifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ReportDeckManifest;
-    const datasetId = String(assembled.datasetId ?? assembled.sourceDatasetId ?? "");
-    if (assembled.caseId !== input.caseId) return null;
-    if (datasetId && datasetId !== input.expectedDatasetId) return null;
-    if (!Array.isArray(assembled.slides) || assembled.slides.length === 0) return null;
-    if (!deckManifest?.pageCount || deckManifest.pageCount <= 0) return null;
-    const assemblyHash = createHash("sha256")
-      .update(hashFile(assembledPath))
-      .update(hashFile(manifestPath))
-      .digest("hex");
-    return {
+  const [assembledPath, manifestPath] = assemblyFilePaths(deckDir);
+  if (!existsSync(assembledPath) || !existsSync(manifestPath)) return refused("missing-files");
+  if (deckIsMarkedStale(input.artifactsDir)) return refused("stale-marker");
+  const assembled = readJsonSafe<{
+    caseId?: string;
+    reportRunId?: string;
+    datasetId?: string;
+    sourceDatasetId?: string;
+    slides?: RendererSlide[];
+  }>(assembledPath);
+  const deckManifest = readJsonSafe<ReportDeckManifest>(manifestPath);
+  // `null` разбирается успешно и уронил бы читателя на первом же поле.
+  if (!assembled || !deckManifest) return refused("corrupt:unreadable");
+  const datasetId = String(assembled.datasetId ?? assembled.sourceDatasetId ?? "");
+  if (assembled.caseId !== input.caseId) {
+    return refused(`case-mismatch deck=${assembled.caseId ?? ""} expected=${input.caseId}`);
+  }
+  // Дека без идентификатора мимо сверки не проскальзывает: о её происхождении
+  // не известно ничего, а прежнее `datasetId && ...` считало её своей.
+  if (!datasetId) return refused("dataset-missing");
+  if (datasetId !== input.expectedDatasetId) {
+    return refused(`dataset-mismatch deck=${datasetId} expected=${input.expectedDatasetId}`);
+  }
+  if (!Array.isArray(assembled.slides) || assembled.slides.length === 0) {
+    return refused("corrupt:no-slides");
+  }
+  if (!deckManifest.pageCount || deckManifest.pageCount <= 0) return refused("corrupt:no-page-count");
+  // Покрытие слотов измеряется по манифесту, а не утверждается наверху: дека,
+  // не набравшая 36 канонических позиций, уехала бы клиенту как полный отчёт.
+  if (deckManifest.baseSlotCoverage !== CANONICAL_SLOT_IDS.length) {
+    return refused("coverage-incomplete");
+  }
+  const laidOutPages = assembled.slides.map((slide) => ({
+    id: String(slide?.slideKey ?? ""),
+    pageNumber: Number(slide?.pageNumber ?? 0),
+  }));
+  if (assembledDeckHashOf(laidOutPages) !== deckManifest.assembledDeckHash) {
+    return refused("deck-manifest-mismatch");
+  }
+  const assemblyHash = hashAssemblyFiles([assembledPath, manifestPath]);
+  if (!assemblyHash) return refused("corrupt:unreadable");
+  // Приёмка относится к этим байтам, а не к «деке вообще»: сменившийся текст
+  // на той же раскладке — это другая сборка, и судить её должны заново.
+  const acceptance = readJsonSafe<{ assemblyHash?: string }>(
+    join(deckDir, ASSEMBLY_ACCEPTANCE_FILE)
+  );
+  if (acceptance?.assemblyHash !== assemblyHash) return refused("not-accepted");
+  return {
+    reused: {
       deckManifest,
       rendererSlides: assembled.slides,
       assemblyHash,
       caseId: assembled.caseId,
       reportRunId: String(assembled.reportRunId ?? ""),
       datasetId,
-    };
-  } catch {
-    return null;
+    },
+    refusedReason: null,
+  };
+}
+
+/**
+ * Возобновление с рендера свалилось в полную сборку — с названной причиной.
+ *
+ * Фолбэк законен (дека бывает инвалидирована, бита или от другого набора), но
+ * молчать о нём нельзя: прогон, который «просто перерисовал документ», платит
+ * при этом за аналитику и обе стадии GPT.
+ */
+export const RENDER_RESUME_REASSEMBLY_WARNING_PREFIX = "render-resume-reassembly:";
+
+/**
+ * С чего начинаются предупреждения, описывающие **попытку** подготовки, а не
+ * прогон: у одного семейства это префикс с двоеточием, у другого — весь токен.
+ *
+ * Висящее с прошлой попытки врёт о нынешней, поэтому успешная подготовка их
+ * снимает (`warningsSurvivingSuccessfulPrepare` в оркестраторе — общий список
+ * префиксов `mergeJobWarnings` эти токены не знает и сам их не заменит).
+ */
+export const PREPARE_ATTEMPT_WARNING_STARTS = [
+  RENDER_RESUME_REASSEMBLY_WARNING_PREFIX,
+  DECK_STALE_MARKER_NOT_CLEARED_WARNING,
+] as const;
+
+/**
+ * Суд над свежесобранной декой — один на оба пути сборки.
+ *
+ * Ворота одинаковы для полной сборки и для повтора стадии 2, и держать их в
+ * двух местах значит держать два ответа на вопрос «годится ли эта дека»:
+ * правка правила обязана попасть в оба, а разойтись они могут молча. Принятая
+ * дека получает штамп здесь же — там, где вердикт вынесен, и нигде больше.
+ *
+ * `answersStaleMarker` — прочла ли эта сборка наблюдения заново. Стоп-маркер
+ * снимает только такая сборка и только после того, как её приняли:
+ * провалившаяся на воротах пересборка гасила бы защиту, ничем её не заменив, и
+ * следующая попытка переиспользовала бы доингестную деку.
+ *
+ * Возвращает хэш сборки: он считается по файлам на диске, потому что
+ * идемпотентный повтор рендера сравнивает именно их.
+ */
+function acceptAssembledDeck(
+  input: CanonicalPrepareInput,
+  deck: GptDeckBuildResult,
+  options: { answersStaleMarker: boolean }
+): { assemblyHash: string | null; staleMarkerWarning: string | null } {
+  if (deck.assembly.errors.length > 0) {
+    throw new CanonicalPrepareBlockedError(
+      "ASSEMBLY_FAILED",
+      `deck assembly failed: ${deck.assembly.errors.slice(0, 4).join("; ")}`
+    );
   }
+  if (deck.manifest.requiredSectionsFailed.length > 0) {
+    throw new CanonicalPrepareBlockedError(
+      "REQUIRED_SECTION_FAILED",
+      `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
+    );
+  }
+  /*
+   * Ворота качества текста останавливают сборку — но только при системной
+   * поломке.
+   *
+   * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false`
+   * уходил клиенту, и ворота были лампочкой. Блокировать по любому
+   * срабатыванию тоже нельзя — ложный случай остановил бы платный прогон на
+   * последнем шаге. Поэтому решает существенность: дефект, задевший три
+   * страницы и больше, означает поломку механизма.
+   */
+  const blocking = deck.assemblyValidation?.blocking ?? [];
+  if (blocking.length > 0) {
+    throw new CanonicalPrepareBlockedError(
+      "ASSEMBLY_QA_FAILED",
+      `качество текста сборки: ${blocking.join("; ")}`
+    );
+  }
+
+  const presentSlots = new Set(
+    deck.assembly.deckManifest.slides.filter((s) => !s.isContinuation).map((s) => s.baseSlotId)
+  );
+  // Слитые слоты берутся из манифеста, а не из статического списка: слияние
+  // может быть выведено при сборке (пустая поверхность печатается один раз),
+  // и второй источник правды о покрытии разошёлся бы с первым — ровно тот
+  // класс дефектов, что чинился в шагах 12 и 13 (шаг 15, E2).
+  const coveredSlots = new Set([
+    ...presentSlots,
+    ...(deck.assembly.deckManifest.mergedSlots ?? []).map((m) => m.baseSlotId),
+  ]);
+  const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
+  if (missingSlots.length > 0) {
+    throw new CanonicalPrepareBlockedError(
+      "ASSEMBLY_FAILED",
+      `baseSlotCoverage != 36; missing canonical slots: ${missingSlots.join(", ")}`
+    );
+  }
+
+  // Сборка принята — и только теперь снимается стоп-маркер: снять его до
+  // приговора значит погасить защиту забракованной пересборкой. Снимать
+  // приходится до сверки штампа ниже: по маркеру загрузчик отказывает, и хэш
+  // принятой деки оказался бы пустым.
+  const staleMarkerWarning = options.answersStaleMarker
+    ? clearDeckStaleMarker(input.artifactsDir)
+    : null;
+
+  const deckDir = join(input.artifactsDir, "deck");
+  if (!stampAcceptedAssembly(deckDir, deck.assembly.deckManifest)) {
+    return { assemblyHash: null, staleMarkerWarning };
+  }
+  return {
+    assemblyHash:
+      loadReusableAssembledDeck({
+        artifactsDir: input.artifactsDir,
+        caseId: input.caseId,
+        expectedDatasetId: input.binding.compositeDatasetId,
+      }).reused?.assemblyHash ?? null,
+    staleMarkerWarning,
+  };
 }
 
 function writeRenderCheckpoint(
@@ -538,7 +839,6 @@ export async function runCanonicalReportPrepare(
   let baseSlotCoverage = 0;
   let requiredSectionsFailed: string[] = [];
   let pageCount = 0;
-  let analyticsDatasetId = input.binding.compositeDatasetId;
   let deckManifest: ReportDeckManifest | null = null;
   let rendererSlides: RendererSlide[] | null = null;
   let assemblyHash: string | null = null;
@@ -551,18 +851,43 @@ export async function runCanonicalReportPrepare(
    */
   let analyticsQualityWarnings: string[] = [];
 
+  /** Причина, по которой возобновление с рендера пошло в полную сборку. */
+  let reuseRefusedReason: AssembledDeckRefusal | null = null;
+  /** Стоп-маркер остался лежать: следующий реюз снова отобьётся по нему. */
+  let staleMarkerWarning: string | null = null;
+
+  /**
+   * Чекпоинт этой попытки. Причина отказа реюза кладётся в каждую его запись —
+   * и пустая тоже: попытка, не дошедшая до результата, ничего не возвращает
+   * (из результата причину отдают `qualityWarnings`), а причина прошлой
+   * попытки, пережившая нынешнюю, врала бы о ней.
+   */
+  const checkpoint = (payload: Record<string, unknown>): void =>
+    writeRenderCheckpoint(input.artifactsDir, { ...payload, reuseRefusedReason });
+
+  /** Жалобы этой попытки: они описывают её, а не прогон, и с ней же уходят. */
+  const attemptWarnings = (): string[] => [
+    ...(reuseRefusedReason
+      ? [`${RENDER_RESUME_REASSEMBLY_WARNING_PREFIX}${reuseRefusedReason}`]
+      : []),
+    ...(staleMarkerWarning ? [staleMarkerWarning] : []),
+  ];
+
   if (resumeFrom === "render") {
-    const reused = loadReusableAssembledDeck({
+    const attempt = loadReusableAssembledDeck({
       artifactsDir: input.artifactsDir,
       caseId: input.caseId,
       expectedDatasetId: input.binding.compositeDatasetId,
     });
-    if (reused) {
+    if (attempt.reused) {
+      const reused = attempt.reused;
       deckManifest = reused.deckManifest;
       rendererSlides = reused.rendererSlides;
       assemblyHash = reused.assemblyHash;
       pageCount = reused.deckManifest.pageCount;
-      baseSlotCoverage = CANONICAL_SLOT_IDS.length;
+      // Покрытие берётся из манифеста принятой деки, а не утверждается
+      // константой: отчёт обязан называть то, что в нём есть.
+      baseSlotCoverage = reused.deckManifest.baseSlotCoverage;
       // Reuse the job's persisted synthetic visual assets so the resumed
       // render keeps its screenshots/panels (slides reference them by ref).
       const assetsPath = join(input.artifactsDir, "report-assets.json");
@@ -576,7 +901,13 @@ export async function runCanonicalReportPrepare(
           visualAssetWarning = "persisted report-assets.json unreadable; render resumed without visual assets";
         }
       }
-      writeRenderCheckpoint(input.artifactsDir, {
+      /*
+       * `READY` пишется здесь, до идемпотентной проверки ниже, а та требует
+       * `SUCCEEDED` — поэтому ранний возврат на пути резюме недостижим и рендер
+       * выполняется всегда. Это стоит одного локального рендера при повторе
+       * шага после падения воркера: денег он не стоит и детерминизма не ломает.
+       */
+      checkpoint({
         version: "render-checkpoint-v1",
         stage: "RENDER",
         status: "READY",
@@ -586,6 +917,10 @@ export async function runCanonicalReportPrepare(
         reusedAssembly: true,
         updatedAt: new Date().toISOString(),
       });
+    } else {
+      // Фолбэк в полную сборку законен, но обязан быть слышимым: причина
+      // доезжает до предупреждений прогона, а оттуда — до `job.warnings`.
+      reuseRefusedReason = attempt.refusedReason;
     }
     // If assembled payload is missing/corrupt, fall through to rebuild deck from
     // existing composite (never base/Arsenkin provider calls).
@@ -635,7 +970,6 @@ export async function runCanonicalReportPrepare(
     }
 
     const deckInputs = loadDeckInputsFromAnalyticsDir(analyticsDir);
-    analyticsDatasetId = deckInputs.sourceDatasetId;
 
     let caseAnalysis: GptCaseAnalysis | null = null;
     const caseAnalysisPath = join(analyticsDir, "gpt-case-analysis.json");
@@ -693,69 +1027,15 @@ export async function runCanonicalReportPrepare(
       gpt: { caller: gptCallerOnce, caseAnalysis },
     });
 
-    if (deck.assembly.errors.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_FAILED",
-        `deck assembly failed: ${deck.assembly.errors.slice(0, 4).join("; ")}`
-      );
-    }
-    if (deck.manifest.requiredSectionsFailed.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "REQUIRED_SECTION_FAILED",
-        `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
-      );
-    }
-    /*
-     * Ворота качества текста останавливают сборку — но только при системной
-     * поломке.
-     *
-     * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false`
-     * уходил клиенту, и ворота были лампочкой. Блокировать по любому
-     * срабатыванию тоже нельзя — ложный случай остановил бы платный прогон на
-     * последнем шаге. Поэтому решает существенность: дефект, задевший три
-     * страницы и больше, означает поломку механизма.
-     */
-    const blocking = deck.assemblyValidation?.blocking ?? [];
-    if (blocking.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_QA_FAILED",
-        `качество текста сборки: ${blocking.join("; ")}`
-      );
-    }
-
-    const presentSlots = new Set(
-      deck.assembly.deckManifest.slides
-        .filter((s) => !s.isContinuation)
-        .map((s) => s.baseSlotId)
-    );
-    // Слитые слоты берутся из манифеста, а не из статического списка: слияние
-    // может быть выведено при сборке (пустая поверхность печатается один раз),
-    // и второй источник правды о покрытии разошёлся бы с первым — ровно тот
-    // класс дефектов, что чинился в шагах 12 и 13 (шаг 15, E2).
-    const coveredSlots = new Set([
-      ...presentSlots,
-      ...(deck.assembly.deckManifest.mergedSlots ?? []).map((m) => m.baseSlotId),
-    ]);
-    const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
-    if (missingSlots.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_FAILED",
-        `baseSlotCoverage != 36; missing canonical slots: ${missingSlots.join(", ")}`
-      );
-    }
-
+    // Стоп-маркер здесь не снимается: повтор стадии 2 читает аналитику с диска
+    // и новых наблюдений не видел — ответом на маркер он не является.
+    assemblyHash = acceptAssembledDeck(input, deck, { answersStaleMarker: false }).assemblyHash;
     assemblyCount = 1;
-    baseSlotCoverage = CANONICAL_SLOT_IDS.length;
+    baseSlotCoverage = deck.assembly.deckManifest.baseSlotCoverage;
     requiredSectionsFailed = deck.manifest.requiredSectionsFailed;
     pageCount = deck.assembly.deckManifest.pageCount;
     deckManifest = deck.assembly.deckManifest;
     rendererSlides = deck.assembly.rendererSlides;
-    const reusedCheck = loadReusableAssembledDeck({
-      artifactsDir: input.artifactsDir,
-      caseId: input.caseId,
-      expectedDatasetId: input.binding.compositeDatasetId,
-    });
-    assemblyHash = reusedCheck?.assemblyHash ?? null;
   }
 
   if (!deckManifest || !rendererSlides) {
@@ -844,6 +1124,9 @@ export async function runCanonicalReportPrepare(
 
     const analytics = await runOrionAnalyticsPipeline({
       caseId: input.caseId,
+      // Идентификатор набора чеканится один раз — при слиянии; аналитика его
+      // наследует во все свои артефакты и в деку.
+      datasetId: input.binding.compositeDatasetId,
       inventoryReportRunId: baseReportRunId,
       items,
       binding: null,
@@ -918,7 +1201,6 @@ export async function runCanonicalReportPrepare(
     }
 
     const deckInputs = loadDeckInputsFromAnalyticsDir(analyticsDir);
-    analyticsDatasetId = deckInputs.sourceDatasetId;
 
     // GPT layer (fail-safe): stage 1 analyzes the WHOLE verified corpus and
     // stage 2 rewrites per-slide client copy grounded in that analysis. Any
@@ -1063,67 +1345,17 @@ export async function runCanonicalReportPrepare(
         // Marker cleanup must not fail the report.
       }
     }
+    // Пересборка прочла наблюдения заново — она и есть ответ на стоп-маркер,
+    // но отвечает им только принятая сборка.
+    const accepted = acceptAssembledDeck(input, deck, { answersStaleMarker: true });
+    assemblyHash = accepted.assemblyHash;
+    staleMarkerWarning = accepted.staleMarkerWarning;
     assemblyCount = 1;
-
-    if (deck.assembly.errors.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_FAILED",
-        `deck assembly failed: ${deck.assembly.errors.slice(0, 4).join("; ")}`
-      );
-    }
-    if (deck.manifest.requiredSectionsFailed.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "REQUIRED_SECTION_FAILED",
-        `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
-      );
-    }
-    /*
-     * Ворота качества текста останавливают сборку — но только при системной
-     * поломке.
-     *
-     * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false`
-     * уходил клиенту, и ворота были лампочкой. Блокировать по любому
-     * срабатыванию тоже нельзя — ложный случай остановил бы платный прогон на
-     * последнем шаге. Поэтому решает существенность: дефект, задевший три
-     * страницы и больше, означает поломку механизма.
-     */
-    const blocking = deck.assemblyValidation?.blocking ?? [];
-    if (blocking.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_QA_FAILED",
-        `качество текста сборки: ${blocking.join("; ")}`
-      );
-    }
-
-    const presentSlots = new Set(
-      deck.assembly.deckManifest.slides.filter((s) => !s.isContinuation).map((s) => s.baseSlotId)
-    );
-    // Слитые слоты берутся из манифеста, а не из статического списка: слияние
-    // может быть выведено при сборке (пустая поверхность печатается один раз),
-    // и второй источник правды о покрытии разошёлся бы с первым — ровно тот
-    // класс дефектов, что чинился в шагах 12 и 13 (шаг 15, E2).
-    const coveredSlots = new Set([
-      ...presentSlots,
-      ...(deck.assembly.deckManifest.mergedSlots ?? []).map((m) => m.baseSlotId),
-    ]);
-    const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
-    if (missingSlots.length > 0) {
-      throw new CanonicalPrepareBlockedError(
-        "ASSEMBLY_FAILED",
-        `baseSlotCoverage != 36; missing canonical slots: ${missingSlots.join(", ")}`
-      );
-    }
-    baseSlotCoverage = CANONICAL_SLOT_IDS.length;
+    baseSlotCoverage = deck.assembly.deckManifest.baseSlotCoverage;
     requiredSectionsFailed = deck.manifest.requiredSectionsFailed;
     pageCount = deck.assembly.deckManifest.pageCount;
     deckManifest = deck.assembly.deckManifest;
     rendererSlides = deck.assembly.rendererSlides;
-    const reusedCheck = loadReusableAssembledDeck({
-      artifactsDir: input.artifactsDir,
-      caseId: input.caseId,
-      expectedDatasetId: input.binding.compositeDatasetId,
-    });
-    assemblyHash = reusedCheck?.assemblyHash ?? null;
   }
 
   // Idempotent: prior successful render artifacts for the same assembly hash.
@@ -1146,7 +1378,7 @@ export async function runCanonicalReportPrepare(
           ? judgeRenderTelemetry(renderDir)
           : null;
       if (reuseVerdict && !reuseVerdict.blocker) {
-        writeRenderCheckpoint(input.artifactsDir, {
+        checkpoint({
           ...cp,
           status: "SUCCEEDED",
           idempotentReuse: true,
@@ -1170,6 +1402,7 @@ export async function runCanonicalReportPrepare(
           ...quality,
           qualityWarnings: [
             ...analyticsQualityWarnings,
+            ...attemptWarnings(),
             ...reuseVerdict.warnings,
             ...(quality.qualityWarnings ?? []),
           ],
@@ -1180,7 +1413,7 @@ export async function runCanonicalReportPrepare(
     }
   }
 
-  writeRenderCheckpoint(input.artifactsDir, {
+  checkpoint({
     version: "render-checkpoint-v1",
     stage: "RENDER",
     status: "IN_PROGRESS",
@@ -1211,7 +1444,7 @@ export async function runCanonicalReportPrepare(
     const safe = sanitizeRendererClientError(
       err instanceof Error ? err.message : String(err)
     );
-    writeRenderCheckpoint(input.artifactsDir, {
+    checkpoint({
       version: "render-checkpoint-v1",
       stage: "RENDER",
       status: "FAILED",
@@ -1237,7 +1470,7 @@ export async function runCanonicalReportPrepare(
   let renderTelemetryWarnings: string[] = [];
   if (!isOfflineFake) {
     if (!rendered.pdf && !rendered.pptx) {
-      writeRenderCheckpoint(input.artifactsDir, {
+      checkpoint({
         version: "render-checkpoint-v1",
         stage: "RENDER",
         status: "FAILED",
@@ -1255,7 +1488,7 @@ export async function runCanonicalReportPrepare(
     // телеметрии, и правило блокировки описано в `render-telemetry-gate.ts`.
     const verdict = judgeRenderTelemetry(renderDir);
     if (verdict.blocker) {
-      writeRenderCheckpoint(input.artifactsDir, {
+      checkpoint({
         version: "render-checkpoint-v1",
         stage: "RENDER",
         status: "FAILED",
@@ -1276,7 +1509,7 @@ export async function runCanonicalReportPrepare(
   }
 
   const renderCount = 1;
-  writeRenderCheckpoint(input.artifactsDir, {
+  checkpoint({
     version: "render-checkpoint-v1",
     stage: "RENDER",
     status: "SUCCEEDED",
@@ -1293,7 +1526,6 @@ export async function runCanonicalReportPrepare(
     caseId: input.caseId,
     unifiedJobId: input.unifiedJobId,
     prepareDatasetId: input.binding.compositeDatasetId,
-    analyticsDatasetId,
     pageCount,
     renderedPageCount: rendered.pageCount,
     assemblyCount,
@@ -1333,6 +1565,7 @@ export async function runCanonicalReportPrepare(
     // Потери аналитики не зависят от того, записалась ли сводка качества.
     qualityWarnings: [
       ...analyticsQualityWarnings,
+      ...attemptWarnings(),
       ...renderTelemetryWarnings,
       ...(quality.qualityWarnings ?? []),
     ],

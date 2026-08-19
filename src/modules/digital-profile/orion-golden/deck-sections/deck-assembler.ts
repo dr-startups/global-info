@@ -496,12 +496,28 @@ export function assembleDeck(input: {
     nonCanonicalPages,
     mergedSlots,
     sectionContentHashes,
-    assembledDeckHash: `sha256:${createHash("sha256")
-      .update(JSON.stringify(slideRefs.map((s) => `${s.slideId}:${s.pageNumber}`)))
-      .digest("hex")}`,
+    assembledDeckHash: assembledDeckHashOf(
+      slideRefs.map((s) => ({ id: s.slideId, pageNumber: s.pageNumber }))
+    ),
   };
 
   return { deckManifest, rendererSlides, rejections, errors, dedupRemovals };
+}
+
+/**
+ * Отпечаток укладки: идентификаторы страниц и их номера в порядке сборки.
+ *
+ * Считается по одной формуле и для манифеста, и для проверки уже записанной
+ * деки. Манифест и `assembled-deck.json` пишутся двумя отдельными записями:
+ * прогон может умереть между ними, а файл — быть урезан, и тогда обещанное
+ * манифестом покрытие относится к деке, которой на диске уже нет.
+ */
+export function assembledDeckHashOf(
+  pages: ReadonlyArray<{ id: string; pageNumber: number }>
+): string {
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(pages.map((p) => `${p.id}:${p.pageNumber}`)))
+    .digest("hex")}`;
 }
 
 /**

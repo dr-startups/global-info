@@ -23,7 +23,10 @@ import type {
   UnifiedCollectionJob,
   UnifiedCollectionStage,
 } from "./unified-collection-types";
-import { loadReusableAssembledDeck } from "./canonical-report-prepare";
+import {
+  loadReusableAssembledDeck,
+  type AssembledDeckReuseResult,
+} from "./canonical-report-prepare";
 import { isDeterministicPrepareGate } from "./prepare-gate-advice";
 import { evaluateLegacyRecoveryEligibility } from "./unified-recovery-legacy-heuristic";
 import {
@@ -513,18 +516,23 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         job.unifiedJobId,
         "report-data-binding.json"
       );
-      const reusable = binding
+      // Причины отказа перечислены типом загрузчика — включая эту, которую
+      // выносит вызыватель: сверять не с чем, привязки джобы нет.
+      const attempt: AssembledDeckReuseResult = binding
         ? loadReusableAssembledDeck({
             artifactsDir,
             caseId: job.caseId,
             expectedDatasetId: binding.compositeDatasetId,
           })
-        : null;
+        : { reused: null, refusedReason: "binding-missing" };
       await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "render-checkpoint.json", {
         version: "render-checkpoint-v1",
         stage: "RENDER",
-        status: reusable ? "READY" : "NEEDS_ASSEMBLY",
-        assemblyHash: reusable?.assemblyHash ?? null,
+        status: attempt.reused ? "READY" : "NEEDS_ASSEMBLY",
+        assemblyHash: attempt.reused?.assemblyHash ?? null,
+        // `NEEDS_ASSEMBLY` без причины означал сразу пять разных вещей, и
+        // оператор видел только то, что повтор рендера стоил как пересборка.
+        reuseRefusedReason: attempt.refusedReason,
         caseId: job.caseId,
         unifiedJobId: job.unifiedJobId,
         updatedAt: nowFn().toISOString(),

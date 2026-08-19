@@ -76,6 +76,7 @@ async function preparedArtifacts(state: unknown): Promise<string> {
 describe("ячейки не заданных вопросов доезжают до деки", () => {
   it("сборщик композита записывает NOT_COLLECTED в provenance", () => {
     const built = buildAnalyticsCompositeDataset({
+      datasetId: "composite-unified-disabled-surfaces",
       caseId: "case-1",
       baseItems: [],
       enrichmentItems: [],

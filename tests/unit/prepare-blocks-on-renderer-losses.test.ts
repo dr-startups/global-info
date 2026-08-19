@@ -12,27 +12,20 @@
  *   · офлайн-фейк без файлов на диске не судится: терять было нечего.
  */
 
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   CanonicalPrepareBlockedError,
   runCanonicalReportPrepare,
-  type CanonicalPrepareInput,
 } from "@/modules/digital-profile/services/canonical-report-prepare";
 import type { DeckRenderAdapter } from "@/modules/digital-profile/services/render-deck-artifacts";
-import { runTinyAnalytics, tinyPrepareInput } from "../fixtures/tiny-canonical-prepare";
-
-const CLEAN_ENTRY = {
-  page: 1,
-  name: "orion_text_body_p1",
-  role: "text",
-  requiredHeight: 197_815,
-  availableHeight: 1_100_000,
-  clipped: false,
-  measurementUncertain: false,
-};
+import {
+  CLEAN_TELEMETRY_ENTRY as CLEAN_ENTRY,
+  renderAdapterWithTelemetry as realShapedAdapter,
+  tinyPrepareInput,
+} from "../fixtures/tiny-canonical-prepare";
 
 const CLIPPED_ENTRY = {
   page: 12,
@@ -54,39 +47,6 @@ const DROPPED_ENTRY = {
   droppedBullets: 2,
   droppedLines: 0,
 };
-
-/** Рендерер, который кладёт клиентские файлы на диск — как настоящий. */
-function realShapedAdapter(entries: Array<Record<string, unknown>> | null): {
-  adapter: DeckRenderAdapter;
-  calls: () => number;
-} {
-  let calls = 0;
-  const adapter: DeckRenderAdapter = async (input) => {
-    calls += 1;
-    mkdirSync(input.outputRoot, { recursive: true });
-    const pptx = join(input.outputRoot, "rendered-client.pptx");
-    const pdf = join(input.outputRoot, "rendered-client.pdf");
-    writeFileSync(pptx, "pptx", "utf8");
-    writeFileSync(pdf, "pdf", "utf8");
-    const telemetryPath = join(input.outputRoot, "layout-telemetry.json");
-    if (entries) {
-      writeFileSync(
-        telemetryPath,
-        JSON.stringify({ version: "orion-layout-telemetry-v1", entries }, null, 2),
-        "utf8"
-      );
-    } else {
-      rmSync(telemetryPath, { force: true });
-    }
-    return {
-      pdf,
-      pptx,
-      pageCount: input.deckManifest.pageCount,
-      renderer: "http:orion/render-golden",
-    };
-  };
-  return { adapter, calls: () => calls };
-}
 
 function checkpoint(root: string): { status?: string; errorCode?: string } {
   return JSON.parse(readFileSync(join(root, "render-checkpoint.json"), "utf8")) as {
@@ -192,38 +152,14 @@ describe("подготовка отчёта и потери рендерера",
     /**
      * Ранний возврат по прежнему рендеру требует двух совпадений: чекпоинт
      * `SUCCEEDED` и равенство хэша сборки. Хэш считается по файлам деки, а в
-     * манифест деки пишется `generatedAt` — без замороженных часов два прогона
-     * дают разные хэши. Замораживается только `Date`, таймеры настоящие.
-     *
-     * Второе совпадение — идентификатор набора: реюз ищет сборку по
-     * `binding.compositeDatasetId`, а дека несёт идентификатор, посчитанный
-     * аналитикой (`composite-<caseId>-<хэш наблюдений>`). У фикстуры они
-     * разные, поэтому вход подстраивается — иначе ветка реюза недостижима и
-     * проверка была бы пустой.
+     * манифест деки пишется `generatedAt` — без замороженных часов две полные
+     * подготовки дают разные хэши. Замораживается только `Date`, таймеры
+     * настоящие; живому пути `resumeFrom: "render"` заморозка не нужна — файлы
+     * деки там не переписываются.
      */
-    let deckDatasetId = "";
-
-    beforeAll(async () => {
-      const probe = tempRoot("prepare-reuse-probe-");
-      const analytics = await runTinyAnalytics(probe);
-      deckDatasetId = analytics.reportDataBinding.datasetId;
-    });
-
-    async function reusableInput(
-      root: string,
-      render: DeckRenderAdapter
-    ): Promise<CanonicalPrepareInput> {
-      const base = await tinyPrepareInput(root, { render });
-      return {
-        ...base,
-        binding: { ...base.binding, compositeDatasetId: deckDatasetId },
-        merge: { ...base.merge, compositeDatasetId: deckDatasetId },
-      };
-    }
-
     async function seedRenderedRun(root: string): Promise<void> {
       const { adapter } = realShapedAdapter([CLEAN_ENTRY]);
-      const first = await runCanonicalReportPrepare(await reusableInput(root, adapter));
+      const first = await runCanonicalReportPrepare(await tinyPrepareInput(root, { render: adapter }));
       expect(first.ok).toBe(true);
     }
 
@@ -234,7 +170,9 @@ describe("подготовка отчёта и потери рендерера",
       await seedRenderedRun(root);
 
       const second = realShapedAdapter([CLEAN_ENTRY]);
-      const res = await runCanonicalReportPrepare(await reusableInput(root, second.adapter));
+      const res = await runCanonicalReportPrepare(
+        await tinyPrepareInput(root, { render: second.adapter })
+      );
 
       expect(res.ok).toBe(true);
       expect(second.calls()).toBe(0);
@@ -250,7 +188,7 @@ describe("подготовка отчёта и потери рендерера",
 
       const second = realShapedAdapter([CLEAN_ENTRY, DROPPED_ENTRY]);
       const err = await runCanonicalReportPrepare(
-        await reusableInput(root, second.adapter)
+        await tinyPrepareInput(root, { render: second.adapter })
       ).then(
         () => null,
         (e: unknown) => e

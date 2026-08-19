@@ -49,6 +49,7 @@ import { assertPreRenderDataGates } from "./pre-render-data-gates";
 import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
+  PREPARE_ATTEMPT_WARNING_STARTS,
 } from "./canonical-report-prepare";
 import { resolvePreparePrismaBundle } from "./prepare-prisma-bundle";
 import {
@@ -799,6 +800,40 @@ export async function runUnifiedCollectionTick(
 
 /** Marker the rebuild path leaves on the job for the duration of the attempt. */
 const REBUILD_MARKER = "report-rebuild-accepted";
+
+/**
+ * Предупреждения, с которыми прогон приходит к готовому отчёту.
+ *
+ * Часть накопленного описывает **попытку**, а не прогон, и переживать успешную
+ * подготовку не должна: иначе на готовом отчёте висят жалобы, которых больше
+ * нет, и оператор читает завершённый прогон как сломанный.
+ */
+export function warningsSurvivingSuccessfulPrepare(input: {
+  jobWarnings: string[];
+  qualityWarnings: string[];
+  enrichmentComplete: boolean;
+  failedAgentCount: number;
+}): string[] {
+  return mergeJobWarnings(input.jobWarnings, input.qualityWarnings).filter((w) => {
+    // Drop sticky historical Arsenkin failures once enrichment is clean.
+    if (/arsenkin-failed:/i.test(w) && input.enrichmentComplete && input.failedAgentCount === 0) {
+      return false;
+    }
+    // The rebuild attempt is over — drop its marker so a later, unrelated
+    // failure cannot restore this run's stale snapshot.
+    if (w === REBUILD_MARKER) return false;
+    // Жалобы попытки подготовки описывают её, а не прогон: висящая с прошлой
+    // попытки врёт о нынешней. Свои эта подготовка только что назвала сама —
+    // они в `qualityWarnings`.
+    if (
+      PREPARE_ATTEMPT_WARNING_STARTS.some((start) => w.startsWith(start)) &&
+      !input.qualityWarnings.includes(w)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
 
 /**
  * Puts a job back the way it was when a report rebuild fails.
@@ -1777,19 +1812,11 @@ async function stepPrepare(
     // Observability must never block REPORT_READY.
   }
 
-  const warningsForReady = mergeJobWarnings(job.warnings, qualityWarnings).filter((w) => {
-    // Drop sticky historical Arsenkin failures once enrichment is clean.
-    if (
-      /arsenkin-failed:/i.test(w) &&
-      job.arsenkinEnrichmentState?.enrichmentComplete &&
-      (job.arsenkinEnrichmentState.failedAgents?.length ?? 0) === 0
-    ) {
-      return false;
-    }
-    // The rebuild attempt is over — drop its marker so a later, unrelated
-    // failure cannot restore this run's stale snapshot.
-    if (w === REBUILD_MARKER) return false;
-    return true;
+  const warningsForReady = warningsSurvivingSuccessfulPrepare({
+    jobWarnings: job.warnings,
+    qualityWarnings,
+    enrichmentComplete: Boolean(job.arsenkinEnrichmentState?.enrichmentComplete),
+    failedAgentCount: job.arsenkinEnrichmentState?.failedAgents?.length ?? 0,
   });
 
   return (
