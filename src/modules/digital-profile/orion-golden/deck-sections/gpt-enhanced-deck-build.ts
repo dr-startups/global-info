@@ -16,9 +16,12 @@ import { buildAllSections, type SectionBuildContext } from "./section-builders";
 import { validateSectionPack } from "./section-validation";
 import {
   loadPreviousPacks,
-  runDeckBuild,
+  runDeckBuildMeasured,
+  type BulletFitReport,
   type DeckBuildResult,
+  type RendererAssetEntry,
 } from "./run-deck-build";
+import type { BulletMeasureAdapter } from "./measured-bullet-fit";
 import type { SerpObservationForGate } from "./assembly-validation";
 import {
   enhanceSectionPacksWithGptCopy,
@@ -97,6 +100,8 @@ export type GptDeckLayer = {
 };
 
 export type GptDeckBuildResult = DeckBuildResult & {
+  /** Разбор цикла «сборка → мера → перекладка». */
+  bulletFit: BulletFitReport;
   gptReport: GptSlideCopyReport | null;
   /** Stage-3 whole-deck editorial pass (level 1); null when the pass did not run. */
   gptEditorReport?: GptDeckEditorReport | null;
@@ -130,6 +135,15 @@ export async function runDeckBuildWithGptCopy(input: {
   forceGptCopy?: boolean;
   /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Имя субъекта и ассеты нужны мерному прогону: он меряет тот же пейлоад. */
+  subjectName: string;
+  assets?: RendererAssetEntry[];
+  /**
+   * Мерный прогон рендерера. `null`/не задан — офлайн-сборка: цикл не
+   * выполняется, дека остаётся такой, какой её разложил сид. Требовать меру
+   * там, где отчёт публикуется, — дело вызывающего.
+   */
+  measure?: BulletMeasureAdapter | null;
 }): Promise<GptDeckBuildResult> {
   const buildLog: DeckBuildResult["buildLog"] = [];
   const previousPacks = loadPreviousPacks(input.outputRoot);
@@ -231,7 +245,7 @@ export async function runDeckBuildWithGptCopy(input: {
     ? new Map(gptComposition.layouts.map((l) => [l.slideId, l.layoutVariant]))
     : undefined;
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
     knownEvidenceRefs: input.knownEvidenceRefs,
@@ -242,6 +256,9 @@ export async function runDeckBuildWithGptCopy(input: {
     prebuiltBuildLog: buildLog,
     layoutVariants,
     serpObservations: input.serpObservations,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
   });
   if (gptReport) {
     result.artifacts["gpt-report-copy.json"] = join(input.outputRoot, "gpt-report-copy.json");
@@ -273,6 +290,15 @@ export async function runDeckGptCopyRetry(input: {
   gpt: GptDeckLayer;
   /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Имя субъекта и ассеты нужны мерному прогону: он меряет тот же пейлоад. */
+  subjectName: string;
+  assets?: RendererAssetEntry[];
+  /**
+   * Мерный прогон рендерера. `null`/не задан — офлайн-сборка: цикл не
+   * выполняется, дека остаётся такой, какой её разложил сид. Требовать меру
+   * там, где отчёт публикуется, — дело вызывающего.
+   */
+  measure?: BulletMeasureAdapter | null;
 }): Promise<GptDeckBuildResult> {
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const packs = packsInArtifactOrder(previousPacks);
@@ -326,7 +352,7 @@ export async function runDeckGptCopyRetry(input: {
     "utf8"
   );
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
     knownEvidenceRefs: input.knownEvidenceRefs,
@@ -337,6 +363,9 @@ export async function runDeckGptCopyRetry(input: {
     prebuiltBuildLog: buildLog,
     layoutVariants: loadCompositionLayoutsFromDisk(input.outputRoot),
     serpObservations: input.serpObservations,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
   });
   result.artifacts["gpt-report-copy.json"] = join(
     input.outputRoot,

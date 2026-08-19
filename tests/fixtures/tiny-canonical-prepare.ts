@@ -174,6 +174,10 @@ export async function tinyPrepareInput(
     merge,
     subjectProfile: tinySubjectProfile(),
     render: fakeRender,
+    // Юнит ничего не рендерит и не публикует, поэтому мерного прогона у него
+    // нет — и он объявляет это явно, а не полагается на умолчание, которое
+    // ушло бы в сеть.
+    measureBulletFit: null,
     gptCaller: null,
     ...extra,
   };

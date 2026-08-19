@@ -26,6 +26,7 @@ import {
   type GptDeckLayer,
 } from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
+import { BulletFitNotConvergedError } from "../orion-golden/deck-sections/run-deck-build";
 import {
   GptCaseAnalysisSchema,
   GPT_CASE_ANALYSIS_VERSION,
@@ -44,11 +45,13 @@ import {
   type RendererSlide,
 } from "../orion-golden/deck-sections/deck-assembler";
 import {
+  createCanonicalBulletMeasureAdapter,
   publishRenderedClientArtifacts,
   renderCanonicalDeck,
   sanitizeRendererClientError,
   type DeckRenderAdapter,
 } from "./render-deck-artifacts";
+import type { BulletMeasureAdapter } from "../orion-golden/deck-sections/measured-bullet-fit";
 import { judgeRenderTelemetry } from "./render-telemetry-gate";
 import {
   ASSEMBLED_DECK_ARTIFACT,
@@ -123,6 +126,46 @@ export class CanonicalPrepareBlockedError extends Error {
   }
 }
 
+/**
+ * Отказ **самой меры** — возобновляемый отказ попытки, а не молчаливый пропуск
+ * цикла: иначе исход сборки зависел бы от здоровья рендерера невидимо.
+ *
+ * Оборачивается ровно вызов адаптера. Обернуть всю сборку было бы удобнее и
+ * неверно: под тем же диагнозом «мера не выполнена» оказались бы падение
+ * модели, отказ обязательной секции и — что хуже всего — крик самой перекладки
+ * о потерянном содержимом.
+ */
+function measureOrFailAttempt(measure: BulletMeasureAdapter): BulletMeasureAdapter {
+  return async (payload) => {
+    try {
+      return await measure(payload);
+    } catch (err) {
+      throw new CanonicalPrepareBlockedError(
+        "RENDER_FAILED",
+        `мерный прогон рендерера не выполнен: ${sanitizeRendererClientError(
+          err instanceof Error ? err.message : String(err)
+        )}`
+      );
+    }
+  };
+}
+
+/**
+ * Цикл не сошёлся — тот же код, которым останавливают прогон ворота потерь:
+ * остановленный прогон честнее урезанного отчёта, и рекавери предложит по нему
+ * пересборку. Остальные ошибки сборки проходят как есть — они о другом.
+ */
+async function buildDeckUnderMeasure<T>(build: () => Promise<T>): Promise<T> {
+  try {
+    return await build();
+  } catch (err) {
+    if (err instanceof BulletFitNotConvergedError) {
+      throw new CanonicalPrepareBlockedError("CONTENT_DROPPED_BY_RENDERER", err.message);
+    }
+    throw err;
+  }
+}
+
 export type CanonicalPrepareInput = {
   caseId: string;
   unifiedJobId: string;
@@ -135,6 +178,12 @@ export type CanonicalPrepareInput = {
   subjectDisplayName?: string;
   /** Injectable renderer; defaults to HTTP canonical adapter (no silent local fallback). */
   render?: DeckRenderAdapter;
+  /**
+   * Мерный прогон рендерера для цикла «сборка → мера → перекладка».
+   * `undefined` → канонический адаптер (мера обязательна); явный `null` →
+   * офлайн-сборка без меры.
+   */
+  measureBulletFit?: BulletMeasureAdapter | null;
   /**
    * GPT report layer: full-corpus case analysis + per-slide client copy.
    * `undefined` → auto (live OpenAI when the AI analyst is configured and
@@ -451,6 +500,8 @@ export type AssembledDeckRefusal =
   | "missing-files"
   | "binding-missing"
   | "stale-marker"
+  /** Деку собрал построитель прежней версии — рендерить её заново нельзя. */
+  | "stale-content-version"
   | "dataset-missing"
   | "coverage-incomplete"
   | "deck-manifest-mismatch"
@@ -611,6 +662,18 @@ export function loadReusableAssembledDeck(input: {
   const deckManifest = readJsonSafe<ReportDeckManifest>(manifestPath);
   // `null` разбирается успешно и уронил бы читателя на первом же поле.
   if (!assembled || !deckManifest) return refused("corrupt:unreadable");
+  /*
+   * Дека — продукт построителя, а построитель версионирован.
+   *
+   * Кнопка «Повторить рендер», которую восстановление предлагает ровно на
+   * `CONTENT_DROPPED_BY_RENDERER`, переиспользовала бы ту самую переполненную
+   * деку и привела бы к тому же блокеру. Отсутствие поля — тоже отказ, и
+   * намеренно: деки, собранные до появления поля, несут ровно то, что новая
+   * версия построителя чинила.
+   */
+  if ((deckManifest as { contentVersion?: unknown }).contentVersion !== DECK_CONTENT_VERSION) {
+    return refused("stale-content-version");
+  }
   const datasetId = String(assembled.datasetId ?? assembled.sourceDatasetId ?? "");
   if (assembled.caseId !== input.caseId) {
     return refused(`case-mismatch deck=${assembled.caseId ?? ""} expected=${input.caseId}`);
@@ -836,6 +899,19 @@ export async function runCanonicalReportPrepare(
   mkdirSync(renderDir, { recursive: true });
 
   const resumeFrom = input.resumeFrom ?? "full";
+  /*
+   * Мера обязательна там, где отчёт публикуется.
+   *
+   * Отказ меры — громкий отказ попытки (возобновляемый, класса RENDER_FAILED),
+   * а не молчаливый пропуск цикла: иначе исход сборки зависел бы от здоровья
+   * рендерера невидимо. Пропуск разрешён только явному `null` — офлайн-сборкам
+   * (голден-кейс, юниты), которые ничего не рендерят и не публикуют.
+   */
+  const resolvedMeasure =
+    input.measureBulletFit === undefined
+      ? createCanonicalBulletMeasureAdapter()
+      : input.measureBulletFit;
+  const bulletMeasure = resolvedMeasure ? measureOrFailAttempt(resolvedMeasure) : null;
   let assemblyCount = 0;
   let baseSlotCoverage = 0;
   let requiredSectionsFailed: string[] = [];
@@ -994,7 +1070,8 @@ export async function runCanonicalReportPrepare(
       }
     }
 
-    const deck = await runDeckGptCopyRetry({
+    const deck = await buildDeckUnderMeasure(() =>
+      runDeckGptCopyRetry({
       ctx: {
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
@@ -1026,7 +1103,11 @@ export async function runCanonicalReportPrepare(
       baseObservationCountAfter: deckInputs.baseCountAfter,
       serpObservations: deckInputs.serpObservations,
       gpt: { caller: gptCallerOnce, caseAnalysis },
-    });
+        subjectName: subjectDisplayName,
+        assets: rendererAssets,
+        measure: bulletMeasure,
+      })
+    );
 
     // Стоп-маркер здесь не снимается: повтор стадии 2 читает аналитику с диска
     // и новых наблюдений не видел — ответом на маркер он не является.
@@ -1309,7 +1390,8 @@ export async function runCanonicalReportPrepare(
     const forceGptCopyPath = join(input.artifactsDir, "force-gpt-copy.json");
     const forceGptCopy = true;
 
-    const deck = await runDeckBuildWithGptCopy({
+    const deck = await buildDeckUnderMeasure(() =>
+      runDeckBuildWithGptCopy({
       ctx: {
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
@@ -1341,7 +1423,11 @@ export async function runCanonicalReportPrepare(
       serpObservations: deckInputs.serpObservations,
       gpt: gptLayer,
       forceGptCopy,
-    });
+        subjectName: subjectDisplayName,
+        assets: rendererAssets,
+        measure: bulletMeasure,
+      })
+    );
     if (existsSync(forceGptCopyPath)) {
       try {
         unlinkSync(forceGptCopyPath);

@@ -32,6 +32,8 @@ import {
 import { dedupSlideBullets } from "./boilerplate-commentary";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
 import { dropEmptyContinuations } from "./continuation-cleanup";
+import { DECK_CONTENT_VERSION } from "./content-version";
+import { applyBulletRecut, type BulletRecutPlan } from "./measured-bullet-fit";
 
 /**
  * Страницы, где строки — данные, а не наша проза.
@@ -140,6 +142,12 @@ export function assembleDeck(input: {
    * The assembler itself stays pure — the map is plain validated data.
    */
   layoutVariants?: ReadonlyMap<string, string>;
+  /**
+   * Вердикт меры рендерера, переведённый в «сколько буллетов на каждой странице
+   * слота». Задан — разбивка построителя (сид) уступает ему: ёмкость листа
+   * знает отрисовка, а не число в реестре.
+   */
+  bulletRecut?: BulletRecutPlan;
 }): DeckAssemblyResult {
   const rejections: AssemblyRejection[] = [];
   const errors: string[] = [];
@@ -302,11 +310,18 @@ export function assembleDeck(input: {
     };
   });
   const packBySlideId = new Map(dedupedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
-  const cleanup = dropEmptyContinuations(dedupedSlides.map(({ slide }) => slide));
-  const finalSlides = cleanup.slides.map((slide) => ({
-    slide,
-    pack: packBySlideId.get(slide.slideId)!,
-  }));
+  // Перекладка по мере идёт после вычистки повторов (её вердикт снят с деки,
+  // где повторов уже нет) и до нумерации страниц: номера принадлежат тому
+  // составу листов, который поедет в рендер.
+  const laidOut = dedupedSlides.map(({ slide }) => slide);
+  // Страницу, которой перекладка добавила, знает только её основа: пак ищется
+  // по слоту, а не по идентификатору листа.
+  const packOf = (slide: SlideContentContract): SectionPackV2 =>
+    packBySlideId.get(slide.slideId) ?? packBySlideId.get(slide.continuationOf ?? "")!;
+  const cleanup = dropEmptyContinuations(
+    input.bulletRecut ? applyBulletRecut(laidOut, input.bulletRecut) : laidOut
+  );
+  const finalSlides = cleanup.slides.map((slide) => ({ slide, pack: packOf(slide) }));
   // Выброшенный лист называется вслух: страница исчезла из отчёта, и это
   // должно быть видно в разборе сборки, а не только в разнице номеров.
   for (const slideId of cleanup.dropped) {
@@ -478,6 +493,7 @@ export function assembleDeck(input: {
     caseId: input.manifest.caseId,
     reportRunId: input.expectedReportRunId,
     sourceDatasetId: input.expectedDatasetId,
+    contentVersion: DECK_CONTENT_VERSION,
     generatedAt: new Date().toISOString(),
     pageCount: total,
     baseSlotCount: slideRefs.filter((s) => !s.isContinuation).length,
@@ -554,6 +570,7 @@ function emptyManifest(input: {
     caseId: input.manifest.caseId,
     reportRunId: input.expectedReportRunId,
     sourceDatasetId: input.expectedDatasetId,
+    contentVersion: DECK_CONTENT_VERSION,
     generatedAt: new Date().toISOString(),
     pageCount: 0,
     baseSlotCount: 0,

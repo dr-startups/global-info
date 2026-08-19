@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { pythonInterpreter } from "./lib/python";
 import {
   loadDeckInputsFromAnalyticsDir,
-  runDeckBuild,
+  runDeckBuildMeasured,
   toRendererPayload,
   buildCoverageReconciliation,
   DECK_TEMPLATE_REGISTRY,
@@ -23,7 +23,9 @@ import {
   type ScopedEvidenceIndex,
   type VisualAssetsBySlot,
   type V72PageInventoryItem,
+  type BulletMeasureAdapter,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
+import { createLocalPythonMeasureAdapter } from "../src/modules/digital-profile/services/render-deck-artifacts";
 import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
 import { normalizeForCompare } from "../src/modules/digital-profile/orion-golden/deck-sections/text-compare";
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
@@ -51,6 +53,22 @@ const RUN_DIR = join(
   "orion-canary-1783980828528"
 );
 const BASELINE_PATH = join(process.cwd(), "baselines", "report-72", "baseline.json");
+
+/** Субъект эталонного прогона — один ответ на сборку и на пейлоад рендера. */
+const SUBJECT_NAME = "Сергей Глинка";
+
+/**
+ * Мерный прогон локальным python — та же реализация, что у продукта.
+ *
+ * Приёмка обязана собирать деку тем же циклом: иначе она мерит раскладку,
+ * которой живой путь никогда не выпустит.
+ *
+ * Интерпретатор ищется в момент вызова, а не при импорте: этот модуль
+ * импортируют офлайн-юниты ради загрузчика входов и разбора ворот, а
+ * `npm run ci` обязан проходить без рендерера — и без Python.
+ */
+const measureWithLocalPython: BulletMeasureAdapter = (payload) =>
+  createLocalPythonMeasureAdapter(pythonInterpreter())(payload);
 
 /**
  * Binding of EXISTING report assets (report-assets.json of the source run) to
@@ -203,7 +221,7 @@ async function main(): Promise<void> {
   const { assets, visualAssets } = loadReportAssets(inputs.evidenceIndex);
   mkdirSync(OUTPUT_ROOT, { recursive: true });
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: {
       caseId: inputs.caseId,
       reportRunId: inputs.reportRunId,
@@ -216,7 +234,7 @@ async function main(): Promise<void> {
       // 22. Любая правка построителя в этот эталон не доезжала — и проверять
       // её было нечем.
       contentVersion: DECK_CONTENT_VERSION,
-      subject: { displayName: "Сергей Глинка", aliases: ["Sergey Glinka"] },
+      subject: { displayName: SUBJECT_NAME, aliases: ["Sergey Glinka"] },
       bundle: inputs.mergedBundle,
       surfaceUnits: inputs.surfaceUnits,
       metricSnapshot: inputs.metricSnapshot,
@@ -242,6 +260,12 @@ async function main(): Promise<void> {
     // Наблюдения для сверки печатной таблицы выдачи — вход тех же ворот, что
     // работают на живом пути.
     serpObservations: inputs.serpObservations,
+    subjectName: SUBJECT_NAME,
+    assets,
+    // Реплей собирает деку тем же циклом, что и продукт: мера идёт локальным
+    // транспортом. Отсутствие меры в приёмочном прогоне — отказ, а не пропуск:
+    // иначе приёмка мерила бы деку, которую живой путь никогда не соберёт.
+    measure: measureWithLocalPython,
   });
 
   // Coverage reconciliation: 36 canonical slots + 43 v72 baseline pages.
@@ -493,7 +517,7 @@ async function main(): Promise<void> {
     const payload = toRendererPayload({
       deckManifest: result.assembly.deckManifest,
       rendererSlides: result.assembly.rendererSlides,
-      subjectName: "Сергей Глинка",
+      subjectName: SUBJECT_NAME,
       assets,
     });
     const payloadPath = join(OUTPUT_ROOT, "render-payload.json");

@@ -55,6 +55,7 @@ import {
   visualSlide,
   withContinuations,
 } from "./shared";
+import { continuationTitle } from "../continuation-slide";
 
 /**
  * Ключ материала для таблицы выдачи (шаг 13, D7).
@@ -956,7 +957,10 @@ export function buildSerpScreenshotFragment(
         continuationOf: slot.slotId,
         continuationIndex: i + 1,
         templateId: "continuation",
-        title: `${slot.title}: почему выделено${pages.length > 1 ? ` (продолжение ${i + 1}/${pages.length})` : ""}`,
+        title:
+          pages.length > 1
+            ? continuationTitle(`${slot.title}: почему выделено`, i + 1, pages.length)
+            : `${slot.title}: почему выделено`,
         subtitle: undefined,
         // Лист несёт только фразы: вывод, рекомендация и подпись источников
         // принадлежат базовому слайду и повторять их незачем.

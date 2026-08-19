@@ -53,6 +53,7 @@ import {
   type SemanticBlock,
 } from "../semantic-summary-pagination";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
+import { continuationTitle } from "../continuation-slide";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -507,9 +508,7 @@ export function buildExecutiveSummaryFromComposed(
       continuationIndex: pageIdx + 1,
       templateId: "continuation",
       title:
-        totalPages > 1
-          ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
-          : baseTitle,
+        totalPages > 1 ? continuationTitle(baseTitle, pageIdx + 1, totalPages) : baseTitle,
       subtitle: undefined,
       content: {
         bullets: pageBlocks.map(formatSemanticBullet),
@@ -723,9 +722,7 @@ export function buildExecutiveSummaryFragment(
         continuationIndex: pageIdx + 1,
         templateId: "continuation",
         title:
-          totalPages > 1
-            ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
-            : baseTitle,
+          totalPages > 1 ? continuationTitle(baseTitle, pageIdx + 1, totalPages) : baseTitle,
         subtitle: undefined,
         content: {
           bullets: chunk,
@@ -977,7 +974,7 @@ export function buildRiskMatrixFragment(
       isContinuation: true,
       continuationOf: baseSlide.slideId,
       continuationIndex: pageIdx,
-      title: `${baseSlide.title} (продолжение ${pageIdx + 1}/${pages.length})`,
+      title: continuationTitle(baseSlide.title, pageIdx + 1, pages.length),
       content: {
         table: { headers, rows: pageFindings.map(riskMatrixRow) },
         bullets: pageFindings.map((f) => riskMatrixDetail(f, extras)),

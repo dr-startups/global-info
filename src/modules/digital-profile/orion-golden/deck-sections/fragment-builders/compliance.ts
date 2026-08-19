@@ -20,6 +20,7 @@ import {
   enumerateRu,
   makeSlotSlide,
 } from "./shared";
+import { continuationTitle } from "../continuation-slide";
 
 
 const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
@@ -461,7 +462,7 @@ export function buildComplianceFragment(
         isContinuation: true,
         continuationOf: input.slot.slotId,
         continuationIndex: pageIndex,
-        title: `${base.title} (продолжение ${pageIndex + 1}/${pages.length})`,
+        title: continuationTitle(base.title, pageIndex + 1, pages.length),
       };
     });
   };
@@ -549,7 +550,7 @@ export function buildComplianceFragment(
     isContinuation: true,
     continuationOf: summarySlot!.slotId,
     continuationIndex: pageIndex + 1,
-    title: `${summarySlot!.title} (продолжение ${pageIndex + 2}/${otherBasePages.length + 1})`,
+    title: continuationTitle(summarySlot!.title, pageIndex + 2, otherBasePages.length + 1),
   }));
 
   const slides: SlideContentContract[] = [

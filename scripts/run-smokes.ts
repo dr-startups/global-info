@@ -125,6 +125,13 @@ const SMOKES: Smoke[] = [
     about: "слова о чтении на листе: покрытие над таблицей тем и доля на странице региона (нужны Python-пакеты)",
   },
   {
+    name: "bullet-measure-vs-render",
+    argv: ["PYTHON", "renderer/smoke_bullet_measure_matches_render.py"],
+    tier: "full",
+    about:
+      "мерный прогон не оптимистичнее отрисовки, слышит перебор элементов и следов не оставляет (нужны Python-пакеты)",
+  },
+  {
     name: "layout-telemetry-response",
     argv: ["PYTHON", "renderer/smoke_layout_telemetry_reaches_response.py"],
     tier: "full",

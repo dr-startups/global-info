@@ -174,6 +174,54 @@ def get_layout_telemetry() -> list[dict[str, Any]]:
     return list(_LAYOUT_TELEMETRY)
 
 
+# Мерные записи пути буллетов: доступная под список высота, высота каждого
+# поданного элемента, сколько удержано. Живут отдельно от телеметрии разметки
+# намеренно: телеметрию судят ворота выпуска, и запись мерного прогона в ней
+# означала бы, что ворота осудили не тот документ.
+_BULLET_MEASURE: list[dict[str, Any]] = []
+
+
+def reset_bullet_measure() -> None:
+    _BULLET_MEASURE.clear()
+
+
+def get_bullet_measure() -> list[dict[str, Any]]:
+    return list(_BULLET_MEASURE)
+
+
+def record_bullet_measure(
+    *,
+    slide_key: str,
+    page: int,
+    available_height: int,
+    max_items: int,
+    item_heights: list[int],
+    kept_items: int,
+    dropped_bullets: int,
+    dropped_lines: int,
+) -> None:
+    """Записать меру одной страницы пути буллетов.
+
+    Высота элемента считается той же функцией, которой блок будет нарисован, —
+    построитель складывает эти числа и сравнивает с `availableHeight`. Сумма
+    отдельных высот всегда не меньше высоты того же набора одним куском
+    (постоянная добавка входит в каждое слагаемое), поэтому укладка по мере
+    консервативнее отрисовки — в ту сторону, где потери невозможны.
+    """
+    _BULLET_MEASURE.append(
+        {
+            "slideKey": slide_key,
+            "page": page,
+            "availableHeight": available_height,
+            "maxItems": max_items,
+            "itemHeights": item_heights,
+            "keptItems": kept_items,
+            "droppedBullets": dropped_bullets,
+            "droppedLines": dropped_lines,
+        }
+    )
+
+
 def record_text_layout(
     *,
     page: int,
@@ -867,10 +915,15 @@ class _Ctx:
         total: int,
         *,
         client_text_contract: dict[str, Any] | None = None,
+        slide_key: str = "",
     ):
         self.prs = prs
         self.page = page
         self.total = total
+        # Ключ страницы деки: по нему построитель находит свою страницу в
+        # вердикте меры. Номер страницы для этого не годится — при перекладке
+        # он и меняется.
+        self.slide_key = slide_key
         self.client_text_contract = resolve_contract(client_text_contract)
         self.warnings: list[str] = []
         self.dark = False
@@ -1303,16 +1356,24 @@ class _Ctx:
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-|\()\s*$",
             re.I,
         )
-        kept: list[str] = []
         # Потеря содержимого на пути к листу считается здесь и только здесь:
-        # опустевший после ножниц буллет (`continue` ниже) молчал, и страница 30
-        # живого отчёта пришла без нарратива при чистой телеметрии.
-        emptied_bullets = 0
+        # опустевший после ножниц буллет молчал, и страница 30 живого отчёта
+        # пришла без нарратива при чистой телеметрии.
+        #
+        # Чистятся **все** поданные элементы, а не первые `max_items`: раньше
+        # хвост списка не доходил ни до листа, ни до счётчика потерь — подали
+        # десять, нарисовали восемь, и узнать об этом было неоткуда. Мере тоже
+        # нужны высоты всех поданных: по ним построитель и решает, что унести на
+        # следующий лист.
+        prepared: list[str] = []
+        submitted = 0
         clipped_chars = 0
-        for b in items[:max_items]:
+        for idx, b in enumerate(items):
             raw = _safe(b)
             if not raw:
+                prepared.append("")
                 continue
+            submitted += 1
             clipped = _clip_structured_bullet(raw, max_chars)
             # Считается ровно то, что срезал бюджет. Сравнение идёт с телом
             # буллета без обрубков модели: чистка заглушек и снятие оборванного
@@ -1344,11 +1405,17 @@ class _Ctx:
                 clipped = "\n".join(lines).strip()
                 flat_tail = clipped.replace("\n", " ").rstrip()
             if not clipped:
-                emptied_bullets += 1
+                prepared.append("")
                 continue
-            if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-", "(")):
+            # Обрубок останавливает рендер только там, где его напечатают:
+            # элемент за пределом `max_items` до листа не доходит, и падать на
+            # нём значило бы ронять документ из-за того, чего в нём нет.
+            if idx < max_items and (
+                dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-", "("))
+            ):
                 raise RuntimeError(f"ORION bullet dangling on p{self.page}: {flat_tail[-48:]}")
-            kept.append(clipped)
+            prepared.append(clipped)
+        kept = [text for text in prepared[:max_items] if text]
         # PDF-46 I.2 — whole bullets only; never paint past CONTENT_BOTTOM.
         #
         # Мерка приведена к тому, что рисуется (шаг 16, 07.6). Прежняя мерила
@@ -1389,7 +1456,6 @@ class _Ctx:
                     total += int((space_before + space_after) * EMU_PER_PT)
             return int(total * measure_slack) + 60_000
 
-        dropped_bullets = emptied_bullets
         dropped_lines = 0
         while kept and _bullet_block_height(kept) > page_avail:
             if len(kept) == 1:
@@ -1399,11 +1465,12 @@ class _Ctx:
                     parts.pop()
                     dropped_lines += 1
                 kept = ["\n".join(parts)] if parts and _bullet_block_height(["\n".join(parts)]) <= page_avail else []
-                if not kept:
-                    dropped_bullets += 1
                 break
             kept.pop()
-            dropped_bullets += 1
+        # Один ответ на «сколько потеряно»: подано минус нарисовано. Прежде
+        # слагаемых было три (опустевшие, срезанные по высоте, невлезшие), а
+        # четвёртое — элементы за пределом `max_items` — не считалось вовсе.
+        dropped_bullets = max(0, submitted - len(kept))
         # Выброшенное содержимое не молчит. Прежде лишние блоки исчезали из
         # отчёта без следа: подали четыре — нарисовалось два, и узнать об этом
         # было неоткуда. Пагинация обязана резать по страницам сама, а этот
@@ -1426,14 +1493,27 @@ class _Ctx:
                 box_width=CONTENT_W,
                 box_height=page_avail,
                 available_height=page_avail,
-                required_height=_bullet_block_height(items[:max_items]),
+                required_height=_bullet_block_height([t for t in prepared if t]),
                 measured_lines=len(kept),
-                text_length=sum(len(_safe(b)) for b in items[:max_items]),
+                text_length=sum(len(_safe(b)) for b in items),
                 clipped=True,
                 measurement_uncertain=False,
                 dropped_bullets=dropped_bullets,
                 dropped_lines=dropped_lines,
             )
+        # Мера пишется всегда, а не только при потере: построитель раскладывает
+        # по ней и чистые страницы тоже — иначе он не знал бы, сколько на них
+        # осталось места.
+        record_bullet_measure(
+            slide_key=self.slide_key,
+            page=self.page,
+            available_height=page_avail,
+            max_items=max_items,
+            item_heights=[_bullet_block_height([t]) if t else 0 for t in prepared],
+            kept_items=len(kept),
+            dropped_bullets=dropped_bullets,
+            dropped_lines=dropped_lines,
+        )
         if not kept:
             return y
         text_lines: list[str] = []

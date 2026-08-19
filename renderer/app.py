@@ -26,7 +26,7 @@ from pydantic import BaseModel
 
 from convert_pdf import convert_to_pdf
 from lexis_docx import process_lexis_docx_bytes
-from orion_golden_renderer import render_orion_golden
+from orion_golden_renderer import measure_orion_golden, render_orion_golden
 from orion_manifest_render import render_orion_manifest
 from orion_report_spec_render import render_report_spec
 from orion_visual_composer import render_client_storyboard
@@ -135,6 +135,13 @@ class OrionGoldenRenderRequest(BaseModel):
     assets: list[dict] = []
 
 
+class OrionBulletMeasureResponse(BaseModel):
+    """Вердикт мерного прогона: сколько высоты под список и сколько просит каждый блок."""
+
+    version: str
+    pages: list[dict] = []
+
+
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -235,6 +242,33 @@ def orion_render_golden(req: OrionGoldenRenderRequest) -> OrionManifestRenderRes
         pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
         warnings=list(result.get("warnings") or []),
         layoutTelemetry=result.get("layoutTelemetry"),
+    )
+
+
+@app.post("/orion/measure-layout", response_model=OrionBulletMeasureResponse)
+def orion_measure_layout(req: OrionGoldenRenderRequest) -> OrionBulletMeasureResponse:
+    """Мерный прогон деки: тот же код рисования, без файлов и без экспорта.
+
+    Отвечает на единственный вопрос, на который у проекта было три ответа: что
+    из поданного помещается на лист. Построитель раскладывает блоки по этому
+    вердикту и пересобирает деку до чистой меры, а настоящий рендер потом судят
+    прежние ворота. Мера идёт под тем же локом, что и рендер: телеметрия и
+    сборник мерных записей — модульные списки процесса, и два одновременных
+    прогона перемешали бы их.
+    """
+    try:
+        payload = {
+            "reportSpec": req.reportSpec,
+            "deckManifest": req.deckManifest,
+            "assets": req.assets,
+        }
+        with _GOLDEN_RENDER_LOCK:
+            result = measure_orion_golden(payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION Golden measure failed: {exc}") from exc
+    return OrionBulletMeasureResponse(
+        version=str(result.get("version") or ""),
+        pages=list(result.get("pages") or []),
     )
 
 

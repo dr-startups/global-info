@@ -29,6 +29,15 @@ import {
   SIDEBAR_HIGHLIGHT_BUDGET,
   SIDEBAR_HIGHLIGHT_SLOTS,
 } from "./template-registry";
+import {
+  measureVerdictHasLoss,
+  planBulletRecut,
+  type BulletItemFold,
+  type BulletMeasureAdapter,
+  type BulletMeasureVerdict,
+  type BulletRecutPlan,
+  type SlotChain,
+} from "./measured-bullet-fit";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -92,6 +101,8 @@ export function runDeckBuild(input: {
   layoutVariants?: ReadonlyMap<string, string>;
   /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Разбивка буллетов по страницам, снятая с меры рендерера. */
+  bulletRecut?: BulletRecutPlan;
 }): DeckBuildResult {
   const buildLog: DeckBuildResult["buildLog"] = input.prebuiltBuildLog ?? [];
   const artifacts: Record<string, string> = {};
@@ -153,6 +164,7 @@ export function runDeckBuild(input: {
     expectedReportRunId: ctx.reportRunId,
     expectedDatasetId: ctx.sourceDatasetId,
     layoutVariants: input.layoutVariants,
+    bulletRecut: input.bulletRecut,
   });
   const deckManifestPath = join(input.outputRoot, "report-deck-manifest.json");
   writeFileSync(deckManifestPath, JSON.stringify(assembly.deckManifest, null, 2), "utf8");
@@ -226,6 +238,178 @@ export function runDeckBuild(input: {
   artifacts["section-build-log.json"] = buildLogPath;
 
   return { packs, validationReports, manifest, assembly, assemblyValidation, buildLog, artifacts };
+}
+
+/** Цикл не сошёлся: содержимое всё ещё не помещается на лист. */
+export class BulletFitNotConvergedError extends Error {
+  /** Разбор цикла: по нему видно, где именно он встал. */
+  readonly bulletFit: BulletFitReport;
+
+  constructor(detail: string, bulletFit: BulletFitReport) {
+    super(`CONTENT_DROPPED_BY_RENDERER: ${detail}`);
+    this.name = "BulletFitNotConvergedError";
+    this.bulletFit = bulletFit;
+  }
+}
+
+/** Разбор цикла: что мерили, что переложили и чем кончилось. */
+export type BulletFitReport = {
+  version: "orion-bullet-fit-v1";
+  /** Была ли мера вообще: офлайн-сборка её не имеет и цикл не выполняет. */
+  measured: boolean;
+  converged: boolean;
+  /**
+   * Сколько раз собиралась дека. Судимых сборок ровно столько же, сколько мер:
+   * пересборка, которую померить уже нечем, — выброшенная работа и приговор
+   * сборке, которую никто не смотрел.
+   */
+  builds: number;
+  iterations: Array<{
+    iteration: number;
+    lossyPages: Array<{ slideKey: string; droppedBullets: number; droppedLines: number }>;
+    movedSlots: Array<{ baseSlotId: string; before: number[]; after: number[] }>;
+  }>;
+};
+
+/** Сколько раз цикл готов пересобрать деку, прежде чем признать несходимость. */
+const MAX_FIT_ITERATIONS = 4;
+
+/** Цепочки слотов собранной деки — вход перекладки. */
+function slotChainsOf(
+  rendererSlides: RendererSlide[],
+  payload: Record<string, unknown>
+): SlotChain[] {
+  const payloadSlides = (payload.deckManifest as { finalSlides?: Array<Record<string, unknown>> })
+    .finalSlides ?? [];
+  const itemsByKey = new Map(
+    payloadSlides.map((s) => [String(s.slideKey ?? ""), rendererBulletItemsOf(s)])
+  );
+  const chains: SlotChain[] = [];
+  const broken = new Set<string>();
+  for (const slide of rendererSlides) {
+    const fold = bulletItemFoldOf({
+      payloadItems: itemsByKey.get(slide.slideKey) ?? [],
+      deckBullets: slide.bullets ?? [],
+      sourceNote: slide.sourceNote,
+    });
+    // Разрез не сошёлся — из перекладки выпадает **вся цепочка**, а не одна её
+    // страница: пропущенный лист сдвинул бы нумерацию страниц в плане, и блоки
+    // легли бы не туда. Сдвинуть блок наугад хуже, чем оставить как есть.
+    if (!fold) {
+      broken.add(slide.baseSlotId);
+      continue;
+    }
+    const page = {
+      slideId: slide.slideKey,
+      bulletCount: (slide.bullets ?? []).length,
+      fold,
+    };
+    const chain = chains[chains.length - 1];
+    if (slide.isContinuation && chain && chain.baseSlotId === slide.baseSlotId) {
+      chain.pages.push(page);
+      continue;
+    }
+    if (slide.isContinuation) continue;
+    chains.push({ baseSlotId: slide.baseSlotId, pages: [page] });
+  }
+  return chains.filter((c) => !broken.has(c.baseSlotId));
+}
+
+/**
+ * Сборка деки под мерой рендерера: собрали → померили → переложили → пересобрали.
+ *
+ * Пересборка идёт на тех же паках, поэтому не стоит ни одного вызова модели и
+ * детерминирована. Цикл кончается, когда мера не находит потерь; не сошёлся за
+ * отведённые итерации — прогон останавливается тем же кодом, которым его
+ * останавливают ворота: лучше остановленный прогон, чем урезанный отчёт.
+ *
+ * Без адаптера меры (офлайн-сборки, которые ничего не рендерят и не публикуют)
+ * цикл не выполняется вовсе, и дека остаётся такой, какой её разложил сид.
+ */
+export async function runDeckBuildMeasured(
+  input: Parameters<typeof runDeckBuild>[0] & {
+    subjectName: string;
+    assets?: RendererAssetEntry[];
+    measure?: BulletMeasureAdapter | null;
+    maxIterations?: number;
+  }
+): Promise<DeckBuildResult & { bulletFit: BulletFitReport }> {
+  const report: BulletFitReport = {
+    version: "orion-bullet-fit-v1",
+    measured: Boolean(input.measure),
+    converged: true,
+    builds: 1,
+    iterations: [],
+  };
+  const finish = (built: DeckBuildResult): DeckBuildResult & { bulletFit: BulletFitReport } => {
+    const path = join(input.outputRoot, "bullet-fit-report.json");
+    writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    built.artifacts["bullet-fit-report.json"] = path;
+    return { ...built, bulletFit: report };
+  };
+
+  let result = runDeckBuild(input);
+  if (!input.measure) return finish(result);
+
+  const limit = Math.max(1, input.maxIterations ?? MAX_FIT_ITERATIONS);
+  /*
+   * План копится, а не заменяется.
+   *
+   * `runDeckBuild` каждую итерацию выводит раскладку из паков заново — паки
+   * хранят сид, — и применяет только то, что ему передали. Цепочка, уже
+   * развезённая и ставшая чистой, в новый план не попадает (её раскладка
+   * совпадает с жадной), и без накопления она откатывалась бы к сиду, снова
+   * теряла содержимое и гоняла цикл по кругу до отказа.
+   */
+  const plan = new Map<string, number[]>();
+  for (let iteration = 1; iteration <= limit; iteration += 1) {
+    const payload = toRendererPayload({
+      deckManifest: result.assembly.deckManifest,
+      rendererSlides: result.assembly.rendererSlides,
+      subjectName: input.subjectName,
+      assets: input.assets,
+    });
+    const verdict: BulletMeasureVerdict = await input.measure(payload);
+    if (!measureVerdictHasLoss(verdict)) {
+      report.iterations.push({ iteration, lossyPages: [], movedSlots: [] });
+      return finish(result);
+    }
+    const lossyPages = verdict.pages
+      .filter((p) => p.droppedBullets > 0 || p.droppedLines > 0)
+      .map((p) => ({
+        slideKey: p.slideKey,
+        droppedBullets: p.droppedBullets,
+        droppedLines: p.droppedLines,
+      }));
+    const chains = slotChainsOf(result.assembly.rendererSlides, payload);
+    const fresh = planBulletRecut({ chains, verdict });
+    const movedSlots = [...fresh.entries()].map(([baseSlotId, after]) => ({
+      baseSlotId,
+      before: chains.find((c) => c.baseSlotId === baseSlotId)?.pages.map((p) => p.bulletCount) ?? [],
+      after,
+    }));
+    report.iterations.push({ iteration, lossyPages, movedSlots });
+    // Двигать нечего (мера жалуется на страницу, которой перекладка не
+    // управляет) или мерить следующую сборку уже нечем — дальше идти незачем.
+    if (fresh.size === 0 || iteration === limit) break;
+    for (const [baseSlotId, counts] of fresh) plan.set(baseSlotId, counts);
+    result = runDeckBuild({
+      ...input,
+      prebuiltPacks: result.packs,
+      prebuiltBuildLog: result.buildLog,
+      bulletRecut: plan,
+    });
+    report.builds += 1;
+  }
+  report.converged = false;
+  finish(result);
+  const last = report.iterations[report.iterations.length - 1];
+  throw new BulletFitNotConvergedError(
+    `перекладка не сошлась за ${report.iterations.length} итераций; страницы с потерей: ${
+      last?.lossyPages.map((p) => p.slideKey).join(", ") || "нет"
+    }`,
+    report
+  );
 }
 
 /** Raw asset entry in the existing report-assets store (imageData base64). */
@@ -322,7 +506,11 @@ export function toRendererPayload(input: {
     let dashboardNarrative: string | undefined;
     if (s.template === "orion_golden_executive_dashboard") {
       dashboardNarrative = narrative;
-      keyFindings = (s.bullets ?? []).slice(0, 2).map((b) => ({ detail: b, tone: "warn" }));
+      // Сколько тем на дашборде — решает мера рендерера; маппинг маппит. Срез
+      // `slice(0, 2)` был вторым ответом на тот же вопрос и молчаливым: на
+      // стр. 3 живого прогона он выбросил третью тему до рендерера, и ворота
+      // потерь её не видели.
+      keyFindings = (s.bullets ?? []).map((b) => ({ detail: b, tone: "warn" }));
       if (s.whatToCheck) actions = [{ label: s.whatToCheck }];
       // Right-column KPI cards (audit headline numbers) — same wire contract
       // as the metrics dashboard.
@@ -496,6 +684,43 @@ export function toRendererPayload(input: {
       // full-bleed grid image; the grids carry their own baked-in labels.
       .map((a) => (a.kind === "image_grid" ? { ...a, caption: "" } : a)),
   };
+}
+
+/**
+ * Что именно получит `ctx.bullets` этой страницы пейлоада.
+ *
+ * У дашборда список рисуется из `keyFindings`, у остальных — из `bullets`.
+ * Спрашивать это надо у пейлоада, а не у деки: между ними лежит склейка
+ * страницы, и она — часть ответа.
+ */
+export function rendererBulletItemsOf(payloadSlide: Record<string, unknown>): string[] {
+  const findings = payloadSlide.keyFindings as Array<{ detail?: string }> | undefined;
+  if (findings) return findings.map((f) => String(f.detail ?? ""));
+  return ((payloadSlide.bullets as string[] | undefined) ?? []).map((b) => String(b));
+}
+
+/**
+ * Разрез «элемент списка рендерера ↔ буллет деки».
+ *
+ * Живёт рядом с самой склейкой и обязан меняться вместе с ней: мера приходит по
+ * элементам списка, а перекладывать надо буллеты деки, и ошибка на единицу
+ * увезла бы блок не на ту страницу. Разрез выводится из данных, а не из копии
+ * ветвлений склейки: ссылка на источник узнаётся по совпадению с последним
+ * элементом, вводный абзац — по остатку длины. Не сошлось (появился новый вид
+ * склейки) — честный `null`: лучше не перекладывать страницу вовсе, чем
+ * сдвинуть блок наугад.
+ */
+export function bulletItemFoldOf(input: {
+  payloadItems: readonly string[];
+  deckBullets: readonly string[];
+  sourceNote?: string;
+}): BulletItemFold | null {
+  const items = input.payloadItems;
+  const trailing =
+    input.sourceNote && items.length > 0 && items[items.length - 1] === input.sourceNote ? 1 : 0;
+  const leading = items.length - input.deckBullets.length - trailing;
+  if (leading < 0 || leading > 1) return null;
+  return { leading, trailing };
 }
 
 /** Dangling tails after a word-boundary cut («…относящийся к», «…и ещё»). */

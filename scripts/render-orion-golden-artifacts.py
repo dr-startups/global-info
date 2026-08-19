@@ -12,10 +12,26 @@ _RENDERER = _ROOT / "renderer"
 if str(_RENDERER) not in sys.path:
     sys.path.insert(0, str(_RENDERER))
 
-from orion_golden_renderer import render_orion_golden
+from orion_golden_renderer import measure_orion_golden, render_orion_golden
+
+
+def measure(payload_path: Path, out_path: Path) -> None:
+    """Мерный прогон локальным транспортом: вердикт в файл, никаких артефактов.
+
+    Тот же вход, что и у рендера, — реплей приёмки собирает деку через цикл с
+    мерой ровно так же, как это делает живой путь по HTTP.
+    """
+    data = json.loads(payload_path.read_text(encoding="utf-8"))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(measure_orion_golden(data), ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def main() -> None:
+    if sys.argv[1] == "--measure":
+        measure(Path(sys.argv[2]), Path(sys.argv[3]))
+        return
     payload_path = Path(sys.argv[1])
     pptx_out = Path(sys.argv[2])
     pdf_out = Path(sys.argv[3])

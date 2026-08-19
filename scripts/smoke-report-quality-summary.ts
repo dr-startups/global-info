@@ -428,6 +428,9 @@ describe("canonical prepare emits report-quality-summary.json", () => {
       merge,
       subjectProfile: subjectProfile(),
       render: fakeRender,
+      // Офлайн-смок ничего не рендерит и не публикует — мерного прогона у него
+      // нет, и он объявляет это явно, а не молча уходит в сеть.
+      measureBulletFit: null,
       gptCaller: null,
     };
     const res = await runCanonicalReportPrepare(input);

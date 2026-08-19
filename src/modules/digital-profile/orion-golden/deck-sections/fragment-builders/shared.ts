@@ -15,6 +15,7 @@ import {
   type DeckTemplateId,
 } from "../template-registry";
 import { balanceTailPage } from "../semantic-summary-pagination";
+import { buildContinuationSlide } from "../continuation-slide";
 import {
   normalizeEvidenceRef,
   regionMatches,
@@ -232,68 +233,39 @@ export function makeSlotSlide(input: {
 }
 
 /**
- * Разложить блоки по страницам: первая — с обвязкой, дальше — без неё.
+ * Разложить блоки по страницам первым заходом: первая — с обвязкой, дальше — без неё.
  *
- * Считается и число блоков, и их суммарный объём: разбиение по одному лишь
- * числу оставляло странице то, что на ней помещалось в шесть раз, и уносило
- * хвост на отдельный лист.
+ * Это **сид**, а не ёмкость. Сколько влезает на лист, отвечает мерный прогон
+ * рендерера, и после него разбивку определяет вердикт меры. Счётная модель
+ * строк, которая раньше стояла здесь, пыталась угадать высоту по числу знаков
+ * в строке и промахнулась на живом прогоне: она и была вторым ответом на
+ * вопрос, у которого ответ один.
  */
-/**
- * Во сколько **нарисованных** строк развернётся блок.
- *
- * Структурные строки заданы переводами строки и переносятся всегда, а каждая
- * из них ещё и переносится по ширине. Счёт по знакам этого не видит:
- * тематический блок «Заголовок / Найдены публикации по теме: / цитата /
- * источник» занимает строк много, а знаков мало.
- */
-export function estimateRenderedLines(text: string, charsPerLine: number): number {
-  if (charsPerLine <= 0) return 1;
-  return text
-    .split("\n")
-    .reduce((n, line) => n + Math.max(1, Math.ceil(line.trim().length / charsPerLine)), 0);
-}
-
 export function packBulletPages(
   bullets: readonly string[],
   firstCount: number,
   contCount: number,
-  itemCharBudget: number,
-  lines?: {
-    /** Ёмкость первой страницы в нарисованных строках. */
-    first: number;
-    /** То же для продолжения. */
-    cont: number;
-    charsPerLine: number;
-  }
+  itemCharBudget: number
 ): string[][] {
   if (firstCount <= 0) return [[...bullets]];
   const pages: string[][] = [];
   let cur: string[] = [];
   let curChars = 0;
-  let curLines = 0;
   let cap = firstCount;
   let charCap = firstCount * itemCharBudget;
-  let lineCap = lines?.first ?? Number.POSITIVE_INFINITY;
   const flush = () => {
     if (cur.length) pages.push(cur);
     cur = [];
     curChars = 0;
-    curLines = 0;
     cap = contCount;
     charCap = contCount * itemCharBudget;
-    lineCap = lines?.cont ?? Number.POSITIVE_INFINITY;
   };
   for (const b of bullets) {
     const size = b.length;
-    // Высота — то, по чему ёмкость меряет рендерер. Счёт блоков и знаков
-    // остаётся: он ловит свои случаи, а строки — те, где блоки разного роста.
-    const blockLines = lines ? estimateRenderedLines(b, lines.charsPerLine) : 0;
-    const overflows =
-      cur.length >= cap || curChars + size > charCap || curLines + blockLines > lineCap;
+    const overflows = cur.length >= cap || curChars + size > charCap;
     if (cur.length > 0 && overflows) flush();
     cur.push(b);
     curChars += size;
-    curLines += blockLines;
   }
   if (cur.length) pages.push(cur);
 
@@ -333,26 +305,9 @@ export function withContinuations(
 
   const firstBulletCap = opts?.firstPageBullets ?? tpl.maxBulletsPerSlide;
   const contBulletCap = tpl.maxBulletsPerContinuation ?? tpl.maxBulletsPerSlide;
-  const lineModel =
-    tpl.maxBulletLinesPerSlide && tpl.layout.charsPerRenderedLine
-      ? {
-          first: tpl.maxBulletLinesPerSlide,
-          cont: tpl.maxBulletLinesPerContinuation ?? tpl.maxBulletLinesPerSlide,
-          charsPerLine: tpl.layout.charsPerRenderedLine,
-        }
-      : undefined;
-  // Разбивать приходится и тогда, когда блоков не больше предела: два блока
-  // при пределе два всё равно не влезли по высоте и один был выброшен
-  // (страницы 11 и 29 эталона). Условие «блоков больше предела» этот случай
-  // пропускало, потому что смотрело на количество.
-  const needsPaging =
-    firstBulletCap > 0 &&
-    (bullets.length > firstBulletCap ||
-      (lineModel !== undefined &&
-        bullets.reduce((n, b) => n + estimateRenderedLines(b, lineModel.charsPerLine), 0) >
-          lineModel.first));
+  const needsPaging = firstBulletCap > 0 && bullets.length > firstBulletCap;
   const bulletChunks = needsPaging
-    ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget, lineModel)
+    ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget)
     : [bullets];
   const rowChunks =
     tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
@@ -375,30 +330,14 @@ export function withContinuations(
     if (i === 0) {
       slides.push({ ...base, content: { ...content, narrative: narrativeChunks[0] || undefined } });
     } else {
-      slides.push({
-        ...base,
-        slideId: `${base.slideId}__cont${i}`,
-        isContinuation: true,
-        continuationOf: base.slideId,
-        continuationIndex: i,
-        title: `${base.title} (продолжение ${i + 1}/${total})`,
-        content: {
-          ...content,
-          narrative: narrativeChunks[i] || undefined,
-          whatWasFound: undefined,
-          whyItMatters: undefined,
-          // Заголовочные числа блока принадлежат его первой странице. Повторяясь
-          // на каждом продолжении, они занимали треть листа и не сообщали ничего
-          // нового: «312 / 5 / 6 / 31» пять страниц подряд (шаг 13, D4).
-          kpis: undefined,
-          // Рекомендация тоже одна на блок — на продолжении она вырождалась
-          // в обрубок «Проверить» (шаг 13, D3).
-          whatToCheck: undefined,
-          // Та же конвенция: доля прочитанного — заголовочное число блока, и
-          // повторять её на каждой странице перечня незачем.
-          statusNote: undefined,
-        },
-      });
+      slides.push(
+        buildContinuationSlide({
+          base,
+          index: i + 1,
+          totalPages: total,
+          content: { ...content, narrative: narrativeChunks[i] || undefined },
+        })
+      );
     }
   }
   return slides;

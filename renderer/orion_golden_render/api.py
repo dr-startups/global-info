@@ -23,15 +23,31 @@ from .common import (
     _asset_map,
     _resolve_image_bytes,
     assert_render_font_family,
+    get_bullet_measure,
     get_layout_telemetry,
+    reset_bullet_measure,
     reset_layout_telemetry,
 )
 from .export import _export_png_pages, _write_pdf_fallback
 from .slides import _render_slide
 
-def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
+#: Версия формы вердикта мерного прогона: меняется форма — меняется строка.
+BULLET_MEASURE_VERSION = "orion-bullet-measure-v1"
+
+
+def _draw_deck(
+    payload: dict[str, Any], *, log_assets: bool
+) -> tuple[Presentation, list[str], str, list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """Нарисовать деку в память: презентация, предупреждения, субъект, слайды, ассеты.
+
+    Общая фаза настоящего рендера и мерного прогона: расходиться им негде,
+    потому что это один и тот же код рисования. Всё, что происходит дальше —
+    сохранение, конвертация, растр — к вопросу «сколько влезло» отношения не
+    имеет и мерному прогону не нужно.
+    """
     assert_render_font_family()
     reset_layout_telemetry()
+    reset_bullet_measure()
     deck = payload.get("deckManifest") or {}
     report_spec = payload.get("reportSpec") or {}
     slides = list(deck.get("finalSlides") or [])
@@ -39,34 +55,37 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("deckManifest.finalSlides is empty")
 
     assets = _asset_map(payload)
-    # Diagnostics for blank SERP slides (lengths only — never log base64).
-    asset_diag = []
-    for ref, asset in list(assets.items())[:20]:
-        raw = _resolve_image_bytes(asset)
-        asset_diag.append(
-            {
-                "assetRef": ref,
-                "kind": asset.get("kind"),
-                "hasImageData": bool(asset.get("imageData")),
-                "imageDataChars": len(str(asset.get("imageData") or "")),
-                "hasStorageKey": bool(asset.get("storageKey")),
-                "resolvedBytes": len(raw) if raw else 0,
-            }
+    if log_assets:
+        # Diagnostics for blank SERP slides (lengths only — never log base64).
+        asset_diag = []
+        for ref, asset in list(assets.items())[:20]:
+            raw = _resolve_image_bytes(asset)
+            asset_diag.append(
+                {
+                    "assetRef": ref,
+                    "kind": asset.get("kind"),
+                    "hasImageData": bool(asset.get("imageData")),
+                    "imageDataChars": len(str(asset.get("imageData") or "")),
+                    "hasStorageKey": bool(asset.get("storageKey")),
+                    "resolvedBytes": len(raw) if raw else 0,
+                }
+            )
+        print(
+            "[orion-golden-render] assets",
+            json.dumps(
+                {
+                    "assetCount": len(assets),
+                    "serpSlides": sum(
+                        1
+                        for s in slides
+                        if str(s.get("template") or "") == "orion_golden_serp_screenshot"
+                    ),
+                    "sample": asset_diag[:8],
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
         )
-    print(
-        "[orion-golden-render] assets",
-        json.dumps(
-            {
-                "assetCount": len(assets),
-                "serpSlides": sum(
-                    1 for s in slides if str(s.get("template") or "") == "orion_golden_serp_screenshot"
-                ),
-                "sample": asset_diag[:8],
-            },
-            ensure_ascii=False,
-        ),
-        flush=True,
-    )
     subject = (report_spec.get("subject") or {}).get("displayName") or "Цифровой профиль"
     total = len(slides)
     prs = Presentation()
@@ -76,10 +95,33 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
 
     warnings: list[str] = [f"client-text-contract:{client_text_contract.get('version')}"]
     for idx, slide in enumerate(slides, start=1):
-        ctx = _Ctx(prs, idx, total, client_text_contract=client_text_contract)
+        ctx = _Ctx(
+            prs,
+            idx,
+            total,
+            client_text_contract=client_text_contract,
+            slide_key=str(slide.get("slideKey") or ""),
+        )
         _render_slide(ctx, slide, assets)
         ctx.footer()
         warnings.extend(ctx.warnings)
+    return prs, warnings, str(subject), slides, assets
+
+
+def measure_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
+    """Мерный прогон: нарисовать деку в память и отчитаться о пути буллетов.
+
+    Ни PPTX, ни PDF, ни PNG, ни файла телеметрии — мера не оставляет следов,
+    которые судят ворота выпуска. Отвечает тем же кодом рисования, поэтому
+    разойтись с настоящим рендером ей негде: «сколько влезает на лист» —
+    вопрос с одним ответом.
+    """
+    _draw_deck(payload, log_assets=False)
+    return {"version": BULLET_MEASURE_VERSION, "pages": get_bullet_measure()}
+
+
+def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
+    prs, warnings, subject, slides, assets = _draw_deck(payload, log_assets=True)
 
     with tempfile.TemporaryDirectory(prefix="orion-golden-") as tmp:
         tmp_path = Path(tmp)

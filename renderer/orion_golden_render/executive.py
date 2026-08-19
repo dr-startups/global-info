@@ -102,7 +102,11 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
         # PDF-36 D.3 — высоту считает мерка, а не предварительная обрезка по
         # знакам: 420 знаков морили строку §7.2 и выводы лида.
         y = ctx.body(_safe(para), y, max_h=1_100_000, bold=idx == 0) + 30_000
-    findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)][:2]
+    # Сколько тем влезет на лист, решает мерка высоты в `ctx.bullets` — она же
+    # считает невлезшее потерей. Срез `[:2]` был вторым ответом на тот же
+    # вопрос и молчаливым: на стр. 3 живого прогона он выбросил третью тему
+    # мимо телеметрии, и ворота потерь её не видели.
+    findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)]
     actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)][:1]
     theme_bullets: list[str] = []
     for finding in findings:

@@ -18,9 +18,11 @@
  */
 
 import type { SlideContentContract } from "./contracts";
-
-/** Подпись продолжения, которую можно перенумеровать. */
-const CONTINUATION_SUFFIX = /\s*\(продолжение\s+(\d+)\/(\d+)\)\s*$/u;
+import {
+  continuationNumberInTitle,
+  continuationTitle,
+  stripContinuationSuffix,
+} from "./continuation-slide";
 
 /**
  * Есть ли на странице то, ради чего её печатают.
@@ -66,12 +68,6 @@ export function dropEmptyContinuations(slides: SlideContentContract[]): {
   return { slides: renumberContinuations(kept, slides, affected), dropped };
 }
 
-/** Номер продолжения из подписи «(продолжение i/N)», если она так устроена. */
-function numberInTitle(title: string): number | undefined {
-  const m = CONTINUATION_SUFFIX.exec(title);
-  return m ? Number(m[1]) : undefined;
-}
-
 /**
  * Пересчитать номера продолжений в блоках, потерявших страницу.
  *
@@ -95,7 +91,7 @@ function renumberContinuations(
   for (const slide of before) {
     if (!slide.isContinuation || !slide.continuationOf) continue;
     if (startsAt.has(slide.continuationOf)) continue;
-    const n = numberInTitle(slide.title);
+    const n = continuationNumberInTitle(slide.title);
     if (n !== undefined) startsAt.set(slide.continuationOf, n);
   }
   const familySize = new Map<string, number>();
@@ -111,11 +107,14 @@ function renumberContinuations(
     seen.set(baseId, index);
     if (!affected.has(baseId)) return { ...slide, continuationIndex: index };
     const offset = Math.max(0, (startsAt.get(baseId) ?? 2) - 1);
-    const title = CONTINUATION_SUFFIX.test(slide.title)
-      ? `${slide.title.replace(CONTINUATION_SUFFIX, "")} (продолжение ${index + offset}/${
-          (familySize.get(baseId) ?? 0) + offset
-        })`
-      : slide.title;
+    const title =
+      continuationNumberInTitle(slide.title) === undefined
+        ? slide.title
+        : continuationTitle(
+            stripContinuationSuffix(slide.title),
+            index + offset,
+            (familySize.get(baseId) ?? 0) + offset
+          );
     return { ...slide, continuationIndex: index, title };
   });
 }

@@ -351,6 +351,9 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     merge,
     subjectProfile: profile,
     render: fakeRender,
+    // Золотой кейс работает с фейковым рендерером и ничего не публикует —
+    // мерного прогона у него нет по построению, и он объявляет это явно.
+    measureBulletFit: null,
     gptCaller: null,
     complianceHits: loadComplianceHits(),
     analystOverrides: loadAnalystOverrides(),

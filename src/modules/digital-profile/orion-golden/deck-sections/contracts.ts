@@ -341,6 +341,15 @@ export const ReportDeckManifestSchema = z.object({
   caseId: z.string().min(1),
   reportRunId: z.string().min(1),
   sourceDatasetId: z.string().min(1),
+  /**
+   * Версия построителей, собравших эту деку (`DECK_CONTENT_VERSION`).
+   *
+   * Годность деки для повторного рендера зависит и от неё: дека, собранная
+   * прежней версией, содержит то, что новая версия чинила. Пишет её тот, кто
+   * собирает; читает — загрузчик реюза, и отсутствие поля для него такой же
+   * отказ, как несовпадение.
+   */
+  contentVersion: z.string().min(1),
   generatedAt: z.string().min(1),
   pageCount: z.number().int().nonnegative(),
   baseSlotCount: z.number().int().nonnegative(),
