@@ -6,6 +6,7 @@
 
 import type { FragmentKey } from "./contracts";
 import type { DeckTemplateId } from "./template-registry";
+import type { PreviewFailureReason } from "../assets/media-asset-svg";
 
 export type CanonicalSlotDef = {
   slotId: string;
@@ -117,6 +118,23 @@ export type VisibleAssetItem = {
   themeTitle?: string;
 };
 
+/**
+ * Строка набора, которая на сетку не попала: превью получить не удалось.
+ *
+ * Плитку-заглушку «Превью недоступно» убрали — рисуется только полученное.
+ * Значит, страница обязана назвать словами, сколько строк осталось за кадром и
+ * почему, иначе материал исчезает молча. Здесь лежат только ссылка, признак и
+ * машинная причина: домен страница берёт из своего индекса доказательств — тем
+ * же способом, каким его берут нарисованные строки, — а причину переводит в
+ * клиентские слова построитель.
+ */
+export type NotShownRow = {
+  ref: string;
+  /** Негативный признак — тот же классификатор, что рисует красную рамку. */
+  adverse: boolean;
+  reason: PreviewFailureReason;
+};
+
 /** Metadata of a bound visual asset (image bytes stay in the renderer payload). */
 export type VisualAssetMeta = {
   assetRef: string;
@@ -129,6 +147,8 @@ export type VisualAssetMeta = {
   evidenceDomains?: string[];
   /** Per-row visibility metadata (url/domain/engine/adverse) for the asset. */
   visibleItems?: VisibleAssetItem[];
+  /** Строки набора, не попавшие на ассет: их называет текст страницы. */
+  notShown?: NotShownRow[];
 };
 
 export type VisualAssetsBySlot = Record<string, VisualAssetMeta[]>;

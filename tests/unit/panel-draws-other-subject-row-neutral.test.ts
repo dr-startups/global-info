@@ -41,7 +41,7 @@ async function panelRows(subjectDecisionByRef?: Record<string, string>) {
   const visuals = await buildCanonicalVisualAssets({
     subjectName: "Виктор Филиппович Рашников",
     items: ITEMS,
-    fetchImagePreviews: false,
+    allowImagePreviewNetwork: false,
     ...(subjectDecisionByRef ? { subjectDecisionByRef } : {}),
   });
   const rows = visuals.visualAssets.p28_uae_suggestions?.[0]?.visibleItems ?? [];

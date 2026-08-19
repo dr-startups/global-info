@@ -56,23 +56,35 @@
     },
     "visuals": {
       "built": 15,
-      "failed": 0,
-      "warning": null,
+      "failed": 1,
+      "warning": "visual-asset-partial-failures:1 (p16_ru_images_3:превью не получено ни для одной из 4 строк (offline))",
+      "failures": [
+        {
+          "kind": "image_grid",
+          "slotId": "p16_ru_images_3",
+          "assetRef": "ru_image_grid_3",
+          "reason": "превью не получено ни для одной из 4 строк (offline)"
+        }
+      ],
       "byKind": {
         "serpSnapshots": 2,
         "suggestionPanels": 2,
         "relatedPanels": 4,
         "aiPanels": 3,
-        "imageGrids": 4
+        "imageGrids": 3
       }
     },
     "slides": {
       "total": 50,
-      "withContent": 46,
+      "withContent": 45,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",
           "reason": "no-suggestions"
+        },
+        {
+          "slotId": "p16_ru_images_3",
+          "reason": "VISUAL_ASSET_UNAVAILABLE"
         },
         {
           "slotId": "p17_ru_images_4",

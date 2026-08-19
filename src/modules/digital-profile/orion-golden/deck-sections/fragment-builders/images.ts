@@ -6,17 +6,145 @@
 import type { FragmentKey, SectionType } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
+import type { NotShownRow, VisibleAssetItem } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import { pluralRu } from "../../analytics/finding-synthesizer";
+import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import {
   adverseVisualSidebar,
   buildPageEvidenceView,
   claimText,
   clampClientText,
   distribute,
+  enumerateRu,
+  findingForVisibleRow,
   pageFindingBlocks,
+  sourcesSentence,
   visualSlide,
 } from "./shared";
+
+/**
+ * Плиток на сетке.
+ *
+ * Столько строк рисует построитель ассетов (`rows.slice(0, 6)`), и столько же
+ * страница вправе засчитать. Продукту ограничение уже не нужно —
+ * `visibleItems` там ровно нарисованное, — но замороженная фикстура эталона 72
+ * старше этой починки: у неё в мете все строки набора (у ОАЭ — 42 на шесть
+ * плиток), и без потолка страница напечатала бы «42».
+ */
+const GRID_TILE_CAPACITY = 6;
+
+/**
+ * Почему превью не получено — клиентскими словами.
+ *
+ * `offline` значит «мы не спрашивали»: выдать его за отказ площадки нельзя,
+ * иначе офлайн-пересборка обвиняет источник в том, чего он не делал. Машинный
+ * код (`http_403`, `not_an_image`) клиенту не показывается — перевод один на
+ * все причины и живёт здесь.
+ */
+function previewFailureWords(reason: NotShownRow["reason"]): string {
+  if (reason.startsWith("http_") || reason === "network") return "источник не отдал файл";
+  switch (reason) {
+    case "offline":
+      return "превью в этом прогоне не запрашивались";
+    case "budget_exhausted":
+      return "не успели загрузиться за отведённое время";
+    case "not_an_image":
+      return "по адресу не изображение";
+    case "too_large":
+      return "файл слишком велик";
+    case "decode_failed":
+      return "файл не читается";
+    case "no_url":
+      return "у строки нет пригодного адреса изображения";
+    default:
+      return "причина не установлена";
+  }
+}
+
+/** Строки страницы, которые нашли, но не нарисовали, — с их доменами и находками. */
+type NotShownOnPage = {
+  rows: Array<{ row: NotShownRow; item: VisibleAssetItem }>;
+  domains: string[];
+  adverse: Array<{ row: NotShownRow; item: VisibleAssetItem }>;
+};
+
+/**
+ * Не показанные строки этой страницы — с доменами из её же доказательств.
+ *
+ * Домен берётся из индекса доказательств, а не из меты ассета: ворота области
+ * сверяют каждый названный домен именно с ним, и домен, добытый другим
+ * способом (например, хост CDN у строки без адреса страницы), обрушил бы
+ * обязательную секцию. По той же причине строка, которой в индексе нет, не
+ * попадает ни в счёт, ни в текст: сказать о ней нечего и сослаться не на что.
+ */
+function notShownOnThisPage(
+  slotId: string,
+  extras: FragmentExtras,
+  scoped: ScopedFragmentInput
+): NotShownOnPage {
+  const rows = (extras.visualAssets?.[slotId] ?? [])
+    .flatMap((m) => m.notShown ?? [])
+    .flatMap((row) => {
+      const e = scoped.evidenceIndex[row.ref];
+      if (!e) return [];
+      const item: VisibleAssetItem = {
+        ref: row.ref,
+        url: e.url,
+        domain: e.domain,
+        title: e.title,
+        adverse: row.adverse,
+      };
+      return [{ row, item }];
+    });
+  return {
+    rows,
+    domains: [...new Set(clientSafeDomains(rows.map((r) => r.item.domain)))],
+    adverse: rows.filter((r) => r.row.adverse),
+  };
+}
+
+/**
+ * Строка о найденном, но не показанном.
+ *
+ * Плитки-заглушки в отчёте нет: сетка рисует только полученные превью. Значит,
+ * остальное страница обязана назвать словами — счётом, причиной и доменами, а
+ * негативную строку отдельно: молча терять негативный сигнал нельзя.
+ *
+ * Порядок предложений — не вкусовщина: строка сайдбара режется по границе
+ * предложения с конца, поэтому перечисление источников стоит последним. Платить
+ * за длину приходится доменами, а не сигналом о негативе.
+ */
+function notShownNote(page: NotShownOnPage, drawn: number): string | undefined {
+  const missing = page.rows.length;
+  if (missing === 0) return undefined;
+  // Причины сводятся по клиентским словам, а не по коду: `http_403` и
+  // `network` — одна новость для читателя и одна строка в перечислении.
+  const byWords = new Map<string, number>();
+  for (const { row } of page.rows) {
+    const words = previewFailureWords(row.reason);
+    byWords.set(words, (byWords.get(words) ?? 0) + 1);
+  }
+  const reasons = [...byWords.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+    .map(([words, n]) => `${words} — ${n}`)
+    .join(", ");
+  const found = drawn + missing;
+  const head =
+    `Из ${found} ${pluralRu(found, "строки", "строк", "строк")} этой страницы ` +
+    `показано ${drawn}: ${missing} без превью (${reasons}).`;
+  const adverseDomains = enumerateRu(
+    clientSafeDomains(page.adverse.map((a) => a.item.domain)),
+    3
+  );
+  const adverseNote = page.adverse.length
+    ? ` Среди них ${page.adverse.length} с негативным признаком${
+        adverseDomains ? ` — ${adverseDomains}` : ""
+      }.`
+    : "";
+  const domains = enumerateRu(page.domains, 3);
+  return `${head}${adverseNote}${domains ? ` Их источники: ${domains}.` : ""}`;
+}
 
 export function buildImagesFragment(
   key: FragmentKey,
@@ -63,17 +191,38 @@ export function buildImagesFragment(
       if (pageDomainSet.size === 0) return true;
       return domains.some((d) => pageDomainSet.has(d));
     });
-    // Четыре страницы картинок подряд отличались только числами внутри текста,
-    // и читатель видел четыре одинаковых заголовка. Заголовок теперь называет
-    // вывод именно этой страницы.
-    const shown = sidebar.visibleRows.length;
-    const adverse = sidebar.adverseRows.length;
+    /*
+     * Что нарисовано на этой странице и что найдено, но не нарисовано.
+     *
+     * Числа считаются по плиткам: `visibleItems` продукта — уже ровно
+     * нарисованное, а потолок ёмкости оставлен ради замороженной фикстуры
+     * эталона (см. `GRID_TILE_CAPACITY`). Негатив без превью при этом не
+     * исчезает: он не выделен рамкой, но остаётся негативом субъекта, и
+     * заголовок со статусом обязаны его считать — иначе страница напишет
+     * «негативных источников нет» над строкой о компромате.
+     */
+    const shownOnGrid = Math.min(sidebar.visibleRows.length, GRID_TILE_CAPACITY);
+    const adverseOnGrid = Math.min(sidebar.adverseRows.length, shownOnGrid);
+    const notShownOnPage = notShownOnThisPage(slot.slotId, extras, scoped);
+    const adverseTotal = adverseOnGrid + notShownOnPage.adverse.length;
+    const note = notShownNote(notShownOnPage, shownOnGrid);
+    /*
+     * Не показанное называется первым.
+     *
+     * Строка сайдбара режется по границе предложения с конца, и «мы нашли, но
+     * не показали» — ровно то, что нельзя потерять на длинной странице.
+     */
+    const counted = sidebar.explanations.length
+      ? `Изображения на этой странице: ${shownOnGrid}; выделено красным (ведут на негативные источники): ${adverseOnGrid}.`
+      : pageBlocks.whatWasFound;
+    const foundText = [note, counted].filter(Boolean).join(" ");
+    const whatWasFound = foundText ? clampClientText(foundText, 400) : undefined;
     const verdictTitle =
-      shown > 0
+      shownOnGrid > 0 || adverseTotal > 0
         ? `${slot.title}: ${
-            adverse > 0
-              ? `${adverse} ${pluralRu(
-                  adverse,
+            adverseTotal > 0
+              ? `${adverseTotal} ${pluralRu(
+                  adverseTotal,
                   "изображение ведёт на негативный источник",
                   "изображения ведут на негативные источники",
                   "изображений ведут на негативные источники"
@@ -90,34 +239,52 @@ export function buildImagesFragment(
       content: {
         bullets: pageClaims.map((c) => clampClientText(claimText(c), 400)),
         ...pageBlocks,
-        ...(sidebar.explanations.length
+        ...(whatWasFound ? { whatWasFound } : {}),
+        // Подпись источников не спорит с абзацем над ней: страница говорит и о
+        // не нарисованных строках, значит, называет и их площадки.
+        ...(notShownOnPage.domains.length
           ? {
-              whatWasFound: clampClientText(
-                `Изображения на этой странице: ${Math.min(sidebar.visibleRows.length, 6)}; выделено красным (ведут на негативные источники): ${sidebar.adverseRows.length}.`,
-                400
-              ),
-              // Consistent with the red frames: the page DOES carry adverse
-              // visual signals, so the meaning block must not claim otherwise.
-              whyItMatters: clampClientText(
-                "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
-                320
-              ),
-              // The generic page status says "no risk conclusions" when the
-              // page findings are empty — contradicting the red frames above.
-              statusNote: `Изображений, ведущих на негативные источники, — ${sidebar.adverseRows.length}; каждое требует сверки с первоисточником.`,
+              sourceNote: sourcesSentence([
+                ...new Set([...view.domains, ...notShownOnPage.domains]),
+              ]),
+            }
+          : {}),
+        // Статус страницы считает весь её негатив, а не только выделенный
+        // рамкой: строка без превью тоже ведёт на негативный источник.
+        ...(adverseTotal > 0
+          ? {
+              statusNote: `Изображений, ведущих на негативные источники, — ${adverseTotal}; каждое требует сверки с первоисточником.`,
               whatToCheck: clampClientText(
                 "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
                 220
               ),
-              highlightExplanations: sidebar.explanations,
+              whyItMatters: clampClientText(
+                sidebar.explanations.length
+                  ? // Consistent with the red frames: the page DOES carry adverse
+                    // visual signals, so the meaning block must not claim otherwise.
+                    "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты."
+                  : "Часть изображений ведёт на негативные источники: превью получить не удалось, но сами материалы остаются в выдаче по субъекту и открываются по клику.",
+                320
+              ),
             }
           : {}),
+        ...(sidebar.explanations.length
+          ? { highlightExplanations: sidebar.explanations }
+          : {}),
       },
-      evidenceRefs: [...new Set(pageRefs)],
+      evidenceRefs: [...new Set([...pageRefs, ...notShownOnPage.rows.map((r) => r.row.ref)])],
       findingIds: [
-        ...new Set([...view.findings.map((f) => f.findingId), ...sidebar.explainedFindingIds]),
+        ...new Set([
+          ...view.findings.map((f) => f.findingId),
+          ...sidebar.explainedFindingIds,
+          // Находка по негативной строке доносится и без плитки: рамки нет, а
+          // материал есть.
+          ...notShownOnPage.adverse
+            .map((a) => findingForVisibleRow(a.item, scoped)?.findingId)
+            .filter((id): id is string => Boolean(id)),
+        ]),
       ],
-      metrics: { items: pageRefs.length, adverseImages: sidebar.adverseRows.length },
+      metrics: { items: pageRefs.length, adverseImages: adverseTotal },
       noUnderlyingData: refs.length === 0,
       noDataReason: i === 0 ? "no-images" : "no-images-continued",
     });

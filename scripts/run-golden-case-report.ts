@@ -52,8 +52,10 @@ import type { AnalystOverridesBundle } from "../src/modules/digital-profile/serv
 import type { EvidenceSupplementBundle } from "../src/modules/digital-profile/services/evidence-supplement-adapter";
 import {
   buildSurfacePanelSvg,
+  previewCachePath,
   svgToPngBase64,
 } from "../src/modules/digital-profile/orion-golden/assets/media-asset-svg";
+import type { CompositeObservation } from "../src/modules/digital-profile/services/composite-serp-merge";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
@@ -126,6 +128,51 @@ async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null
     );
   }
   return bundle;
+}
+
+/** Плиток на сетке: столько строк берёт `buildGrid` (`rows.slice(0, 6)`). */
+const GRID_TILE_CAPACITY = 6;
+/**
+ * Сколько RU-адресов получают превью: первая сетка целиком, второй — четыре из
+ * шести. Живой дефект был именно частичным (30 плиток при 16 превью), поэтому
+ * страница «часть плиток» обязана быть в контуре, а не только «всё» и «ничего».
+ */
+const SEEDED_RU_PREVIEWS = GRID_TILE_CAPACITY + 4;
+
+/**
+ * Детерминированные превью в кэше прогона — тем же приёмом, что и снимки
+ * выдачи выше.
+ *
+ * Сетка изображений рисует только полученные превью, а офлайн-прогон в сеть не
+ * ходит: без посева все сетки эталона выродились бы в текст, и отрисовка
+ * плиток выпала бы из офлайн-контура целиком. Эталон закрепляет три ветки
+ * сразу: полная страница (RU-1 и ОАЭ), частичная (RU-2: четыре плитки и строка
+ * о двух без превью) и честная деградация в текст (RU-3, ни одного превью).
+ * Кэш при этом не сеть: выборка читает его и при `NETWORK_CALLS=0`.
+ */
+async function seedImagePreviewCache(
+  artifactsDir: string,
+  rows: CompositeObservation[]
+): Promise<void> {
+  const imageUrls = (region: string, limit: number): string[] =>
+    rows
+      .filter((r) => r.surface === "images" && (r.region ?? "") === region)
+      .map((r) => r.imageUrl || r.url)
+      .filter((u): u is string => Boolean(u))
+      .slice(0, limit);
+  const seeded = [
+    ...imageUrls("RU", SEEDED_RU_PREVIEWS),
+    ...imageUrls("UAE", GRID_TILE_CAPACITY),
+  ];
+  const cacheDir = join(artifactsDir, "image-preview-cache");
+  mkdirSync(cacheDir, { recursive: true });
+  const png = await svgToPngBase64(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200">` +
+      `<rect width="320" height="200" fill="#dbe4f0"/>` +
+      `<rect x="120" y="40" width="80" height="80" rx="40" fill="#8fa7c4"/>` +
+      `<rect x="90" y="130" width="140" height="40" rx="8" fill="#8fa7c4"/></svg>`
+  );
+  for (const url of seeded) writeFileSync(previewCachePath(cacheDir, url), png, "utf8");
 }
 
 function assertEvidenceSupplementSlides(artifactsDir: string): void {
@@ -268,6 +315,8 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     ],
   });
   writeJson(join(artifactsDir, "subject-identity-profile.json"), profile);
+
+  await seedImagePreviewCache(artifactsDir, rows);
 
   const merge = await mergeCompositeSerp({ manifest, fixtureBaseRows: rows });
   // Keep full fixture row set (merge may reshape; golden case measures prepare on our corpus).

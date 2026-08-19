@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
-import { COLORS, FONT_STACK, FS, truncateToWidth } from "../../serp-snapshot/layout";
+import { COLORS, FONT_STACK, truncateToWidth } from "../../serp-snapshot/layout";
 
 function esc(text: string): string {
   return text
@@ -15,8 +15,12 @@ function esc(text: string): string {
 export type ImageGridItem = {
   title: string;
   domain: string;
-  previewBase64?: string;
-  unavailableNote?: string;
+  /**
+   * Полученное превью. Обязательно: плитки-заглушки в отчёте больше нет, и
+   * строка без картинки на сетку не попадает вовсе — вернуть её сюда можно
+   * теперь только ошибкой компиляции, а не молча.
+   */
+  previewBase64: string;
   /** Undesirable / risk — red cell border in the grid PNG. */
   highlight?: boolean;
   /** v57: red solid | amber dashed | none */
@@ -35,6 +39,13 @@ export type ImagePreviewFetchOptions = {
   cacheDir?: string;
   /** Injected fetch for offline tests. */
   fetchImpl?: typeof fetch;
+  /**
+   * Разрешена ли сеть. Кэш читается всегда — он не сеть, а уже купленная
+   * работа: пересборка оплаченного прогона обязана получить свои превью с
+   * диска. Явный `false` даёт отказ `offline` на каждый некэшированный адрес,
+   * даже когда выборка подменена в тесте.
+   */
+  allowNetwork?: boolean;
   nowMs?: () => number;
   /**
    * Почему очередное превью не получено. Пустая плитка в отчёте должна быть
@@ -44,13 +55,17 @@ export type ImagePreviewFetchOptions = {
   onFailure?: (url: string, reason: PreviewFailureReason) => void;
 };
 
-function previewCacheKey(url: string): string {
-  return createHash("sha256").update(url).digest("hex").slice(0, 32);
+/**
+ * Где лежит превью этого адреса. Раскладка кэша названа один раз: её читают
+ * выборка, запись и посев детерминированных превью в золотом кейсе.
+ */
+export function previewCachePath(cacheDir: string, url: string): string {
+  return join(cacheDir, `${createHash("sha256").update(url).digest("hex").slice(0, 32)}.b64`);
 }
 
 function readPreviewCache(cacheDir: string | undefined, url: string): string | undefined {
   if (!cacheDir) return undefined;
-  const path = join(cacheDir, `${previewCacheKey(url)}.b64`);
+  const path = previewCachePath(cacheDir, url);
   if (!existsSync(path)) return undefined;
   try {
     const raw = readFileSync(path, "utf8").trim();
@@ -64,15 +79,15 @@ function writePreviewCache(cacheDir: string | undefined, url: string, b64: strin
   if (!cacheDir || !b64) return;
   try {
     mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(join(cacheDir, `${previewCacheKey(url)}.b64`), b64, "utf8");
+    writeFileSync(previewCachePath(cacheDir, url), b64, "utf8");
   } catch {
     // Cache is best-effort — never fail the grid.
   }
 }
 
 /**
- * Fetch one image preview. Disk cache first; NETWORK_CALLS=0 without inject →
- * placeholder (no network). Failures never throw (§5.2).
+ * Fetch one image preview. Disk cache first; without network permission →
+ * `offline` refusal, no request. Failures never throw (§5.2).
  */
 /**
  * Кто мы для чужого сервера.
@@ -123,6 +138,8 @@ export const PREVIEW_USER_AGENT =
 export type PreviewFailureReason =
   | "no_url"
   | "offline"
+  /** Бюджет выборки исчерпан — до этого адреса очередь не дошла. */
+  | "budget_exhausted"
   | `http_${number}`
   | "not_an_image"
   | "too_large"
@@ -131,7 +148,10 @@ export type PreviewFailureReason =
 
 export async function tryFetchImagePreview(
   url: string | undefined,
-  opts?: Pick<ImagePreviewFetchOptions, "timeoutMs" | "fetchImpl" | "cacheDir"> & {
+  opts?: Pick<
+    ImagePreviewFetchOptions,
+    "timeoutMs" | "fetchImpl" | "cacheDir" | "allowNetwork"
+  > & {
     /** Причина отказа — чтобы пустая плитка не была немой. */
     onFailure?: (url: string, reason: PreviewFailureReason) => void;
     /** Глубина перехода по `og:image`; больше одного шага не делаем. */
@@ -146,7 +166,16 @@ export async function tryFetchImagePreview(
   };
   const cached = readPreviewCache(opts?.cacheDir, url);
   if (cached) return cached;
-  if (process.env.NETWORK_CALLS === "0" && !opts?.fetchImpl) return fail("offline");
+  /*
+   * Разрешение спрашивается один раз и здесь: запрет сети живёт в самой
+   * выборке, а не в вызывающем коде, иначе кэш перестаёт читаться вместе с ней.
+   *
+   * Право вето — за окружением: `NETWORK_CALLS=0` это условие офлайн-контура,
+   * и разрешение вызывающего его не перебивает. Подменённая выборка сетью не
+   * является — на ней и держится офлайновый тест.
+   */
+  const envAllows = process.env.NETWORK_CALLS !== "0" || Boolean(opts?.fetchImpl);
+  if (!envAllows || opts?.allowNetwork === false) return fail("offline");
   try {
     const controller = new AbortController();
     const timeoutMs = opts?.timeoutMs ?? 5000;
@@ -186,7 +215,7 @@ export async function tryFetchImagePreview(
 
 /**
  * REMEDIATION §5.2 — parallel preview fetch with concurrency + wall budget.
- * Returns a map url → base64 | undefined (undefined = placeholder tile).
+ * Returns a map url → base64 | undefined (undefined = row is not drawn).
  */
 export async function fetchImagePreviewsWithBudget(
   urls: Array<string | undefined>,
@@ -196,8 +225,17 @@ export async function fetchImagePreviewsWithBudget(
   const budgetMs = opts?.budgetMs ?? 30_000;
   const now = opts?.nowMs ?? (() => Date.now());
   const started = now();
-  const unique = [...new Set(urls.filter((u): u is string => Boolean(u && /^https?:\/\//i.test(u))))];
+  const wanted = [...new Set(urls.filter((u): u is string => Boolean(u)))];
+  const unique = wanted.filter((u) => /^https?:\/\//i.test(u));
   const out = new Map<string, string | undefined>();
+  // Адрес, который не адрес, называется своей причиной. Пока он молча выпадал
+  // из очереди, вызывающий не знал ничего и печатал «источник не отдал файл» —
+  // отказ площадки там, где запроса не было.
+  for (const url of wanted) {
+    if (unique.includes(url)) continue;
+    out.set(url, undefined);
+    opts?.onFailure?.(url, "no_url");
+  }
   let cursor = 0;
 
   const worker = async () => {
@@ -213,6 +251,7 @@ export async function fetchImagePreviewsWithBudget(
           timeoutMs: opts?.timeoutMs,
           fetchImpl: opts?.fetchImpl,
           cacheDir: opts?.cacheDir,
+          allowNetwork: opts?.allowNetwork,
           onFailure: opts?.onFailure,
         })
       );
@@ -220,43 +259,13 @@ export async function fetchImagePreviewsWithBudget(
   };
 
   await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
-  // URLs skipped after budget → explicit undefined (placeholder).
+  // URLs skipped after budget → explicit undefined (row is not drawn).
   for (const url of unique) {
-    if (!out.has(url)) out.set(url, undefined);
+    if (out.has(url)) continue;
+    out.set(url, undefined);
+    opts?.onFailure?.(url, "budget_exhausted");
   }
   return out;
-}
-
-export async function buildImageGridItems(
-  items: Array<{
-    title: string;
-    domain?: string;
-    imageUrl?: string;
-    highlight?: boolean;
-    frameTone?: "red" | "amber" | "none";
-    themeLabel?: string;
-  }>,
-  opts?: ImagePreviewFetchOptions
-): Promise<ImageGridItem[]> {
-  const slice = items.slice(0, 6);
-  const previews = await fetchImagePreviewsWithBudget(
-    slice.map((i) => i.imageUrl),
-    opts
-  );
-  return slice.map((item) => {
-    const domain = item.domain ?? "";
-    const previewBase64 = item.imageUrl ? previews.get(item.imageUrl) : undefined;
-    const frameTone = item.frameTone ?? (item.highlight ? "red" : "none");
-    return {
-      title: item.title,
-      domain,
-      previewBase64,
-      unavailableNote: previewBase64 ? undefined : "Изображение недоступно для предпросмотра",
-      highlight: frameTone === "red" || frameTone === "amber",
-      frameTone,
-      themeLabel: item.themeLabel,
-    };
-  });
 }
 
 export function buildImageGridSvg(input: { title: string; items: ImageGridItem[] }): string {
@@ -287,13 +296,7 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
     );
     if (item.previewBase64) {
       parts.push(
-        `<image href="data:image/png;base64,${item.previewBase64}" x="${x + 8}" y="${y + 8}" width="${cellW - 16}" height="${cellH - 56}" preserveAspectRatio="xMidYMid meet"/>`
-      );
-    } else {
-      parts.push(`<rect x="${x + 8}" y="${y + 8}" width="${cellW - 16}" height="${cellH - 56}" fill="#f8fafc" stroke="${COLORS.panelBorder}"/>`);
-      const note = truncateToWidth(item.unavailableNote ?? "", cellW - 24, 11);
-      parts.push(
-        `<text x="${x + 16}" y="${y + 48}" font-family="${FONT_STACK}" font-size="11" fill="${COLORS.muted}">${esc(note)}</text>`
+        `<image href="data:image/png;base64,${esc(item.previewBase64)}" x="${x + 8}" y="${y + 8}" width="${cellW - 16}" height="${cellH - 56}" preserveAspectRatio="xMidYMid meet"/>`
       );
     }
     if (tone === "red" || tone === "amber") {
@@ -314,39 +317,6 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
     if (item.domain) {
       parts.push(
         `<text x="${x + 12}" y="${y + cellH - 12}" font-family="${FONT_STACK}" font-size="11" fill="${COLORS.urlGreen}">${esc(truncateToWidth(item.domain, cellW - 24, 11))}</text>`
-      );
-    }
-  });
-  parts.push("</svg>");
-  return parts.join("");
-}
-
-export function buildVideoCardsSvg(input: {
-  title: string;
-  items: Array<{ label: string; domain?: string; context?: string }>;
-}): string {
-  const width = 1200;
-  const height = Math.min(560, 120 + input.items.length * 110);
-  const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
-    `<rect width="100%" height="100%" fill="${COLORS.pageBg}"/>`,
-    `<text x="40" y="48" font-family="${FONT_STACK}" font-size="22" fill="${COLORS.text}">${esc(input.title)}</text>`,
-  ];
-  input.items.slice(0, 4).forEach((item, idx) => {
-    const y = 80 + idx * 100;
-    parts.push(`<rect x="40" y="${y}" width="1120" height="88" rx="8" fill="${COLORS.panel}" stroke="${COLORS.panelBorder}"/>`);
-    parts.push(`<polygon points="60,${y + 24} 60,${y + 64} 92,${y + 44}" fill="${COLORS.brandA}"/>`);
-    parts.push(
-      `<text x="110" y="${y + 34}" font-family="${FONT_STACK}" font-size="15" fill="${COLORS.text}">${esc(truncateToWidth(item.label, 700, 15))}</text>`
-    );
-    if (item.domain) {
-      parts.push(
-        `<text x="110" y="${y + 54}" font-family="${FONT_STACK}" font-size="12" fill="${COLORS.urlGreen}">${esc(item.domain)}</text>`
-      );
-    }
-    if (item.context) {
-      parts.push(
-        `<text x="110" y="${y + 72}" font-family="${FONT_STACK}" font-size="11" fill="${COLORS.muted}">${esc(truncateToWidth(item.context, 900, 11))}</text>`
       );
     }
   });

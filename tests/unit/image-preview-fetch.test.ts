@@ -83,6 +83,33 @@ describe("запрос за превью", () => {
     }
   });
 
+  it("разрешение вызывающего не перебивает офлайн-запрет окружения", async () => {
+    /*
+     * `NETWORK_CALLS=0` — условие офлайн-контура, а не пожелание: `npm run ci`
+     * обязан проходить без сети. Право вето остаётся за окружением, иначе
+     * достаточно одного вызывающего с `allowNetwork: true`, чтобы контур
+     * перестал быть офлайновым.
+     */
+    const prev = process.env.NETWORK_CALLS;
+    process.env.NETWORK_CALLS = "0";
+    const realFetch = vi.fn(async () => response({ type: "image/png" }));
+    vi.stubGlobal("fetch", realFetch);
+    try {
+      const reasons: PreviewFailureReason[] = [];
+      const out = await tryFetchImagePreview("https://example.org/a.png", {
+        allowNetwork: true,
+        onFailure: (_u, r) => reasons.push(r),
+      });
+      expect(out).toBeUndefined();
+      expect(reasons).toEqual(["offline"]);
+      expect(realFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      if (prev === undefined) delete process.env.NETWORK_CALLS;
+      else process.env.NETWORK_CALLS = prev;
+    }
+  });
+
   it("не адрес — не запрос", async () => {
     const fetchImpl = vi.fn();
     expect(await tryFetchImagePreview(undefined, { fetchImpl: fetchImpl as never })).toBeUndefined();

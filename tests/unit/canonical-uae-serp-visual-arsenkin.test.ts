@@ -24,7 +24,7 @@ describe("canonical UAE SERP visual from Arsenkin organic", () => {
     const visuals = await buildCanonicalVisualAssets({
       subjectName: "Умар Назарович Кремлев",
       items,
-      fetchImagePreviews: false,
+      allowImagePreviewNetwork: false,
     });
 
     assert.ok(visuals.visualAssets.p27_uae_serp_visual?.length, "p27 asset bound");
