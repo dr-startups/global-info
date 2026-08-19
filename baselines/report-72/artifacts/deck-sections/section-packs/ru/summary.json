@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v94",
+  "contentVersion": "deck-sections-v95",
   "promptVersion": "ru-regional-summary-v4",
   "contentHash": "sha256:9f71a0264a0b9e38f5460670523f4aaa486433b0ba017ec20d55eb07a89c3256",
   "inputHash": "sha256:9d1c68f597fe061651a39fda5b2f24590900fd103e6fefbac81504118fb2b2db:1f84c7af4b1b9a32",
-  "generatedAt": "2026-08-19T06:37:40.129Z",
+  "generatedAt": "2026-08-19T13:25:01.210Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -476,11 +476,6 @@
       "title": "Россия: в выдаче есть материалы повышенного внимания",
       "content": {
         "narrative": "По региону «Россия» собрано 246 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
-        "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]"
-        ],
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники — argumenti.ru, argumentiru.com, audit-it.ru, belcanto.ru и ещё 2.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.",
         "kpis": [
           {
@@ -503,7 +498,12 @@
             "value": "0",
             "tone": "neutral"
           }
-        ]
+        ],
+        "bullets": [
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]"
+        ],
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "sourceNote": "Источники — argumenti.ru, argumentiru.com, audit-it.ru, belcanto.ru и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",

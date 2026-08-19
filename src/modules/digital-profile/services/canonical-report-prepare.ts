@@ -61,6 +61,7 @@ import { disabledSurfaceCoverageCells } from "./arsenkin-enrichment-state";
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
+import { observationVerdictsForVisuals } from "../serp-observation/resolve-observation-highlights";
 import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-version";
 import {
   buildReportQualitySummary,
@@ -1154,6 +1155,9 @@ export async function runCanonicalReportPrepare(
       const visuals = await buildCanonicalVisualAssets({
         subjectName: subjectDisplayName,
         items,
+        // Рамку на снимке выдачи ставит прочитанная страница, а не словарь слов
+        // в заголовке; легенда говорит теми же кластерными ярлыками, что резюме.
+        verdictByRef: observationVerdictsForVisuals(analytics.linkVerdicts),
         // Панель рисует то, что говорит текст страницы: строка о другом лице
         // уходит на снимок нейтральной и с тегом. Решения уже посчитаны
         // аналитикой выше — второй сверки имён здесь нет.

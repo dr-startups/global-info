@@ -99,6 +99,7 @@ import {
   composeClientSummary,
 } from "./client-summary-composer";
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
+import type { LinkVerdict, VerdictSummary } from "../contracts/link-verdict";
 import {
   assertFilterLossGatesPass,
   buildFilterLossMatrix,
@@ -159,6 +160,13 @@ export type AnalyticsPipelineResult = {
   composedClientSummary: ComposedClientSummary;
   filterLossMatrix: FilterLossMatrix;
   reportDataBinding: ReportDataBinding;
+  /**
+   * Решения по прочитанным страницам и их свод по сюжетам.
+   *
+   * Нужны визуальному слою: рамку на снимке выдачи ставит прочитанная
+   * страница, а легенда говорит теми же кластерными ярлыками, что и резюме.
+   */
+  linkVerdicts: { summary: VerdictSummary; verdicts: LinkVerdict[] };
   artifactPaths: Record<string, string>;
   /**
    * Машинные предупреждения о потерях содержимого (`link-verdicts-lost:*`).
@@ -926,6 +934,10 @@ export async function runOrionAnalyticsPipeline(
     reconciliation,
     composite,
     subjectResolution,
+    // Решения по прочитанным страницам едут дальше по конвейеру, а не только в
+    // артефакт: по ним визуальный слой ставит рамки на снимке выдачи. Читать
+    // только что записанный файл было бы вторым ответом на тот же вопрос.
+    linkVerdicts: { summary: linkVerdicts.summary, verdicts: linkVerdicts.verdicts },
     surfaceAnalyses,
     synthesis,
     executiveSummaryInput,

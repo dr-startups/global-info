@@ -17,7 +17,11 @@ import {
   rankSourceBelongsToEngine,
   serpMaterialKey,
 } from "./fragment-builders/serp";
-import { sameSerpQuery } from "./fragment-builders/shared";
+import { clientAddress, sameSerpQuery } from "./fragment-builders/shared";
+import {
+  normalizeDomainForCompare,
+  undeclaredClientTextDomains,
+} from "./section-validation";
 import { NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 
 /** Renderer templates that draw the analytical sidebar next to a visual. */
@@ -600,29 +604,46 @@ export function validateAssembly(input: {
   //    sidebar must resolve through that slide's evidenceRefs.
   let footerOk = true;
   if (input.evidenceIndex) {
-    const domainToken = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
+    // Продолжение наследует область своей базы: лист «почему выделено» несёт
+    // тот же текст, что панель, и обязан отвечать за домены так же.
+    const sidebarBaseKeys = new Set(
+      rendererSlides
+        .filter((s) => SIDEBAR_TEMPLATES.has(s.template) && s.visualAssetRefs.length > 0)
+        .map((s) => s.slideKey)
+    );
     for (const slide of rendererSlides) {
-      if (!SIDEBAR_TEMPLATES.has(slide.template)) continue;
-      if (slide.visualAssetRefs.length === 0) continue;
+      const ownScope = SIDEBAR_TEMPLATES.has(slide.template) && slide.visualAssetRefs.length > 0;
+      const inheritedScope =
+        slide.isContinuation && slide.continuationOf
+          ? sidebarBaseKeys.has(slide.continuationOf)
+          : false;
+      if (!ownScope && !inheritedScope) continue;
       const normRefs = new Set(slide.evidenceRefs.map(normalizeEvidenceRef));
       const allowed = new Set<string>();
+      const allowedLinks = new Set<string>();
       for (const [ref, e] of Object.entries(input.evidenceIndex)) {
-        if (!e.domain || e.domain === "—") continue;
-        if (normRefs.has(normalizeEvidenceRef(ref))) allowed.add(e.domain.toLowerCase());
+        if (!normRefs.has(normalizeEvidenceRef(ref))) continue;
+        if (e.domain && e.domain !== "—") allowed.add(normalizeDomainForCompare(e.domain));
+        // Адрес — в той же форме, в какой его печатает отчёт: сверка идёт
+        // строкой, а не разбором границ.
+        const link = clientAddress(e.url);
+        if (link) allowedLinks.add(link);
       }
       const texts = [
         slide.sourceNote,
         slide.whatWasFound,
         ...(slide.highlightExplanations ?? []).map((h) => h.clientReason),
+        ...(inheritedScope && !ownScope ? slide.bullets ?? [] : []),
       ].filter((t): t is string => Boolean(t));
       for (const text of texts) {
-        for (const m of text.matchAll(domainToken)) {
-          if (!allowed.has(m[0].toLowerCase())) {
-            footerOk = false;
-            issues.push(
-              `slide ${slide.slideKey}: sidebar names domain ${m[0]} not derived from its evidence`
-            );
-          }
+        // Разбор доменов — общий с секционной валидацией: два своих выражения
+        // на один вопрос уже расходились (ASCII против юникода), и напечатанный
+        // адрес страницы одно из них читало как чужой домен.
+        for (const domain of undeclaredClientTextDomains(text, allowed, allowedLinks)) {
+          footerOk = false;
+          issues.push(
+            `slide ${slide.slideKey}: sidebar names domain ${domain} not derived from its evidence`
+          );
         }
       }
     }

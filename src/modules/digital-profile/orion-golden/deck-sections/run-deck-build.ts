@@ -25,6 +25,10 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import { getClientTextContract } from "../client/load-client-text-contract";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { normalizeForCompare } from "./text-compare";
+import {
+  SIDEBAR_HIGHLIGHT_BUDGET,
+  SIDEBAR_HIGHLIGHT_SLOTS,
+} from "./template-registry";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -538,7 +542,7 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
   // 130–200-char budgets pre-truncated GPT text the panel could easily hold;
   // the renderer still sentence-fits each block, so overflow degrades safely.
   const explanations = (s.highlightExplanations ?? []).map((h) => ({
-    clientReason: sidebarSafe(h.clientReason, 240),
+    clientReason: sidebarSafe(h.clientReason, SIDEBAR_HIGHLIGHT_BUDGET),
     frameTone: h.frameTone,
   }));
   // On adverse pages the "why adverse" is carried by the highlight
@@ -581,8 +585,8 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
     headlineConclusion,
     whatIsVisible,
     clientMeaning,
-    highlightExplanations: explanations.slice(0, 2),
-    moreSignalsCount: Math.max(0, explanations.length - 2),
+    highlightExplanations: explanations.slice(0, SIDEBAR_HIGHLIGHT_SLOTS),
+    moreSignalsCount: Math.max(0, explanations.length - SIDEBAR_HIGHLIGHT_SLOTS),
     // Рекомендация тоже подчиняется правилу «каждый блок говорит своё». На
     // странице «AI-ответы» она дословно повторяла нарратив: одна и та же
     // фраза печаталась дважды на одном экране.

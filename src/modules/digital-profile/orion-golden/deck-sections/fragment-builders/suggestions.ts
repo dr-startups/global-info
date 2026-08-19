@@ -64,7 +64,7 @@ export function buildSuggestionsFragment(
       scoped,
       bullets.length ? claims.flatMap((c) => c.evidenceRefs) : lineRefs
     );
-    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "подсказка");
+    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
     /*
      * Числа страницы — про строки панели, потому что панель и есть то, что
      * читатель видит. На приёмке панель рисовала десять подсказок, а описание

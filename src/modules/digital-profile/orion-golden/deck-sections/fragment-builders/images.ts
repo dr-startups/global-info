@@ -170,7 +170,7 @@ export function buildImagesFragment(
   const slides = slots.map((slot, i) => {
     // Red-framed image cards on THIS page's bound grid (§7.1 / PDF p19):
     // page scope = visible tiles only — never region-level refChunks.
-    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "изображение");
+    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
     const pageRefs =
       sidebar.gridRefs.length > 0
         ? sidebar.gridRefs

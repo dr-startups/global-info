@@ -60,7 +60,7 @@ export type ClientTextSnapshot = {
   slides: ClientTextSlide[];
 };
 
-export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v2";
+export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v3";
 
 /**
  * Пробелы схлопываются, края обрезаются. Перенос строки внутри абзаца — это
@@ -132,12 +132,19 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       };
     }
 
-    if (Array.isArray(raw.highlightExplanations)) {
-      const hl = (raw.highlightExplanations as Array<Record<string, unknown>>)
-        .map((h) => norm(h.clientReason))
-        .filter(Boolean);
-      if (hl.length) slide.highlights = hl;
-    }
+    /*
+     * Фразы «Почему выделено» клиенту показывает боковая панель, и в payload
+     * рендерера они лежат в `visualAnalysis`. Снимок читал только одноимённое
+     * поле верхнего уровня, которого в payload нет вовсе, — поэтому в эталоне
+     * не было ни одной такой фразы, и переписать их можно было молча.
+     */
+    const analysis = raw.visualAnalysis as Record<string, unknown> | undefined;
+    const explanations = [
+      ...(Array.isArray(raw.highlightExplanations) ? raw.highlightExplanations : []),
+      ...(Array.isArray(analysis?.highlightExplanations) ? analysis.highlightExplanations : []),
+    ] as Array<Record<string, unknown>>;
+    const hl = explanations.map((h) => norm(h?.clientReason)).filter(Boolean);
+    if (hl.length) slide.highlights = hl;
 
     out.push(slide);
   }

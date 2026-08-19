@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v94",
+  "contentVersion": "deck-sections-v95",
   "promptVersion": "uae-images-analysis-v4",
-  "contentHash": "sha256:71ba126b0c7bf8c4d3bb8af93d03381ed96a3cb61b2311a42c0fec94a3bb1ebc",
+  "contentHash": "sha256:ab74985e8eb172819d63b320bc6a75632e81d1f910f55a72376131c988b3c4f3",
   "inputHash": "sha256:b5bb3371cbb2f41a65ebc701d8146d874457aa53a9210961a7816bee67c8a63d:2e9d8c457123422a",
-  "generatedAt": "2026-08-19T06:37:40.155Z",
+  "generatedAt": "2026-08-19T13:25:01.239Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -247,23 +247,23 @@
         "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 4.",
         "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
         "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
-        "sourceNote": "Источники — wikiart.org, instagram.com, facebook.com, youtube.com и ещё 1.",
         "statusNote": "Изображений, ведущих на негативные источники, — 4; каждое требует сверки с первоисточником.",
+        "sourceNote": "Источники — wikiart.org, instagram.com, facebook.com, youtube.com и ещё 1.",
         "highlightExplanations": [
           {
-            "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на vlasti.io; уровень: средний.",
+            "clientReason": "PEP / RCA / watchlist-сигналы — vlasti.io; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
             "frameTone": "red"
           },
           {
-            "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на rucriminal.info; требует ручной проверки.",
+            "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки.",
             "frameTone": "red"
           },
           {
-            "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на rupep.org; уровень: средний.",
+            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
             "frameTone": "red"
           },
           {
-            "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на cybercriminal.com; уровень: критический.",
+            "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
             "frameTone": "red"
           }
         ]

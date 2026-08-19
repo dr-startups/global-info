@@ -87,7 +87,83 @@ export function sanitizeSerpSnippet(snippet: string | null | undefined): string 
   return t;
 }
 
-export function classifyObservationHighlight(obs: PersistedSerpObservation): {
+/**
+ * Что решение по прочитанной странице говорит о строке выдачи.
+ *
+ * Только по прочитанным страницам: непрочитанная решения не приносит, и
+ * подставлять вместо него честное «не знаем» модели значило бы гасить
+ * словарную метку тем, что страницу не открыли.
+ */
+export type ObservationVerdict = {
+  tone: "adverse" | "neutral" | "supportive";
+  /** Есть ли дословная цитата: нежелательный вывод без неё рамку не назначает. */
+  quoted: boolean;
+  subjectMatch: "subject" | "likely" | "other" | "unclear";
+  /** Кластерный ярлык сюжета — язык резюме; без него легенда берёт словарь. */
+  themeLabel?: string;
+};
+
+/** `evidenceRef → решение по прочитанной странице`. */
+export type ObservationVerdictByRef = Record<string, ObservationVerdict>;
+
+/**
+ * Собрать карту решений для визуального слоя из артефакта чтения ссылок.
+ *
+ * Связь краски со словами держится на одном ключе: `evidenceRef` решения обязан
+ * совпасть с тем, которым визуальный слой называет строку (`inventory:<id>`).
+ * Разъедутся — рамки молча вернутся к словарю: дека соберётся, ворота пройдут,
+ * и заметить это будет негде. Поэтому сборка карты — названная функция со
+ * своим тестом, а не выражение внутри подготовки отчёта.
+ */
+export function observationVerdictsForVisuals(artifact: {
+  summary?: { themes?: Array<{ theme?: string; evidenceRefs?: string[] }> };
+  verdicts?: Array<{
+    evidenceRef?: string;
+    tone?: string;
+    subjectMatch?: string;
+    quotes?: Array<{ text?: string }>;
+    readFailure?: string;
+  }>;
+}): ObservationVerdictByRef {
+  const themeLabelByRef = new Map<string, string>();
+  for (const theme of artifact.summary?.themes ?? []) {
+    const label = String(theme.theme ?? "").trim();
+    if (!label) continue;
+    for (const ref of theme.evidenceRefs ?? []) themeLabelByRef.set(String(ref), label);
+  }
+  const out: ObservationVerdictByRef = {};
+  for (const v of artifact.verdicts ?? []) {
+    const ref = String(v.evidenceRef ?? "");
+    // Непрочитанная страница решения не приносит — словарь заголовка всё, что
+    // о ней есть.
+    if (!ref || v.readFailure) continue;
+    const label = themeLabelByRef.get(ref);
+    out[ref] = {
+      tone: (v.tone as ObservationVerdict["tone"]) ?? "neutral",
+      quoted: (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0),
+      subjectMatch: (v.subjectMatch as ObservationVerdict["subjectMatch"]) ?? "unclear",
+      ...(label ? { themeLabel: label } : {}),
+    };
+  }
+  return out;
+}
+
+/**
+ * Негативна ли строка — один ответ на весь отчёт.
+ *
+ * Решение по прочитанной странице сильнее заголовка выдачи: словарь ключевых
+ * слов работает по двум строкам, которые показал поисковик, и на них
+ * телеинтервью получало метку «уголовное дело», а страница санкционного списка
+ * без этих слов — зелёную. То же правило уже применяет дека к своим оценкам;
+ * пока снимок выдачи считал по-своему, один лист мог нести красную рамку,
+ * которую текст рядом опровергал.
+ *
+ * Словарь остаётся ответом там, где страницу не читали, — и только там.
+ */
+export function classifyObservationHighlight(
+  obs: PersistedSerpObservation,
+  verdict?: ObservationVerdict
+): {
   isHighlighted: boolean;
   riskTheme: string | null;
   themeTitle: string | null;
@@ -95,6 +171,27 @@ export function classifyObservationHighlight(obs: PersistedSerpObservation): {
   const url = obs.url ?? "";
   const domain = obs.domain ?? domainOf(url);
   const blob = `${obs.title ?? ""} ${obs.snippet ?? ""} ${url} ${domain}`;
+
+  if (verdict) {
+    // Материал о другом человеке не подтверждает ничего о субъекте. Строка при
+    // этом рисуется: снимок воспроизводит выдачу, и спрятать её значило бы
+    // нарисовать страницу, которой поисковик не показывал.
+    if (verdict.subjectMatch === "other") {
+      return { isHighlighted: false, riskTheme: null, themeTitle: null };
+    }
+    if (verdict.tone === "neutral" || verdict.tone === "supportive") {
+      return { isHighlighted: false, riskTheme: null, themeTitle: null };
+    }
+    if (verdict.tone === "adverse" && verdict.quoted) {
+      const label = verdict.themeLabel?.trim();
+      if (label) return { isHighlighted: true, riskTheme: label.toLowerCase(), themeTitle: label };
+      const theme = themeForBlob(blob);
+      return { isHighlighted: true, riskTheme: theme.key, themeTitle: theme.title };
+    }
+    // Нежелательный вывод без цитаты ничего не назначает: то же правило, по
+    // которому такой вывод понижается в самом решении.
+  }
+
   const byDomain = ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domain);
   const softProfile = SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain);
   const strongBlob = STRONG_ADVERSE_BLOB_RE.test(blob);
@@ -111,8 +208,11 @@ export function classifyObservationHighlight(obs: PersistedSerpObservation): {
   return { isHighlighted: true, riskTheme: theme.key, themeTitle: theme.title };
 }
 
-function toLoadedResult(obs: PersistedSerpObservation): LoadedResult {
-  const hl = classifyObservationHighlight(obs);
+function toLoadedResult(
+  obs: PersistedSerpObservation,
+  verdictByRef?: ObservationVerdictByRef
+): LoadedResult {
+  const hl = classifyObservationHighlight(obs, verdictByRef?.[obs.id]);
   const engine: SerpEngine = obs.engine === "YANDEX" ? "YANDEX" : "GOOGLE";
   return {
     id: obs.id,
@@ -135,18 +235,20 @@ function toLoadedResult(obs: PersistedSerpObservation): LoadedResult {
 
 export function buildObservationThemeGrouping(
   observations: PersistedSerpObservation[],
-  language: SerpLanguage = "ru"
+  language: SerpLanguage = "ru",
+  verdictByRef?: ObservationVerdictByRef
 ): { loaded: LoadedResult[]; grouping: ThemeGrouping } {
-  const loaded = observations.map(toLoadedResult);
+  const loaded = observations.map((o) => toLoadedResult(o, verdictByRef));
   const grouping = buildConsistentThemeGrouping(loaded, language);
   return { loaded, grouping };
 }
 
 export function observationToResultView(
   obs: PersistedSerpObservation,
-  grouping: ThemeGrouping
+  grouping: ThemeGrouping,
+  verdictByRef?: ObservationVerdictByRef
 ): ResultView {
-  const loaded = toLoadedResult(obs);
+  const loaded = toLoadedResult(obs, verdictByRef);
   const mark = grouping.highlights.get(obs.id);
   return {
     rank: obs.rank,

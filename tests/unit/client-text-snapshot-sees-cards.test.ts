@@ -9,10 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  CLIENT_TEXT_SNAPSHOT_VERSION,
-  extractClientText,
-} from "../../scripts/lib/client-text-snapshot";
+import { extractClientText } from "../../scripts/lib/client-text-snapshot";
 
 describe("снимок клиентского текста видит карточки", () => {
   it("захватывает заголовок, степень и текст карточки", () => {
@@ -54,9 +51,5 @@ describe("снимок клиентского текста видит карто
       slides: [{ slideKey: "p1", keyFindings: [{ headline: "Тема", status: "Низкий", detail: "Текст" }] }],
     });
     expect(snapshot.totalChars).toBe("Тема".length + "Низкий".length + "Текст".length);
-  });
-
-  it("версия снимка поднята — эталон без карточек считается устаревшим", () => {
-    expect(CLIENT_TEXT_SNAPSHOT_VERSION).toBe("client-text-snapshot-v2");
   });
 });

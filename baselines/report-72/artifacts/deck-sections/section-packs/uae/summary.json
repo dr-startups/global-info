@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v94",
+  "contentVersion": "deck-sections-v95",
   "promptVersion": "uae-regional-summary-v4",
   "contentHash": "sha256:86a84dec2c6090f0cf2c8741a62ba2994c9c15ffa88f0b5bbf9473603a52bcbb",
   "inputHash": "sha256:7af16d0423ff09a8789f3bfe2711935630cdd38badcef4530e73469ab9c89bc2:34c806b75f673376",
-  "generatedAt": "2026-08-19T06:37:40.151Z",
+  "generatedAt": "2026-08-19T13:25:01.234Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -328,11 +328,6 @@
       "title": "ОАЭ / международный: в выдаче есть материалы повышенного внимания",
       "content": {
         "narrative": "По региону «ОАЭ / международный» собрано 97 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
-        "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]"
-        ],
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.",
         "kpis": [
           {
@@ -355,7 +350,12 @@
             "value": "0",
             "tone": "neutral"
           }
-        ]
+        ],
+        "bullets": [
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]"
+        ],
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",

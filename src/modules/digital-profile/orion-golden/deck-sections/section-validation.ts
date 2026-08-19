@@ -6,6 +6,7 @@ import { domainToASCII } from "node:url";
 
 import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
 import { clientLink } from "./fragment-builders/serp";
+import { clientAddress } from "./fragment-builders/shared";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {
@@ -59,6 +60,87 @@ const REGION_SUMMARY_FRAGMENTS = new Set(["RU_SUMMARY", "UAE_SUMMARY", "COMPLIAN
 // «руни.рф» не опознавался как домен.
 export const DOMAIN_TOKEN_RE =
   /(?<![\p{L}0-9.-])[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9-]+)*\.(?:xn--[a-z0-9-]+|\p{L}{2,})(?![\p{L}0-9-])/giu;
+
+/**
+ * Напечатанный адрес страницы: хост и путь до конца слова.
+ *
+ * Путь адреса — не имя источника: сегмент вроде `otchet.html` внутри ссылки
+ * читался как отдельный домен, которого нет среди доказательств, и
+ * обязательная секция получала отказ — то есть дека не собиралась вовсе.
+ *
+ * Выражение опознаёт **чужой** адрес, и только его: свой вырезается раньше и
+ * точным совпадением (см. `undeclaredClientTextDomains`). Поэтому неточность
+ * границы здесь безопасна — она даёт лишний разбор чужого адреса, а не
+ * освобождение.
+ */
+const PRINTED_LINK_RE =
+  /(?<![\p{L}0-9.-])(?:https?:\/\/)?([\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9-]+)*\.(?:xn--[a-z0-9-]+|\p{L}{2,}))(\/[^\s»"]*)/giu;
+
+/** Печатный адрес ищется в тексте как есть, поэтому спецсимволы экранируются. */
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/**
+ * Домены клиентского текста, не выводимые из доказательств страницы.
+ *
+ * Один ответ на весь отчёт: секционная валидация и проверка сборки задавали
+ * этот вопрос по отдельности и разными выражениями — ASCII-только против
+ * юникодного, — то есть один и тот же текст могли оценить по-разному.
+ */
+export function undeclaredClientTextDomains(
+  text: string,
+  allowed: ReadonlySet<string>,
+  /**
+   * Адреса доказательств страницы — в том виде, в каком отчёт их печатает
+   * (`clientAddress`).
+   */
+  allowedLinks: ReadonlySet<string> = new Set()
+): string[] {
+  const out: string[] = [];
+  const check = (raw: string): void => {
+    const domain = normalizeDomainForCompare(raw);
+    if (domain && !allowed.has(domain)) out.push(domain);
+  };
+  /*
+   * Свой адрес вырезается целиком и по точному совпадению.
+   *
+   * У пути нет «конца слова»: в нём законны пробел (из `%20`), точка с запятой,
+   * апостроф, скобки. Любой набор терминаторов на них промахивается, матч
+   * обрывается — и хвост собственного адреса уходит в общий разбор, где
+   * `otchet.html` и `doc.pdf` выглядят доменами. Это тот самый отказ
+   * обязательной секции, ради которого освобождение и заводилось, только
+   * взведённый обычными символами адреса. Сравнение печатных строк вопроса о
+   * границе не задаёт вовсе.
+   *
+   * Длинные адреса вырезаются первыми: короткий может оказаться префиксом
+   * длинного, и тогда от длинного остался бы хвост.
+   *
+   * Границы у вхождения обязательны. Доказательство с корневым адресом даёт
+   * печатную форму из одного домена («x.com»), и вырезание сырой подстрокой
+   * снимало его изнутри чужих имён — `evil-x.com`, `mx.com`, `yx.com` уходили
+   * из разбора вместе с ним. Слева граница домена, справа — граница домена и
+   * пути: адрес с путём освобождается только целиком, а корневой — только там,
+   * где он стоит сам по себе.
+   */
+  let rest = text.toLowerCase();
+  for (const link of [...allowedLinks].sort((a, z) => z.length - a.length)) {
+    const printed = String(link ?? "").trim().toLowerCase();
+    if (!printed) continue;
+    rest = rest.replace(
+      new RegExp(`(?<![\\p{L}0-9.-])${escapeForRegExp(printed)}(?![\\p{L}0-9\\-/])`, "giu"),
+      " "
+    );
+  }
+  // Остаток: ссылка, которой у страницы нет, отвечает и за хост, и за домены в
+  // пути — домен, спрятанный в сегменте чужого адреса, тоже назван клиенту.
+  rest = rest.replace(PRINTED_LINK_RE, (_match, host: string, path: string) => {
+    check(host);
+    return ` ${path} `;
+  });
+  for (const m of rest.matchAll(DOMAIN_TOKEN_RE)) check(m[0]);
+  return out;
+}
 
 const TEXT_BUDGETS = getClientTextFieldBudgets();
 
@@ -218,32 +300,54 @@ export function validateSectionPack(input: {
   // highlight explanations must be derivable from that slide's OWN evidence
   // refs — never from an unrelated global domain list.
   if (input.evidenceIndex && !REGION_SUMMARY_FRAGMENTS.has(pack.fragmentKey)) {
+    /*
+     * Продолжение наследует область своей базы.
+     *
+     * Ворота ходили по списку шаблонов, и лист «…: почему выделено» — новый тип
+     * страницы — оказался вне проверки целиком, хотя доменов на нём больше, чем
+     * на любом другом: цитаты и адреса первоисточников. Заводя новый шаблон,
+     * обойти fail-closed проверку не должно быть возможно.
+     */
+    const pageScopedIds = new Set(
+      pack.slides.filter((s) => PAGE_SCOPED_TEMPLATES.has(s.templateId)).map((s) => s.slideId)
+    );
     for (const slide of pack.slides) {
-      if (!PAGE_SCOPED_TEMPLATES.has(slide.templateId)) continue;
+      const ownScope = PAGE_SCOPED_TEMPLATES.has(slide.templateId);
+      const inheritedScope =
+        slide.isContinuation && slide.continuationOf
+          ? pageScopedIds.has(slide.continuationOf)
+          : false;
+      if (!ownScope && !inheritedScope) continue;
       const normRefs = new Set(slide.evidenceRefs.map(normalizeEvidenceRef));
       const allowed = new Set<string>();
+      const allowedLinks = new Set<string>();
       for (const [ref, e] of Object.entries(input.evidenceIndex)) {
-        if (!e.domain || e.domain === "—") continue;
-        if (normRefs.has(normalizeEvidenceRef(ref))) allowed.add(normalizeDomainForCompare(e.domain));
+        if (!normRefs.has(normalizeEvidenceRef(ref))) continue;
+        if (e.domain && e.domain !== "—") allowed.add(normalizeDomainForCompare(e.domain));
+        // Адрес — в той же форме, в какой его печатает отчёт: сверка идёт
+        // строкой, а не разбором границ.
+        const link = clientAddress(e.url);
+        if (link) allowedLinks.add(link);
       }
       const dynamicTexts = [
         slide.content.whatWasFound,
         slide.content.sourceNote,
         ...(slide.content.highlightExplanations ?? []).map((h) => h.clientReason),
+        // Текст продолжения живёт в буллетах — на базовой странице там лежат
+        // цитаты доказательств, разбираемые своими проверками, поэтому в общий
+        // разбор буллеты идут только у унаследованной области.
+        ...(inheritedScope && !ownScope ? slide.content.bullets ?? [] : []),
       ].filter((t): t is string => Boolean(t));
       for (const text of dynamicTexts) {
-        for (const m of text.matchAll(DOMAIN_TOKEN_RE)) {
-          // Сверяется нормализованная форма: клиенту домен показывается
-          // читаемым («руни.рф»), а в индексе доказательств он лежит в
-          // punycode. Без приведения к одной форме читаемая запись выглядела
-          // бы «не выведенной из доказательств» — той же ценой, что уже стоил
-          // обрезок `xn--h1ajim.xn`: отказ обязательной секции и пустая дека.
-          const domain = normalizeDomainForCompare(m[0]);
-          if (!allowed.has(domain)) {
-            issues.push(
-              `sidebar domain not derived from page evidence on ${slide.slideId}: ${domain}`
-            );
-          }
+        // Сверяется нормализованная форма: клиенту домен показывается читаемым
+        // («руни.рф»), а в индексе доказательств он лежит в punycode. Без
+        // приведения к одной форме читаемая запись выглядела бы «не
+        // выведенной из доказательств» — той же ценой, что уже стоил обрезок
+        // `xn--h1ajim.xn`: отказ обязательной секции и пустая дека.
+        for (const domain of undeclaredClientTextDomains(text, allowed, allowedLinks)) {
+          issues.push(
+            `sidebar domain not derived from page evidence on ${slide.slideId}: ${domain}`
+          );
         }
       }
     }
@@ -316,9 +420,12 @@ function wikipediaDenialIssue(
     : `wikipedia denial contradicts page evidence on ${slide.slideId}: ${unnamed.join(", ")}`;
 }
 
-/** Одна форма домена для сверки: нижний регистр и punycode. */
-function normalizeDomainForCompare(domain: string): string {
-  const d = String(domain ?? "").trim().toLowerCase();
+/** Одна форма домена для сверки: нижний регистр, без `www.`, punycode. */
+export function normalizeDomainForCompare(domain: string): string {
+  const d = String(domain ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^www\./u, "");
   if (!d) return "";
   return domainToASCII(d) || d;
 }

@@ -529,7 +529,12 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
      * `readVerdictTone`, по которому потребители отличают прочитанную страницу
      * от непрочитанной. Про заблокированную страницу словарь — всё, что есть.
      */
-    if (v.readFailure) continue;
+    if (v.readFailure) {
+      // Причина непрочтения — тоже результат: страница отчёта объясняет ею
+      // рамку, поставленную по заголовку выдачи, вместо молчаливого «уровень».
+      evidenceIndex[ref].readFailure = String(v.readFailure);
+      continue;
+    }
     const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
     if (v.tone === "adverse" && quoted) evidenceIndex[ref].adverse = true;
     if (v.tone === "supportive" || v.tone === "neutral") evidenceIndex[ref].adverse = false;
@@ -537,6 +542,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       evidenceIndex[ref].adverse = false;
       evidenceIndex[ref].subjectDecision = "OTHER_SUBJECT";
     }
+    // Принадлежность по прочтению запоминается как есть: фраза «Почему
+    // выделено» обязана оговорить вероятную принадлежность, а не выдать её за
+    // подтверждённую.
+    if (v.subjectMatch) evidenceIndex[ref].verdictSubjectMatch = String(v.subjectMatch);
     // Тип источника определён по самой странице — он сильнее догадки по домену.
     const sourceType = normalizeSourceType(v.sourceType);
     if (sourceType) evidenceIndex[ref].sourceType = sourceType;

@@ -454,8 +454,42 @@ async function main(): Promise<void> {
   console.log("=== PAGE-LEVEL CHECKS ===");
   console.log(JSON.stringify(pageLevelChecks, null, 2));
 
+  /*
+   * Дека не собралась — это провал приёмки, а не повод её пропустить.
+   *
+   * Весь блок ворот стоит под условием «ошибок сборки нет», поэтому худший из
+   * исходов — отказ обязательной секции и `pageCount: 0` — уходил из прогона
+   * нулевым кодом возврата и без единой напечатанной проверки. Ровно тот
+   * случай, ради которого раннер смоков считает провалом прогон без единой
+   * выполненной проверки.
+   */
+  if (result.assembly.errors.length > 0) {
+    console.error(
+      `\nПРИЁМКА НЕ ПРОЙДЕНА: дека не собралась, ошибок сборки — ${result.assembly.errors.length}`
+    );
+    for (const err of result.assembly.errors.slice(0, 10)) console.error(`  ${err}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  /*
+   * Прогон без единой выполненной проверки — провал, а не успех.
+   *
+   * `SKIP_RENDER=1` выключает рендер, а вместе с ним и весь блок из 26 ворот:
+   * скрипт молча заканчивался нулём, ничего не проверив. Это та же форма, что
+   * этажом выше у несобранной деки, и то же правило, по которому раннер смоков
+   * считает провалом прогон без проверок. Пропуск объявляется словами и красит
+   * прогон — иначе его не отличить от пройденного.
+   */
+  if (process.env.SKIP_RENDER === "1") {
+    console.error("# SKIP приёмочные ворота — рендер выключен (SKIP_RENDER=1)");
+    console.error("ПРИЁМКА НЕ ВЫПОЛНЕНА: ни одно из ворот не проверялось");
+    process.exitCode = 1;
+    return;
+  }
+
   // Render through the EXISTING local python renderer (no second renderer).
-  if (result.assembly.errors.length === 0 && process.env.SKIP_RENDER !== "1") {
+  {
     const payload = toRendererPayload({
       deckManifest: result.assembly.deckManifest,
       rendererSlides: result.assembly.rendererSlides,

@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v94",
+  "contentVersion": "deck-sections-v95",
   "promptVersion": "uae-related-analysis-v4",
   "contentHash": "sha256:cc4bc57e8da1aadbadfa4c42e1f54d782aaee5a5c09811aa10386913ff8582cb",
   "inputHash": "sha256:0df60f23ab87b35a5eb8bb7bd5fa6b2332c46a0e143fbfb9a4639afb2d535bad:0609c0a1c84cfcde",
-  "generatedAt": "2026-08-19T06:37:40.157Z",
+  "generatedAt": "2026-08-19T13:25:01.242Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -43,8 +43,8 @@
         "whatWasFound": "На панели — 1 связанный запрос: 1 относится к субъекту. Негативных формулировок нет.",
         "whyItMatters": "Связанные запросы поисковик предлагает набрать следующими: негативных формулировок среди них нет, к нежелательным материалам блок не уводит.",
         "whatToCheck": "Проверять блок при обновлении: состав связанных запросов меняется вместе с выдачей.",
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
-        "statusNote": "Запросов с негативной формулировкой на этой странице нет."
+        "statusNote": "Запросов с негативной формулировкой на этой странице нет.",
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczpl00b1vd9g27ool8o4"

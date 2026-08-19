@@ -32,7 +32,10 @@ import {
 import {
   selectVisibleObservationsForEngine,
 } from "../serp-observation/synthetic-asset";
-import { classifyObservationHighlight } from "../serp-observation/resolve-observation-highlights";
+import {
+  classifyObservationHighlight,
+  type ObservationVerdictByRef,
+} from "../serp-observation/resolve-observation-highlights";
 import type { PersistedSerpObservation } from "../serp-observation/types";
 import {
   buildImageGridSvg,
@@ -157,13 +160,19 @@ function toSerpObservation(item: RawInventoryItem, rank: number): PersistedSerpO
   };
 }
 
-function toVisibleItem(item: RawInventoryItem): VisibleAssetItem {
-  const hl = classifyObservationHighlight({
-    url: item.sourceUrl ?? null,
-    domain: domainOf(item.sourceUrl) || null,
-    title: item.title ?? null,
-    snippet: item.snippet ?? null,
-  } as unknown as PersistedSerpObservation);
+function toVisibleItem(
+  item: RawInventoryItem,
+  verdictByRef?: ObservationVerdictByRef
+): VisibleAssetItem {
+  const hl = classifyObservationHighlight(
+    {
+      url: item.sourceUrl ?? null,
+      domain: domainOf(item.sourceUrl) || null,
+      title: item.title ?? null,
+      snippet: item.snippet ?? null,
+    } as unknown as PersistedSerpObservation,
+    verdictByRef?.[refOf(item)]
+  );
   return {
     ref: refOf(item),
     url: item.sourceUrl,
@@ -264,6 +273,8 @@ async function buildSerpSnapshotAsset(input: {
   bind: (slotId: string, meta: VisualAssetMeta) => void;
   push: (asset: RendererAssetEntry) => void;
   slotId: string;
+  /** Решения по прочитанным страницам: рамки и легенда следуют им. */
+  verdictByRef?: ObservationVerdictByRef;
 }): Promise<boolean> {
   // Only engine-attributable rows can appear in a Yandex/Google column.
   const attributable = input.items.filter((it) => engineOf(it) !== null && it.sourceUrl);
@@ -281,8 +292,8 @@ async function buildSerpSnapshotAsset(input: {
   const filtered = filterObservationsForSyntheticSerp(allObs, input.subjectName);
   const visibleIds = new Set(
     [
-      ...selectVisibleObservationsForEngine(filtered, "YANDEX"),
-      ...selectVisibleObservationsForEngine(filtered, "GOOGLE"),
+      ...selectVisibleObservationsForEngine(filtered, "YANDEX", undefined, input.verdictByRef),
+      ...selectVisibleObservationsForEngine(filtered, "GOOGLE", undefined, input.verdictByRef),
     ].map((o) => o.id)
   );
   if (visibleIds.size === 0) return false;
@@ -292,12 +303,13 @@ async function buildSerpSnapshotAsset(input: {
     subjectName: input.subjectName,
     queryText: dominantQuery(attributable, input.subjectName),
     language: input.region === "UAE" ? "en" : "ru",
+    verdictByRef: input.verdictByRef,
   });
   const png = await renderSerpSnapshotPng(vm);
 
   const visibleItems = observations
     .filter((o) => visibleIds.has(o.obs.id))
-    .map((o) => toVisibleItem(o.item));
+    .map((o) => toVisibleItem(o.item, input.verdictByRef));
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: "serp_screenshot",
@@ -331,6 +343,8 @@ async function buildListPanelAsset(input: {
   push: (asset: RendererAssetEntry) => void;
   /** Принадлежность строк субъекту: решения subject-resolution по ссылкам. */
   subjectDecisionByRef?: Record<string, string>;
+  /** Решения по прочитанным страницам: рамка на панели следует им. */
+  verdictByRef?: ObservationVerdictByRef;
   /** Test hook (§5.1): force this panel to throw. */
   injectFailureForAssetRef?: string;
 }): Promise<boolean> {
@@ -345,7 +359,7 @@ async function buildListPanelAsset(input: {
   // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
   const drawn = rows.map((r) =>
     panelRowWithOwnership({
-      item: toVisibleItem(r),
+      item: toVisibleItem(r, input.verdictByRef),
       decision: input.subjectDecisionByRef?.[refOf(r)],
       meta: input.rowMeta?.(r),
     })
@@ -408,6 +422,15 @@ export async function buildCanonicalVisualAssets(input: {
    * валидным. С картой строка о другом лице уходит на панель нейтральной.
    */
   subjectDecisionByRef?: Record<string, string>;
+  /**
+   * Решения по прочитанным страницам: `evidenceRef → тон, цитата, ярлык сюжета`.
+   *
+   * Без карты поведение прежнее — словарь заголовков. С картой красную рамку и
+   * легенду снимка назначает прочитанная страница, а словарь остаётся только
+   * для строк, которых не читали: два ответа на «негативна ли строка» на одном
+   * листе противоречили друг другу.
+   */
+  verdictByRef?: ObservationVerdictByRef;
   /** Optional clock for freshness tests. */
   nowMs?: number;
   /** Test-only (§5.1): throw inside the builder for this assetRef. */
@@ -489,7 +512,7 @@ export async function buildCanonicalVisualAssets(input: {
         const organic = by(
           (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
         );
-        const visibleItems = organic.slice(0, 10).map(toVisibleItem);
+        const visibleItems = organic.slice(0, 10).map((it) => toVisibleItem(it, input.verdictByRef));
         const asset: RendererAssetEntry = {
           assetRef: `${assetRef}_real_${real.id}`,
           kind: "live_serp",
@@ -520,6 +543,7 @@ export async function buildCanonicalVisualAssets(input: {
         items: by((it) => surfaceOf(it) === "organic" && regionOf(it.region) === region),
         bind,
         push,
+        verdictByRef: input.verdictByRef,
       });
     });
     if (ok) counts.serpSnapshots += 1;
@@ -553,6 +577,7 @@ export async function buildCanonicalVisualAssets(input: {
         bind,
         push,
         subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -579,6 +604,7 @@ export async function buildCanonicalVisualAssets(input: {
         bind,
         push,
         subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -600,6 +626,7 @@ export async function buildCanonicalVisualAssets(input: {
         bind,
         push,
         subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -631,6 +658,7 @@ export async function buildCanonicalVisualAssets(input: {
           bind,
           push,
           subjectDecisionByRef: input.subjectDecisionByRef,
+          verdictByRef: input.verdictByRef,
           injectFailureForAssetRef: input.injectFailureForAssetRef,
         })
       )
@@ -653,6 +681,7 @@ export async function buildCanonicalVisualAssets(input: {
         bind,
         push,
         subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -691,7 +720,7 @@ export async function buildCanonicalVisualAssets(input: {
     const used = [answer, ...rows.filter((r) => r !== answer).slice(0, 4)].filter(
       (r): r is RawInventoryItem => Boolean(r)
     );
-    const visibleItems = used.map(toVisibleItem);
+    const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef));
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "knowledge_panel",
@@ -817,7 +846,7 @@ export async function buildCanonicalVisualAssets(input: {
     }
     // Одна выборка кормит и краску, и счёт: `visibleItems` — ровно те строки,
     // что попали в PNG, поэтому счётные строки страницы считают нарисованное.
-    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row));
+    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row, input.verdictByRef));
     if (drawnItems.length === 0) {
       // Рисовать нечего — ассета нет, страница уходит в текстовую ветку. Мета
       // без картинки нужна ей, чтобы назвать словами, что найдено и не показано.

@@ -9,7 +9,11 @@ import type {
   SlideContentContract,
 } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
-import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "../template-registry";
+import {
+  DECK_TEMPLATE_REGISTRY,
+  SIDEBAR_HIGHLIGHT_BUDGET,
+  type DeckTemplateId,
+} from "../template-registry";
 import { balanceTailPage } from "../semantic-summary-pagination";
 import {
   normalizeEvidenceRef,
@@ -19,6 +23,7 @@ import {
   type EmptySurfaceCollectionStatus,
   type LinkReadRegionCounts,
   type MetricSnapshot,
+  type ScopedEvidenceIndex,
   type ScopedFragmentInput,
   type SurfaceCollectionHint,
 } from "../scoped-input";
@@ -48,7 +53,11 @@ import {
 } from "../../../services/report-material-freshness";
 export { pickDistinctTitles, titleFingerprint } from "../../analytics/distinct-stories";
 import { pickDistinctTitles } from "../../analytics/distinct-stories";
-import { clientSafeDomains, isMockClientDomain } from "../../../services/composite-serp-merge";
+import {
+  clientSafeDomain,
+  clientSafeDomains,
+  isMockClientDomain,
+} from "../../../services/composite-serp-merge";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 
@@ -2383,39 +2392,327 @@ export function panelStatusLine(input: {
   return "Строк с негативной формулировкой на этой странице нет.";
 }
 
-export function adverseVisualSidebar(
-  slotId: string,
-  extras: FragmentExtras,
-  scoped: ScopedFragmentInput,
-  rowNoun: string
-): {
+/** Длиннее этого адрес перестаёт читаться и ломает ширину колонки таблицы. */
+const LINK_MAX_CHARS = 62;
+
+/** Разбор адреса — один на всех; политику печати выбирает вызывающий. */
+function parseAddress(url: string | undefined): { host: string; path: string } | undefined {
+  const raw = String(url ?? "").trim();
+  if (!raw) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  let path = parsed.pathname.replace(/\/$/u, "");
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Битая процентная последовательность — печатаем путь как есть.
+  }
+  return { host: parsed.hostname.replace(/^www\./u, ""), path };
+}
+
+/**
+ * Адрес источника так, как его читает клиент: читаемый хост и путь, без
+ * протокола и без хвоста параметров, целиком.
+ *
+ * `undefined` — назвать нечего: пустой или неразбираемый адрес, либо хост из
+ * демонстрационных данных. Имя демо-домена не должно оказаться в отчёте, и
+ * прочерк вместо адреса тоже не годится — это сломанный текст.
+ *
+ * Кириллическая зона печатается кириллицей: в отчёте 28.07 клиент читал
+ * `xn--h1ajim.xn--p1ai`. Формально верно, но документ показывают человеку.
+ */
+export function clientAddress(url: string | undefined): string | undefined {
+  const parts = parseAddress(url);
+  if (!parts) return undefined;
+  const host = clientSafeDomain(parts.host);
+  return host ? `${host}${parts.path}` : undefined;
+}
+
+/**
+ * Адрес для колонки таблицы: тот же разбор, обрезанный по ширине.
+ *
+ * Отбор демо-имён здесь не делается намеренно: строки таблицы отфильтрованы
+ * выше по течению, а ячейка обязана что-то напечатать. Фраза «Почему выделено»
+ * пользуется `clientAddress`, у которого политика строже — там адрес стоит
+ * рядом с утверждением о лице.
+ */
+export function clientLink(
+  url: string | undefined,
+  domain: string | undefined,
+  maxChars = LINK_MAX_CHARS
+): string {
+  const raw = String(url ?? "").trim();
+  if (!raw) return domain ?? "—";
+  const parts = parseAddress(raw);
+  const text = parts
+    ? `${parts.host}${parts.path}`
+    : // Не URL — печатаем как есть, обрезав по длине.
+      raw.replace(/^https?:\/\//iu, "").replace(/\/$/u, "");
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars - 1)}…`;
+}
+
+/**
+ * Почему страницу не прочитали — клиентскими словами.
+ *
+ * Машинный код решения (`blocked`, `not_found`) клиенту не показывается, а
+ * перевод живёт одной функцией: три места, переводившие причины по-своему,
+ * уже расходились в формулировках на соседних страницах.
+ */
+function readFailureWords(reason: string | undefined): string {
+  switch (String(reason ?? "")) {
+    case "blocked":
+      return "доступ закрыт";
+    case "not_found":
+      return "страница не найдена";
+    case "timeout":
+      return "страница не ответила вовремя";
+    case "empty_text":
+      return "на странице нет читаемого текста";
+    case "analysis_failed":
+      return "текст получен, но разбор не состоялся";
+    case "not_fetched":
+      return "страница не запрашивалась";
+    default:
+      return "причина не установлена";
+  }
+}
+
+/** Фраза «Почему выделено» в двух формах: для узкой колонки и целиком. */
+export type HighlightPhrase = {
+  /** Форма для боковой панели: помещается в её бюджет знаков. */
+  sidebar: string;
+  /** Форма целиком — с полной цитатой и полным адресом. */
+  full: string;
+  /** Адрес наблюдения в клиентской форме, если он известен. */
+  link?: string;
+  /** Адрес уцелел в сайдбарной форме. */
+  sidebarHasLink: boolean;
+  /** Сайдбарная форма ничего не потеряла — продолжение этой строке не нужно. */
+  sidebarComplete: boolean;
+  /** Страница прочитана: у решения по ней есть сюжет. */
+  read: boolean;
+};
+
+/** Предложения текста — по границе, а не по знакам. */
+function sentencesOf(text: string): string[] {
+  return text
+    .split(/(?<=[.!?…])\s+/u)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * «Почему выделено» — словами прочитанной страницы.
+ *
+ * Прежде под выделенным результатом стояло перечисление «рубрика — домен;
+ * уровень: высокий»: три служебных слова вместо ответа на вопрос, что на
+ * странице написано. Ответ уже куплен раньше по конвейеру — сюжет одной
+ * фразой, дословная цитата с аудитом и адрес наблюдения, — поэтому фраза
+ * собирается детерминированно и прослеживается до URL. Модель на сборке деки
+ * её не пишет и не правит.
+ *
+ * Непрочитанная страница прочитанной не притворяется: у неё нет ни сюжета, ни
+ * цитаты, и фраза называет словарную рубрику и причину непрочтения. Домен
+ * обязателен в обеих ветках и берётся из доказательств самой строки — домен,
+ * добытый другим способом, роняет обязательную секцию воротами области.
+ */
+export function highlightPhrase(input: {
+  row: VisibleAssetItem;
+  evidence: ScopedEvidenceIndex;
+  /**
+   * Находка, которой принадлежит строка, если она с ней сопоставлена.
+   *
+   * Отвечает сразу на два вопроса и потому передаётся целиком: какой рубрикой
+   * назвать непрочитанную страницу и учтён ли уже материал в находках отчёта.
+   * Находки знает область фрагмента, а не индекс доказательств, — поэтому
+   * сопоставление делает вызывающий.
+   */
+  finding?: Finding;
+  /** Ёмкость узкой колонки; по умолчанию — та, что рисует рендерер. */
+  budget?: number;
+}): HighlightPhrase {
+  const e = input.evidence[input.row.ref];
+  const budget = input.budget ?? SIDEBAR_HIGHLIGHT_BUDGET;
+  /*
+   * Источник называется, если его можно назвать, — и не называется иначе.
+   *
+   * Пропускать такую строку нельзя: рамку на снимке ставит классификатор, до
+   * отбора имён ему дела нет, и страница выходила с тремя красными рамками при
+   * подписи «выделено: 2». Число, не сходящееся с картинкой, читатель замечает
+   * раньше любой ошибки в формулировке. Прочерк вместо имени тоже не годится —
+   * это сломанный текст, — поэтому у безымянной строки имени просто нет, а всё
+   * остальное во фразе остаётся.
+   *
+   * Причин безымянности две: имя демонстрационных данных (в отчёт не попадает
+   * ни под каким видом) и адрес, который не разбирается в домен вовсе.
+   */
+  const domain = clientSafeDomain(e?.domain ?? input.row.domain);
+  // Адрес печатается целиком: обрезанный не открывается, а фраза заводится
+  // ровно ради того, чтобы утверждение можно было проверить по первоисточнику.
+  // Не поместился в узкую колонку — уйдёт на продолжение, но не пропадёт.
+  const link = clientAddress(e?.url ?? input.row.url);
+
+  // Непрочитанная страница решения не приносит: сюжет и цитата в артефакте
+  // могли остаться от заголовка выдачи, но выдавать их за содержимое страницы,
+  // которую не открывали, — сочинение.
+  const readFailure = e?.readFailure ? String(e.readFailure) : undefined;
+  const theme = readFailure ? "" : String(e?.verdictTheme ?? "").trim();
+  const read = theme.length > 0;
+
+  if (!read) {
+    const rubric = String(
+      input.finding?.theme ?? input.row.themeTitle ?? "Потенциально нежелательный материал"
+    ).trim();
+    const why = readFailure
+      ? `страница не прочитана: ${readFailureWords(readFailure)}`
+      : "страница не читалась в этом прогоне";
+    /*
+     * Сопоставленная с находкой строка и строка, не сопоставленная ни с чем, —
+     * разные состояния, и словами они разные. Прежде их различал «уровень:
+     * высокий»; уровень отсюда ушёл (степень риска — язык находок и матрицы),
+     * но само различие терять нельзя: иначе страница изображений говорит об
+     * учтённом материале и о ничейном одинаково.
+     */
+    // Точка с запятой, а не тире: у «материал учтён» своё подлежащее, и через
+    // тире оценка приравнивалась к материалу.
+    const tail = input.finding
+      ? "; материал учтён в находках отчёта"
+      : " — требует ручной проверки";
+    const text = `${rubric}${domain ? ` — ${domain}` : ""}; ${why}, оценка по заголовку выдачи${tail}.`;
+    return { sidebar: text, full: text, sidebarHasLink: false, sidebarComplete: true, read: false };
+  }
+
+  const head = domain ? `На странице ${domain} — ${theme}` : `Выделенный результат — ${theme}`;
+  const caveat =
+    e?.verdictSubjectMatch === "likely"
+      ? "Принадлежность материала проверяемому лицу требует подтверждения."
+      : undefined;
+  const quoteSentences = sentencesOf(String(e?.pageQuote ?? "").trim());
+  /*
+   * Цитата с многоточием в боковую панель не идёт.
+   *
+   * Панель многоточий не допускает (контракт клиентского текста), и подгонка
+   * под неё заменяет «…» точкой — прямо внутри кавычек: «Совет ЕС постановил.
+   * активы заморожены». Дословная цитата перестаёт быть дословной, а править
+   * её нам нельзя. Значит, в узкой колонке такой цитаты нет вовсе, а целиком
+   * она печатается на продолжении.
+   */
+  const sidebarQuoteLimit = quoteSentences.findIndex((q) => /\.\.\.|…/u.test(q));
+  const maxSidebarQuote =
+    sidebarQuoteLimit === -1 ? quoteSentences.length : sidebarQuoteLimit;
+
+  const compose = (quoteCount: number, withLink: boolean): string => {
+    const quote = quoteSentences.slice(0, quoteCount).join(" ");
+    // Точка внутри кавычек — точка цитаты; своей мы её не дублируем.
+    const opening = quote
+      ? `${head}: «${quote}»${/[.!?…]$/u.test(quote) ? "" : "."}`
+      : `${head}.`;
+    return [opening, caveat, withLink && link ? `${link}.` : undefined]
+      .filter(Boolean)
+      .join(" ");
+  };
+
+  const full = compose(quoteSentences.length, true);
+  // Цитата уступает адресу: без адреса утверждение нечем проверить, а
+  // укороченная по границе предложения цитата остаётся дословной.
+  let sidebar: string | undefined;
+  let sidebarHasLink = false;
+  for (let n = maxSidebarQuote; n >= 0; n -= 1) {
+    const candidate = compose(n, true);
+    if (candidate.length <= budget) {
+      sidebar = candidate;
+      sidebarHasLink = Boolean(link);
+      break;
+    }
+  }
+  if (sidebar === undefined) {
+    for (let n = maxSidebarQuote; n >= 0; n -= 1) {
+      const candidate = compose(n, false);
+      if (candidate.length <= budget || n === 0) {
+        sidebar = candidate;
+        break;
+      }
+    }
+  }
+  return {
+    sidebar: sidebar ?? full,
+    full,
+    link,
+    sidebarHasLink,
+    sidebarComplete: (sidebar ?? full) === full,
+    read: true,
+  };
+}
+
+/** Что страница знает о своих выделенных строках — одним разбором. */
+export type AdverseVisualSidebar = {
   visibleRows: VisibleAssetItem[];
   adverseRows: VisibleAssetItem[];
   gridRefs: string[];
   explanations: NonNullable<SlideBody["highlightExplanations"]>;
+  /** Фразы целиком, в порядке объяснений, — материал слайда-продолжения. */
+  phrases: HighlightPhrase[];
+  explainedFindings: Finding[];
   explainedFindingIds: string[];
-} {
+  explainedDomains: string[];
+  explainedRefs: string[];
+};
+
+/**
+ * Объяснения выделенных строк одной привязанной картинки.
+ *
+ * Один разбор на все поверхности: снимок выдачи, панель подсказок и сетка
+ * изображений печатали одну и ту же фразу двумя построителями, и это была
+ * готовая точка расхождения — на снимке фраза говорила «выделенный результат»,
+ * на панели «изображение ведёт на», а уровень риска в обеих был служебным
+ * словом вместо содержания страницы.
+ */
+export function adverseVisualSidebar(
+  slotId: string,
+  extras: FragmentExtras,
+  scoped: ScopedFragmentInput
+): AdverseVisualSidebar {
   const visibleRows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
   const adverseRows = visibleRows.filter((v) => v.adverse);
   const seen = new Set<string>();
   const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
-  const explainedFindingIds: string[] = [];
+  const phrases: HighlightPhrase[] = [];
+  const explainedFindings: Finding[] = [];
+  const explainedDomains: string[] = [];
+  const explainedRefs: string[] = [];
   for (const row of adverseRows) {
     const f = findingForVisibleRow(row, scoped);
-    const theme = f?.theme ?? row.themeTitle ?? "Потенциально нежелательный материал";
-    const target = row.domain ? ` — ${rowNoun} ведёт на ${row.domain}` : "";
-    const dedupKey = `${f?.findingId ?? theme}|${row.domain ?? row.title ?? ""}`;
+    const e = scoped.evidenceIndex[row.ref];
+    const domain = clientSafeDomain(e?.domain ?? row.domain);
+    const dedupKey = `${f?.findingId ?? f?.theme ?? row.themeTitle ?? "—"}|${domain ?? row.title ?? ""}`;
     if (seen.has(dedupKey)) continue;
     seen.add(dedupKey);
+    const phrase = highlightPhrase({ row, evidence: scoped.evidenceIndex, finding: f });
+    phrases.push(phrase);
     explanations.push({
-      clientReason: clampClientText(
-        `«${theme}»${target}${f ? `; уровень: ${riskLabel(f.riskLevel).toLowerCase()}` : "; требует ручной проверки"}.`,
-        300
-      ),
+      clientReason: clampClientText(phrase.sidebar, 300),
       frameTone: "red" as const,
     });
-    if (f && !explainedFindingIds.includes(f.findingId)) explainedFindingIds.push(f.findingId);
+    if (f && !explainedFindings.some((x) => x.findingId === f.findingId)) explainedFindings.push(f);
+    // Демо-домен не называется клиенту даже как подпись к снимку.
+    if (domain && !explainedDomains.includes(domain)) explainedDomains.push(domain);
+    if (e) explainedRefs.push(row.ref);
   }
   const gridRefs = visibleRows.map((v) => v.ref).filter((r) => Boolean(scoped.evidenceIndex[r]));
-  return { visibleRows, adverseRows, gridRefs, explanations, explainedFindingIds };
+  return {
+    visibleRows,
+    adverseRows,
+    gridRefs,
+    explanations,
+    phrases,
+    explainedFindings,
+    explainedFindingIds: explainedFindings.map((f) => f.findingId),
+    explainedDomains,
+    explainedRefs,
+  };
 }

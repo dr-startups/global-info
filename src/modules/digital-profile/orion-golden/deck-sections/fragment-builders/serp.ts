@@ -3,20 +3,26 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
-import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "../contracts";
+import type { FragmentKey, SectionType, SlideContentContract } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
-import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL } from "../template-registry";
+import {
+  DECK_TEMPLATE_REGISTRY,
+  RED_MARKER_LABEL,
+  SIDEBAR_HIGHLIGHT_SLOTS,
+} from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { clientNamedSearchEngine } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
-import type { Finding } from "../../contracts/finding";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
-import { clientSafeDomain, clientSafeDomains } from "../../../services/composite-serp-merge";
+import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
+import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import {
   RISK_ORDER,
+  adverseVisualSidebar,
+  clientLink,
   VISUAL_ASSET_UNAVAILABLE,
   assetsFor,
   buildPageEvidenceView,
@@ -29,14 +35,13 @@ import {
   domainOfUrl,
   emptyStatusForReason,
   fitClientSentences,
-  findingForVisibleRow,
   isAdverse,
   makeSlotSlide,
+  packBulletPages,
   pageFindingBlocks,
   pageRowCompositionBlocks,
   pageScopedConclusion,
   pageSourceLine,
-  riskLabel,
   sourceLine,
   normalizeSerpQuery,
   sameSerpQuery,
@@ -112,27 +117,12 @@ export const OTHER_SUBJECT_LABEL = "О другом лице" as const;
  */
 const RATING_COLUMN = SERP_TABLE_HEADERS.indexOf("Оценка");
 
-/** Длиннее этого адрес перестаёт читаться и ломает ширину колонки. */
-const LINK_MAX_CHARS = 62;
-
-/**
- * Адрес для клиента: без протокола и без хвоста параметров, но целиком до
- * последнего значимого сегмента — по нему материал находится вручную.
+/*
+ * Адрес для клиента печатают и таблица выдачи, и фраза «Почему выделено»,
+ * поэтому сам печатник переехал к общим помощникам. Реэкспорт оставлен ради
+ * тех, кто и так брал его отсюда: печатник один, дверей к нему две.
  */
-export function clientLink(url: string | undefined, domain: string | undefined): string {
-  const raw = String(url ?? "").trim();
-  if (!raw) return domain ?? "—";
-  let text = raw.replace(/^https?:\/\//iu, "").replace(/\/$/u, "");
-  try {
-    const parsed = new URL(raw);
-    text = `${parsed.hostname.replace(/^www\./u, "")}${parsed.pathname.replace(/\/$/u, "")}`;
-    text = decodeURIComponent(text);
-  } catch {
-    // Не URL — печатаем как есть, обрезав по длине.
-  }
-  if (text.length <= LINK_MAX_CHARS) return text;
-  return `${text.slice(0, LINK_MAX_CHARS - 1)}…`;
-}
+export { clientLink };
 
 const SERP_ENGINE_LABELS: Record<string, string> = { YANDEX: "Яндекс", GOOGLE: "Google" };
 /** «Выдача Яндекса», но «выдача Google»: русское имя склоняется, латинское нет. */
@@ -844,33 +834,13 @@ export function buildSerpScreenshotFragment(
   }
   const adverseRows = visibleRows.filter((v) => v.adverse);
 
-  // One explanation per red-framed row, attributed to the finding whose
-  // evidence that row is (dedup by finding+domain).
-  const seenExplanation = new Set<string>();
-  const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
-  const explainedFindings: Finding[] = [];
-  const explainedDomains: string[] = [];
-  const explainedRefs: string[] = [];
-  for (const row of adverseRows) {
-    const f = findingForVisibleRow(row, scoped);
-    const theme = f?.theme ?? row.themeTitle ?? "Потенциально нежелательный материал";
-    const domain = row.domain ?? "—";
-    const dedupKey = `${f?.findingId ?? theme}|${domain}`;
-    if (seenExplanation.has(dedupKey)) continue;
-    seenExplanation.add(dedupKey);
-    const level = f
-      ? `уровень: ${riskLabel(f.riskLevel).toLowerCase()}`
-      : "требует ручной проверки";
-    explanations.push({
-      clientReason: clampClientText(`«${theme}» — выделенный результат ${domain}; ${level}.`, 300),
-      frameTone: "red" as const,
-    });
-    if (f && !explainedFindings.some((x) => x.findingId === f.findingId)) explainedFindings.push(f);
-    // Демо-домен не называется клиенту даже как подпись к снимку.
-    const safeRowDomain = clientSafeDomain(row.domain);
-    if (safeRowDomain && !explainedDomains.includes(safeRowDomain)) explainedDomains.push(safeRowDomain);
-    if (scoped.evidenceIndex[row.ref]) explainedRefs.push(row.ref);
-  }
+  // Объяснение на каждую строку в рамке — тем же разбором, что у панелей и
+  // сеток изображений: фразу «Почему выделено» пишет один помощник.
+  const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
+  const explanations = sidebar.explanations;
+  const explainedFindings = [...sidebar.explainedFindings];
+  const explainedDomains = sidebar.explainedDomains;
+  const explainedRefs = sidebar.explainedRefs;
   explainedFindings.sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0));
   const top = explainedFindings[0];
 
@@ -953,5 +923,50 @@ export function buildSerpScreenshotFragment(
     },
     noUnderlyingData: false,
   });
-  return { slides: [slide], status: "READY" };
+
+  /*
+   * «Под каждым выделенным результатом» выполняется буквально.
+   *
+   * Боковая панель рисует две фразы по бюджету узкой колонки — это ёмкость
+   * рендерера, а не решение построителя. Значит, третья фраза и всё, что из
+   * первых двух не поместилось (прежде всего адрес, по которому утверждение
+   * проверяют), обязаны уйти на отдельный лист. Полный список фраз при этом
+   * остаётся на базовом слайде: проверка «объяснение на каждую находку»
+   * считает по нему.
+   */
+  const needsContinuation =
+    sidebar.phrases.length > SIDEBAR_HIGHLIGHT_SLOTS ||
+    sidebar.phrases.some((p) => !p.sidebarComplete);
+  const slides: SlideContentContract[] = [slide];
+  if (explanations.length > 0 && needsContinuation) {
+    const budget = getClientTextFieldBudgets().bullet;
+    const bullets = sidebar.phrases.map((p) => clampClientText(p.full, budget));
+    const cont = DECK_TEMPLATE_REGISTRY["continuation"];
+    const pages = packBulletPages(
+      bullets,
+      cont.maxBulletsPerSlide,
+      cont.maxBulletsPerSlide,
+      cont.layout.itemCharBudget
+    );
+    pages.forEach((page, i) => {
+      slides.push({
+        ...slide,
+        slideId: `${slot.slotId}__why${i + 1}`,
+        isContinuation: true,
+        continuationOf: slot.slotId,
+        continuationIndex: i + 1,
+        templateId: "continuation",
+        title: `${slot.title}: почему выделено${pages.length > 1 ? ` (продолжение ${i + 1}/${pages.length})` : ""}`,
+        subtitle: undefined,
+        // Лист несёт только фразы: вывод, рекомендация и подпись источников
+        // принадлежат базовому слайду и повторять их незачем.
+        content: { bullets: page },
+        visualAssetRefs: [],
+        evidenceRefs: explainedRefs,
+        findingIds: explainedFindings.map((f) => f.findingId),
+        metrics: { adverseHighlights: explanations.length },
+      });
+    });
+  }
+  return { slides, status: "READY" };
 }

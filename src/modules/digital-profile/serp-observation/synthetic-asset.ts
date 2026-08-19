@@ -8,6 +8,7 @@ import {
   buildObservationThemeGrouping,
   classifyObservationHighlight,
   observationToResultView,
+  type ObservationVerdictByRef,
 } from "./resolve-observation-highlights";
 import {
   SERP_SNAPSHOT_CAPTION,
@@ -27,16 +28,19 @@ const VISIBLE_PER_ENGINE = 5;
 export function selectVisibleObservationsForEngine(
   observations: PersistedSerpObservation[],
   engine: "YANDEX" | "GOOGLE",
-  limit = VISIBLE_PER_ENGINE
+  limit = VISIBLE_PER_ENGINE,
+  verdictByRef?: ObservationVerdictByRef
 ): PersistedSerpObservation[] {
   const sorted = observations
     .filter((o) => o.engine === engine)
     .sort((a, b) => a.rank - b.rank);
+  const framed = (o: PersistedSerpObservation): boolean =>
+    classifyObservationHighlight(o, verdictByRef?.[o.id]).isHighlighted;
 
   const highlighted: PersistedSerpObservation[] = [];
   const neutral: PersistedSerpObservation[] = [];
   for (const o of sorted) {
-    if (classifyObservationHighlight(o).isHighlighted) highlighted.push(o);
+    if (framed(o)) highlighted.push(o);
     else neutral.push(o);
   }
 
@@ -50,12 +54,8 @@ export function selectVisibleObservationsForEngine(
   for (const o of highlighted) push(o);
   for (const o of neutral) push(o);
   // Paint highlights first so the SVG card never clips red frames at the bottom.
-  const hl = picked
-    .filter((o) => classifyObservationHighlight(o).isHighlighted)
-    .sort((a, b) => a.rank - b.rank);
-  const neu = picked
-    .filter((o) => !classifyObservationHighlight(o).isHighlighted)
-    .sort((a, b) => a.rank - b.rank);
+  const hl = picked.filter(framed).sort((a, b) => a.rank - b.rank);
+  const neu = picked.filter((o) => !framed(o)).sort((a, b) => a.rank - b.rank);
   return [...hl, ...neu];
 }
 
@@ -64,6 +64,11 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
   subjectName: string;
   queryText: string;
   language?: SerpLanguage;
+  /**
+   * Решения по прочитанным страницам: они назначают рамки и дают легенде
+   * кластерные ярлыки сюжетов — язык резюме, а не рубрики справочника.
+   */
+  verdictByRef?: ObservationVerdictByRef;
 }): SerpSnapshotViewModel {
   const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
@@ -72,15 +77,26 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
     input.subjectName
   );
 
-  const yandexObs = selectVisibleObservationsForEngine(observations, "YANDEX");
-  const googleObs = selectVisibleObservationsForEngine(observations, "GOOGLE");
+  const verdictByRef = input.verdictByRef;
+  const yandexObs = selectVisibleObservationsForEngine(
+    observations,
+    "YANDEX",
+    VISIBLE_PER_ENGINE,
+    verdictByRef
+  );
+  const googleObs = selectVisibleObservationsForEngine(
+    observations,
+    "GOOGLE",
+    VISIBLE_PER_ENGINE,
+    verdictByRef
+  );
   const visible = [...yandexObs, ...googleObs];
 
   // Themes/legend only from rows that appear in the PNG columns.
-  const { grouping } = buildObservationThemeGrouping(visible, language);
+  const { grouping } = buildObservationThemeGrouping(visible, language, verdictByRef);
 
-  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping));
-  const googleResults = googleObs.map((o) => observationToResultView(o, grouping));
+  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping, verdictByRef));
+  const googleResults = googleObs.map((o) => observationToResultView(o, grouping, verdictByRef));
 
   const dateLabel = new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ru-RU", {
     day: "numeric",
