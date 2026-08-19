@@ -182,6 +182,35 @@ export function readSearchTopRequest(requestJson: unknown): SearchTopRequestShap
 }
 
 /**
+ * Написание запроса — то, которым он отправлялся, а не эхо провайдера.
+ *
+ * Arsenkin возвращает запрос нормализованным в нижний регистр. Пока в
+ * наблюдение писалось эхо, один запрос жил в корпусе двумя написаниями
+ * (в живом прогоне 57 строк «тиньков олег юрьевич» против 24 «Тиньков Олег
+ * Юрьевич»), а печатная форма выбирает самое частое — то есть нижний регистр.
+ * Сверяем без учёта регистра и лишних пробелов; строку, которой в заявке нет,
+ * оставляем как пришла: придумывать написание, которого мы не отправляли,
+ * нельзя. Сырое эхо остаётся в `responseJson` задачи.
+ */
+function queryMatchKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function requestedSpellings(request: SearchTopRequestShape | null): Map<string, string> {
+  const byKey = new Map<string, string>();
+  for (const q of request?.queries ?? []) {
+    const key = queryMatchKey(q);
+    if (key && !byKey.has(key)) byKey.set(key, q);
+  }
+  return byKey;
+}
+
+function spellAsRequested(echo: string, spellings: Map<string, string>): string {
+  if (!echo) return echo;
+  return spellings.get(queryMatchKey(echo)) ?? echo;
+}
+
+/**
  * Разложить плоский ответ check-top обратно на блоки «запрос × поисковик».
  *
  * Ответ приходит одним списком, а на деле это склейка блоков: для каждого
@@ -283,8 +312,9 @@ function adaptSearchTop(
     }
   }
 
+  const spellings = requestedSpellings(request);
   const itemQueries = used.map((raw) =>
-    asString((raw as Record<string, unknown>).query ?? response.query ?? "")
+    spellAsRequested(asString((raw as Record<string, unknown>).query ?? response.query ?? ""), spellings)
   );
   const attribution = attributeSearchTopRows(itemQueries, request);
   warnings.push(...attribution.warnings);

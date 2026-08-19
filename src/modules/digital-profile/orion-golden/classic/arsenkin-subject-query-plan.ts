@@ -37,25 +37,40 @@ function dedupePreserve(order: string[]): string[] {
   return out;
 }
 
+/**
+ * A plan line is a query a human would actually type.
+ *
+ * Input order is the FIO one — "Surname First Patronymic" (see parseSubjectName).
+ * The list used to carry the fully reversed order as well, and that string was
+ * sent to the paid provider: a live run bought 10 organic rows for "юрьевич
+ * олег тиньков" and printed that query to the client as the SERP caption.
+ * Human orders are these three: full FIO, "First Patronymic Surname" and the
+ * most common "First Surname".
+ */
 function permutationsOfName(fullName: string): string[] {
   const parts = fullName.split(/\s+/).filter(Boolean);
   if (parts.length < 2) return [fullName];
-  const reversed = [...parts].reverse().join(" ");
-  // FIO classic: Surname First Patronymic → First Surname (common search)
-  const firstLast =
-    parts.length >= 2 ? `${parts[1]} ${parts[0]}` : fullName;
-  return [fullName, reversed, firstLast];
+  const firstLast = `${parts[1]} ${parts[0]}`;
+  if (parts.length === 2) return [fullName, firstLast];
+  return [fullName, `${parts[1]} ${parts[2]} ${parts[0]}`, firstLast];
 }
 
-function latinNameVariants(input: string): string[] {
+/**
+ * Latin spellings follow the decision already recorded for enBaseVariants:
+ * full spelling plus "First Surname". The patronymic is not typed outside the
+ * Russian-speaking world, and the reversed order is not a spelling of a name
+ * at all — "Filippovich Viktor Rashnikov" went to the UAE contour for money.
+ *
+ * Only ever called on the transliteration of our own Cyrillic FIO: that is the
+ * single Latin string whose part order we know. Rearranging any other one
+ * invents a query — "Mohammed bin Rashid Al Maktoum" would give "bin
+ * Mohammed", and an analyst-supplied alias is already in the order a human
+ * types.
+ */
+function transliteratedFioVariants(input: string): string[] {
   const parts = input.split(/\s+/).filter(Boolean);
   if (parts.length < 2) return [input];
-  const first = parts[0] ?? "";
-  const second = parts[1] ?? "";
-  const reversed = [...parts].reverse().join(" ");
-  const firstLast = `${first} ${second}`.trim();
-  const lastFirst = `${second} ${first}`.trim();
-  return [input, firstLast, lastFirst, reversed];
+  return [input, `${parts[1]} ${parts[0]}`];
 }
 
 /** Build deterministic Arsenkin RU/UAE query lists from subject identity. */
@@ -82,14 +97,27 @@ export function buildArsenkinSubjectQueryPlan(
   const cyrAliases = aliases.filter((a) => hasCyrillic(a));
   const latinAliases = aliases.filter((a) => !hasCyrillic(a));
 
-  const ruBase = hasCyrillic(name) ? [name, ...permutationsOfName(name), ...cyrAliases] : [...cyrAliases];
+  // Rearranging is allowed for our own FIO only. With an empty fullName the
+  // subject name is an alias, and its part order was set by whoever wrote it:
+  // "Олег Юрьевич Тиньков" would give "Юрьевич Тиньков Олег" and "Юрьевич Олег".
+  const ownFio = fullName && hasCyrillic(fullName) ? fullName : "";
+  const ruBase = hasCyrillic(name)
+    ? [name, ...(ownFio ? permutationsOfName(ownFio) : []), ...cyrAliases]
+    : [...cyrAliases];
   const queriesRu = dedupePreserve(ruBase).slice(0, 5);
 
-  // UAE plan: primary confirmed Latin alias first; otherwise transliteration
-  // from canonical fullName. No synthetic aliases beyond deterministic order
-  // variants of an existing identity string.
-  const latinPrimary = latinAliases[0]?.trim() || (hasCyrillic(name) ? transliterateRuToEn(name) : name);
-  const uaeBase = [latinPrimary, ...latinNameVariants(latinPrimary), ...latinAliases];
+  // UAE plan: confirmed Latin aliases go as the analyst wrote them; with no
+  // alias the plan is built from our own FIO, and only that string may be
+  // rearranged. Anything else — a Latin fullName, a name taken from an alias —
+  // goes as it is, transliterated when Cyrillic: changing the alphabet keeps
+  // the order, guessing the order does not.
+  const latinFromOwnFio = ownFio ? transliterateRuToEn(ownFio) : "";
+  const uaeBase =
+    latinAliases.length > 0
+      ? latinAliases
+      : latinFromOwnFio
+        ? transliteratedFioVariants(latinFromOwnFio)
+        : [hasCyrillic(name) ? transliterateRuToEn(name) : name];
   const queriesUae = dedupePreserve(uaeBase).slice(0, 4);
 
   const blockers: string[] = [];
