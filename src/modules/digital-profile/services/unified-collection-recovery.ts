@@ -590,6 +590,15 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
+        /*
+         * Возраст отсчитывается заново: сторож закрывает прогон, не
+         * продвигавшийся дольше шести часов, и меряет его от `startedAt`. А
+         * «Возобновить» нажимают как раз на прогоне, который простоял ночь, —
+         * без этой строки первый же тик закрыл бы восстановление, не начав
+         * работы, и, поскольку код отказа тут уже обнулён, первопричина
+         * потерялась бы целиком. `createdAt` остаётся историей прогона.
+         */
+        startedAt: nowIso,
         // Ceiling reset so durable poll can resume the same paid externalTaskIds.
         pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
         // Общий срок ожидания отсчитывается заново: это осознанное решение

@@ -17,6 +17,12 @@ import {
   unifiedArtifactsDir,
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
+import {
+  REBUILD_MARKER,
+  rebuildDataBlockerReason,
+  restoreStateAfterFailedRebuild,
+  type UnifiedRebuildRestoreSnapshot,
+} from "./unified-report-rebuild";
 import type {
   BaseCollectionManifest,
   ReportDataBinding,
@@ -743,16 +749,37 @@ export async function runUnifiedCollectionTick(
     const nowMs = deps.now?.().getTime() ?? Date.now();
     const ageMs = Number.isFinite(startedMs) ? nowMs - startedMs : 0;
     if (ageMs > UNIFIED_RUN_MAX_MS) {
+      /*
+       * Возраст — это следствие, а не причина: прогон простаивает до утра
+       * именно потому, что уже отказал. Сторож переписывал `lastErrorCode` на
+       * свой код и уносил с собой единственное знание о том, почему прогон
+       * встал, — а по коду отказа решают и восстановление, и интерфейс. У
+       * владельца так был стёрт `CONTENT_DROPPED_BY_RENDERER`: документ
+       * испорчен, сбор цел и оплачен, но выглядело это как «просто просрочен».
+       * Поэтому первопричина остаётся в коде, а возраст — в предупреждениях.
+       */
+      const priorCode = String(job.lastErrorCode ?? "").trim();
+      const priorError = String(job.lastError ?? "").trim();
+      /*
+       * Совет спрашивает тот же предикат, что и кнопка: звать пересобирать
+       * там, где кнопки не будет, — обещание, которого интерфейс не выполнит.
+       * А звать за новым сбором поверх целых данных значит звать заплатить за
+       * то же самое второй раз.
+       */
+      const advice = (await rebuildDataBlockerReason(job)) === null
+        ? "Данные собраны и сохранены — нажмите «Пересобрать отчёт»; повторный платный сбор не нужен."
+        : "Запустите сбор заново — данные предыдущих этапов сохранены.";
+      const stopped = `Прогон не продвигался дольше шести часов и остановлен. ${advice}`;
       console.error(
         `[unified] прогон остановлен по возрасту: кейс=${job.caseId} джоба=${job.unifiedJobId} ` +
-          `стадия=${job.stage} возраст=${Math.round(ageMs / 60000)} мин`
+          `стадия=${job.stage} возраст=${Math.round(ageMs / 60000)} мин ` +
+          `первопричина=${priorCode || "нет"}`
       );
       return await patchUnifiedCollectionJob(caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
-        lastError:
-          "Прогон не продвигался дольше шести часов и остановлен. Запустите сбор заново — данные предыдущих этапов сохранены.",
-        lastErrorCode: "STALE_NO_PROGRESS",
+        lastError: priorError ? `${priorError} — ${stopped}` : stopped,
+        lastErrorCode: priorCode || "STALE_NO_PROGRESS",
         completedAt: new Date().toISOString(),
         warnings: [...job.warnings, "STALE_NO_PROGRESS"],
       });
@@ -798,9 +825,6 @@ export async function runUnifiedCollectionTick(
 }
 
 
-/** Marker the rebuild path leaves on the job for the duration of the attempt. */
-const REBUILD_MARKER = "report-rebuild-accepted";
-
 /**
  * Предупреждения, с которыми прогон приходит к готовому отчёту.
  *
@@ -815,6 +839,9 @@ export function warningsSurvivingSuccessfulPrepare(input: {
   failedAgentCount: number;
 }): string[] {
   return mergeJobWarnings(input.jobWarnings, input.qualityWarnings).filter((w) => {
+    // Возрастной останов — свойство прошлой попытки: на готовом отчёте жалоба
+    // на застой читается как «собрано сломанным».
+    if (w === "STALE_NO_PROGRESS") return false;
     // Drop sticky historical Arsenkin failures once enrichment is clean.
     if (/arsenkin-failed:/i.test(w) && input.enrichmentComplete && input.failedAgentCount === 0) {
       return false;
@@ -854,32 +881,16 @@ async function restoreAfterFailedRebuild(
 ): Promise<UnifiedCollectionJob | null> {
   if (!job.warnings.some((w) => w === REBUILD_MARKER)) return null;
   const audit = await readUnifiedArtifact<{
-    restoreSnapshot?: {
-      stage: string;
-      status: string;
-      progress: number;
-      completedAt: string | null;
-      reportLinks: Record<string, string>;
-    };
+    restoreSnapshot?: UnifiedRebuildRestoreSnapshot;
   }>(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json");
   const snap = audit?.restoreSnapshot;
   if (!snap) return null;
 
   return (
-    (await patchUnifiedCollectionJob(job.caseId, {
-      stage: snap.stage as UnifiedCollectionJob["stage"],
-      status: snap.status as UnifiedCollectionJob["status"],
-      progress: snap.progress,
-      completedAt: snap.completedAt,
-      reportLinks: snap.reportLinks,
-      lastError: null,
-      lastErrorCode: null,
-      warnings: [
-        ...job.warnings.filter((w) => w !== REBUILD_MARKER),
-        `report-rebuild-failed:${code}`,
-        `report-rebuild-failed-detail:${message.slice(0, 160)}`,
-      ],
-    })) ?? job
+    (await patchUnifiedCollectionJob(
+      job.caseId,
+      restoreStateAfterFailedRebuild(snap, job.warnings, { code, message })
+    )) ?? job
   );
 }
 

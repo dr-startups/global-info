@@ -125,7 +125,13 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     recoveryAllowed: Boolean(recovery.recoveryAllowed),
     autoResume,
   });
-  const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
+  const rebuild = await evaluateUnifiedReportRebuildEligibility({
+    caseId: id,
+    job,
+    // Шаги уже спрошены выше: пока конвейер вернётся к работе сам, звать
+    // пользователя нельзя ни к восстановлению, ни к пересборке (шаг 14).
+    autoResumePending: autoResume.pending,
+  });
   const actionState = {
     preserved,
     recoveryAllowed: needsUser,
