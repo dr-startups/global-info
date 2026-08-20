@@ -1480,6 +1480,79 @@ export const REGION_CLIENT_LABELS: Record<string, string> = {
 };
 
 /**
+ * Название региона для клиентского текста; незнакомый код остаётся как есть.
+ *
+ * Незнакомый контур — это не «нет региона»: назвать его нечем, но умолчать о
+ * нём значило бы потерять материалы, которые в нём собраны.
+ */
+export function regionClientLabel(region: string): string {
+  const raw = String(region ?? "").trim();
+  return REGION_CLIENT_LABELS[raw.toUpperCase()] ?? raw;
+}
+
+/**
+ * Названия стран по-русски — одно место на всю деку.
+ *
+ * Комплаенс-провайдеры отдают страну кодом ISO 3166-1 («ru», «ch»), и на живом
+ * прогоне 20.08 (страница 61) банк читал «Страны в записи: ru, ch». Детектор
+ * внутренних кодов такой код не ловит: подчёркиваний в нём нет.
+ *
+ * Своего словаря стран здесь нет намеренно: полный ICU в среде уже знает все
+ * названия, а собственный список устарел бы на первой же смене состава.
+ * Названия — часть клиентского текста, поэтому урезанный ICU (молча английские
+ * названия) обязан ронять сборку: это закреплено тестом карточки.
+ */
+const REGION_NAMES_RU = new Intl.DisplayNames(["ru"], { type: "region" });
+
+/**
+ * Короткий латинский токен — это код, а не название.
+ *
+ * Нужен только для значений, которые назвать не удалось: «Швеция» из ручного
+ * импорта — уже клиентский текст и печатается дословно, а «RUS», «suhh», «643»
+ * или «q1» — машинный код, и печатать его нельзя. Английское название короче
+ * пяти букв («Chad») тоже свернётся в общую формулировку: отличить его от кода
+ * нечем, а общая формулировка честнее машинного кода.
+ */
+const COUNTRY_CODE_SHAPE = /^[A-Za-z0-9]{2,4}$/u;
+
+/** Страна есть, назвать её нечем — общая формулировка вместо кода. */
+const COUNTRY_NOT_RECOGNIZED_RU = "страна не распознана";
+
+/**
+ * Список стран записи для клиентского текста.
+ *
+ * `Intl.DisplayNames` на неизвестном коде возвращает сам код («XX»), а на
+ * некорректном бросает — оба случая сворачиваются в одну общую формулировку.
+ * Именно в одну и без счёта: «ru» и «RUS» могут быть одной страной, и число
+ * нераспознанных назвало бы две. Пустой список — пустой результат: строки о
+ * странах в карточке тогда нет вовсе, потому что провайдер о них не говорил.
+ */
+export function countryNamesRu(values: readonly string[]): string[] {
+  const named: string[] = [];
+  let hasUnrecognized = false;
+  for (const value of values) {
+    const raw = String(value ?? "").trim();
+    if (!raw) continue;
+    let name = "";
+    try {
+      name = REGION_NAMES_RU.of(raw.toUpperCase()) ?? "";
+    } catch {
+      name = "";
+    }
+    if (name && name.toUpperCase() !== raw.toUpperCase()) {
+      named.push(name);
+    } else if (COUNTRY_CODE_SHAPE.test(raw)) {
+      hasUnrecognized = true;
+    } else {
+      named.push(raw);
+    }
+  }
+  const unique = [...new Set(named)];
+  if (hasUnrecognized) unique.push(COUNTRY_NOT_RECOGNIZED_RU);
+  return unique;
+}
+
+/**
  * Предмет аудита одной фразой: что именно проверялось.
  *
  * Отчёт анализирует ТОП-20 выдачи и международные базы, а собирает шире —
@@ -1591,7 +1664,7 @@ export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
     const denominator = readShareDenominator(b);
     if (denominator <= 0) continue;
     parts.push(
-      `${REGION_CLIENT_LABELS[regionKey] ?? regionKey} — ${readSharePercent(
+      `${regionClientLabel(regionKey)} — ${readSharePercent(
         b.adverseRead,
         denominator
       )}% (${b.adverseRead} из ${denominator})`

@@ -184,7 +184,7 @@ describe("ответ провайдера превращается в совпа
     expect(map("строка")).toEqual([]);
   });
 
-  it("краткое описание называет списки и роль, а не выдумывает", () => {
+  it("краткое описание называет роль и число списков, а не выдумывает", () => {
     const summary = summarizeEntity(ENTITY);
     // Тема называется словами: код провайдера («sanction», «role.pep», «poi»)
     // в клиентский текст не попадает. Проверка держала здесь именно код и тем
@@ -193,7 +193,9 @@ describe("ответ провайдера превращается в совпа
     expect(summary).toMatch(/санкцион/iu);
     expect(summary).not.toContain("sanction");
     expect(summary).toContain("Chief Executive Officer");
-    expect(summary).toContain("us_ofac_sdn");
+    // Имена наборов данных — такие же машинные коды: клиенту называется их число.
+    expect(summary).not.toContain("us_ofac_sdn");
+    expect(summary).toContain("источника в записи: 2");
     expect(summarizeEntity({ id: "x" })).toMatch(/без дополнительных сведений/);
   });
 });

@@ -50,13 +50,15 @@ describe("сводка совпадения в комплаенс-базе", () 
     expect(text).not.toContain("fresh.unknown.topic");
   });
 
-  it("должность и списки по-прежнему называются", () => {
+  it("должность называется, а списки считаются", () => {
     const text = summarizeEntity({
       ...entity({ topics: ["role.pep"], position: ["Сенатор"] }),
       datasets: ["us_ofac_sdn", "eu_fsf"],
     });
     expect(text).toContain("Сенатор");
-    expect(text).toContain("us_ofac_sdn");
+    // Имя набора данных — такой же машинный код, как код темы.
+    expect(text).not.toContain("us_ofac_sdn");
+    expect(text).toContain("источника в записи: 2");
   });
 
   it("запись без сведений описывается словами", () => {

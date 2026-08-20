@@ -42,6 +42,7 @@ import {
   looksLikeSurfaceBlockHeading,
 } from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
+import { pluralRu } from "../../report/i18n/plural-ru";
 
 export type { ThemeDef };
 
@@ -117,15 +118,14 @@ function itemIsAdverse(item: RawInventoryItem): boolean {
   return getAdversePatterns().test(itemText(item));
 }
 
-/** Russian plural form: 1 публикация, 2 публикации, 5 публикаций. */
-export function pluralRu(n: number, one: string, few: string, many: string): string {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return many;
-  if (last === 1) return one;
-  if (last >= 2 && last <= 4) return few;
-  return many;
-}
+/**
+ * Russian plural form: lives in `report/i18n/plural-ru` because the compliance
+ * response mapper needs it too and must not pull this module in. Re-exported
+ * here: the deck fragment builders import it from this file, and their sources
+ * feed the deck content fingerprint — moving the import would invalidate every
+ * cached section pack for nothing.
+ */
+export { pluralRu };
 
 /**
  * PDF-40 G.2b — short framing lead (what was found). The concrete meaning

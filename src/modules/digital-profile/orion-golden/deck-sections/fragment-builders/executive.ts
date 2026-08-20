@@ -37,7 +37,7 @@ import {
   packBulletPages,
   matchGptKeyRisk,
   readShareExecutiveLine,
-  REGION_CLIENT_LABELS,
+  regionClientLabel,
   riskLabel,
   sourceLine,
   splitClientParagraphs,
@@ -257,7 +257,7 @@ export function composeExecutivePageStructure(
   const materialWord = pluralRu(ms.compositeCount, "материал", "материала", "материалов");
   const regionBits = Object.entries(ms.perRegionCounts ?? {})
     .filter(([, n]) => typeof n === "number" && n > 0)
-    .map(([r, n]) => `${REGION_CLIENT_LABELS[String(r).toUpperCase()] ?? r} — ${n}`);
+    .map(([r, n]) => `${regionClientLabel(String(r))} — ${n}`);
   const surfaces = [
     ...new Set(
       scoped.surfaceUnits
@@ -1056,7 +1056,9 @@ export function buildDigitalProfileOverviewFragment(
               "регионального контура",
               "региональных контуров",
               "региональных контуров"
-            )} (${regions.map(([r, n]) => `${r}: ${n}`).join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+            )} (${regions
+              .map(([r, n]) => `${regionClientLabel(r)}: ${n}`)
+              .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
           ]
             .filter(Boolean)
             .join(" "),
@@ -1072,7 +1074,11 @@ export function buildDigitalProfileOverviewFragment(
             { label: "Требуют идентификации", value: String(s.ambiguousCount), tone: "warn" },
             { label: "Относятся к другим лицам", value: String(s.otherSubjectCount), tone: "warn" },
             { label: "Тем повышенного внимания", value: String(s.adverseFindingCount), tone: "risk" },
-            { label: "Региональные контуры", value: regions.map(([r]) => r).join(" · "), tone: "accent" },
+            {
+              label: "Региональные контуры",
+              value: regions.map(([r]) => regionClientLabel(r)).join(" · "),
+              tone: "accent",
+            },
           ],
           bullets: adverseThemes,
           whatToCheck:

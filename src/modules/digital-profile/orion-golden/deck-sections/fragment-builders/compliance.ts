@@ -17,6 +17,7 @@ import {
   VISUAL_ASSET_UNAVAILABLE,
   chunk,
   clampClientText,
+  countryNamesRu,
   enumerateRu,
   makeSlotSlide,
 } from "./shared";
@@ -210,7 +211,11 @@ export function buildComplianceFragment(
     if (aliases.length > 0) {
       rows.push(["Также числится как", clampClientText(aliasList(aliases), 200)]);
     }
-    const countries = (e.countries ?? []).map((c) => String(c).trim()).filter(Boolean);
+    // Страна печатается названием, а не кодом провайдера: «ru, ch» на странице
+    // 61 живого прогона — такой же машинный текст посреди клиентского, как коды
+    // тем. Список тот же, что печатался раньше; вторым полем записи он не
+    // становится.
+    const countries = countryNamesRu((e.countries ?? []).map((c) => String(c)));
     if (countries.length > 0) rows.push(["Страны в записи", countries.join(", ")]);
     const dates = (e.datesOfBirth ?? []).map((d) => String(d).trim()).filter(Boolean);
     if (dates.length > 0) rows.push(["Даты рождения в записи", dates.join(", ")]);

@@ -613,7 +613,7 @@
       "totalPageCount": 49,
       "baseSlotId": "p05_profile_dashboard",
       "isContinuation": false,
-      "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (RU: 246, UAE: 97). Принадлежность каждого материала к проверяемому лицу проверена.",
+      "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (Россия: 246, ОАЭ: 97). Принадлежность каждого материала к проверяемому лицу проверена.",
       "bullets": [
         "Криминальные / судебные материалы\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]"
       ],
@@ -673,7 +673,7 @@
         },
         {
           "label": "Региональные контуры",
-          "value": "RU · UAE",
+          "value": "Россия · ОАЭ",
           "tone": "accent"
         }
       ]

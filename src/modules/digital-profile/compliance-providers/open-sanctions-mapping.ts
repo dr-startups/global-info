@@ -15,6 +15,7 @@
  * нет, должно означать «нет сведений», а не падение прогона.
  */
 
+import { pluralRu } from "../report/i18n/plural-ru";
 import type {
   ComplianceConfidenceLevel,
   ComplianceRiskType,
@@ -190,7 +191,20 @@ export function summarizeEntity(entity: Record<string, unknown>): string {
     if (riskLabels.length > 0) parts.push(`темы: ${riskLabels.join(", ")}`);
   }
   if (position) parts.push(`должность: ${position}`);
-  if (datasets.length > 0) parts.push(`источники: ${datasets.slice(0, 5).join(", ")}`);
+  // Наборы данных называются числом, а не именами.
+  //
+  // Имя набора — такой же машинный код, как код темы: на прогоне 20.08
+  // (страница 61) клиент читал «источники: ext_gb_coh_psc, wd_oligarchs,
+  // ru_billionaires_2021, ext_ru_egrul, wd_curated». Прослеживаемость от этого
+  // не страдает — строкой ниже в той же карточке стоит ссылка на карточку
+  // записи OpenSanctions, по которой видны все наборы.
+  //
+  // Наборов нет — строки нет вовсе: «источников в записи: 0» сообщало бы о том,
+  // чего провайдер не говорил, — то же правило, что для пустых тем выше.
+  if (datasets.length > 0) {
+    const word = pluralRu(datasets.length, "источник", "источника", "источников");
+    parts.push(`${word} в записи: ${datasets.length}`);
+  }
   return parts.length > 0 ? parts.join("; ") : "запись в базе OpenSanctions без дополнительных сведений";
 }
 
