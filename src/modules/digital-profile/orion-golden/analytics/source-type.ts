@@ -51,7 +51,7 @@ const REFERENCE_SITES =
   /(^|\.)(imdb\.com|kinopoisk\.ru|tadviser\.(?:ru|com)|allmusic\.com|discogs\.com|last\.fm|musicbrainz\.org|genius\.com|peoples\.ru|24smi\.org|uznayvse\.ru|biographe\.ru|biografguru\.ru|whoiswho\.dp\.ru|persons-info\.com|viperson\.ru)$/iu;
 
 const REGISTRY_SITES =
-  /(^|\.)(zachestnyibiznes\.ru|sbis\.ru|spark-interfax\.ru|kartoteka\.ru|synapsenet\.ru|xfirm\.ru|prima-inform\.ru|egrul\.nalog\.ru|nalog\.gov\.ru|fedresurs\.ru|kad\.arbitr\.ru|sudact\.ru|fssp\.gov\.ru|orgs\.biz)$/iu;
+  /(^|\.)(zachestnyibiznes\.ru|sbis\.ru|spark-interfax\.ru|kartoteka\.ru|synapsenet\.ru|xfirm\.ru|prima-inform\.ru|egrul\.nalog\.ru|nalog\.gov\.ru|fedresurs\.ru|kad\.arbitr\.ru|sudact\.ru|fssp\.gov\.ru|orgs\.biz|bizfiles\.org)$/iu;
 
 const AGGREGATOR_SITES =
   /(^|\.)(yandex\.(?:ru|com)|google\.(?:com|ru|ae)|mail\.ru|rambler\.ru|bing\.com|yahoo\.com|news\.google\.com|zoon\.ru|yell\.ru|2gis\.ru)$/iu;

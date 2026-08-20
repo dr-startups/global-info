@@ -42,6 +42,8 @@ import {
   looksLikeSurfaceBlockHeading,
 } from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
+import { sourceTypeFromDomain, type SourceType } from "./source-type";
+import { publicDomainOf } from "./public-domain";
 import { pluralRu } from "../../report/i18n/plural-ru";
 
 export type { ThemeDef };
@@ -105,8 +107,41 @@ function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
+/**
+ * Площадки, у которых сниппет выдачи — оглавление сайта, а не текст о человеке.
+ *
+ * Реестр и каталог устроены одинаково: карточка человека перечисляет разделы,
+ * которые на ней есть, и поисковик забирает этот перечень в сниппет. На живом
+ * прогоне 20.08 (кейс Прохоров) банк получил ключевым риском №1 «Криминальные /
+ * судебные материалы» — под находкой стояла одна карточка `bizfiles.org` с
+ * двадцатого места Яндекса, страница не читалась, а весь «криминал» был словом
+ * «суды» в строке «Сводка информации, аффилированность, финансы, суды».
+ * Такой перечень стоит на карточке любого человека на этом сайте.
+ *
+ * Тип спрашивается у `source-type.ts`, а не задаётся вторым списком доменов:
+ * ответ на вопрос «что это за площадка» в проекте уже есть, и он один.
+ */
+const DIRECTORY_SOURCE_TYPES: ReadonlySet<SourceType> = new Set<SourceType>([
+  "База данных / реестр",
+  "Агрегатор / каталог",
+]);
+
+/**
+ * Сниппет наблюдения — или пусто, если читать его как утверждение нельзя.
+ *
+ * Режется именно сниппет, а не материал целиком: заголовок карточки реестра
+ * («Суд взыскал с …») — по-прежнему утверждение, и тему он даёт. Прочитанная
+ * страница ничего не теряет и здесь: её темы идут своим путём, через
+ * `run-link-verdicts.ts` → `link-theme-clustering.ts`, а в него `itemText` не
+ * входит.
+ */
+function readableSnippet(item: RawInventoryItem): string | undefined {
+  const type = sourceTypeFromDomain(publicDomainOf(item.sourceUrl));
+  return type && DIRECTORY_SOURCE_TYPES.has(type) ? undefined : item.snippet;
+}
+
 function itemText(item: RawInventoryItem): string {
-  return [item.title, item.snippet, item.classification, item.sourceUrl]
+  return [item.title, readableSnippet(item), item.classification, item.sourceUrl]
     .filter(Boolean)
     .join(" ");
 }
