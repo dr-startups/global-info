@@ -38,6 +38,7 @@ import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
+import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
 import { normalizeForCompare } from "../text-compare";
 import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
 import {
@@ -603,12 +604,21 @@ export function statusLine(top: Finding | undefined): string {
     top.confidence >= 0.7 ? "тема подтверждена" : "сигнал предварительный";
   const conf =
     top.confidence >= 0.85
-      ? "достоверность оценки высокая"
+      ? // Было «достоверность оценки высокая». Рядом со ступенью «высокий» это
+        // один и тот же корень дважды об одном предложении, а речь о разном:
+        // степень внимания и надёжность оценки.
+        "оценка достоверна"
       : top.confidence >= 0.6
         ? "достоверность оценки уверенная"
         : "оценка требует подтверждения";
   const head = kind.charAt(0).toUpperCase() + kind.slice(1);
-  return `${head}, уровень внимания — ${riskLabel(top.riskLevel).toLowerCase()}; ${conf}.`;
+  // Ступень стоит после тире; у неизвестного уровня слова-прилагательного нет,
+  // и оборот берётся целиком — иначе выходит «уровень внимания — требует
+  // уточнения».
+  const attention = clientRiskStep(top.riskLevel)
+    ? `уровень внимания — ${riskWord(top.riskLevel)}`
+    : riskAttentionPhrase(top.riskLevel);
+  return `${head}, ${attention}; ${conf}.`;
 }
 
 export function normalizeEvidenceUrl(url: string | undefined): string {
@@ -721,7 +731,7 @@ export function pageScopedConclusion(f: Finding, view: PageEvidenceView): string
   // Было: «тема»: уровень внимания — критический — материалы на этой странице:
   // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
   // а не как предложение. Теперь это два коротких предложения.
-  const level = `«${f.theme}» — ${riskLabel(f.riskLevel).toLowerCase()} уровень внимания.`;
+  const level = `«${f.theme}» — ${riskAttentionPhrase(f.riskLevel)}.`;
   const src = where.length ? ` Материалы по теме на этой странице — ${enumerateRu(where)}.` : "";
   return clampClientText(`${level}${src}`, 400);
 }
@@ -1993,28 +2003,11 @@ export function uniqueRefs(scoped: ScopedFragmentInput): string[] {
   });
 }
 
-export function riskLabel(level: string): string {
-  const map: Record<string, string> = {
-    critical: "Критический",
-    high: "Высокий",
-    medium: "Средний",
-    low: "Низкий",
-    none: "Нет",
-  };
-  return map[level] ?? level;
-}
-
-/** Executive verdict → client label. Raw enum (HIGH/ELEVATED/…) never leaks. */
-export function verdictClientLabel(verdict: string): string {
-  const map: Record<string, string> = {
-    HIGH: "Высокий риск",
-    ELEVATED: "Повышенный риск",
-    MIXED: "Смешанный фон",
-    LOW: "Низкий риск",
-    INSUFFICIENT_DATA: "Недостаточно данных",
-  };
-  return map[String(verdict).toUpperCase()] ?? verdict;
-}
+/**
+ * Уровень и вердикт становятся словом на клиентской шкале, и только там.
+ * Построители печатают то, что она отдала, — своей таблицы у них нет.
+ */
+export { riskLabel, verdictClientLabel } from "../../client/risk-scale";
 
 /**
  * Visual slide helper: binds the slot's asset when available; otherwise emits

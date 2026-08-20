@@ -96,21 +96,22 @@ const BATCH_SURFACES: Record<GptCaseAnalysisMapBatchKey, Set<string>> = {
   compliance: new Set(["compliance", "url_audit"]),
 };
 
-const MAP_SYSTEM_PROMPT = [
+/** Словарь ступеней в промпте закреплён тестом: модели предлагаются три. */
+export const GPT_STAGE1_MAP_SYSTEM_PROMPT = [
   "Ты — аналитик reputational due diligence.",
   "Тебе передан ЧАСТИЧНЫЙ верифицированный корпус (один батч поверхностей). Сделай мини-анализ только по этим данным.",
   "Не выдумывай фактов вне переданного батча. Пиши по-русски, без внутренних технических терминов и URL.",
   "Лимиты: keyRisks ≤ 6 (theme ≤ 160, explanation ≤ 700, advice ≤ 400); notableFacts/positiveSignals item ≤ 400.",
-  'Верни ТОЛЬКО JSON: {"keyRisks":[{"theme":string,"severity":"низкий|средний|высокий|критический","explanation":string,"advice":string}],"notableFacts":[string],"positiveSignals":[string]}.',
+  'Верни ТОЛЬКО JSON: {"keyRisks":[{"theme":string,"severity":"низкий|средний|высокий","explanation":string,"advice":string}],"notableFacts":[string],"positiveSignals":[string]}.',
 ].join(" ");
 
-const REDUCE_SYSTEM_PROMPT = [
+export const GPT_STAGE1_REDUCE_SYSTEM_PROMPT = [
   "Ты — старший аналитик reputational due diligence.",
   "Тебе переданы мини-анализы частей корпуса и общие метрики. Сведи их в ОДИН целостный клиентский анализ кейса.",
   "Не добавляй фактов, которых нет в мини-анализах. Пиши по-русски; каждый риск объясняй и давай совет.",
   "Лимиты длины (символы, жёстко): executiveConclusion ≤ 1400; digitalPortrait ≤ 1000; keyRisks.theme ≤ 160; keyRisks.explanation ≤ 700; keyRisks.advice ≤ 400; positiveSignals/recommendations item ≤ 400.",
   "Строгие запреты: не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider); не вставляй URL.",
-  'Верни ТОЛЬКО JSON по схеме: {"overallRiskLevel":"низкий|средний|высокий|критический","executiveConclusion":string,"digitalPortrait":string,"keyRisks":[{"theme":string,"severity":"низкий|средний|высокий|критический","explanation":string,"advice":string}],"positiveSignals":[string],"recommendations":[string]}.',
+  'Верни ТОЛЬКО JSON по схеме: {"overallRiskLevel":"низкий|средний|высокий","executiveConclusion":string,"digitalPortrait":string,"keyRisks":[{"theme":string,"severity":"низкий|средний|высокий","explanation":string,"advice":string}],"positiveSignals":[string],"recommendations":[string]}.',
 ].join(" ");
 
 type CorpusInput = {
@@ -372,7 +373,7 @@ export async function runGptCaseAnalysisMapReduce(
       key: `gpt-stage1-map:${batch.key}`,
       run: () =>
         input.caller({
-          systemPrompt: MAP_SYSTEM_PROMPT,
+          systemPrompt: GPT_STAGE1_MAP_SYSTEM_PROMPT,
           userPayload: buildMapBatchPayload(corpus, batch),
         }),
     })),
@@ -447,7 +448,10 @@ export async function runGptCaseAnalysisMapReduce(
             input.caller({
               // Свод тоже получает вычисленный уровень: иначе он предложит свой,
               // и объяснение разойдётся с плашкой по смыслу (шаг 07.9).
-              systemPrompt: withRiskLevelLine(REDUCE_SYSTEM_PROMPT, input.deterministicVerdict),
+              systemPrompt: withRiskLevelLine(
+                GPT_STAGE1_REDUCE_SYSTEM_PROMPT,
+                input.deterministicVerdict
+              ),
               userPayload: reducePayload,
             }),
         },

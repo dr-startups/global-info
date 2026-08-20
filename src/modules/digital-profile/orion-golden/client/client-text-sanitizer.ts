@@ -7,17 +7,20 @@ import {
   getClientTextContract,
   matchInternalClientToken,
 } from "./load-client-text-contract";
+import { RISK_STEP_UNKNOWN_LABEL, riskLevelLabel } from "./risk-scale";
 
 const RISK_LEVEL_LABELS: Record<string, string> = {
   review_required: "Требует ручной проверки",
   requires_review: "Требует ручной проверки",
   manual_review: "Требует ручной проверки",
-  unknown: "Требует уточнения",
+  unknown: RISK_STEP_UNKNOWN_LABEL,
   no_data: "Недостаточно данных",
-  low: "Низкий уровень",
-  medium: "Средний уровень",
-  high: "Высокий уровень",
-  critical: "Критический уровень",
+  // Словоформы ступеней — с клиентской шкалы: утёкший токен гуманизируется в
+  // то же слово, которым уровень напечатан на карточке.
+  low: riskLevelLabel("low"),
+  medium: riskLevelLabel("medium"),
+  high: riskLevelLabel("high"),
+  critical: riskLevelLabel("critical"),
 };
 
 const THEME_LABELS: Record<string, string> = {

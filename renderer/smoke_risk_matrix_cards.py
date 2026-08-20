@@ -161,7 +161,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 def card(idx: int, detail: str) -> dict[str, str]:
     return {
         "headline": f"Тема риска {idx}",
-        "status": "Критический" if idx == 1 else "Высокий",
+        "status": "Высокий",
         "detail": detail,
         "tone": "risk",
     }
@@ -316,7 +316,7 @@ def raster_body_height(detail: str, text_w: int, detail_font: float) -> int:
 
 def main() -> int:
     # --- К1. Здоровая страница: полный лист сводных карточек -----------------
-    PAGE_CARDS = page_capacity("Тема риска 1", SUMMARY_DETAIL, "Критический")
+    PAGE_CARDS = page_capacity("Тема риска 1", SUMMARY_DETAIL, "Высокий")
     healthy = [card(i, SUMMARY_DETAIL) for i in range(1, PAGE_CARDS + 1)]
     prs, telemetry = render_page(healthy)
     drawn = drawn_headlines(prs, healthy)
@@ -647,7 +647,7 @@ def main() -> int:
     # снова треть пустоты на листе и недостача ёмкости. Растровый шаг строки
     # замерен по странице 6 эталона и живёт вне кода меры.
     for label, detail, pill in (
-        ("сводной", SUMMARY_DETAIL, "Критический"),
+        ("сводной", SUMMARY_DETAIL, "Высокий"),
         ("худшей легальной", f"{WORST_PROBLEM}\n{WORST_ACTION}", "Требует подтверждения"),
     ):
         text_w = CONTENT_W - BADGE_W - 220_000 if pill else int(CONTENT_W * 0.92)
@@ -659,7 +659,7 @@ def main() -> int:
             1.0 <= ratio <= 1.12,
             f"мера {measured}, растровая потребность {physical}, отношение {ratio:.3f}",
         )
-    summary_h = card_height("Тема риска 1", SUMMARY_DETAIL, "Критический")
+    summary_h = card_height("Тема риска 1", SUMMARY_DETAIL, "Высокий")
     check(
         # Число из комментария реестра и из ENGINEERING.md: сводная карточка
         # эталона. Допуск ±5 % — меньше одной строки тела (строка стоит ~21 %

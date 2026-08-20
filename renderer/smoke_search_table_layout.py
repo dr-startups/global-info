@@ -69,6 +69,11 @@ CHAR_W_10PT = int(BODY_PT * EMU_PER_PT * 0.52)
 STATUS_UNRECORDED = "Не подтверждено (статус в артефактах прогона не зафиксирован)"
 COMPLIANCE_ROW = ["OpenSanctions", "PEP (политически значимое лицо)", "71/100", STATUS_UNRECORDED]
 
+#: Цвета `_status_tone` по ступеням клиентской шкалы: danger / warn / neutral.
+RED_RISK = "B91C1C"
+AMBER_OPEN = "C2410C"
+SLATE_NEUTRAL = "64748B"
+
 #: Зелёный `_status_tone` по умолчанию — тот самый «всё в порядке».
 #: Сравнивается строкой: RGBColor — подкласс tuple, и сравнение с числом
 #: всегда ложно, то есть проверка «не зелёный» была бы тождеством.
@@ -299,6 +304,20 @@ def main() -> int:
         "Т9б: незафиксированный статус — не зелёный бейдж",
         str(tone_unrecorded) != GREEN_OK,
         f"цвет {tone_unrecorded}",
+    )
+    # Клиентская шкала печатает три слова, и бейдж обязан их знать: незнакомое
+    # слово здесь зелёное по умолчанию, то есть «Высокий» читался бы как «всё в
+    # порядке».
+    steps = {word: str(_status_tone(word)[1]) for word in ("Высокий", "Средний", "Низкий")}
+    check(
+        "Т9в: ступени шкалы не зелёные",
+        all(colour != GREEN_OK for colour in steps.values()),
+        f"цвета {steps}",
+    )
+    check(
+        "Т9г: цвет ступени растёт вместе со ступенью",
+        steps["Высокий"] == RED_RISK and steps["Средний"] == AMBER_OPEN and steps["Низкий"] == SLATE_NEUTRAL,
+        f"цвета {steps}",
     )
 
     # --- Т10. Подсветка строки — только от статусной колонки ------------------

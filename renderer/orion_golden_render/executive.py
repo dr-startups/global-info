@@ -48,12 +48,12 @@ from .common import (
 )
 from .layout_cleeq import (
     bars_color,
+    bars_for_level,
     content_stage,
     draw_level_bars,
     render_action_block,
     render_hero_metrics_row,
     stage_heading,
-    tone_to_bars,
 )
 from .visual import (
     _render_kpi_cards,
@@ -398,11 +398,12 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             if len(pill) > 14 or " " in pill:
                 lines = max(lines, 2)
             line_h = int(pill_size * 12_700 * 1.35)
-            filled = tone_to_bars(tone, pill)
+            filled = bars_for_level(pill)
             # Шкале степени нужна своя полоса под словом уровня: делений пять,
             # высота 90 000 плюс отбивка. Без этого запаса шкала ложилась прямо
-            # на слово и читалась как зачёркивание.
-            bars_h = 130_000
+            # на слово и читалась как зачёркивание. Карточке статуса полоса не
+            # нужна: шкалы у неё не будет.
+            bars_h = 130_000 if filled else 0
             need = lines * line_h + 60_000 + bars_h
             bh = min(max(420_000, need + 140_000), max(420_000, h - 2 * pad_y))
             # Soft tone fill, no hard border — a stroked plate was reading as
@@ -429,7 +430,9 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             # в сравнении с соседними темами.
             bars_w = 5 * 120_000 + 4 * 30_000
             bars_y = by + 70_000 + lines * line_h + 40_000
-            if bars_y + 90_000 <= by + bh - 40_000:
+            # Статус — не ступень: делений он не несёт вовсе, иначе
+            # непроверенный материал стоит на середине шкалы риска.
+            if filled and bars_y + 90_000 <= by + bh - 40_000:
                 draw_level_bars(
                     ctx,
                     bx + (badge_w - bars_w) // 2,

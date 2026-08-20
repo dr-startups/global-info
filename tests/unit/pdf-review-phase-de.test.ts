@@ -47,7 +47,9 @@ describe("D.4 — statusLine human phrasing", () => {
     } as never);
     expect(line).not.toMatch(/уверенность \d+%/u);
     expect(line).toMatch(/[Тт]ема подтверждена/u);
-    expect(line).toMatch(/достоверность оценки высокая/u);
+    // Было «достоверность оценки высокая»: рядом со ступенью «высокий» это
+    // один корень дважды об одном предложении.
+    expect(line).toMatch(/оценка достоверна/u);
   });
 
   it("preliminary signal below 0.7 confidence", () => {

@@ -8,16 +8,11 @@
  * Feeding the model client-safe Russian labels removes the leak at the source.
  */
 
-export function riskLevelRu(level: string): string {
-  const map: Record<string, string> = {
-    critical: "критический",
-    high: "высокий",
-    medium: "средний",
-    low: "низкий",
-    none: "нет риска",
-  };
-  return map[level.toLowerCase()] ?? "требует уточнения";
-}
+/**
+ * Уровень находки словом. Берётся с клиентской шкалы: модель эхом возвращает
+ * слова своего входа, поэтому словарь нагрузки и есть словарь отчёта.
+ */
+export { riskWord as riskLevelRu } from "../client/risk-scale";
 
 export function subjectMatchRu(value: string): string {
   const map: Record<string, string> = {

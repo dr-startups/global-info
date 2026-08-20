@@ -27,6 +27,7 @@ import {
 } from "../contracts/client-summary-pack";
 import type { LinkVerdict, VerdictThemeSummary } from "../contracts/link-verdict";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
+import { riskWord, verdictRiskWord } from "../client/risk-scale";
 import { themeLabelRu } from "./canonical-themes";
 import {
   isQuotableEvidence,
@@ -77,11 +78,11 @@ export type ClientSummaryPackBuildInput = {
   /**
    * Authoritative overall verdict (executive summary scale).
    *
-   * Without it the summary text recomputed its own verdict from theme
-   * materiality, on a different scale that has «критический» while the badge
-   * scale tops out at HIGH. One slide therefore carried two answers:
-   * «Итоговая оценка: Высокий риск» directly above «Итоговая оценка:
-   * критический риск» (step 07.9).
+   * Without it the summary text recomputes its own verdict from theme
+   * materiality — a second answer to the question the badge already answered.
+   * One slide therefore carried «Итоговая оценка: Высокий риск» directly above
+   * a sentence naming another level (step 07.9). Both now print on the same
+   * three-step client scale, but the verdict still belongs to the analytics.
    */
   overallVerdict?: string;
   /**
@@ -730,17 +731,6 @@ function buildInternationalDatabases(
   return out;
 }
 
-/** Verdict wording for the summary sentence, on the executive summary scale. */
-function verdictSentenceLabel(verdict: string): string | null {
-  const map: Record<string, string> = {
-    HIGH: "высокий",
-    ELEVATED: "повышенный",
-    MIXED: "смешанный",
-    LOW: "низкий",
-  };
-  return map[String(verdict).toUpperCase()] ?? null;
-}
-
 function buildOverallAssessment(
   subjectId: string,
   themes: ClientMaterialTheme[],
@@ -752,7 +742,7 @@ function buildOverallAssessment(
   const levels = themes.map((t) => t.materialityLevel);
   const riskLevel = riskFromMateriality(levels);
   // One verdict per report: prefer the authoritative one when supplied.
-  const authoritative = overallVerdict ? verdictSentenceLabel(overallVerdict) : null;
+  const authoritative = overallVerdict ? verdictRiskWord(overallVerdict) : null;
   // Прочитанная страница сильнее заголовка и здесь: пока есть негативные
   // сюжеты, основания называются ими, а не рубриками словаря.
   const topTitles = (
@@ -764,14 +754,7 @@ function buildOverallAssessment(
     riskLevel === "none" && adversePlots.length === 0
       ? `По собранным открытым источникам существенных рисковых тем по субъекту не выделено; вывод ограничен доступностью данных.`
       : `Итоговая оценка: ${
-          authoritative ??
-          (riskLevel === "critical"
-            ? "критический"
-            : riskLevel === "high"
-              ? "высокий"
-              : riskLevel === "medium"
-                ? "средний"
-                : "низкий")
+          authoritative ?? riskWord(riskLevel)
         } риск. Основные основания: ${topTitles || "подтверждённые темы риска в открытых источниках"}.`
   );
   const reasons = themes.slice(0, 6).map((t) =>

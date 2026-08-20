@@ -55,6 +55,7 @@ from .common import (
     plural_ru,
     record_text_layout,
 )
+from .layout_cleeq import level_step
 
 try:
     from client_text_contract import sidebar_check_failures
@@ -528,6 +529,14 @@ def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_line
     return min(lines, max_lines)
 
 
+#: Цвет точки по ступени: danger / warn / neutral клиентской шкалы.
+_STEP_DOT_COLORS = {
+    "high": RGBColor(0xB9, 0x1C, 0x1C),
+    "medium": RGBColor(0xC2, 0x41, 0x0C),
+    "low": RGBColor(0x64, 0x74, 0x8B),
+}
+
+
 def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     s = (status or "").strip().lower()
     # C.4 — negative/sanction values must never carry a green marker.
@@ -557,6 +566,12 @@ def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     # однофамильца.
     if "друго" in s:
         return "○", RGBColor(0x94, 0xA3, 0xB8)
+    # Слова клиентской шкалы: незнакомое слово здесь зелёное по умолчанию, и
+    # «Высокий» читался бы как «всё в порядке». Ступень узнаёт то же место, что
+    # и шкала делений, — второго словаря ступеней в рендерере нет.
+    step = level_step(s)
+    if step:
+        return "●", _STEP_DOT_COLORS[step]
     # E.6 — neutral verdicts read gray, green stays for explicit positives.
     if "нейтрал" in s or s in {"·", "—", "-", ""}:
         return "●", RGBColor(0x64, 0x74, 0x8B)

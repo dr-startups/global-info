@@ -52,6 +52,7 @@ import {
   renderSemanticBlock,
   type SemanticBlock,
 } from "../semantic-summary-pagination";
+import { legacyRiskWordPlate } from "../../client/risk-scale";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 import { continuationTitle } from "../continuation-slide";
 
@@ -434,11 +435,11 @@ export function buildExecutiveSummaryFromComposed(
   const riskLevel = composed.sections.overallAssessment.match(
     /критический|высокий|средний|низкий/i
   )?.[0];
-  const verdictLabel = es
-    ? verdictClientLabel(es.verdict)
-    : riskLevel
-      ? riskLevel
-      : "по открытым источникам";
+  // Резюме, составленное до перехода на три ступени, содержит слово
+  // «критический»: в плашку оно уехало бы как есть, если не привести.
+  const verdictLabel =
+    (es ? verdictClientLabel(es.verdict) : riskLevel && legacyRiskWordPlate(riskLevel)) ||
+    "по открытым источникам";
 
   // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold the
   // visible-facts card (§7.2 + доля негатива) into the packed overview when it

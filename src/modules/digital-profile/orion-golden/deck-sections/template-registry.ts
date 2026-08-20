@@ -7,6 +7,8 @@
  * (orion_golden_*) so no second renderer is created.
  */
 
+import { CLIENT_RISK_LABELS } from "../client/risk-scale";
+
 export type DeckTemplateId =
   | "cover"
   | "toc"
@@ -196,7 +198,9 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     templateId: "risk-matrix",
     rendererTemplate: "orion_golden_risk_matrix_grid",
     staticBlocks: ["Матрица рисков", "Уровень", "Тема", "Статус"],
-    legend: ["Критический", "Высокий", "Средний", "Низкий", "Требует подтверждения"],
+    // Ступени — с клиентской шкалы; «Требует подтверждения» стоит рядом с
+    // ними как статус идентификации, а не как четвёртая ступень.
+    legend: [...CLIENT_RISK_LABELS, "Требует подтверждения"],
     maxBulletsPerSlide: 0,
     /*
      * Единственный ответ на вопрос «сколько карточек на листе».

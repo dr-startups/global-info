@@ -171,18 +171,32 @@ def draw_level_bars(
             pass
 
 
-def tone_to_bars(tone: str, pill: str) -> int:
-    """Сколько делений шкалы закрашено. Слово степени важнее тона карточки."""
-    blob = f"{tone} {pill}".lower()
-    if any(k in blob for k in ("крит", "danger", "крайне")):
-        return 5
-    if any(k in blob for k in ("высок", "high", "risk")):
-        return 4
-    if any(k in blob for k in ("сред", "medium", "warn")):
-        return 3
-    if any(k in blob for k in ("низк", "low")):
-        return 2
-    return 3
+def level_step(text: str) -> str | None:
+    """Ступень клиентской шкалы по напечатанному слову: `high`/`medium`/`low`.
+
+    Единственное место в рендерере, которое узнаёт ступень. Слов ровно три —
+    столько печатает клиентская шкала (`orion-golden/client/risk-scale.ts`);
+    `None` означает «это не ступень», и такой ответ получают статусы
+    («Требует подтверждения», «Нет данных»). По тону ступень не определяется:
+    тон `warn` носит и «Средний», и статус.
+    """
+    word = (text or "").lower()
+    if "высок" in word:
+        return "high"
+    if "сред" in word:
+        return "medium"
+    if "низк" in word:
+        return "low"
+    return None
+
+
+#: Делений шкалы на ступень. Ноль — шкалы нет вовсе: статус её не рисует.
+_BARS_BY_STEP = {"high": 5, "medium": 3, "low": 2}
+
+
+def bars_for_level(pill: str) -> int:
+    """Сколько делений шкалы закрашено; ноль — шкалу не рисовать."""
+    return _BARS_BY_STEP.get(level_step(pill) or "", 0)
 
 
 def bars_color(filled: int) -> RGBColor:

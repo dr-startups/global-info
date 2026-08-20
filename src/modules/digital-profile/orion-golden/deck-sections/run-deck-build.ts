@@ -23,6 +23,7 @@ import {
 import { buildLinkUsageTrace, linkUsageLogLine } from "./link-usage-trace";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
+import { toneForRiskLabel } from "../client/risk-scale";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { normalizeForCompare } from "./text-compare";
 import {
@@ -458,14 +459,6 @@ export function toRendererPayload(input: {
     "orion_golden_surface_panel",
     "orion_golden_image_grid",
   ]);
-  const RISK_TONES: Record<string, string> = {
-    Критический: "danger",
-    Высокий: "danger",
-    Средний: "warn",
-    Низкий: "neutral",
-    Нет: "neutral",
-    "Требует подтверждения": "warn",
-  };
   const usedAssetRefs = new Set<string>();
   const finalSlides = input.rendererSlides.map((raw) => {
     // Вводный абзац и текст находки склеиваются до переноса строк: перенос
@@ -533,7 +526,9 @@ export function toRendererPayload(input: {
         headline: row[0] ?? "Тема",
         detail: s.bullets?.[i] ?? `Уровень риска: ${row[1] ?? "—"}; приоритет: ${row[2] ?? "—"}.`,
         status: row[1] ?? "",
-        tone: RISK_TONES[row[1] ?? ""] ?? "warn",
+        // Тон задан ступенью, а не второй таблицей у маппинга: статусы
+        // («Требует подтверждения», «Нет данных») выше warn не поднимаются.
+        tone: toneForRiskLabel(row[1] ?? ""),
       }));
     }
     // KPI cards for the metrics dashboard layout (label/value/tone contract).

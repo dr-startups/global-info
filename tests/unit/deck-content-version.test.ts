@@ -46,6 +46,16 @@ const BUILDERS_DIR = join(SECTIONS_DIR, "fragment-builders");
  * набор снимаемых заголовочных полей) изменила бы паки, не тронув ни одного
  * файла из списка выше.
  *
+ * `../client/risk-scale.ts` — словарь клиентской шкалы риска: им написаны
+ * бейджи карточек матрицы, легенда и плашка резюме. Файл лежит вне
+ * `deck-sections/`, но решает, какими словами напечатан уровень, — правка в нём
+ * меняет пакеты секций ровно так же, как правка построителя.
+ *
+ * `run-deck-build.ts`, `llm-slide-copy.ts`, `gpt-deck-composer.ts` и
+ * `../gpt/client-payload-labels.ts` — по той же причине: первый решает тон
+ * бейджа и склейку текста слайда, остальные три переписывают копию страниц
+ * моделью и задают словарь, которым модель отвечает.
+ *
  * `measured-bullet-fit.ts` и `deck-assembler.ts` — состав страниц. Пакеты они
  * не меняют, но ключ кэша сторожит не только пакеты: по совпадению версии
  * «Повторить рендер» переиспользует **готовую деку**, и дека, разложенная
@@ -59,6 +69,11 @@ const EXTRA_SOURCES = [
   "deck-assembler.ts",
   "measured-bullet-fit.ts",
   "template-registry.ts",
+  "../client/risk-scale.ts",
+  "run-deck-build.ts",
+  "llm-slide-copy.ts",
+  "gpt-deck-composer.ts",
+  "../gpt/client-payload-labels.ts",
 ];
 
 /** Исходники, из которых считается отпечаток, — в порядке хеширования. */
@@ -112,6 +127,22 @@ describe("версия содержимого деки не отстаёт от 
     const registry = join(SECTIONS_DIR, "template-registry.ts");
     const patched = fingerprintBuilders((path) =>
       path === registry ? `${readFileSync(path, "utf8")}\n// правка` : readFileSync(path)
+    );
+    expect(patched).not.toBe(fingerprintBuilders());
+  });
+
+  it.each([
+    ["клиентской шкалы риска", "../client/risk-scale.ts"],
+    ["сборки полезной нагрузки рендерера", "run-deck-build.ts"],
+    ["подмены копии слайдов моделью", "llm-slide-copy.ts"],
+    ["сборки деки моделью", "gpt-deck-composer.ts"],
+    ["словаря нагрузки модели", "../gpt/client-payload-labels.ts"],
+  ])("правка %s двигает отпечаток", (_what, file) => {
+    // Все они решают, каким словом и каким тоном напечатано содержимое
+    // страницы. Файл вне отпечатка — правка приезжает из кэша прежней.
+    const target = join(SECTIONS_DIR, file);
+    const patched = fingerprintBuilders((path) =>
+      path === target ? `${readFileSync(path, "utf8")}\n// правка` : readFileSync(path)
     );
     expect(patched).not.toBe(fingerprintBuilders());
   });

@@ -87,21 +87,6 @@ function countTechnicalTokens(text: string): number {
   return matches?.length ?? 0;
 }
 
-function riskLabelRu(level: string): string {
-  switch (level) {
-    case "critical":
-      return "критический";
-    case "high":
-      return "высокий";
-    case "medium":
-      return "средний";
-    case "low":
-      return "низкий";
-    default:
-      return "не определён как повышенный";
-  }
-}
-
 function composeScope(pack: ClientSummaryPack): string {
   const regions = pack.scope.regions.length
     ? pack.scope.regions.join(", ")
@@ -128,7 +113,6 @@ function composeScope(pack: ClientSummaryPack): string {
 }
 
 function composeOverall(pack: ClientSummaryPack): string {
-  const risk = riskLabelRu(pack.overallAssessment.riskLevel);
   const reasons = pack.overallAssessment.reasons.slice(0, 4).map(finishSentence);
   const limitations = pack.overallAssessment.limitations.slice(0, 2).map(finishSentence);
   /*
@@ -142,11 +126,18 @@ function composeOverall(pack: ClientSummaryPack): string {
    * собственного текста.
    */
   const parts = [
-    finishSentence(
-      pack.overallAssessment.conclusion.includes("Итоговая оценка")
-        ? pack.overallAssessment.conclusion
-        : `Итоговая оценка: ${risk} риск. ${pack.overallAssessment.conclusion}`
-    ),
+    /*
+     * Вывод печатается тем, чем его написала оценка пакета: своей ступени
+     * композитор не приписывает.
+     *
+     * Приписывал: пакет без единой существенной темы пишет «существенных
+     * рисковых тем не выделено; вывод ограничен доступностью данных», а префикс
+     * ставил перед этим «Итоговая оценка: низкий риск» — оценка и следом отказ
+     * от неё в соседнем предложении. Вердикт аналитики на этом пути не
+     * участвовал вовсе: плашка говорила «Недостаточно данных», а текст под ней
+     * — «низкий риск». Ступень называет тот, кто её вычислил.
+     */
+    finishSentence(pack.overallAssessment.conclusion),
     reasons.length > 0 && pack.readPlots.length === 0
       ? `Главные основания. ${reasons.join(" ")}`
       : "",

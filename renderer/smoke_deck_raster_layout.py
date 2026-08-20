@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import sys
 import tempfile
 from pathlib import Path
@@ -66,6 +68,109 @@ def count_first_level(runs_by_page: dict) -> dict:
         top = max(r[0] for r in runs)
         out[page] = {r[1] for r in runs if r[0] == top}
     return out
+
+
+#: Цвета шкалы степени в отрисованной карточке: закрашенное деление и пустое.
+BAR_COLORS = {"red": (0xE1, 0x3D, 0x3D), "amber": (0xE3, 0x8A, 0x24), "cold": (0xD8, 0xE3, 0xDA)}
+#: Деление шириной 120 000 EMU — около 18 px на растре; глиф уже вдвое.
+BAR_MIN_RUN_PX = 12
+#: Бейджи стоят в правой четверти листа — там же и слово ступени, и её шкала.
+BADGE_COLUMN_FROM = 0.75
+
+
+def render_matrix_page(cards: list[dict]) -> bytes | None:
+    """Одна страница матрицы, отрисованная настоящим рендерером; None — нечего смотреть.
+
+    Шкалу делений смотрим на карточках, которых в эталоне 72 нет вовсе
+    («Требует подтверждения», «Нет данных»), поэтому страница строится здесь.
+
+    Растр принимается только от LibreOffice: при её отсутствии рендерер рисует
+    PDF запасным кодом, и проверять вёрстку по нему — значит проверять не ту
+    вёрстку. Такой прогон объявляется пропуском, а не считается пройденным.
+    """
+    from orion_golden_render import render_orion_golden  # noqa: PLC0415
+
+    payload = {
+        "subjectName": "Тест",
+        "deckManifest": {
+            "toc": [],
+            "sectionPageRanges": [],
+            "finalSlides": [
+                {
+                    "slideKey": "p04_risk_dashboard",
+                    "template": "orion_golden_risk_matrix_grid",
+                    "title": "Матрица комплаенс-рисков",
+                    "pageNumber": 1,
+                    "totalPageCount": 1,
+                    "keyFindings": cards,
+                }
+            ],
+        },
+    }
+    out = render_orion_golden(payload)
+    pages = out.get("pages") or []
+    if not pages or out.get("pdfExportMode") != "libreoffice":
+        return None
+    return base64.b64decode(pages[0]["contentBase64"])
+
+
+def scan_badges(png: bytes) -> dict:
+    """Что нарисовано в колонке бейджей: шкалы делений и палитра пикселей.
+
+    Мерами рендерера не пользуемся вовсе — ищем то, что нарисовано: подряд
+    идущие ряды, где стоят четыре и более широких пятна цвета делений. Слово
+    ступени тоже цвет, поэтому пиксели считаются в том же проходе: по ним видно,
+    что бейдж нарисован и без шкалы.
+    """
+    with Image.open(io.BytesIO(png)) as raw:
+        im = raw.convert("RGB")
+    w, h = im.size
+    px = im.load()
+    x_from = int(w * BADGE_COLUMN_FROM)
+    pixels = {name: 0 for name in BAR_COLORS}
+
+    def color_of(c) -> str | None:
+        for name, t in BAR_COLORS.items():
+            if all(abs(c[i] - t[i]) <= 26 for i in range(3)):
+                return name
+        return None
+
+    groups: list[dict] = []
+    for y in range(h):
+        runs: list[str] = []
+        x = x_from
+        while x < w:
+            kind = color_of(px[x, y])
+            if kind is None:
+                x += 1
+                continue
+            start = x
+            while kind is not None:
+                pixels[kind] += 1
+                x += 1
+                kind = color_of(px[x, y]) if x < w else None
+            if x - start >= BAR_MIN_RUN_PX:
+                # Цвет деления берётся по середине пятна: край размыт конвертацией.
+                runs.append(color_of(px[(start + x) // 2, y]) or "cold")
+        if len(runs) < 4:
+            continue
+        # Сама шкала и её тень идут одной группой: тень отстоит от делений на
+        # несколько рядов и без склейки читалась бы второй шкалой.
+        if groups and y - groups[-1]["lastY"] <= 12:
+            group = groups[-1]
+            group["lastY"] = y
+            if len(runs) > len(group["widest"]):
+                group["widest"] = runs
+        else:
+            groups.append({"y": y, "lastY": y, "widest": runs})
+
+    return {
+        "pixels": pixels,
+        "bars": [
+            {name: sum(1 for kind in g["widest"] if kind == name) for name in BAR_COLORS}
+            for g in groups
+        ],
+    }
 
 
 def make_page(path: Path, *, spill: bool = False, outside: bool = False) -> None:
@@ -158,6 +263,74 @@ def main() -> int:
             rep.passed,
             f"проверено страниц: {rep.pages_checked}, дефектов: {len(rep.findings)}",
         )
+
+    # --- Шкала делений принадлежит ступени, а не статусу ------------------
+    #
+    # «Требует подтверждения» — статус идентификации, а не степень риска: на
+    # шкале ему места нет, в том числе визуального. Пока деления рисовались по
+    # тону карточки, непроверенный материал стоял на середине шкалы (3 из 5).
+    detail = (
+        "7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org.\n"
+        "В чём проблема: материалы связывают субъекта с судебными разбирательствами.\n"
+        "Что делать: Проверить статусы дел и первоисточники до принятия решений."
+    )
+    steps_png = render_matrix_page(
+        [
+            {"headline": "Тема ступени", "status": "Высокий", "detail": detail, "tone": "danger"},
+            {"headline": "Тема ступени", "status": "Средний", "detail": detail, "tone": "warn"},
+        ]
+    )
+    if steps_png is None:
+        print("# SKIP шкала делений — растр не получен от LibreOffice")
+    else:
+        bars = scan_badges(steps_png)["bars"]
+        check(
+            "карточка ступени рисует шкалу делений",
+            len(bars) == 2,
+            f"найдено шкал: {len(bars)}, ожидалось 2",
+        )
+        high, medium = (bars + [{}, {}])[:2]
+        check(
+            "«Высокий» — пять красных делений",
+            high.get("red") == 5 and high.get("cold") == 0,
+            f"красных {high.get('red')}, серых {high.get('cold')}",
+        )
+        check(
+            "«Средний» — три янтарных из пяти",
+            medium.get("amber") == 3 and medium.get("cold") == 2,
+            f"янтарных {medium.get('amber')}, серых {medium.get('cold')}",
+        )
+
+        statuses_png = render_matrix_page(
+            [
+                {
+                    "headline": "Тема статуса",
+                    "status": "Требует подтверждения",
+                    "detail": detail,
+                    "tone": "warn",
+                },
+                {
+                    "headline": "Нет подтверждённых тем",
+                    "status": "Нет данных",
+                    "detail": detail,
+                    "tone": "warn",
+                },
+            ]
+        )
+        if statuses_png is None:
+            print("# SKIP шкала делений у статусов — растр не получен от LibreOffice")
+        else:
+            statuses = scan_badges(statuses_png)
+            check(
+                "статус делений не рисует вовсе",
+                not statuses["bars"],
+                f"найдено шкал: {len(statuses['bars'])}",
+            )
+            check(
+                "слово статуса при этом нарисовано янтарным",
+                statuses["pixels"]["amber"] > 100,
+                f"янтарных пикселей: {statuses['pixels']['amber']}",
+            )
 
     # --- ADR-0008: типографическая шкала закрыта -------------------------
     #
