@@ -4,8 +4,9 @@
  * Сюжет собирается из строки артефакта, а цитаты берутся из вердиктов
  * участников: цитата чужого сюжета в блоке — это то же нарушение, что и
  * заголовок, приписанный не тому изданию. Порядок отбора задан: сначала
- * нежелательные страницы, внутри — по позиции в выдаче; больше двух цитат в
- * блок не идёт.
+ * нежелательные страницы, внутри — по позиции в выдаче; предел цитат — один на
+ * весь проект (`READ_PLOT_QUOTE_LIMIT`), и схема с построителем берут его из
+ * одного места.
  *
  * Гигиена та же, что у остального клиентского текста: обрывок или машинная
  * выгрузка не печатается вовсе, и тогда блок живёт числами и доменами, а не
@@ -15,7 +16,11 @@
 import { describe, expect, it } from "vitest";
 import { buildClientSummaryPack } from "@/modules/digital-profile/orion-golden/analytics/client-summary-pack-builder";
 import type { CanonicalClaimsBundle } from "@/modules/digital-profile/orion-golden/contracts/canonical-claim";
-import type { ClientSummaryPack } from "@/modules/digital-profile/orion-golden/contracts/client-summary-pack";
+import {
+  ClientReadPlotSchema,
+  READ_PLOT_QUOTE_LIMIT,
+  type ClientSummaryPack,
+} from "@/modules/digital-profile/orion-golden/contracts/client-summary-pack";
 import type {
   LinkVerdict,
   VerdictThemeSummary,
@@ -69,7 +74,7 @@ function pack(themes: VerdictThemeSummary[], verdicts: LinkVerdict[]): ClientSum
 }
 
 describe("цитаты сюжета", () => {
-  it("нежелательная страница цитируется раньше нейтральной, и не больше двух", () => {
+  it("нежелательная страница цитируется раньше нейтральной", () => {
     const built = pack(
       [
         {
@@ -110,14 +115,18 @@ describe("цитаты сюжета", () => {
       ]
     );
     const plot = built.readPlots[0]!;
-    expect(plot.quotes.map((q) => q.text)).toEqual([ADVERSE_TOP, ADVERSE_LOWER]);
+    // Нежелательные впереди по позиции в выдаче, нейтральная — последней.
+    expect(plot.quotes.map((q) => q.text)).toEqual([
+      ADVERSE_TOP,
+      ADVERSE_LOWER,
+      ADVERSE_THIRD,
+      NEUTRAL_QUOTE,
+    ]);
     expect(plot.quotes.map((q) => q.domain)).toEqual([
       "affarsposten.se",
       "pravo-obzor.ru",
-    ]);
-    expect(plot.quotes.map((q) => q.evidenceRef)).toEqual([
-      "inventory:obs-03",
-      "inventory:obs-02",
+      "nordic-review.se",
+      "affarsposten.se",
     ]);
   });
 
@@ -202,5 +211,64 @@ describe("цитаты сюжета", () => {
     expect(plot.count).toBe(2);
     expect(plot.adverseCount).toBe(2);
     expect(plot.sourceDomains).toEqual(["affarsposten.se", "pravo-obzor.ru"]);
+  });
+
+  it("сюжет из девяти нежелательных публикаций цитируется шестью, а не двумя", () => {
+    /*
+     * Тот самый случай прогона Прохорова: сюжет «Скандалы, конфликты и критика
+     * деловой репутации» собрал девять нежелательных страниц, среди них разбор
+     * файлов Эпштейна. В блок шли две цитаты — Википедия и Куршевель, — и
+     * владелец, читая отчёт, не нашёл про Эпштейна ни слова.
+     */
+    const refs = Array.from({ length: 9 }, (_, i) => `inventory:obs-${String(i + 1).padStart(2, "0")}`);
+    const built = pack(
+      [
+        {
+          theme: "Скандалы, конфликты и критика деловой репутации",
+          count: 9,
+          adverseCount: 9,
+          evidenceRefs: refs,
+          examples: [],
+        },
+      ],
+      refs.map((ref, i) =>
+        verdict({
+          evidenceRef: ref,
+          rank: i + 1,
+          tone: "adverse",
+          domain: `pub-${i + 1}.example`,
+          quotes: [{ text: `Публикация номер ${i + 1} подробно разбирает обстоятельства дела и его последствия для деловой репутации` }],
+        })
+      )
+    );
+    const plot = built.readPlots[0]!;
+    expect(plot.quotes).toHaveLength(READ_PLOT_QUOTE_LIMIT);
+    expect(plot.quotes.map((q) => q.evidenceRef)).toEqual(refs.slice(0, READ_PLOT_QUOTE_LIMIT));
+    // Шестая по порядку — та, что при пределе в две терялась.
+    expect(plot.quotes[5]!.text).toContain("номер 6");
+  });
+
+  it("схема принимает ровно тот же предел, что и построитель", () => {
+    const quote = { text: "Фраза со страницы", domain: "example.com", evidenceRef: "inventory:obs-x" };
+    const plot = {
+      plotId: "plot:abc",
+      title: "Сюжет",
+      count: 9,
+      adverseCount: 9,
+      evidenceRefs: [],
+      sourceDomains: [],
+    };
+    expect(
+      ClientReadPlotSchema.safeParse({
+        ...plot,
+        quotes: Array.from({ length: READ_PLOT_QUOTE_LIMIT }, () => quote),
+      }).success
+    ).toBe(true);
+    expect(
+      ClientReadPlotSchema.safeParse({
+        ...plot,
+        quotes: Array.from({ length: READ_PLOT_QUOTE_LIMIT + 1 }, () => quote),
+      }).success
+    ).toBe(false);
   });
 });

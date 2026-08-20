@@ -71,6 +71,25 @@ export type ClientIsolatedItem = z.infer<typeof ClientIsolatedItemSchema>;
  * Цитата сюжета: дословная строка со страницы и наблюдение, из которого она
  * взята. Домен пустой, когда называть его клиенту нельзя.
  */
+/**
+ * Сколько цитат печатается в блоке одного сюжета.
+ *
+ * Было две, и на отчёте Прохорова (20.08) из девяти прочитанных публикаций
+ * сюжета «Скандалы, конфликты и критика деловой репутации» клиент видел
+ * Википедию и Куршевель, а разбор файлов Эпштейна не видел вовсе; из пяти
+ * публикаций сюжета «Санкции, гражданство и зарубежные активы» — не видел
+ * Ибицу. Блок говорил числа и молчал о том, чем эти публикации нежелательны.
+ *
+ * Шесть, а не «все»: резюме обязано сказать, о чём сюжет, а не пересказать его
+ * целиком — масштаб даёт счётная фраза. Когда процитированы не все, блок
+ * называет это числом: молчаливый срез читается как «это всё, что нашли».
+ *
+ * Число объявлено здесь, а схема и построитель берут его отсюда: пока на этот
+ * вопрос отвечали два места (цикл построителя и `max(2)` схемы), поднять предел
+ * можно было в одном и не заметить второго.
+ */
+export const READ_PLOT_QUOTE_LIMIT = 6;
+
 export const ClientReadPlotQuoteSchema = z.object({
   text: z.string().min(1),
   domain: z.string(),
@@ -97,7 +116,7 @@ export const ClientReadPlotSchema = z.object({
   adverseCount: z.number().int().min(0),
   evidenceRefs: z.array(z.string()),
   sourceDomains: z.array(z.string()),
-  quotes: z.array(ClientReadPlotQuoteSchema).max(2),
+  quotes: z.array(ClientReadPlotQuoteSchema).max(READ_PLOT_QUOTE_LIMIT),
 });
 export type ClientReadPlot = z.infer<typeof ClientReadPlotSchema>;
 

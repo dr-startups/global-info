@@ -18,6 +18,7 @@ import { complianceProviderLabel } from "../../compliance-providers/provider-lab
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
+  READ_PLOT_QUOTE_LIMIT,
   type ClientSummaryPack,
   type ClientMaterialTheme,
   type ClientReadPlot,
@@ -596,7 +597,7 @@ function readPlotId(title: string): string {
  * Название, `count` и `adverseCount` копируются из строки артефакта дословно —
  * их печатает и страница «о чём публикации в ТОП-20», и два счётчика на один
  * вопрос разошлись бы на первом краевом случае. Из решений берётся то, чего в
- * строке нет: домены участников и до двух цитат.
+ * строке нет: домены участников и цитаты — до `READ_PLOT_QUOTE_LIMIT` штук.
  *
  * Порядок участников — нежелательные впереди, внутри по позиции в выдаче: он
  * же задаёт и порядок доменов, и выбор цитат, поэтому расходиться им негде.
@@ -617,7 +618,7 @@ function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
       );
     const quotes: ClientReadPlot["quotes"] = [];
     for (const v of participants) {
-      if (quotes.length >= 2) break;
+      if (quotes.length >= READ_PLOT_QUOTE_LIMIT) break;
       // Гигиена та же, что у остального клиентского текста: обрывок выдачи и
       // выгрузка таблицы не цитируются, и тогда блок живёт числами и доменами.
       const text = (v.quotes ?? []).map((q) => pageQuoteForClient(q.text)).find(Boolean);

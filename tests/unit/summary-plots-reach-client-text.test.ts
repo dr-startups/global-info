@@ -163,4 +163,45 @@ describe("сюжет от вердикта до снимка клиентско�
       expect(printed).toContain(`nordic-review-${i}.se`);
     }
   });
+
+  it("блок называет, сколько публикаций процитировано из скольких прочитанных", () => {
+    /*
+     * Молчаливый срез читается как «это всё, что нашли». На отчёте Прохорова
+     * блок говорил «по сюжету прочитано 5 публикаций, 5 из них нежелательных»
+     * и показывал две цитаты — владелец не смог понять, чем эти публикации
+     * нежелательны и куда делись остальные.
+     */
+    const refs = Array.from({ length: 9 }, (_, i) => `inventory:obs-${i + 1}`);
+    const themes: VerdictThemeSummary[] = [
+      { theme: STOCKHOLM, count: 9, adverseCount: 9, evidenceRefs: refs, examples: [] },
+    ];
+    const verdicts = refs.map((evidenceRef, i) =>
+      verdict({
+        evidenceRef,
+        rank: i + 1,
+        domain: `nordic-review-${i + 1}.se`,
+        quotes: [{ text: `Публикация номер ${i + 1} подробно разбирает обстоятельства дела и его последствия для деловой репутации` }],
+      })
+    );
+    const composed = composeClientSummary({ pack: packFrom(themes, verdicts) });
+    const body = composed.sections.themes[0]!.body;
+    expect(body).toContain("Процитировано 6 публикаций сюжета из 9 прочитанных.");
+  });
+
+  it("когда процитированы все, лишней фразы нет", () => {
+    const refs = Array.from({ length: 3 }, (_, i) => `inventory:obs-${i + 1}`);
+    const themes: VerdictThemeSummary[] = [
+      { theme: STOCKHOLM, count: 3, adverseCount: 3, evidenceRefs: refs, examples: [] },
+    ];
+    const verdicts = refs.map((evidenceRef, i) =>
+      verdict({
+        evidenceRef,
+        rank: i + 1,
+        domain: `nordic-review-${i + 1}.se`,
+        quotes: [{ text: `Публикация номер ${i + 1} подробно разбирает обстоятельства дела и его последствия для деловой репутации` }],
+      })
+    );
+    const composed = composeClientSummary({ pack: packFrom(themes, verdicts) });
+    expect(composed.sections.themes[0]!.body).not.toMatch(/Процитирован/u);
+  });
 });
