@@ -79,6 +79,7 @@ import {
 } from "./arsenkin-enrichment-state";
 import type { FullAuditResultDTO } from "./agent-run-service";
 import { ensurePersistedUnifiedBaseReportRun } from "./unified-base-report-run";
+import { collectYandexGenAnswer } from "./yandex-gen-answer-collection";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "./unified-collection-recovery";
 import { ConflictError } from "../http/errors";
@@ -929,6 +930,14 @@ async function stepBaseCollection(
   const audit = await runFullAudit(job.caseId, job.requestedBy);
   const actualProviders = mapFullAuditToActualProviders(audit);
 
+  // Нейро-ответ Яндекса спрашивается между аудитом и снятием манифеста: строки
+  // должны попасть в его дифф. Офлайн-контур (фикстурные строки или отсутствие
+  // prisma) пробу пропускает так же, как пропускает остальной живой сбор.
+  const yandexGenAnswerProbe =
+    deps.fixtureBaseRows || !prisma
+      ? undefined
+      : await collectYandexGenAnswer({ caseId: job.caseId });
+
   let manifest: BaseCollectionManifest;
   if (deps.fixtureBaseRows) {
     manifest = {
@@ -960,6 +969,7 @@ async function stepBaseCollection(
       beforeSearchSurfaceItemIds: before.searchSurfaceItemIds,
       actualProviders,
       baseReportRunId: job.baseReportRunId,
+      ...(yandexGenAnswerProbe ? { yandexGenAnswerProbe } : {}),
     });
   } else {
     return await failRetryable(

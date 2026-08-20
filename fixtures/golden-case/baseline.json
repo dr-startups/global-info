@@ -1,8 +1,8 @@
 {
   "version": "golden-case-baseline-v1",
-  "observationCount": 314,
+  "observationCount": 318,
   "observationStats": {
-    "total": 314,
+    "total": 318,
     "organic:organic:RU": 129,
     "organic:organic:UAE": 41,
     "suggestion:autocomplete:RU": 36,
@@ -11,7 +11,7 @@
     "paa:related:UAE": 12,
     "other:images:RU": 16,
     "other:images:UAE": 8,
-    "other:ai_answer:RU": 8,
+    "other:ai_answer:RU": 12,
     "other:ai_answer:UAE": 4,
     "other:wikipedia:RU": 6,
     "other:knowledge_block:RU": 4,
@@ -25,13 +25,13 @@
     "counts": {
       "dbSearchResults": null,
       "dbSurfaceItems": null,
-      "manifestIds": 302,
-      "manifestDeltaCount": 302,
+      "manifestIds": 306,
+      "manifestDeltaCount": 306,
       "manifestCorpusCount": 0,
-      "compositeObservations": 314,
-      "subjectMatch": 298,
+      "compositeObservations": 318,
+      "subjectMatch": 301,
       "likelySubject": 3,
-      "ambiguous": 2,
+      "ambiguous": 3,
       "otherSubject": 5,
       "insufficient": 6,
       "verifiedFindings": 4,
@@ -75,8 +75,8 @@
       }
     },
     "slides": {
-      "total": 51,
-      "withContent": 46,
+      "total": 52,
+      "withContent": 47,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",

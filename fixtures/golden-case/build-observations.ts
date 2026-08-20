@@ -639,6 +639,47 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     );
   }
 
+  // --- Нейро-ответ Яндекса (официальный GenSearch), RU ---
+  // Тело ответа плюс названные Яндексом источники: страница обязана напечатать
+  // текст целиком, подпись про официальный API и перечень источников.
+  const GEN_ANSWER_TEXT = [
+    `${SUBJECT} — основатель и управляющий партнёр инвестиционной компании ${COMPANY}.`,
+    `По данным открытых источников, ${COMPANY} специализируется на прямых инвестициях в скандинавский промышленный сектор и в последние годы расширяет присутствие в ОАЭ.`,
+    `Публикации деловых изданий связывают предпринимателя с налоговым разбирательством и с расширением бизнеса в Дубае; окончательных решений по разбирательству в открытых источниках нет.`,
+    `Также встречаются материалы о полном тёзке — хоккейном вратаре, которые к предпринимателю отношения не имеют.`,
+  ].join(" ");
+  rows.push(
+    base({
+      key: `other|ru|yandex|gen_answer|${id()}`,
+      kind: "other",
+      surface: "ai_answer",
+      region: "RU",
+      engine: "YANDEX",
+      url: "yandex-gen://answer/9f2c1a7b4e05",
+      contentKind: "answer_text",
+      title: `Нейро-ответ Яндекса (официальный API): ${SUBJECT}`,
+      snippet: GEN_ANSWER_TEXT,
+      evidenceRefs: ["surface:ss-gen-answer"],
+      baseSearchSurfaceItemId: "ss-gen-answer",
+    })
+  );
+  ["affarsposten.se", "finansbladet.se", "kapitalnytt.se"].forEach((hostName, i) => {
+    rows.push(
+      base({
+        key: `other|ru|yandex|gen_answer_source|${id()}`,
+        kind: "other",
+        surface: "ai_answer",
+        region: "RU",
+        engine: "YANDEX",
+        url: `https://${hostName}/profil/holmstrom-${i}`,
+        contentKind: "answer_source",
+        title: `${SUBJECT} и ${COMPANY}: профиль предпринимателя`,
+        evidenceRefs: [`surface:ss-gen-src-${i}`],
+        baseSearchSurfaceItemId: `ss-gen-src-${i}`,
+      })
+    );
+  });
+
   if (rows.length < 280 || rows.length > 340) {
     throw new Error(`golden-case observation count out of band: ${rows.length}`);
   }

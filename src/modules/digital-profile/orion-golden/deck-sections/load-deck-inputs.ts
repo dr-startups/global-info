@@ -34,6 +34,10 @@ export type CompositeObservationRow = {
   engine?: string;
   url?: string;
   title?: string;
+  /** Текст наблюдения — есть у ответов ИИ-поиска, которые страница печатает целиком. */
+  snippet?: string;
+  /** Кто добыл наблюдение (`yandex` / `serper` / `arsenkin`). */
+  provider?: string;
   domain?: string;
   /** Позиция в выдаче, если поисковик её сообщил. */
   rank?: number;
@@ -216,6 +220,12 @@ export function googleAnswerProbeHints(
   existing: SurfaceCollectionHint[]
 ): SurfaceCollectionHint[] {
   const isGoogle = (engine?: string): boolean => /GOOGLE|SERPER/iu.test(String(engine ?? ""));
+  // Заслонить выведенный факт может только запись, про которую известно, что
+  // она о Google, либо запись без движка вовсе (движок неизвестен — считаем,
+  // что она может быть о нём). Ответ, у которого движок назван и он другой,
+  // факта про Google не отменяет.
+  const notOtherEngine = (engine?: string): boolean =>
+    !String(engine ?? "").trim() || isGoogle(engine);
   const probedRegions = new Set<string>();
   const answeredRegions = new Set<string>();
   for (const o of observations) {
@@ -223,7 +233,9 @@ export function googleAnswerProbeHints(
     if (!region) continue;
     const surface = normalizeCoverageSurface(o.surface);
     if (surface === "organic" && isGoogle(o.engine)) probedRegions.add(region);
-    if (surface === "ai_answers") answeredRegions.add(region);
+    // Отвеченность считается по-движково: нейро-ответ Яндекса не отменяет
+    // факта «Google спрошен, готового ответа в его выдаче нет».
+    if (surface === "ai_answers" && notOtherEngine(o.engine)) answeredRegions.add(region);
   }
   // Заслоняет выведенный факт только запись о **состоявшейся** попытке —
   // измерение или сбой. Ячейка «не спрашивали» (выключенный инструмент по
@@ -234,6 +246,7 @@ export function googleAnswerProbeHints(
       .filter(
         (h) =>
           normalizeCoverageSurface(h.surface) === "ai_answers" &&
+          notOtherEngine(h.engine) &&
           !/^(NOT_COLLECTED|DISABLED)$/i.test(String(h.status ?? ""))
       )
       .map((h) => mapRegionBucket(h.region ?? ""))
@@ -468,6 +481,11 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         url: obs.url,
         domain: obs.domain,
         title: obs.title,
+        // Текст и его добытчик нужны там, где страница печатает само
+        // наблюдение, а не ссылку на него: нейро-ответ поисковика — это его
+        // текст, и подпись под ним обязана называть, чей это ответ.
+        snippet: obs.snippet ?? evidenceIndex[ref]?.snippet,
+        provider: obs.provider ?? evidenceIndex[ref]?.provider,
         kind: obs.surface,
         region: obs.region,
         engine: obs.engine,

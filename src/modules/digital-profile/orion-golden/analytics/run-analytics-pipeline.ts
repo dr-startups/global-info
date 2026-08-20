@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { RawInventoryItem } from "../types";
 import type { ArsenkinReportBindingV2 } from "../classic/arsenkin-report-binding";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
+import { normalizeCoverageSurface } from "../deck-sections/scoped-input";
 import type { SubjectResolution } from "../contracts/subject-resolution";
 import type { SurfaceAnalysis } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
@@ -201,6 +202,60 @@ function sourceQualityFor(domains: string[]): SourceQualityEntry[] {
   }));
 }
 
+/** Client-facing surface labels — internal SurfaceKind keys never leak into
+ * the executive conclusion ("Не закрыты направления: …"). */
+const SURFACE_CLIENT_LABELS: Record<string, string> = {
+  organic: "органическая выдача",
+  suggestions: "поисковые подсказки",
+  paa_related: "связанные запросы",
+  images: "изображения в поиске",
+  wikipedia: "Википедия",
+  ai_answers: "ответы ИИ-поиска",
+  url_audit: "проверка URL и индексации",
+  compliance: "комплаенс-базы",
+};
+
+/**
+ * Пробелы покрытия, которые печатает резюме, — **единственный** ответ на
+ * вопрос «о чём сводка говорит „не собрано“».
+ *
+ * Пробел — это поверхность в регионе, а не ячейка: у одной поверхности их
+ * несколько (по числу поисковых систем), и без склейки резюме печатало
+ * «ответы ИИ-поиска (RU)» дважды подряд.
+ *
+ * И пробел не печатается вовсе, если у той же пары «регион + поверхность»
+ * есть **измеренная** ячейка. Иначе сводка спорит со слайдом того же отчёта:
+ * на прогоне 2026-08-19 `dataLimitations` объявляли «ответы ИИ-поиска (UAE):
+ * поверхность не собрана», пока слайд 55 показывал собранный ответ.
+ * Группировка идёт той же функцией, что у деки, — два грейдера обязаны мерить
+ * одной линейкой.
+ */
+export function coverageDataGaps(
+  coverage: Array<{ region: string; surface: string; sampleStatus: "MEASURED" | "NOT_COLLECTED" }>
+): Array<{ area: string; detail: string }> {
+  const measured = new Set(
+    coverage
+      .filter((c) => c.sampleStatus === "MEASURED")
+      .map((c) => `${c.region}|${normalizeCoverageSurface(c.surface)}`)
+  );
+  const gaps: Array<{ area: string; detail: string }> = [];
+  const seen = new Set<string>();
+  for (const c of coverage) {
+    if (c.sampleStatus !== "NOT_COLLECTED") continue;
+    const surface = normalizeCoverageSurface(c.surface);
+    if (measured.has(`${c.region}|${surface}`)) continue;
+    // «MIXED» — слот без региональной привязки (аудит URL). Его код клиенту
+    // ничего не говорит, а направление строка называет и без региона.
+    const region = c.region === "MIXED" ? "" : c.region;
+    const label = SURFACE_CLIENT_LABELS[surface] ?? surface;
+    const area = region ? `${label} (${region})` : label;
+    if (seen.has(area)) continue;
+    seen.add(area);
+    gaps.push({ area, detail: "поверхность не собрана в текущем прогоне" });
+  }
+  return gaps;
+}
+
 function buildExecutiveSummaryInput(input: {
   caseId: string;
   datasetId: string;
@@ -266,33 +321,7 @@ function buildExecutiveSummaryInput(input: {
     }
   }
 
-  // Client-facing surface labels — internal SurfaceKind keys never leak into
-  // the executive conclusion ("Не закрыты направления: …").
-  const SURFACE_CLIENT_LABELS: Record<string, string> = {
-    organic: "органическая выдача",
-    suggestions: "поисковые подсказки",
-    paa_related: "связанные запросы",
-    images: "изображения в поиске",
-    wikipedia: "Википедия",
-    ai_answers: "ответы ИИ-поиска",
-    url_audit: "проверка URL и индексации",
-    compliance: "комплаенс-базы",
-  };
-  const dataGaps: Array<{ area: string; detail: string }> = [];
-  // Пробел покрытия — это поверхность в регионе, а не ячейка: у одной
-  // поверхности их несколько (по числу поисковых систем), и без склейки
-  // резюме печатало «ответы ИИ-поиска (RU)» дважды подряд.
-  const gapAreas = new Set<string>();
-  for (const c of coverage.filter((x) => x.sampleStatus === "NOT_COLLECTED")) {
-    // «MIXED» — слот без региональной привязки (аудит URL). Его код клиенту
-    // ничего не говорит, а направление строка называет и без региона.
-    const region = c.region === "MIXED" ? "" : c.region;
-    const label = SURFACE_CLIENT_LABELS[c.surface] ?? c.surface;
-    const area = region ? `${label} (${region})` : label;
-    if (gapAreas.has(area)) continue;
-    gapAreas.add(area);
-    dataGaps.push({ area, detail: "поверхность не собрана в текущем прогоне" });
-  }
+  const dataGaps: Array<{ area: string; detail: string }> = [...coverageDataGaps(coverage)];
   for (const s of input.missingSources) {
     dataGaps.push({ area: s, detail: "источник отсутствует в инвентаре прогона" });
   }

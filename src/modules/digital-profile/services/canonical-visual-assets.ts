@@ -48,6 +48,7 @@ import {
   type PreviewFailureReason,
 } from "../orion-golden/assets/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import { YANDEX_GEN_ANSWER_URL_SCHEME } from "../providers/yandex-gen-search";
 import {
   pickRealSerpScreenshot,
   type RealSerpScreenshotInput,
@@ -703,7 +704,15 @@ export async function buildCanonicalVisualAssets(input: {
     slotId: string,
     title: string
   ): Promise<boolean> => {
-    const answer = rows.find((r) => String(r.snippet ?? "").trim());
+    // Сводкой панели становится тело ответа: у названного источника есть свой
+    // адрес, и его описание — не ответ поисковика. Панель рисует одну строку
+    // (известное ограничение) — полноту несёт текст страницы.
+    const answer =
+      rows.find(
+        (r) =>
+          String(r.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME) &&
+          String(r.snippet ?? "").trim()
+      ) ?? rows.find((r) => String(r.snippet ?? "").trim());
     if (!answer && rows.length === 0) return false;
     const facts = rows
       .filter((r) => r !== answer)

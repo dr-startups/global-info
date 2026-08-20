@@ -182,6 +182,8 @@ function toRow(
   const queryText = String(meta.queryText ?? meta.query ?? item.query ?? "").trim();
   const queryPurpose = String(meta.queryPurpose ?? "").trim();
   const rankSource = String(meta.rankSource ?? "").trim();
+  const surface = mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic"));
+  const snippet = String(item.snippet ?? "").trim();
   return {
     observationKey: key,
     ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
@@ -192,10 +194,12 @@ function toRow(
     provider: String(item.provider ?? "unknown").toLowerCase(),
     providers: [String(item.provider ?? "unknown").toLowerCase()],
     engine: mapEngineBucket(String(meta.engine ?? item.provider ?? "")),
-    surface: mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic")),
+    surface,
     region: mapRegionBucket(item.region),
     url: item.sourceUrl,
     title: item.title,
+    // Текст едет только у ответов ИИ-поиска: их страница печатает целиком.
+    ...(surface === "ai_answer" && snippet ? { snippet } : {}),
     domain: domainOf(item.sourceUrl) || undefined,
     evidenceRefs,
     provenanceOwner: owner,

@@ -61,6 +61,7 @@ import type { CompositeMergeResult, CompositeObservation } from "./composite-ser
 import type { ReportDataBinding } from "./unified-collection-types";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
 import { disabledSurfaceCoverageCells } from "./arsenkin-enrichment-state";
+import { genAnswerCoverageCells } from "./base-collection-manifest";
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
@@ -384,6 +385,9 @@ export function compositeObservationsToInventory(input: {
       rawMetadata: {
         engine: obs.engine,
         surface,
+        // Вид строки внутри поверхности — то, чем сборщик отличает сам ответ от
+        // пометки о пустоте. Аналитике он нужен, чтобы не гадать по словам.
+        contentKind: obs.contentKind,
         queryText: obs.query,
         provider,
         // Позиция в выдаче и назначение запроса — то, по чему определяется
@@ -1201,6 +1205,12 @@ export async function runCanonicalReportPrepare(
       })),
       ...disabledSurfaceCoverageCells(
         readJsonSafe(join(input.artifactsDir, "arsenkin-enrichment-state.json"))
+      ),
+      // Исход пробы нейро-ответа — тем же каналом. Успех отсюда не читается:
+      // иначе манифест и строки наблюдений станут двумя ответами на один
+      // вопрос «собрано ли».
+      ...genAnswerCoverageCells(
+        readJsonSafe(join(input.artifactsDir, "base-collection-manifest.json"))
       ),
     ] as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
 

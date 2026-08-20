@@ -47,6 +47,7 @@ export function mapResultClassToContentClass(
   if (surfaceType === "IMAGE_RESULT") return "IMAGE_NEUTRAL";
   if (surfaceType === "VIDEO_RESULT") return "VIDEO_NEUTRAL";
   if (surfaceType === "KNOWLEDGE_BLOCK") return "KNOWLEDGE_PANEL";
+  if (surfaceType === "AI_ANSWER") return "AI_ANSWER";
   if (surfaceType === "WIKIPEDIA_RESULT") return "WIKIPEDIA";
   if (surfaceType === "RELATED_QUERY" || surfaceType === "SEARCH_SUGGESTION") {
     return "NEWS_NEUTRAL";

@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v96",
+  "contentVersion": "deck-sections-v97",
   "promptVersion": "ru-ai-analysis-v4",
-  "contentHash": "sha256:0941002a227934f77e229af55362953ad627fce379420267e944e1e23e89f386",
-  "inputHash": "sha256:871c79783e9001d6303987d36d44eba1163de855f2224998b1b8152524e0b7a9:f4f3e8ad6fa266e4",
-  "generatedAt": "2026-08-19T21:55:07.899Z",
+  "contentHash": "sha256:326f3b8131e0e4e26f66e564f434e0feb7cba36c157a00f1dde05f2250bddf63",
+  "inputHash": "sha256:0366635c3de2ff1999938d384b0552ed8fe6ed564355c204fe10f524cecb91db:f4f3e8ad6fa266e4",
+  "generatedAt": "2026-08-20T05:22:47.948Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -88,7 +88,7 @@
       ],
       "findingIds": [],
       "metrics": {
-        "answers": 3
+        "answers": 0
       },
       "visualAssetRefs": [],
       "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"

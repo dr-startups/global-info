@@ -13,6 +13,7 @@ export const SearchSurfaceTypeSchema = z.enum([
   "KNOWLEDGE_BLOCK",
   "SERP_SCREENSHOT",
   "MANUAL_NOTE",
+  "AI_ANSWER",
 ]);
 
 export const SearchSurfaceSourceSchema = z.enum([

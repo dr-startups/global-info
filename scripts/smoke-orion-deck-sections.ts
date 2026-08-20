@@ -583,18 +583,31 @@ describe("regression scenario: change only the RU AI fixture (report-72 data)", 
     assert.equal(build2.assembly.deckManifest.assembledDeckHash, deckHash1);
 
     // 3. Change ONLY the RU AI fixture: new AI answers appear in RU.
+    // Страница печатает свои наблюдения, а не их claims, поэтому и правка
+    // фикстуры — это новые наблюдения: иначе сценарий менял бы то, чего
+    // страница не читает, и «пересобралось только российское» проверялось бы
+    // вакуумно.
     const ctx3 = makeCtx();
     const ruAiUnit = ctx3.surfaceUnits.find((u) => u.surface === "ai_answers" && u.region === "RU");
     assert.ok(ruAiUnit, "report-72 data must contain an RU ai_answers unit");
-    const existingRef = ruAiUnit!.evidenceRefs[0] ?? ruAiUnit!.claims[0]?.evidenceRefs[0];
-    for (let i = 0; i < 8; i += 1) {
-      ruAiUnit!.claims.push({
-        claimId: `fixture-ru-ai-${i}`,
-        text: `Обновлённый AI-ответ №${i + 1}: нейтральное упоминание делового профиля Сергея Глинки в сводке поисковой системы.`,
-        subjectMatch: "SUBJECT_MATCH",
-        evidenceRefs: existingRef ? [existingRef] : [],
-      });
-    }
+    ctx3.evidenceIndex = { ...ctx3.evidenceIndex };
+    ruAiUnit!.evidenceRefs.forEach((ref, i) => {
+      const previous = ctx3.evidenceIndex[ref];
+      if (!previous || previous.kind !== "ai_answer") return;
+      ctx3.evidenceIndex[ref] = {
+        ...previous,
+        title: `Нейро-ответ Яндекса (официальный API): Сергей Глинка №${i + 1}`,
+        url: `yandex-gen://answer/fixture-${i}`,
+        // Длинный ответ — чтобы страница разъехалась продолжениями: сценарий
+        // проверяет и то, что новые страницы появляются, и что нумерация
+        // остальных разделов сдвигается.
+        snippet: Array.from(
+          { length: 70 },
+          (_, k) =>
+            `Обновлённый AI-ответ №${i + 1}, часть ${k + 1}: нейтральное упоминание делового профиля Сергея Глинки в сводке поисковой системы.`
+        ).join(" "),
+      };
+    });
 
     // 4. Rebuild.
     const build3 = buildOnce(dir, ctx3);

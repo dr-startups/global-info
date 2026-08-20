@@ -334,8 +334,11 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     templateId: "ai-overview",
     rendererTemplate: "orion_golden_surface_panel",
     staticBlocks: ["AI-ответы поисковых систем", ...FINDING_BLOCKS],
+    // Обещание держится данными: текст ответа едет наблюдением и печатается
+    // блоками, а перенос делают продолжения. Про иллюстрацию сказано «если
+    // она есть»: та же заметка стоит на страницах без панели.
     methodologyNote:
-      "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
+      "Ответы AI-сервисов приводятся полностью, без сокращений; иллюстрация панели, если она приведена, показывает только начало ответа. Интерпретация даётся отдельным блоком.",
     maxBulletsPerSlide: 6,
     maxTableRowsPerSlide: 0,
     layout: layout("single-column", { itemCharBudget: 1200, pagination: "continuation" }),

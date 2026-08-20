@@ -29,8 +29,16 @@ export const ADVERSE_PATTERNS: Pick<RegExp, "test"> = {
   test: (text: string) => getAdversePatterns().test(text),
 };
 
+/**
+ * Слова, которыми строка-маркер говорит «поверхность спрошена, данных нет».
+ *
+ * «Ответ не предоставлен» — отказ генеративной модели: вопрос задан, ответ
+ * получен и он отрицательный. Это измеренная пустота, а не находка и не сбой,
+ * поэтому маркер обязан считаться здесь; словами он от «не найдено»
+ * отличается, чтобы страница не выдавала отказ за отсутствие ответа.
+ */
 export const NOT_FOUND_PATTERNS =
-  /не найден|not found|отсутствует или пуст|нет блока|no results|н\/д/iu;
+  /не найден|ответ не предоставлен|not found|отсутствует или пуст|нет блока|no results|н\/д/iu;
 
 function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
@@ -52,8 +60,46 @@ function isAdverse(item: RawInventoryItem): boolean {
   return ADVERSE_PATTERNS.test(text);
 }
 
+/**
+ * Длина, до которой сниппет ещё читается как служебная пометка, а не как текст
+ * материала. Пометки поверхностей укладываются в пару фраз («Фактическая
+ * проверка Wikipedia: статья не найдена.» — 46 знаков), нейро-ответ поисковика
+ * идёт на тысячи.
+ */
+const MAX_MARKER_SNIPPET_CHARS = 240;
+
+/** Виды строк, которые сборщик сам объявил пометкой о пустоте. */
+const EMPTY_MARKER_KINDS = new Set(["absent", "answer_rejected"]);
+/** Виды строк, которые сборщик сам объявил материалом. */
+const MATERIAL_KINDS = new Set(["answer_text", "answer_source"]);
+
+/**
+ * Строка-маркер «поверхность спрошена, данных нет».
+ *
+ * Где вид строки известен, решает он: сборщик единственный знает наверняка,
+ * ответ это или пометка, и гадать по словам поверх его ответа значило бы
+ * завести второй ответ на тот же вопрос. Короткий настоящий ответ-отрицание
+ * («Сведений о судимости не найдено; он указан как основатель …») иначе
+ * расходился с декой: анализатор считал его пустотой, страница печатала его
+ * с подписью, и над напечатанным ответом стояло «Показано 0 результатов».
+ *
+ * Для чужих поверхностей вид не пишется, и остаётся разбор по словам: признак
+ * ищется в заголовке — либо в сниппете, но только пока весь сниппет и есть
+ * служебная пометка. Сверять сниппет любой длины нельзя (в него едет текст
+ * ответа), только заголовок — тоже: у записи проверки Википедии он нейтральный
+ * («Wikipedia»), и признак живёт ровно в сниппете.
+ */
 function isEmptyMarker(item: RawInventoryItem): boolean {
-  return NOT_FOUND_PATTERNS.test(`${item.title} ${item.snippet ?? ""}`);
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  const contentKind = String(meta.contentKind ?? "").trim();
+  if (EMPTY_MARKER_KINDS.has(contentKind)) return true;
+  if (MATERIAL_KINDS.has(contentKind)) return false;
+
+  if (NOT_FOUND_PATTERNS.test(String(item.title ?? ""))) return true;
+  const snippet = String(item.snippet ?? "").trim();
+  return snippet.length > 0 && snippet.length <= MAX_MARKER_SNIPPET_CHARS
+    ? NOT_FOUND_PATTERNS.test(snippet)
+    : false;
 }
 
 type UnitAccumulator = {

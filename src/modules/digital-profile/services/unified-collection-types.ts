@@ -45,6 +45,22 @@ export type SurfaceCoverageBreakdown = {
   progressRatio: number;
 };
 
+/**
+ * Запись о попытке спросить нейро-ответ Яндекса (шаг AO).
+ *
+ * Это **не-данные**: сам ответ и его источники живут строками наблюдений.
+ * Успех отсюда не читается — иначе манифест и строки станут двумя ответами на
+ * один вопрос «собрано ли».
+ */
+export type YandexGenAnswerProbe = {
+  status: "SUCCESS" | "NO_RESULTS" | "REJECTED" | "FAILED" | "NOT_CONFIGURED";
+  /** Текст запроса, который ушёл в GenSearch (null — построить его не удалось). */
+  query: string | null;
+  errorCode: string | null;
+  message: string | null;
+  attemptedAt: string;
+};
+
 export type BaseCollectionManifest = {
   version: "base-collection-manifest-v1";
   unifiedJobId: string;
@@ -65,6 +81,11 @@ export type BaseCollectionManifest = {
   actualProviders: ActualProviderRecord[];
   /** True when every required collection provider completed as real (not mock fallback). */
   realCollectionSufficient: boolean;
+  /**
+   * Исход одного вызова нейро-ответа Яндекса. Отсутствует на прогонах до шага
+   * AO — история не переписывается, они ведут себя как раньше.
+   */
+  yandexGenAnswerProbe?: YandexGenAnswerProbe;
 };
 
 /** All base observation IDs the composite must cover (delta ∪ corpus). */

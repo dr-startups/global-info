@@ -126,6 +126,21 @@ export type ScopedEvidenceIndex = Record<
     url?: string;
     domain?: string;
     title?: string;
+    /**
+     * Текст наблюдения.
+     *
+     * Заведён для нейро-ответов: страница обязана печатать сам ответ, а не его
+     * заголовок. Пока индекс нёс только `title`, обещание методики «ответы
+     * приводятся полностью, без сокращений» данными не подкреплялось — в claim
+     * ехал заголовок, срезанный до 300 знаков.
+     */
+    snippet?: string;
+    /**
+     * Кто добыл наблюдение. Подпись под ответом поискового ИИ выводится из
+     * него: «получен официальным Yandex Search API» — утверждение о способе
+     * получения, и оно обязано следовать данным, а не схеме адреса.
+     */
+    provider?: string;
     adverse?: boolean;
     kind?: string;
     region?: string;
@@ -397,7 +412,18 @@ export function normalizeCoverageSurface(raw: string): string {
     .toLowerCase();
   if (!s) return s;
   if (s === "paa" || s === "related" || s === "paa_related") return "paa_related";
-  if (s === "ai_answer" || s === "ai" || s === "ai_answers" || s === "knowledge") return "ai_answers";
+  // `knowledge_block` группируется сюда же: ровно так группирует анализатор
+  // поверхности, и без этого измеренная ячейка панели знаний не гасила пробел
+  // «ответы ИИ-поиска» в сводке — два грейдера мерили разными линейками.
+  if (
+    s === "ai_answer" ||
+    s === "ai" ||
+    s === "ai_answers" ||
+    s === "knowledge" ||
+    s === "knowledge_block"
+  ) {
+    return "ai_answers";
+  }
   if (s === "autocomplete" || s === "suggest" || s === "suggestions") return "suggestions";
   if (s === "indexation" || s === "page_meta" || s === "url_audit") return "url_audit";
   if (s === "wiki" || s === "wikipedia") return "wikipedia";
@@ -437,11 +463,39 @@ function isNotCollectedStatus(status: string | undefined): boolean {
   return /^(NOT_COLLECTED|DISABLED)$/i.test(String(status ?? ""));
 }
 
+/**
+ * Насколько причина «не собирали» пригодна для печати, когда их несколько.
+ *
+ * На составе по умолчанию по одной паре «регион + поверхность» приходят две
+ * ячейки: «инструмент не входил в состав» (решение, которое никто не менял) и
+ * «провайдер не настроен» (то, что владелец может исправить одной переменной).
+ * Печатать надо ту, по которой можно действовать, — и выбор обязан быть
+ * правилом, а не порядком конкатенации ячеек в `coverageRows`.
+ */
+function notCollectedCauseRank(errorCode?: string | null): number {
+  const code = String(errorCode ?? "");
+  if (/NOT_CONFIGURED/i.test(code)) return 2;
+  if (/DISABLED/i.test(code)) return 1;
+  return 0;
+}
+
+/** Самая пригодная к действию причина среди ячеек «не спрашивали». */
+function strongestNotCollectedCause(hints: SurfaceCollectionHint[]): string | null {
+  let best: { rank: number; code?: string | null } | null = null;
+  for (const h of hints) {
+    if (!isNotCollectedStatus(h.status)) continue;
+    const rank = notCollectedCauseRank(h.errorCode);
+    if (!best || rank > best.rank) best = { rank, code: h.errorCode };
+  }
+  return best ? clientNotCollectedLabel(best.code) : null;
+}
+
 /** Причина «не собирали» для клиента — без внутренних кодов. */
 function clientNotCollectedLabel(errorCode?: string | null): string {
-  return /DISABLED/i.test(String(errorCode ?? ""))
-    ? "инструмент сбора не входил в состав прогона"
-    : "поверхность не собиралась в этом прогоне";
+  const code = String(errorCode ?? "");
+  if (/NOT_CONFIGURED/i.test(code)) return "провайдер не настроен";
+  if (/DISABLED/i.test(code)) return "инструмент сбора не входил в состав прогона";
+  return "поверхность не собиралась в этом прогоне";
 }
 
 /** Client-safe failure cause — internal status/errorCode never leak. */
@@ -502,8 +556,8 @@ export function resolveEmptySurfaceCollection(
     };
   }
 
-  const notCollectedHint = hints.find((h) => isNotCollectedStatus(h.status));
-  const notCollectedReason = clientNotCollectedLabel(notCollectedHint?.errorCode);
+  const notCollectedReason =
+    strongestNotCollectedCause(hints) ?? clientNotCollectedLabel(undefined);
   const measuredHint = hints.some((h) => isMeasuredStatus(h.status));
 
   let anyMeasured = measuredHint;
@@ -585,7 +639,7 @@ function partialByEngine(
     if (reasonLabel) continue;
     reasonLabel = failed
       ? clientCollectionFailureLabel(failed.status, failed.errorCode)
-      : clientNotCollectedLabel(group.find((h) => isNotCollectedStatus(h.status))?.errorCode);
+      : strongestNotCollectedCause(group) ?? undefined;
   }
   if (measuredEngines.length === 0 || notCollectedEngines.length === 0) return null;
   return { kind: "MEASURED_PARTIAL", reasonLabel, measuredEngines, notCollectedEngines };

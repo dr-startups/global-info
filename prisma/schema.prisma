@@ -71,6 +71,10 @@ enum SearchSurfaceType {
   KNOWLEDGE_BLOCK
   SERP_SCREENSHOT
   MANUAL_NOTE
+  // Нейро-ответ поисковика (Yandex GenSearch). Отдельным значением, а не
+  // KNOWLEDGE_BLOCK: панель знаний и генеративный ответ — разные наблюдения,
+  // и общий тип утащил бы ответ на страницу «панель знаний» под чужим именем.
+  AI_ANSWER
 }
 
 enum SearchSurfaceSource {

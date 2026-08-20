@@ -38,6 +38,13 @@ export type CompositeObservation = {
   suggestion?: string;
   question?: string;
   /**
+   * Вид строки внутри своей поверхности: сам ответ (`answer_text`), названный
+   * им источник (`answer_source`) или пометка о пустоте (`absent`,
+   * `answer_rejected`). Пишет его сборщик — он единственный знает наверняка, и
+   * гадать по словам там, где вид известен, не нужно.
+   */
+  contentKind?: string;
+  /**
    * Позиция материала в выдаче — то, по чему определяется ТОП-20.
    *
    * До этого позиция терялась на слиянии: провайдеры её пишут
@@ -276,6 +283,9 @@ function surfaceOfBaseSurfaceType(type: string): string {
   if (t.includes("RELATED") || /PAA|PEOPLE.?ALSO/i.test(t)) return "related";
   if (t.includes("IMAGE")) return "images";
   if (t.includes("VIDEO")) return "video";
+  // Генеративный ответ проверяется до KNOWLEDGE: это разные наблюдения, и
+  // общая ветка увела бы ответ на страницу «панель знаний».
+  if (t.includes("AI_ANSWER")) return "ai_answer";
   if (t.includes("KNOWLEDGE")) return "knowledge_block";
   if (t.includes("SCREENSHOT")) return "serp_screenshot";
   if (t.includes("ORGANIC")) return "organic";
@@ -565,6 +575,8 @@ export async function mergeCompositeSerp(input: {
         (s as { imageUrl?: string | null; thumbnailUrl?: string | null }).imageUrl ??
         (s as { thumbnailUrl?: string | null }).thumbnailUrl ??
         null;
+      const surfaceMeta = (s.rawMetadata ?? {}) as Record<string, unknown>;
+      const contentKind = String(surfaceMeta.contentKind ?? "").trim();
       const surfaceTs = s.capturedAt ?? s.createdAt;
       const surfaceCollectedAt =
         surfaceTs instanceof Date ? surfaceTs.toISOString() : undefined;
@@ -578,6 +590,7 @@ export async function mergeCompositeSerp(input: {
           query: s.query ?? undefined,
           title: s.title ?? undefined,
           snippet: s.snippet ?? undefined,
+          ...(contentKind ? { contentKind } : {}),
           suggestion: kind === "suggestion" ? String(s.title ?? s.snippet ?? "") : undefined,
           question: kind === "paa" ? String(s.title ?? "") : undefined,
           url: s.url ?? undefined,
