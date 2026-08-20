@@ -1,7 +1,6 @@
 {
-  "version": "orion-bullet-fit-v1",
-  "measured": true,
-  "converged": true,
+  "version": "orion-bullet-fit-v2",
+  "outcome": "CONVERGED",
   "builds": 2,
   "iterations": [
     {

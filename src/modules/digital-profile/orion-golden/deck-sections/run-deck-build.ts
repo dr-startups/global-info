@@ -253,12 +253,30 @@ export class BulletFitNotConvergedError extends Error {
   }
 }
 
+/**
+ * Чем кончился цикл — **единственный** ответ на «мерили ли и сошлось ли».
+ *
+ * Двумя признаками (`measured` + `converged`) состояние не описывалось: у
+ * несобравшейся деки цикл не доходил до меры, а отчёт по умолчаниям утверждал
+ * «мера выполнялась и сошлась» — врал ровно в том файле, куда лезут
+ * разбираться, когда всё сломалось. `NOT_MEASURED_*` — не отказ меры, а её
+ * отсутствие с названной причиной: отказ меры громкий и приезжает кодом
+ * `RENDER_FAILED`, а не строкой в этом отчёте.
+ */
+export type BulletFitOutcome =
+  /** Померено, потерь нет. */
+  | "CONVERGED"
+  /** Померено, потеря осталась после отведённых итераций. */
+  | "NOT_CONVERGED"
+  /** Адаптера меры нет: офлайн-сборка, которая ничего не рендерит. */
+  | "NOT_MEASURED_NO_ADAPTER"
+  /** Дека не собралась: слайдов нет, мерить нечего. */
+  | "NOT_MEASURED_ASSEMBLY_FAILED";
+
 /** Разбор цикла: что мерили, что переложили и чем кончилось. */
 export type BulletFitReport = {
-  version: "orion-bullet-fit-v1";
-  /** Была ли мера вообще: офлайн-сборка её не имеет и цикл не выполняет. */
-  measured: boolean;
-  converged: boolean;
+  version: "orion-bullet-fit-v2";
+  outcome: BulletFitOutcome;
   /**
    * Сколько раз собиралась дека. Судимых сборок ровно столько же, сколько мер:
    * пересборка, которую померить уже нечем, — выброшенная работа и приговор
@@ -336,9 +354,11 @@ export async function runDeckBuildMeasured(
   }
 ): Promise<DeckBuildResult & { bulletFit: BulletFitReport }> {
   const report: BulletFitReport = {
-    version: "orion-bullet-fit-v1",
-    measured: Boolean(input.measure),
-    converged: true,
+    version: "orion-bullet-fit-v2",
+    // Исход начинается с «меры не было» и уточняется по ходу: на любом раннем
+    // выходе отчёт тогда говорит о том, что действительно случилось, а не о
+    // том, что задумывалось.
+    outcome: "NOT_MEASURED_NO_ADAPTER",
     builds: 1,
     iterations: [],
   };
@@ -364,6 +384,24 @@ export async function runDeckBuildMeasured(
    */
   const plan = new Map<string, number[]>();
   for (let iteration = 1; iteration <= limit; iteration += 1) {
+    /*
+     * Сборка не закрылась — мерить нечего, и спрашивать об этом рендерер
+     * нельзя.
+     *
+     * Отказ обязательной секции останавливает сборку, и дека выходит пустой:
+     * ноль слайдов, `pageCount: 0`. Рендерер на таком манифесте законно
+     * отвечает 500 «finalSlides is empty», и наружу уезжает **его** отказ
+     * вместо кода сборки и имени секции — на живом прогоне 20.08 оператор
+     * прочитал именно 500. Судит сборку тот, кто её принимает; цикл только не
+     * подменяет его приговор своим. Проверка стоит внутри цикла, а не перед
+     * ним: дека выходит пустой и с первой сборки, и с любой пересборки —
+     * поэтому исход говорит о последней сборке, а прошлые итерации, если они
+     * были, остаются в списке.
+     */
+    if (result.assembly.errors.length > 0) {
+      report.outcome = "NOT_MEASURED_ASSEMBLY_FAILED";
+      return finish(result);
+    }
     const payload = toRendererPayload({
       deckManifest: result.assembly.deckManifest,
       rendererSlides: result.assembly.rendererSlides,
@@ -373,6 +411,7 @@ export async function runDeckBuildMeasured(
     const verdict: BulletMeasureVerdict = await input.measure(payload);
     if (!measureVerdictHasLoss(verdict)) {
       report.iterations.push({ iteration, lossyPages: [], movedSlots: [] });
+      report.outcome = "CONVERGED";
       return finish(result);
     }
     const lossyPages = verdict.pages
@@ -402,7 +441,7 @@ export async function runDeckBuildMeasured(
     });
     report.builds += 1;
   }
-  report.converged = false;
+  report.outcome = "NOT_CONVERGED";
   finish(result);
   const last = report.iterations[report.iterations.length - 1];
   throw new BulletFitNotConvergedError(

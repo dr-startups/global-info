@@ -259,7 +259,9 @@ describe("сборка деки по мере рендерера", () => {
   it("без адаптера меры собирается по сид-разбивке и меру не спрашивает", async () => {
     const res = await tinyDeckBuild({ measure: null });
     expect(res.assembly.deckManifest.pageCount).toBeGreaterThan(0);
-    expect(res.bulletFit.measured).toBe(false);
+    // «Меры не было» — это не отказ меры: исход называет причину, по которой
+    // рендерера не спрашивали.
+    expect(res.bulletFit.outcome).toBe("NOT_MEASURED_NO_ADAPTER");
     expect(res.bulletFit.iterations).toHaveLength(0);
   });
 
@@ -272,8 +274,7 @@ describe("сборка деки по мере рендерера", () => {
       },
     });
     expect(calls).toBe(1);
-    expect(res.bulletFit.measured).toBe(true);
-    expect(res.bulletFit.converged).toBe(true);
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
     expect(res.bulletFit.iterations).toHaveLength(1);
   });
 
@@ -305,7 +306,7 @@ describe("сборка деки по мере рендерера", () => {
       },
     });
     expect(calls).toBe(2);
-    expect(res.bulletFit.converged).toBe(true);
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
     expect(res.bulletFit.iterations).toHaveLength(2);
     expect(res.bulletFit.iterations[0]!.movedSlots.length).toBeGreaterThan(0);
   });
@@ -324,7 +325,7 @@ describe("сборка деки по мере рендерера", () => {
      */
     const seed = await report72DeckBuild(null);
     const recut = await report72DeckBuild(twoPerPage);
-    expect(recut.bulletFit.converged).toBe(true);
+    expect(recut.bulletFit.outcome).toBe("CONVERGED");
     // Перекладка действительно работала: листов стало больше.
     expect(recut.assembly.deckManifest.pageCount).toBeGreaterThan(
       seed.assembly.deckManifest.pageCount
@@ -358,6 +359,7 @@ describe("сборка деки по мере рендерера", () => {
     expect((failure as BulletFitNotConvergedError).bulletFit.builds).toBe(
       (failure as BulletFitNotConvergedError).bulletFit.iterations.length
     );
+    expect((failure as BulletFitNotConvergedError).bulletFit.outcome).toBe("NOT_CONVERGED");
   });
 
   it("пересборка внутри цикла не платит ни одного вызова модели", async () => {
