@@ -6,7 +6,11 @@ import { domainToASCII } from "node:url";
 
 import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
 import { clientLink } from "./fragment-builders/serp";
-import { clientAddress } from "./fragment-builders/shared";
+import {
+  WIKIPEDIA_FRAGMENT_CATEGORY_LABELS,
+  clientAddress,
+  pickWikipediaCheckEntry,
+} from "./fragment-builders/shared";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {
@@ -354,10 +358,14 @@ export function validateSectionPack(input: {
   }
 
   // 13. Утверждение «не найдено» не спорит с собственными наблюдениями отчёта.
+  // 14. Фрагменты текста статьи печатаются только при подтверждённой
+  //     принадлежности — по данным пака, а не по выводу построителя.
   if (input.evidenceIndex) {
     for (const slide of pack.slides) {
       const issue = wikipediaDenialIssue(slide, input.evidenceIndex);
       if (issue) issues.push(issue);
+      const fragmentIssue = wikipediaFragmentOwnershipIssue(slide, input.evidenceIndex);
+      if (fragmentIssue) issues.push(fragmentIssue);
     }
   }
 
@@ -418,6 +426,46 @@ function wikipediaDenialIssue(
   return unnamed.length === 0
     ? null
     : `wikipedia denial contradicts page evidence on ${slide.slideId}: ${unnamed.join(", ")}`;
+}
+
+/**
+ * Фрагмент текста статьи — это негатив о ком-то.
+ *
+ * Пока не доказано, что статья о проверяемом лице, такой фрагмент работал бы на
+ * чужой профиль (правило шага AG). Построитель эту ветку закрывает, но ворота
+ * повторяют проверку по данным слайда: проверка, читающая вывод построителя,
+ * подтверждает сама себя. Признак фрагмента — метка категории, та же, которой
+ * его печатают.
+ */
+function wikipediaFragmentOwnershipIssue(
+  slide: SectionPackV2["slides"][number],
+  evidenceIndex: ScopedEvidenceIndex
+): string | null {
+  /*
+   * Признак держится на шаблоне страницы, а не на одной метке.
+   *
+   * «Требует проверки: …» — общеупотребительная фраза: статус ручного ревью,
+   * уровень риска, подпись в комплаенсе. Пока признаком служила только она,
+   * любой такой буллет на чужом слайде отклонял бы обязательную секцию — то
+   * есть деку целиком.
+   */
+  if (slide.templateId !== "wikipedia-check") return null;
+  const labels = Object.values(WIKIPEDIA_FRAGMENT_CATEGORY_LABELS);
+  const fragments = (slide.content.bullets ?? []).filter((b) =>
+    labels.some((label) => String(b ?? "").startsWith(`${label}: `))
+  );
+  if (fragments.length === 0) return null;
+  // Спрашивается принадлежность **той** записи, о которой страница печатает, —
+  // выбор общий с построителем. «Хоть одна подтверждённая» позволяла бы записи
+  // «статьи нет» оправдывать фрагменты неподтверждённой найденной статьи.
+  const printed = pickWikipediaCheckEntry(
+    slide.evidenceRefs
+      .map((ref) => evidenceIndex[ref])
+      .filter((e): e is NonNullable<typeof e> => e?.kind === "wikipedia_check")
+  );
+  return printed?.subjectDecision === "SUBJECT_MATCH"
+    ? null
+    : `wikipedia article fragments without confirmed ownership on ${slide.slideId}: ${fragments.length}`;
 }
 
 /** Одна форма домена для сверки: нижний регистр, без `www.`, punycode. */

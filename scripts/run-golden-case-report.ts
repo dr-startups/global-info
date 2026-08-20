@@ -50,6 +50,7 @@ import {
 import type { DatabaseProfileHitInput } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
 import type { AnalystOverridesBundle } from "../src/modules/digital-profile/services/analyst-overrides-loader";
 import type { EvidenceSupplementBundle } from "../src/modules/digital-profile/services/evidence-supplement-adapter";
+import { runWikipediaArticleReview } from "../src/modules/digital-profile/orion-golden/analytics/run-wikipedia-article-review";
 import {
   buildSurfacePanelSvg,
   previewCachePath,
@@ -130,6 +131,50 @@ async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null
   return bundle;
 }
 
+/**
+ * Купленный разбор статьи, подсеянный до подготовки.
+ *
+ * Модельная часть разбора офлайн не работает (и правильно: `NETWORK_CALLS=0`),
+ * а ветка печати фрагментов без неё осталась бы вне офлайн-контура целиком.
+ * Артефакт кладётся в каталог аналитики так же, как его положил бы прошлый
+ * прогон, — то есть заодно проверяется загрузчик реюза. Выбор фрагментов
+ * задан здесь, но дословность, привязка к разделу и аудит считаются настоящим
+ * кодом стадии: подделать проверенную цитату этим посевом нельзя.
+ */
+async function seedWikipediaArticleReview(
+  artifactsDir: string,
+  bundle: EvidenceSupplementBundle
+): Promise<void> {
+  const set = await runWikipediaArticleReview({
+    caseId: CASE_ID,
+    subject: { fullName: "Anders Holmström", aliases: [] },
+    checks: bundle.wikipediaChecks,
+    deps: {
+      env: {} as NodeJS.ProcessEnv,
+      call: async () => ({
+        subjectMatch: "subject",
+        fragments: [
+          {
+            quote:
+              "В 2019 году налоговая служба Швеции начала проверку операций фонда, " +
+              "завершившуюся доначислением платежей.",
+            category: "negative",
+            gloss: "налоговая проверка фонда в 2019 году",
+          },
+          {
+            quote:
+              "По состоянию на 2014 год компания насчитывала двенадцать сотрудников " +
+              "и работала только на скандинавском рынке.",
+            category: "needs_update",
+            gloss: "данные о компании на 2014 год",
+          },
+        ],
+      }),
+    },
+  });
+  writeJson(join(artifactsDir, "analytics", "wikipedia-article-review.json"), set);
+}
+
 /** Плиток на сетке: столько строк берёт `buildGrid` (`rows.slice(0, 6)`). */
 const GRID_TILE_CAPACITY = 6;
 /**
@@ -190,13 +235,30 @@ function assertEvidenceSupplementSlides(artifactsDir: string): void {
 
   const assembled = JSON.parse(
     readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
-  ) as { slides: Array<{ baseSlotId?: string; narrative?: string }> };
+  ) as { slides: Array<{ baseSlotId?: string; narrative?: string; bullets?: string[] }> };
   const p13 = assembled.slides.find((s) => s.baseSlotId === "p13_ru_wikipedia");
   assert.ok(p13, "p13_ru_wikipedia missing");
   assert.match(
     String(p13.narrative ?? ""),
     /проверк|Wikipedia/i,
     `p13 should mention Wikipedia check: ${p13.narrative}`
+  );
+  // Разбор статьи доезжает до листа: начало статьи дословно и отдельный блок
+  // фрагментов с рекомендациями. Метрики тут мало — проверяется напечатанное.
+  const wikiBullets = assembled.slides
+    .filter((s) => s.baseSlotId === "p13_ru_wikipedia")
+    .flatMap((s) => s.bullets ?? []);
+  assert.ok(
+    wikiBullets.some((b) => b.startsWith("Начало статьи (дословно): ")),
+    `p13 must print the article lead verbatim: ${JSON.stringify(wikiBullets).slice(0, 300)}`
+  );
+  assert.ok(
+    wikiBullets.some((b) => b.startsWith("Негативный фрагмент: ")),
+    "p13 must print the negative article fragment"
+  );
+  assert.ok(
+    wikiBullets.some((b) => b.includes("Рекомендация: ")),
+    "p13 fragments must carry a deterministic recommendation"
   );
 }
 
@@ -335,6 +397,9 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   // Freeze binding timestamp for determinism of any downstream hashes that might read it.
   binding.generatedAt = "2026-01-15T12:00:00.000Z";
 
+  const supplement = await loadEvidenceSupplement();
+  if (supplement) await seedWikipediaArticleReview(artifactsDir, supplement);
+
   const fakeRender: DeckRenderAdapter = async (r) => ({
     pdf: undefined,
     pptx: undefined,
@@ -357,7 +422,7 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     gptCaller: null,
     complianceHits: loadComplianceHits(),
     analystOverrides: loadAnalystOverrides(),
-    evidenceSupplement: await loadEvidenceSupplement(),
+    evidenceSupplement: supplement,
   };
 
   const res = await runCanonicalReportPrepare(input);

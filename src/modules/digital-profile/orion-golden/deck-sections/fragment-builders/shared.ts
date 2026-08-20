@@ -246,14 +246,16 @@ export function packBulletPages(
   bullets: readonly string[],
   firstCount: number,
   contCount: number,
-  itemCharBudget: number
+  itemCharBudget: number,
+  /** Померенная ёмкость первого листа в знаках; без неё — прежний расчёт. */
+  firstCharCap?: number
 ): string[][] {
   if (firstCount <= 0) return [[...bullets]];
   const pages: string[][] = [];
   let cur: string[] = [];
   let curChars = 0;
   let cap = firstCount;
-  let charCap = firstCount * itemCharBudget;
+  let charCap = firstCharCap ?? firstCount * itemCharBudget;
   const flush = () => {
     if (cur.length) pages.push(cur);
     cur = [];
@@ -306,9 +308,27 @@ export function withContinuations(
 
   const firstBulletCap = opts?.firstPageBullets ?? tpl.maxBulletsPerSlide;
   const contBulletCap = tpl.maxBulletsPerContinuation ?? tpl.maxBulletsPerSlide;
-  const needsPaging = firstBulletCap > 0 && bullets.length > firstBulletCap;
+  /*
+   * Ёмкость первого листа в знаках — только там, где её померили.
+   *
+   * Разбивка шла по счёту буллетов и молчала, когда счёт помещается, а знаки
+   * нет: три блока по 300 знаков — это «три из четырёх», и лист их принимал,
+   * хотя рендерер рисовал один. Шаблоны без объявленной меры сохраняют прежнее
+   * поведение: подставить сюда расчёт «по бумаге» значило бы завести второй,
+   * неизмеренный ответ о ёмкости.
+   */
+  const firstCharCap = tpl.layout.maxBulletCharsPerSlide;
+  const overflowsChars =
+    firstCharCap !== undefined && bullets.reduce((n, b) => n + b.length, 0) > firstCharCap;
+  const needsPaging = firstBulletCap > 0 && (bullets.length > firstBulletCap || overflowsChars);
   const bulletChunks = needsPaging
-    ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget)
+    ? packBulletPages(
+        bullets,
+        firstBulletCap,
+        contBulletCap,
+        tpl.layout.itemCharBudget,
+        firstCharCap
+      )
     : [bullets];
   const rowChunks =
     tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
@@ -1719,7 +1739,7 @@ export const WIKIPEDIA_WHY_NO_ARTICLE =
  * покажет её на запрос об имени в любом случае.
  */
 export const WIKIPEDIA_WHY_ARTICLE_NAME_MATCH =
-  "Статья с совпадающим именем попадает в панели знаний и ответы ИИ независимо от того, о ком она написана: читатель, проверяющий субъекта, увидит её первой и примет изложенное за его биографию. Поэтому сначала нужно установить, кому статья посвящена.";
+  "Статья, найденная по имени субъекта, попадает в панели знаний и ответы ИИ независимо от того, о ком она написана: читатель, проверяющий субъекта, увидит её первой и примет изложенное за его биографию. Поэтому сначала нужно установить, кому статья посвящена.";
 
 /** Чем важна уже существующая статья: её правит кто угодно. */
 export const WIKIPEDIA_WHY_ARTICLE_EXISTS =
@@ -1742,6 +1762,65 @@ export const WIKIPEDIA_ADVICE_CONTROL =
  */
 export const WIKIPEDIA_ADVICE_CONFIRM_OWNERSHIP =
   "Мы предлагаем сначала подтвердить принадлежность найденной статьи проверяемому лицу; если статья о нём — контролировать корректность её содержимого, если о другом лице — рассмотреть создание отдельной нейтральной биографической статьи.";
+
+/**
+ * Подпись основного описания статьи.
+ *
+ * «Дословно» — не украшение: за этой строкой идёт текст самой статьи, а не наш
+ * пересказ, и читатель обязан видеть разницу.
+ */
+export const WIKIPEDIA_ARTICLE_LEAD_PREFIX = "Начало статьи (дословно): ";
+
+/** То же описание, когда неизвестно, о ком статья. */
+export const WIKIPEDIA_ARTICLE_LEAD_PREFIX_UNCONFIRMED =
+  "Начало статьи (дословно; принадлежность статьи проверяемому лицу не подтверждена): ";
+
+/**
+ * Метка второго и следующих листов лида.
+ *
+ * Лид биографии — 700–1500 знаков и разъезжается на несколько буллетов. Без
+ * метки на каждом втором лист выглядит абзацем от лица отчёта, а стоит он
+ * рядом со строками «Риск смешения с другим лицом»: читателю нечем отличить
+ * цитату от нашего утверждения.
+ */
+export const WIKIPEDIA_ARTICLE_LEAD_PREFIX_CONTINUED = "Начало статьи (дословно), продолжение: ";
+
+/**
+ * Какая из записей проверки описывает статью, о которой говорит страница.
+ *
+ * Ответ один на построителя и на ворота: страница печатает найденную статью
+ * (при нескольких языковых разделах — ту, где статья есть), и ворота обязаны
+ * спрашивать о принадлежности **той же** записи. Пока ворота спрашивали «есть
+ * ли среди записей слайда хоть одна подтверждённая», подтверждённая запись
+ * «статьи нет» оправдывала бы фрагменты неподтверждённой найденной статьи.
+ */
+export function pickWikipediaCheckEntry<T extends { wikipediaExists?: boolean }>(
+  entries: readonly T[]
+): T | undefined {
+  return entries.find((e) => e.wikipediaExists === true) ?? entries[0];
+}
+
+/** Метка фрагмента текста статьи: по ней его узнаёт и читатель, и валидация. */
+export const WIKIPEDIA_FRAGMENT_CATEGORY_LABELS: Record<"negative" | "needs_update", string> = {
+  negative: "Негативный фрагмент",
+  needs_update: "Требует проверки",
+};
+
+/**
+ * Что сделать с фрагментом — детерминированным шаблоном по категории.
+ *
+ * Писать за клиента новый текст статьи означало бы утверждать биографические
+ * факты, которых нет ни в одном наблюдении: модель выбирает и называет
+ * фрагменты, но рекомендацию формирует не она.
+ */
+export const WIKIPEDIA_FRAGMENT_RECOMMENDATIONS: Record<"negative" | "needs_update", string> = {
+  negative:
+    "Рекомендация: сверить формулировку с первоисточниками, на которые ссылается статья, " +
+    "и отслеживать историю правок этого раздела.",
+  needs_update:
+    "Рекомендация: актуализировать сведения по правилам Википедии, опираясь на независимые " +
+    "авторитетные источники.",
+};
 
 /** Результат проверки неизвестен — двусторонняя рекомендация. */
 export const WIKIPEDIA_ADVICE_UNKNOWN =

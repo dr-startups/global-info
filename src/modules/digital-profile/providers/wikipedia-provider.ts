@@ -17,12 +17,26 @@ export interface WikipediaCandidate {
   snippet: string;
 }
 
+/** Как статья нашлась: поиском по имени или по межъязыковой ссылке соседа. */
+export type WikipediaFoundVia = "search" | "langlink";
+
 export interface WikipediaLanguageResult {
   language: string;
   exists: boolean;
   matchedTitle: string | null;
   url: string | null;
   extract: string | null;
+  /**
+   * Полный плейнтекст статьи (`prop=extracts&explaintext`) с заголовками
+   * `== … ==`. Один вызов даёт и лид, и структуру разделов, и тело для разбора;
+   * REST-сводка рядом остаётся, но лидом служить не может — она срезает скобки
+   * первого предложения (наблюдение: у статьи Мордашова так исчезла дата
+   * рождения, и «основное описание» вышло в 76 знаков).
+   */
+  articleText: string | null;
+  foundVia: WikipediaFoundVia | null;
+  /** Раздел-источник межъязыковой ссылки, по которой найдена эта статья. */
+  langlinkOf: { language: string; title: string } | null;
   notabilityScore: number | null;
   candidates: WikipediaCandidate[];
   rawSnapshot: unknown;
@@ -214,6 +228,25 @@ interface SummaryApiResponse {
   content_urls?: { desktop?: { page?: string } };
 }
 
+/** `formatversion=2`: страницы приходят массивом, а не словарём по pageid. */
+interface ExtractsApiResponse {
+  query?: { pages?: Array<{ title?: string; extract?: string }> };
+}
+
+interface LanglinksApiResponse {
+  query?: { pages?: Array<{ langlinks?: Array<{ lang?: string; title?: string }> }> };
+}
+
+/** Адрес статьи в её языковом разделе — в одной форме на весь модуль. */
+function articleUrl(language: string, title: string): string {
+  return `https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+}
+
+function apiUrl(language: string, params: Record<string, string>): string {
+  const query = new URLSearchParams({ format: "json", formatversion: "2", ...params });
+  return `https://${language}.wikipedia.org/w/api.php?${query.toString()}`;
+}
+
 function notabilityScore(extract: string | null, candidateCount: number): number {
   if (!extract) return candidateCount > 0 ? 20 : 0;
   const lengthScore = Math.min(80, Math.round(extract.length / 20));
@@ -230,6 +263,56 @@ export class WikipediaProvider {
 
   enabled(): boolean {
     return this.availability().status === "ENABLED";
+  }
+
+  /**
+   * Полный текст статьи одним вызовом.
+   *
+   * Отказ здесь проверку не роняет: статья без текста — валидное состояние, и
+   * «нашли статью, но не смогли прочитать» честнее, чем «статьи нет».
+   */
+  private async articleText(language: string, title: string): Promise<string | null> {
+    try {
+      const raw = (await fetchJson(
+        apiUrl(language, {
+          action: "query",
+          prop: "extracts",
+          explaintext: "1",
+          redirects: "1",
+          titles: title,
+        })
+      )) as ExtractsApiResponse;
+      const text = raw.query?.pages?.[0]?.extract;
+      return typeof text === "string" && text.trim() ? text : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Заголовок той же сущности в другом языковом разделе, если он объявлен. */
+  private async langlinkTitle(
+    source: { language: string; title: string },
+    target: string
+  ): Promise<string | null> {
+    try {
+      const raw = (await fetchJson(
+        apiUrl(source.language, {
+          action: "query",
+          prop: "langlinks",
+          lllimit: "50",
+          redirects: "1",
+          titles: source.title,
+        })
+      )) as LanglinksApiResponse;
+      const code = target.toLowerCase().split(/[-_]/u)[0] ?? "";
+      const link = (raw.query?.pages?.[0]?.langlinks ?? []).find(
+        (l) => String(l.lang ?? "").toLowerCase() === code
+      );
+      const title = String(link?.title ?? "").trim();
+      return title || null;
+    } catch {
+      return null;
+    }
   }
 
   private async lookupLanguage(
@@ -261,13 +344,12 @@ export class WikipediaProvider {
         summaryRaw = (await fetchJson(summaryUrl)) as SummaryApiResponse;
         const summary = summaryRaw as SummaryApiResponse;
         extract = summary.extract ?? null;
-        url =
-          summary.content_urls?.desktop?.page ??
-          `https://${language}.wikipedia.org/wiki/${encodeURIComponent(matched.title.replace(/ /g, "_"))}`;
+        url = summary.content_urls?.desktop?.page ?? articleUrl(language, matched.title);
       } catch {
-        url = `https://${language}.wikipedia.org/wiki/${encodeURIComponent(matched.title.replace(/ /g, "_"))}`;
+        url = articleUrl(language, matched.title);
       }
     }
+    const articleText = matched ? await this.articleText(language, matched.title) : null;
 
     return {
       language,
@@ -275,6 +357,9 @@ export class WikipediaProvider {
       matchedTitle: matched?.title ?? null,
       url,
       extract,
+      articleText,
+      foundVia: matched ? "search" : null,
+      langlinkOf: null,
       notabilityScore: matched ? notabilityScore(extract, candidates.length) : 0,
       candidates,
       rawSnapshot: {
@@ -285,8 +370,51 @@ export class WikipediaProvider {
         terms,
         search: candidates,
         summary: summaryRaw,
+        articleText,
+        foundVia: matched ? "search" : null,
+        langlinkOf: null,
         capturedAt: new Date().toISOString(),
       },
+    };
+  }
+
+  /**
+   * Статья раздела, где поиск ничего не дал, но сосед статью нашёл.
+   *
+   * Межъязыковая ссылка — утверждение самой Википедии о том, что это одна и та
+   * же сущность Викиданных, а не наша догадка по транслитерации. На живом
+   * прогоне Мордашова en-поиск вернул страницу-дизамбигуацию «Alexey», отчёт
+   * написал «статьи нет» — и напечатал это над собственными буллетами со
+   * ссылкой на `en.wikipedia.org/wiki/Alexei_Mordashov`. Заголовок этой статьи
+   * стоит в langlinks ru-статьи прямым текстом.
+   *
+   * Поисковый запрос раздела в снимке остаётся дословным: «по этому запросу не
+   * нашла» и «статья есть» — два разных наблюдения, и страница печатает оба.
+   */
+  private async resolveByLanglink(
+    missing: WikipediaLanguageResult,
+    source: WikipediaLanguageResult
+  ): Promise<WikipediaLanguageResult> {
+    const sourceTitle = String(source.matchedTitle ?? "").trim();
+    if (!sourceTitle) return missing;
+    const title = await this.langlinkTitle(
+      { language: source.language, title: sourceTitle },
+      missing.language
+    );
+    if (!title) return missing;
+    const langlinkOf = { language: source.language, title: sourceTitle };
+    const articleText = await this.articleText(missing.language, title);
+    const raw = (missing.rawSnapshot ?? {}) as Record<string, unknown>;
+    return {
+      ...missing,
+      exists: true,
+      matchedTitle: title,
+      url: articleUrl(missing.language, title),
+      articleText,
+      foundVia: "langlink",
+      langlinkOf,
+      notabilityScore: notabilityScore(missing.extract, missing.candidates.length),
+      rawSnapshot: { ...raw, articleText, foundVia: "langlink", langlinkOf },
     };
   }
 
@@ -320,6 +448,17 @@ export class WikipediaProvider {
       } catch (err) {
         failures++;
         lastError = err;
+      }
+    }
+
+    // Разделы, где поиск промахнулся, добираются межъязыковой ссылкой уже
+    // найденной статьи. Источник берётся первый найденный по порядку языков
+    // конфигурации — он же первый по приоритету.
+    const source = languages.find((l) => l.exists && l.matchedTitle);
+    if (source) {
+      for (const [i, lang] of languages.entries()) {
+        if (lang.exists) continue;
+        languages[i] = await this.resolveByLanglink(lang, source);
       }
     }
 

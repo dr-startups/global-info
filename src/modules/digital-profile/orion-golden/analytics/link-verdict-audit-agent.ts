@@ -24,6 +24,7 @@
  */
 
 import { requireQuotedAdverse, type LinkVerdict } from "../contracts/link-verdict";
+import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 
 export type VerdictAuditChange = {
   evidenceRef: string;
@@ -99,6 +100,25 @@ function nameAnchors(name: string): string[] {
   const whole = normalize(name);
   if (!whole) return [];
   return [whole, ...whole.split(" ").filter((w) => w.length >= 4)];
+}
+
+/**
+ * Как имя субъекта может быть написано в чужом тексте.
+ *
+ * Латинское написание нужно наравне с русским: половина прочитанного — страницы
+ * на других языках, где фамилия стоит транслитом. Ответ на этот вопрос один на
+ * весь аудит — и чтения ссылок, и разбора статьи Википедии: разойдясь, они
+ * по-разному отвечали бы на «упомянут ли здесь субъект».
+ */
+export function subjectNameVariants(subject: {
+  fullName: string;
+  aliases?: string[];
+}): string[] {
+  return [
+    subject.fullName,
+    transliterateRuToEn(subject.fullName),
+    ...(subject.aliases ?? []),
+  ];
 }
 
 /**

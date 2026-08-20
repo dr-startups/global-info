@@ -505,6 +505,66 @@ export function promoteLikelyBySharedDomain(input: {
   });
 }
 
+/**
+ * Статья, найденная по межъязыковой ссылке, наследует решение статьи-источника.
+ *
+ * Это одна сущность Викиданных, а не две: латинский заголовок «Alexei
+ * Mordashov» токенная классификация не узнаёт вовсе (наша транслитерация даёт
+ * «Aleksey»), и повторная классификация дала бы «не подтверждено» рядом с
+ * подтверждённой ru-статьёй — две записи об одном разошлись бы. Направление
+ * наследования безопасно по построению: тёзка-источник передаёт сестре свою
+ * неподтверждённость, а не наоборот.
+ */
+export function inheritLanglinkDecisions(input: {
+  items: RawInventoryItem[];
+  resolution: SubjectResolution;
+}): SubjectResolution {
+  const byRef = new Map(input.resolution.items.map((r) => [r.evidenceRef, r]));
+  const languageOf = (item: RawInventoryItem): string =>
+    String(((item.rawMetadata ?? {}) as Record<string, unknown>).language ?? "")
+      .toLowerCase()
+      .split(/[-_]/u)[0] ?? "";
+  const sourceOf = (sourceLanguage: string, self: RawInventoryItem): RawInventoryItem | undefined =>
+    input.items.find((i) => {
+      if (i === self) return false;
+      const meta = (i.rawMetadata ?? {}) as Record<string, unknown>;
+      return (
+        meta.surface === "wikipedia" &&
+        meta.wikipediaExists === true &&
+        languageOf(i) === sourceLanguage
+      );
+    });
+
+  let changed = false;
+  const items = input.resolution.items.map((r) => {
+    const item = input.items.find((i) => `inventory:${i.inventoryId}` === r.evidenceRef);
+    const meta = (item?.rawMetadata ?? {}) as Record<string, unknown>;
+    const from = (meta.identityFromLanglink as { sourceLanguage?: string } | undefined)
+      ?.sourceLanguage;
+    if (!item || !from) return r;
+    const source = sourceOf(String(from).toLowerCase(), item);
+    const inherited = source ? byRef.get(`inventory:${source.inventoryId}`) : undefined;
+    if (!inherited) return r;
+    changed = true;
+    return {
+      ...r,
+      decision: inherited.decision,
+      confidence: inherited.confidence,
+      matchedIdentifiers: inherited.matchedIdentifiers,
+      conflictingIdentifiers: inherited.conflictingIdentifiers,
+      reasonCode: "langlink_inherited",
+    };
+  });
+  if (!changed) return input.resolution;
+
+  return SubjectResolutionSchema.parse({
+    ...input.resolution,
+    schemaVersion: SUBJECT_RESOLUTION_SCHEMA_VERSION,
+    items,
+    evidenceRefs: items.map((i) => i.evidenceRef),
+  });
+}
+
 export function buildSubjectResolution(input: {
   caseId: string;
   datasetId: string;
@@ -522,7 +582,12 @@ export function buildSubjectResolution(input: {
     subjectDisplayName: input.subject.displayName,
     items: classified,
   });
-  return promoteLikelyBySharedDomain({ items: input.items, resolution: base });
+  // Наследование по межъязыковой ссылке — последним: сестра получает
+  // окончательное решение источника, а не промежуточное.
+  return inheritLanglinkDecisions({
+    items: input.items,
+    resolution: promoteLikelyBySharedDomain({ items: input.items, resolution: base }),
+  });
 }
 
 /** Profile shape consumed by the classifier (subset of SubjectIdentityProfile). */

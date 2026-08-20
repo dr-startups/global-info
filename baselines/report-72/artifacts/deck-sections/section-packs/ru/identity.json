@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v98",
+  "contentVersion": "deck-sections-v99",
   "promptVersion": "ru-identity-analysis-deterministic-v1",
-  "contentHash": "sha256:d5a27b46913fc70e965347df8771f06c9634c5f392003b21c8ae09e253b88b0e",
+  "contentHash": "sha256:3cd704087cc4dc3b7bcc654060292f2150aa87c955382079fedfcd0f0f4ababa",
   "inputHash": "sha256:8a6a07a7ab37c99ee0bb68ac9739af56589ea6651e2de86bccac92a32cf43130:29c5b83127b888c2",
-  "generatedAt": "2026-08-20T09:59:44.415Z",
+  "generatedAt": "2026-08-20T14:49:13.454Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -37,7 +37,7 @@
       "templateId": "wikipedia-check",
       "title": "Россия — Википедия",
       "content": {
-        "narrative": "Результат отдельной проверки наличия статьи в Википедии для этого контура в отчёте отсутствует, поэтому вывод о наличии или отсутствии статьи не делается. В поисковой выдаче по контуру Россия зафиксирована 1 энциклопедическая строка (ru.wikipedia.org); принадлежность материала проверяемому лицу не подтверждена. Существенных негативных или спорных формулировок в ней не выявлено.",
+        "narrative": "Результат отдельной проверки наличия статьи в Википедии для этого контура в отчёте отсутствует, поэтому вывод о наличии или отсутствии статьи не делается. В поисковой выдаче по контуру Россия зафиксирована 1 энциклопедическая строка (ru.wikipedia.org); принадлежность материала проверяемому лицу не подтверждена. В заголовках зафиксированных строк выдачи существенных негативных или спорных формулировок не выявлено.",
         "bullets": [
           "Глинка (дворянский род) — ru.wikipedia.org"
         ],
@@ -53,7 +53,9 @@
       "metrics": {
         "subjectClaims": 0,
         "identityPollution": 0,
-        "wikipediaCheckExists": -1
+        "wikipediaCheckExists": -1,
+        "wikipediaArticleFragments": 0,
+        "wikipediaArticleFragmentsDropped": 0
       },
       "visualAssetRefs": []
     }

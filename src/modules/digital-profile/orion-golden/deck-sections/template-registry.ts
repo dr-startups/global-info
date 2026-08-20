@@ -41,6 +41,22 @@ export type TemplateLayoutSpec = {
   narrativeCharBudget: number;
   /** Character budget per bullet/table cell. */
   itemCharBudget: number;
+  /**
+   * Сколько знаков списка помещается на **первый** лист — по мере рендерера.
+   *
+   * Ёмкость страницы измеряется, а не считается: `maxBulletsPerSlide` верно для
+   * коротких строк выдачи, но высота блока растёт не пропорционально их числу,
+   * и произведение «счёт × бюджет знака» на длинных буллетах ошибается в разы.
+   * Замер страницы Википедии голден-кейса (`/orion/measure-layout`):
+   * `availableHeight` 1 542 687 EMU, блок в 253–331 знак — 822 784 EMU, то есть
+   * на лист входит один такой буллет. Без объявленной ёмкости рендерер молча
+   * оставлял на листе один буллет из трёх, а нарратив рядом утверждал, что
+   * каждый фрагмент приведён дословно.
+   *
+   * Объявляется только там, где ёмкость **померена**: не объявлено — прежнее
+   * поведение, ограничение по счёту.
+   */
+  maxBulletCharsPerSlide?: number;
   /** Pagination rule: what happens when content exceeds the budgets. */
   pagination: "continuation" | "clamp" | "none";
 };
@@ -332,7 +348,12 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     maxBulletsPerSlide: 4,
     maxBulletsPerContinuation: 10,
     maxTableRowsPerSlide: 0,
-    layout: layout("single-column", { narrativeCharBudget: 900, itemCharBudget: 400 }),
+    layout: layout("single-column", {
+      narrativeCharBudget: 900,
+      itemCharBudget: 400,
+      // Замер: на базовом листе помещается один блок в 250–330 знаков.
+      maxBulletCharsPerSlide: 340,
+    }),
   },
   "ai-overview": {
     templateId: "ai-overview",

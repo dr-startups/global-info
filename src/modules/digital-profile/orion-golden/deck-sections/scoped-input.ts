@@ -14,6 +14,7 @@ import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
+import type { WikipediaArticleReview } from "../contracts/wikipedia-article-review";
 
 export type SubjectProfileInput = {
   displayName: string;
@@ -184,6 +185,40 @@ export type ScopedEvidenceIndex = Record<
     wikipediaExists?: boolean;
     /** WikipediaCheck.language (ru / en / …). */
     language?: string;
+    /**
+     * Как статья нашлась: `search` или `langlink`. Страница называет способ
+     * находки словами — «поиск по этому запросу статью не нашёл, статья взята
+     * по межъязыковой ссылке» — потому что это два разных наблюдения.
+     */
+    foundVia?: string;
+    /** Раздел-источник межъязыковой ссылки, по которой найдена статья. */
+    langlinkOf?: { language?: string; title?: string };
+    /**
+     * Разбор текста самой статьи: основное описание и фрагменты, требующие
+     * внимания.
+     *
+     * Единственный источник фразы страницы о содержании статьи. Словарь
+     * заголовков (`ADVERSE_PATTERNS`) говорит о заголовках строк выдачи и о
+     * тексте статьи ничего не знает: на живом прогоне он писал «существенных
+     * негативных формулировок не выявлено» рядом с прочитанной статьёй, где
+     * вердикт нашёл санкции и падение состояния.
+     */
+    articleReview?: Pick<
+      WikipediaArticleReview,
+      | "status"
+      | "notReviewedReason"
+      | "lead"
+      | "sections"
+      | "fragments"
+      | "truncated"
+      | "reviewedChars"
+      | "articleTextChars"
+      | "subjectMatch"
+      // Отчёт аудита обязателен на этой стороне: без него построитель не может
+      // отличить «разбор ничего не нашёл» от «разбор нашёл, а сверка сняла всё»,
+      // и печатает «негатива не выделено» в обоих случаях.
+      | "audit"
+    >;
     /**
      * Когда проверка выполнялась (ISO). Страница печатает эту дату, а не дату
      * подготовки отчёта: пересборка старого прогона не должна выдавать старую

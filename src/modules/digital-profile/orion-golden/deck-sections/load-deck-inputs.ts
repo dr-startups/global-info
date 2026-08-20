@@ -26,6 +26,9 @@ import { normalizeSourceType } from "../analytics/source-type";
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
+import { wikipediaCheckInventoryId } from "../../services/evidence-supplement-adapter";
+import { WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT } from "../analytics/run-wikipedia-article-review";
+import { WikipediaArticleReviewSetSchema } from "../contracts/wikipedia-article-review";
 
 export type CompositeObservationRow = {
   observationKey?: string;
@@ -662,6 +665,8 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           pageTitle?: string | null;
           lastChecked?: string | null;
           query?: string | null;
+          foundVia?: string | null;
+          langlinkOf?: { language?: string | null; title?: string | null } | null;
         }>;
         serpScreenshots?: Array<{
           id?: string;
@@ -672,7 +677,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       }>(supplementPath);
       for (const w of supplement.wikipediaChecks ?? []) {
         if (!w.id) continue;
-        const ref = `inventory:wiki-${w.id}`;
+        const ref = `inventory:${wikipediaCheckInventoryId(w.id)}`;
         const existing = evidenceIndex[ref] ?? {};
         const lang = String(w.language ?? "").toLowerCase();
         evidenceIndex[ref] = {
@@ -689,6 +694,13 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           // «каким запросом это получено» на всём индексе один.
           query: w.query ?? existing.query,
           region: lang.startsWith("ru") ? "RU" : lang ? "UAE" : existing.region,
+          // Способ находки: страница печатает «найдена по межъязыковой ссылке»
+          // рядом с дословным поисковым запросом, который статью не нашёл.
+          foundVia: w.foundVia ?? existing.foundVia,
+          langlinkOf:
+            w.langlinkOf?.language && w.langlinkOf?.title
+              ? { language: String(w.langlinkOf.language), title: String(w.langlinkOf.title) }
+              : existing.langlinkOf,
         };
         knownEvidenceRefs.add(ref);
       }
@@ -707,6 +719,57 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       }
     } catch {
       // non-fatal
+    }
+  }
+
+  /*
+   * Разбор статьи — на записи её проверки, и он может только понижать.
+   *
+   * Правило то же, что у вердиктов прочитанных страниц (`subjectMatch: "other"`
+   * → `OTHER_SUBJECT`), и по той же причине без обратного хода: полный тёзка
+   * проходит модельную проверку насквозь, поэтому подтверждённость печати
+   * держится детерминированным признаком — ФИО в заголовке или наследование по
+   * межъязыковой ссылке, — а не мнением модели.
+   */
+  const articleReviewPath = join(analyticsDir, WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT);
+  if (existsSync(articleReviewPath)) {
+    try {
+      // Артефакт разбирается своей же схемой, а не полем за полем: писатель и
+      // читатель обязаны понимать «годную запись» одинаково.
+      const parsed = WikipediaArticleReviewSetSchema.safeParse(readJson<unknown>(articleReviewPath));
+      const wikipediaChecks = Object.values(evidenceIndex).filter(
+        (e) => e.kind === "wikipedia_check"
+      );
+      for (const review of parsed.success ? parsed.data.reviews : []) {
+        const entry = evidenceIndex[review.checkRef];
+        if (!entry) continue;
+        entry.articleReview = review;
+        if (review.subjectMatch !== "other") continue;
+        entry.subjectDecision = "OTHER_SUBJECT";
+        /*
+         * Понижение идёт по ребру наследования.
+         *
+         * Наследование по межъязыковой ссылке заводилось затем, чтобы две
+         * записи об одной сущности Викиданных не разошлись. Понижение,
+         * применённое к одной из них, обязано идти тем же ребром — иначе
+         * ru-статья становится «о другом лице», а её en-сестра остаётся
+         * подтверждённой, и на соседних страницах отчёта об одной статье
+         * сказано разное. Ребро ненаправленное: прочли любую из двух — вывод
+         * относится к обеим.
+         */
+        const language = String(entry.language ?? "").toLowerCase().split(/[-_]/u)[0];
+        for (const other of wikipediaChecks) {
+          if (other === entry) continue;
+          const otherLanguage = String(other.language ?? "").toLowerCase().split(/[-_]/u)[0];
+          const linked =
+            (language && other.langlinkOf?.language?.toLowerCase() === language) ||
+            (otherLanguage && entry.langlinkOf?.language?.toLowerCase() === otherLanguage);
+          if (linked) other.subjectDecision = "OTHER_SUBJECT";
+        }
+      }
+    } catch {
+      // Нечитаемый разбор — не повод потерять остальной вход: страница просто
+      // промолчит о тексте статьи, как молчит на старых артефактах.
     }
   }
 

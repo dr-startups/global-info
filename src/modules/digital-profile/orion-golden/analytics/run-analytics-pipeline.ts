@@ -40,6 +40,13 @@ import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import { loadReusableLinkVerdicts, runLinkVerdicts } from "./run-link-verdicts";
 import { verdictAuditLogLine } from "./link-verdict-audit-agent";
+import {
+  loadReusableWikipediaArticleReview,
+  runWikipediaArticleReview,
+  wikipediaArticleReviewLogLine,
+  WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT,
+  type WikipediaArticleReviewCheck,
+} from "./run-wikipedia-article-review";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
@@ -139,6 +146,12 @@ export type AnalyticsPipelineInput = {
   /** Injectable GPT callers for offline tests (§2.4 / §3.3). */
   gptIdentityCaller?: GptJsonCaller;
   gptThemesCaller?: GptJsonCaller;
+  /**
+   * Записи проверки Википедии со снимками — вход разбора статьи по существу.
+   * Приходят параметром: supplement уже в руках у подготовки отчёта, и второй
+   * его загрузчик здесь был бы вторым ответом на вопрос «какие статьи нашлись».
+   */
+  wikipediaChecks?: WikipediaArticleReviewCheck[];
 };
 
 export type AnalyticsPipelineResult = {
@@ -643,6 +656,58 @@ export async function runOrionAnalyticsPipeline(
         (reasons ? `; отказы — ${reasons}` : "")
     );
     console.log(verdictAuditLogLine(linkVerdicts.audit));
+  }
+
+  /*
+   * 2f. Разбор текста найденных статей Википедии.
+   *
+   * Вход — снимки проверки, а не сеть: полный плейнтекст статьи забрал
+   * провайдер одним вызовом `prop=extracts`. Детерминированная часть (лид,
+   * разделы) работает всегда, модельная — при ключе OpenAI. Купленный разбор
+   * сильнее пересборки по той же причине, что и вердикты: базы у него нет.
+   */
+  const reusableReview = loadReusableWikipediaArticleReview(input.artifactsDir, {
+    caseId: input.caseId,
+  });
+  // Купленное входит в стадию, а не подменяет её: состоявшийся разбор
+  // переиспользуется пофрагментно, а проверка, которой в прошлый раз не
+  // досталось модели, спрашивается заново.
+  const articleReview = await runWikipediaArticleReview({
+    caseId: input.caseId,
+    subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+    checks: input.wikipediaChecks ?? [],
+    previous: reusableReview.status === "reuse" ? reusableReview.result.reviews : [],
+  });
+  emit(WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT, {
+    ...articleReview,
+    datasetId,
+    ...(reusableReview.status === "reuse"
+      ? {
+          reuse: {
+            reusedAt: new Date().toISOString(),
+            previousDatasetId: reusableReview.previousDatasetId,
+          },
+        }
+      : {}),
+    ...(reusableReview.status === "lost"
+      ? {
+          superseded: {
+            reason: reusableReview.reason,
+            previousReviewCount: reusableReview.previousReviewCount,
+          },
+        }
+      : {}),
+  });
+  if (reusableReview.status === "lost") {
+    qualityWarnings.push(`wikipedia-article-review-lost:${reusableReview.reason}`);
+    console.error(
+      `[digital-profile][википедия] КУПЛЕННОЕ ПОДМЕНЕНО: ` +
+        `wikipedia-article-review-lost:${reusableReview.reason}; ` +
+        `прежних записей: ${reusableReview.previousReviewCount}`
+    );
+  }
+  if (articleReview.reviews.length > 0) {
+    console.log(wikipediaArticleReviewLogLine(articleReview));
   }
 
   // 3. Typed surface analyzers.

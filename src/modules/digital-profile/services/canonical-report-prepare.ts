@@ -1225,6 +1225,9 @@ export async function runCanonicalReportPrepare(
       coverageRows,
       subjectProfile,
       artifactsDir: analyticsDir,
+      // Снимки проверок Википедии — вход разбора статьи. Supplement уже здесь;
+      // второй его загрузчик в аналитике был бы вторым ответом на один вопрос.
+      wikipediaChecks: supplement.bundle.wikipediaChecks,
       analystOverrides: input.analystOverrides,
       analystOverridesPrisma:
         input.analystOverrides == null &&

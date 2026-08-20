@@ -7,6 +7,8 @@ import type { FragmentKey, SectionType } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import type { SurfaceAnalysisUnit } from "../../contracts/surface-analysis";
 import { slotsForFragment } from "../canonical-slots";
+import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
+import { packSentencesNoTruncate } from "../semantic-summary-pagination";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
@@ -14,6 +16,11 @@ import { formatRuDate } from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput } from "./shared";
 import { clientLink, serpEngineLabel } from "./serp";
 import {
+  WIKIPEDIA_ARTICLE_LEAD_PREFIX,
+  WIKIPEDIA_ARTICLE_LEAD_PREFIX_CONTINUED,
+  WIKIPEDIA_ARTICLE_LEAD_PREFIX_UNCONFIRMED,
+  WIKIPEDIA_FRAGMENT_CATEGORY_LABELS,
+  WIKIPEDIA_FRAGMENT_RECOMMENDATIONS,
   WIKIPEDIA_ADVICE_CONFIRM_OWNERSHIP,
   WIKIPEDIA_ADVICE_CONTROL,
   WIKIPEDIA_ADVICE_CREATE,
@@ -24,6 +31,7 @@ import {
   WIKIPEDIA_WHY_NO_ARTICLE,
   buildPageEvidenceView,
   clampClientText,
+  pickWikipediaCheckEntry,
   clientReadableUrl,
   coverageContent,
   emptyStatusForReason,
@@ -50,6 +58,12 @@ function dedupeByText(texts: readonly string[]): string[] {
   }
   return out;
 }
+
+/** Почему разбор текста статьи не выполнялся — человеческими словами. */
+const NOT_REVIEWED_REASONS: Record<string, string> = {
+  offline: "прогон выполнялся без обращения к внешним сервисам",
+  "model-unavailable": "языковая модель разбора в этом прогоне недоступна",
+};
 
 /** Языковые разделы Википедии, у которых есть общепринятое русское название. */
 const WIKIPEDIA_SECTION_NAMES: Record<string, string> = {
@@ -180,11 +194,12 @@ export function buildIdentityFragment(
     // UAE / intl: non-ru languages (en, ar, …).
     return Boolean(lang) && !lang.startsWith("ru");
   });
-  // Prefer an exists=true check when several languages/entries match the region.
-  const wikiCheck =
-    wikiCheckEntries.find(([, e]) => e.wikipediaExists === true) ?? wikiCheckEntries[0];
-  const checkExists = wikiCheck ? Boolean(wikiCheck[1].wikipediaExists) : null;
-  const checkRef = wikiCheck?.[0];
+  // Какую из записей описывает страница — общий ответ с воротами фрагментов.
+  const wikiCheck = pickWikipediaCheckEntry(
+    wikiCheckEntries.map(([ref, e]) => ({ ref, ...e }))
+  );
+  const checkExists = wikiCheck ? Boolean(wikiCheck.wikipediaExists) : null;
+  const checkRef = wikiCheck?.ref;
   /*
    * Наличие статьи и её принадлежность — два разных ответа, и оба уже есть в
    * данных. Проверка Википедии сверяет имя, а не личность: на реальном прогоне
@@ -192,7 +207,9 @@ export function buildIdentityFragment(
    * subject-resolution оценил как AMBIGUOUS. Писать «статья о проверяемом лице
    * найдена» можно только при подтверждённой принадлежности.
    */
-  const checkSubjectConfirmed = wikiCheck?.[1].subjectDecision === "SUBJECT_MATCH";
+  const checkSubjectConfirmed = wikiCheck?.subjectDecision === "SUBJECT_MATCH";
+  /** Разбор текста найденной статьи — единственный источник слов о её содержании. */
+  const review = wikiCheck?.articleReview;
 
   /*
    * Признак присутствия — реально собранные строки, а не число юнитов.
@@ -217,10 +234,27 @@ export function buildIdentityFragment(
    */
   const datesClause = checkDatesClause(wikiCheckEntries.map(([, e]) => e));
   const queriesClause = checkQueriesClause(wikiCheckEntries.map(([, e]) => e));
+  /*
+   * Способ находки — часть метода, и он бывает не один.
+   *
+   * «Поиск по этому запросу статью не нашёл» и «статья существует» — два разных
+   * наблюдения: на живом прогоне en-поиск вернул страницу-дизамбигуацию, а
+   * статья лежала за межъязыковой ссылкой ru-статьи. Страница называет оба.
+   */
+  const langlinkCheck = wikiCheckEntries.find(
+    ([, e]) => e.foundVia === "langlink" && e.langlinkOf?.language
+  );
+  const langlinkClause = langlinkCheck
+    ? ` Статья в ${wikipediaSectionPart(langlinkCheck[1].language ?? "")} найдена по` +
+      ` межъязыковой ссылке из статьи в ${wikipediaSectionPart(
+        langlinkCheck[1].langlinkOf?.language ?? ""
+      )}.`
+    : "";
+
   const methodSentence = wikiCheck
     ? `Наличие статьи о проверяемом лице проверено через официальный поисковый API Википедии${
         sectionLabel ? ` ${sectionLabel}` : ""
-      }; ${queriesClause}${datesClause}.`
+      }; ${queriesClause}${datesClause}.${langlinkClause}`
     : "";
 
   // Маркер «статья не найдена» — не строка выдачи: ни плиткой, ни в счёте.
@@ -279,8 +313,8 @@ export function buildIdentityFragment(
       )}`
     : "";
 
-  const articleTitle = wikiCheck?.[1].title ? `«${wikiCheck[1].title}»` : "";
-  const articleUrl = wikiCheck?.[1].url ? clientReadableUrl(wikiCheck[1].url) : "";
+  const articleTitle = wikiCheck?.title ? `«${wikiCheck.title}»` : "";
+  const articleUrl = wikiCheck?.url ? clientReadableUrl(wikiCheck.url) : "";
   const articleName = [articleTitle, articleUrl].filter(Boolean).join(", ");
   /*
    * Результат проверки — один на все ветки страницы.
@@ -294,9 +328,19 @@ export function buildIdentityFragment(
     checkExists === true
       ? checkSubjectConfirmed
         ? `Результат проверки: статья о проверяемом лице найдена${articleName ? ` — ${articleName}` : ""}.`
-        : `Результат проверки: найдена статья${articleTitle ? ` ${articleTitle}` : ""}${
-            articleUrl ? ` (${articleUrl})` : ""
-          }, заголовок которой совпадает с именем субъекта; принадлежность статьи проверяемому лицу не подтверждена.`
+        : /*
+           * Называется способ находки, а не мнимое совпадение.
+           *
+           * Формула «заголовок которой совпадает с именем субъекта» стала
+           * достижимой только после снятия чеканки — и на флагманском кейсе она
+           * ложна: у «Глинка (дворянский род)» совпала фамилия, а у находки по
+           * межъязыковой ссылке заголовок латиницей может не совпадать с нашей
+           * транслитерацией вовсе. Верно и достаточно то, что статья найдена по
+           * имени субъекта; чем именно она совпала, страница не знает.
+           */
+          `Результат проверки: по имени субъекта найдена статья${
+            articleTitle ? ` ${articleTitle}` : ""
+          }${articleUrl ? ` (${articleUrl})` : ""}; принадлежность статьи проверяемому лицу не подтверждена.`
       : checkExists === false
         ? contradictingClause
           ? `Проверка по этому запросу статью не нашла${contradictingClause}.`
@@ -359,17 +403,86 @@ export function buildIdentityFragment(
     .filter((e): e is NonNullable<typeof e> => Boolean(e?.title))
     .slice(0, 6)
     .map((e) => clampClientText(`${e.title}${e.domain ? ` — ${e.domain}` : ""}`, 400));
-  const bullets = [
-    ...subjectClaims.slice(0, 5).map((c) => clampClientText(c.text, 400)),
-    // OTHER_SUBJECT is identity pollution, never a neutral subject signal.
-    //
-    // Одинаковые заголовки схлопываются: на живом прогоне строка «Дуров, Павел
-    // Валерьевич» стояла трижды подряд, и читатель видел не три сигнала, а один
-    // и тот же трижды (шаг 15, E7).
-    ...dedupeByText(foreignClaims.map((c) => c.text))
-      .slice(0, 3)
-      .map((text) => clampClientText(`Риск смешения с другим лицом (не относится к субъекту): ${text}`, 400)),
-  ];
+  // OTHER_SUBJECT is identity pollution, never a neutral subject signal.
+  //
+  // Одинаковые заголовки схлопываются: на живом прогоне строка «Дуров, Павел
+  // Валерьевич» стояла трижды подряд, и читатель видел не три сигнала, а один
+  // и тот же трижды (шаг 15, E7).
+  const foreignBullets = dedupeByText(foreignClaims.map((c) => c.text))
+    .slice(0, 3)
+    .map((text) =>
+      clampClientText(`Риск смешения с другим лицом (не относится к субъекту): ${text}`, 400)
+    );
+
+  /*
+   * Лид и фрагменты идут буллетами, а не карточкой.
+   *
+   * Карточка `content_card` при нехватке места **молча** отбрасывает
+   * предложения: предупреждение уходит в лог, приёмка остаётся зелёной, а со
+   * страницы исчезает дословный текст статьи. Путь буллетов после перехода на
+   * меру рендерера слышен — переполнение уходит в продолжение, а не в тишину.
+   * Любая попытка «переложить» это в карточку вернёт молчаливое урезание.
+   */
+  const bulletBudget = DECK_TEMPLATE_REGISTRY["wikipedia-check"].layout.itemCharBudget;
+  /*
+   * Домен внутри дословного текста статьи не вырезается.
+   *
+   * Здесь стоял гард: строка с доменом, не выводимым из доказательств
+   * страницы, не печаталась. Он был обоснован тем, что иначе доменные ворота
+   * уронят обязательную секцию, — и это оказалось неправдой: и секционная
+   * валидация, и проверка сборки берут буллеты в разбор только у
+   * **унаследованной** области (`inheritedScope && !ownScope`), а
+   * `wikipedia-check` — own scope и на базовом листе, и на продолжении. То есть
+   * гард ничего не предотвращал, зато удалял дословный текст, а на обычной
+   * прозе срабатывал ложно: «предприниматель.Он», «г.Москва», «им.Пушкина»
+   * выглядят доменом для `DOMAIN_TOKEN_RE`.
+   *
+   * По существу правило и не нарушается: домен внутри цитаты — часть текста
+   * статьи, а не наша ссылка на источник, и источник этой строки назван на том
+   * же слайде адресом самой статьи. Собственную прозу страницы (`sourceNote`,
+   * «Что обнаружено», объяснения рамок) ворота по-прежнему проверяют.
+   */
+  const leadPrefix = checkSubjectConfirmed
+    ? WIKIPEDIA_ARTICLE_LEAD_PREFIX
+    : WIKIPEDIA_ARTICLE_LEAD_PREFIX_UNCONFIRMED;
+  // Метка «дословно» стоит на **каждом** листе лида. Лид биографии — 700–1500
+  // знаков, он разъезжается на несколько буллетов, и второй без метки читался
+  // бы как утверждение отчёта — рядом со строками «Риск смешения с другим
+  // лицом» это прямая подмена авторства.
+  const leadBullets =
+    review && review.lead.trim()
+      ? packSentencesNoTruncate(review.lead, bulletBudget).map(
+          (chunk, i) => `${i === 0 ? leadPrefix : WIKIPEDIA_ARTICLE_LEAD_PREFIX_CONTINUED}${chunk}`
+        )
+      : [];
+  // Чужой негатив не работает на профиль субъекта: пока принадлежность статьи
+  // не подтверждена, её фрагменты не печатаются вовсе.
+  /** Сколько фрагментов разбор выделил, но до листа они не дошли. */
+  const droppedFragments = review?.status === "REVIEWED" ? review.audit.dropped : 0;
+  const fragmentBullets =
+    review?.status === "REVIEWED" && checkSubjectConfirmed
+      ? review.fragments
+          .map((f) => {
+            const section = f.section ? ` (раздел «${f.section}»)` : "";
+            return `${WIKIPEDIA_FRAGMENT_CATEGORY_LABELS[f.category]}: «${f.quote}» — ${
+              f.gloss
+            }${section}. ${WIKIPEDIA_FRAGMENT_RECOMMENDATIONS[f.category]}`;
+          })
+      : [];
+
+  /*
+   * Со статьёй на странице строки выдачи в буллетах не нужны: их состав уже
+   * описан числом и доменами в нарративе, а на живом прогоне они выродились в
+   * трижды повторённый заголовок. Без разбора состав буллетов прежний.
+   */
+  const bullets = review
+    ? [...leadBullets, ...fragmentBullets, ...foreignBullets]
+    : [
+        ...dedupeByText(subjectClaims.map((c) => c.text))
+          .slice(0, 5)
+          .map((text) => clampClientText(text, 400)),
+        ...foreignBullets,
+      ];
   const shownBullets = bullets.length > 0 ? bullets : referenceEntries;
   const wikiDomains = [
     ...new Set(
@@ -408,20 +521,79 @@ export function buildIdentityFragment(
           wikiDomains.length ? ` (${enumerateRu(wikiDomains)})` : ""
         }; ${rowsOwnership}.`
       : `Энциклопедических строк в поисковой выдаче по контуру ${regionLabel} не зафиксировано.`;
+  /*
+   * Словарь заголовков говорит о заголовках строк выдачи — и только о них.
+   *
+   * Пока фраза звучала как «существенных негативных формулировок в них не
+   * выявлено», она читалась как утверждение о статье: на живом прогоне она
+   * стояла на той же странице, где вердикт прочитанной статьи нашёл санкции и
+   * падение состояния. О тексте статьи говорит разбор, и только он.
+   */
   const toneSentence = hasAdverseRow
-    ? "Отдельные карточки содержат чувствительные формулировки — их содержание отражено в темах повышенного внимания."
-    : `Существенных негативных или спорных формулировок в ${
-        collectedRows === 1 ? "ней" : "них"
-      } не выявлено.`;
+    ? "В заголовках отдельных строк выдачи есть чувствительные формулировки — их содержание отражено в темах повышенного внимания."
+    : "В заголовках зафиксированных строк выдачи существенных негативных или спорных формулировок не выявлено.";
   const identitySentence =
     foreignClaims.length > 0
       ? `Справочные ресурсы (${regionLabel}) содержат материалы об одноимённом лице; ниже они отделены от данных проверяемого субъекта.`
       : unresolvedRows === 0
         ? `Материалов об одноимённых лицах в контуре ${regionLabel} не зафиксировано.`
         : "";
+  /*
+   * Три состояния разбора различаются словами страницы, а не только метрикой.
+   *
+   * «Мы не смотрели» и «мы посмотрели и ничего не нашли» — разные утверждения,
+   * и пустой разбор не имеет права читаться как чистая статья.
+   */
+  const articleSentence = !review
+    ? ""
+    : review.status === "NOT_REVIEWED"
+      ? `Разбор текста статьи не выполнялся: ${
+          NOT_REVIEWED_REASONS[String(review.notReviewedReason ?? "")] ?? "причина не записана"
+        }.`
+      : !checkSubjectConfirmed
+        ? "Фрагменты текста статьи не приводятся, пока принадлежность статьи не подтверждена."
+        : fragmentBullets.length > 0
+          ? `В тексте статьи выделено ${fragmentBullets.length} фрагмент${pluralRu(
+              fragmentBullets.length,
+              "",
+              "а",
+              "ов"
+            )}, требующ${pluralRu(
+              fragmentBullets.length,
+              "ий",
+              "их",
+              "их"
+            )} внимания; каждый приведён дословно с рекомендацией.${
+              droppedFragments > 0
+                ? ` Ещё ${droppedFragments} не прош${pluralRu(
+                    droppedFragments,
+                    "ёл",
+                    "ли",
+                    "ли"
+                  )} сверку с текстом статьи и не приводятся.`
+                : ""
+            }`
+          : /*
+             * «Не выделено» разрешено только там, где выделять было нечего.
+             *
+             * Ветка смотрела на число **напечатанного**, и одна фраза покрывала
+             * три исхода: разбор ничего не нашёл, аудит снял всё как выдуманное,
+             * подавление сняло всё. Банк читал справку о чистой статье ровно в
+             * прогоне, где инструмент отработал, а его вывод выброшен.
+             */
+            droppedFragments > 0
+            ? "Выделенные разбором фрагменты не прошли сверку с текстом статьи и в отчёт не вошли; вывод об отсутствии негатива в тексте статьи из этого не следует."
+            : "Негативных или спорных фрагментов в тексте статьи не выделено.";
+  const truncatedSentence =
+    review?.status === "REVIEWED" && review.truncated
+      ? `Статья длиннее предела разбора: разобраны первые ${review.reviewedChars} знаков её текста.`
+      : "";
+
   const narrative = [
     methodSentence,
     resultSentence,
+    articleSentence,
+    truncatedSentence,
     rowsSentence,
     collectedRows > 0 ? toneSentence : "",
     collectedRows > 0 ? identitySentence : "",
@@ -468,6 +640,8 @@ export function buildIdentityFragment(
       subjectClaims: subjectClaims.length,
       identityPollution: foreignClaims.length,
       wikipediaCheckExists: checkExists === true ? 1 : checkExists === false ? 0 : -1,
+      wikipediaArticleFragments: fragmentBullets.length,
+      wikipediaArticleFragmentsDropped: droppedFragments,
     },
   });
   return { slides: withContinuations(base, "wikipedia-check"), status: "READY" };
