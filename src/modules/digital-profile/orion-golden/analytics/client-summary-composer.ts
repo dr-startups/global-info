@@ -25,7 +25,8 @@ import {
   INTERNAL_CLIENT_TOKEN_RE,
 } from "./client-summary-pack-builder";
 import { looksLikeSearchQuery } from "./client-quote-hygiene";
-import { pluralRu, quoteForClaim } from "./finding-synthesizer";
+import { quoteForClaim } from "./finding-synthesizer";
+import { pluralRu } from "../../report/i18n/plural-ru";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */

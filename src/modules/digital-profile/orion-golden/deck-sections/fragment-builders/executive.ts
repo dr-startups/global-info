@@ -10,7 +10,7 @@ import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import type { MetricSnapshot, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import {
   freshnessFootnote,
   reportDiffClientLine,

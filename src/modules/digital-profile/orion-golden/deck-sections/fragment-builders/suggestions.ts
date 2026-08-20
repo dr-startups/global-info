@@ -7,7 +7,7 @@ import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import {
   adverseVisualSidebar,
   buildPageEvidenceView,

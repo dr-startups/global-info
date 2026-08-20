@@ -8,7 +8,7 @@ import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { NotShownRow, VisibleAssetItem } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import {
   adverseVisualSidebar,

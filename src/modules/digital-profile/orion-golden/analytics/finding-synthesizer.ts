@@ -119,15 +119,6 @@ function itemIsAdverse(item: RawInventoryItem): boolean {
 }
 
 /**
- * Russian plural form: lives in `report/i18n/plural-ru` because the compliance
- * response mapper needs it too and must not pull this module in. Re-exported
- * here: the deck fragment builders import it from this file, and their sources
- * feed the deck content fingerprint — moving the import would invalidate every
- * cached section pack for nothing.
- */
-export { pluralRu };
-
-/**
  * PDF-40 G.2b — short framing lead (what was found). The concrete meaning
  * comes from quoted headlines + domains, not from these templates alone.
  */

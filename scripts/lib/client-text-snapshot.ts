@@ -33,7 +33,14 @@ export type ClientTextSlide = {
   template?: string;
   text: Record<string, string>;
   bullets?: string[];
-  kpis?: string[];
+  /**
+   * Текст плиток дашборда — «Всего материалов: 72», «Региональные контуры:
+   * Россия · ОАЭ». В нагрузке рендерера они лежат полем `metrics`: `kpis`
+   * контракта переименовывает `run-deck-build.ts` до снятия снимка. Снимок
+   * читал `kpis` и потому не видел ни одной плитки — ноль из 52 слайдов, хотя
+   * обзор всегда печатает семь, — и переформулировать плитку можно было молча.
+   */
+  metrics?: string[];
   /**
    * Текст карточек «Что проверить» — рекомендация приходит в макет отдельным
    * полем, а не текстовым. Пока снимок его не читал, формулировки рекомендаций
@@ -60,7 +67,7 @@ export type ClientTextSnapshot = {
   slides: ClientTextSlide[];
 };
 
-export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v3";
+export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v4";
 
 /**
  * Пробелы схлопываются, края обрезаются. Перенос строки внутри абзаца — это
@@ -115,11 +122,11 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       if (cards.length) slide.keyFindings = cards;
     }
 
-    if (Array.isArray(raw.kpis)) {
-      const kpis = (raw.kpis as Array<Record<string, unknown>>)
+    if (Array.isArray(raw.metrics)) {
+      const metrics = (raw.metrics as Array<Record<string, unknown>>)
         .map((k) => `${norm(k.label)}: ${norm(k.value)}`.trim())
         .filter((s) => s !== ":");
-      if (kpis.length) slide.kpis = kpis;
+      if (metrics.length) slide.metrics = metrics;
     }
 
     const table = raw.table as { headers?: unknown; rows?: unknown } | undefined;
@@ -153,7 +160,7 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
     const parts = [
       ...Object.values(s.text),
       ...(s.bullets ?? []),
-      ...(s.kpis ?? []),
+      ...(s.metrics ?? []),
       ...(s.actions ?? []),
       ...(s.keyFindings ?? []).flatMap((k) => [k.headline, k.status, k.detail]),
       ...(s.highlights ?? []),

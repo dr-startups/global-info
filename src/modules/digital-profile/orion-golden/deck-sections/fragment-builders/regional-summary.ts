@@ -7,7 +7,7 @@ import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
 import { looksLikeSurfaceBlockHeading } from "../../analytics/client-quote-hygiene";
 import { quoteForClaim } from "../../analytics/finding-synthesizer";

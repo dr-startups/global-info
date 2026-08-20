@@ -10,7 +10,7 @@ import { slotsForFragment } from "../canonical-slots";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import { packSentencesNoTruncate } from "../semantic-summary-pagination";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import { formatRuDate } from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput } from "./shared";

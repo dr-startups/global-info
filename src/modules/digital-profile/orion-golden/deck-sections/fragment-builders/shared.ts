@@ -46,8 +46,8 @@ import {
   isWeakExampleTitle,
   quoteForClaim,
   joinTitlesWithinBudget,
-  pluralRu,
 } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import { getFindingThemes } from "../../../config/finding-themes";
 import {
   freshnessFootnote,
@@ -1501,31 +1501,141 @@ export function regionClientLabel(region: string): string {
  * названия, а собственный список устарел бы на первой же смене состава.
  * Названия — часть клиентского текста, поэтому урезанный ICU (молча английские
  * названия) обязан ронять сборку: это закреплено тестом карточки.
+ *
+ * Английский состав нужен не для печати, а для разбора: провайдеры и ручной
+ * импорт называют страну и словом тоже.
  */
 const REGION_NAMES_RU = new Intl.DisplayNames(["ru"], { type: "region" });
+const REGION_NAMES_EN = new Intl.DisplayNames(["en"], { type: "region" });
+
+/** Название региона по коду; пусто — если ICU этот код не знает. */
+function icuRegionName(names: Intl.DisplayNames, code: string): string {
+  let name = "";
+  try {
+    name = names.of(code) ?? "";
+  } catch {
+    // Некорректный код (дефис, цифра, три буквы) — RangeError, а не название.
+    return "";
+  }
+  // На неизвестном коде ICU возвращает сам код: «XX» на слайде — тот же мусор,
+  // что и «xx».
+  return name && name.toUpperCase() !== code.toUpperCase() ? name : "";
+}
+
+/**
+ * Коды, которые ICU не знает, — дополнение к нему, а не второй словарь стран.
+ *
+ * Здесь только то, на чём `Intl.DisplayNames` бросает: собственные коды
+ * территорий FollowTheMoney (их отдаёт OpenSanctions) и четырёхбуквенные коды
+ * ISO 3166-3 для стран, которых больше нет. Полный список стран по-прежнему
+ * берётся из ICU: дублировать его руками — заводить копию, которая разойдётся.
+ *
+ * Кода нет в этом списке — он свернётся в общую формулировку, и это безопасный
+ * исход: назвать страну неверно хуже, чем сказать, что назвать её нечем.
+ */
+const EXTRA_TERRITORY_NAMES_RU: Record<string, string> = {
+  "GB-ENG": "Англия",
+  "GB-NIR": "Северная Ирландия",
+  "GB-SCT": "Шотландия",
+  "GB-WLS": "Уэльс",
+  "SO-SOM": "Сомалиленд",
+  "CY-TRNC": "Северный Кипр",
+  "GE-AB": "Абхазия",
+  "GE-OS": "Южная Осетия",
+  "AZ-NK": "Нагорный Карабах",
+  "MD-PMR": "Приднестровье",
+  SUHH: "СССР",
+  DDDE: "ГДР",
+  YUCS: "Югославия",
+  CSHH: "Чехословакия",
+};
+
+/**
+ * Псевдорегионы ICU — не страны и в клиентский текст не идут.
+ *
+ * `ZZ` («неизвестный регион») особенно: это второе название того же, о чём
+ * говорит общая формулировка ниже, и печатать два разных слова про одно
+ * состояние нельзя.
+ */
+const ICU_PSEUDO_REGIONS = new Set(["ZZ", "XA", "XB"]);
+
+/** Ключ поиска по названию: регистр и пробелы — не различие. */
+function countryNameKey(value: string): string {
+  return value.toLowerCase().replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Обратный указатель «название → русское название», построенный из ICU.
+ *
+ * Нужен потому, что страну называют не только кодом: в записях провайдера и в
+ * ручном импорте встречаются «Iran», «Cuba», «Germany», «россия». Пока их
+ * разбирало правило «2–4 знака = код», «Iran» и «Chad» съедались общей
+ * формулировкой — терялось сведение, которое провайдер назвал, причём ровно на
+ * санкционно значимых странах.
+ *
+ * Указатель строится из самого ICU (все существующие alpha-2), а не руками:
+ * своего списка названий в проекте по-прежнему нет. Считается один раз, лениво.
+ */
+let countryNameIndex: Map<string, string> | undefined;
+
+function countryByName(): Map<string, string> {
+  if (countryNameIndex) return countryNameIndex;
+  const index = new Map<string, string>();
+  for (let first = 65; first <= 90; first += 1) {
+    for (let second = 65; second <= 90; second += 1) {
+      const code = String.fromCharCode(first, second);
+      if (ICU_PSEUDO_REGIONS.has(code)) continue;
+      const ru = icuRegionName(REGION_NAMES_RU, code);
+      if (!ru) continue;
+      for (const key of [countryNameKey(ru), countryNameKey(icuRegionName(REGION_NAMES_EN, code))]) {
+        // Первое название выигрывает: у одной страны бывает несколько кодов
+        // («DE» и «DD»), и переписывать уже найденное нечем.
+        if (key && !index.has(key)) index.set(key, ru);
+      }
+    }
+  }
+  countryNameIndex = index;
+  return index;
+}
 
 /**
  * Короткий латинский токен — это код, а не название.
  *
  * Нужен только для значений, которые назвать не удалось: «Швеция» из ручного
- * импорта — уже клиентский текст и печатается дословно, а «RUS», «suhh», «643»
- * или «q1» — машинный код, и печатать его нельзя. Английское название короче
- * пяти букв («Chad») тоже свернётся в общую формулировку: отличить его от кода
- * нечем, а общая формулировка честнее машинного кода.
+ * импорта — уже клиентский текст и печатается дословно, а «RUS», «643», «q1»
+ * или «xx-yyy» — машинный код, и печатать его нельзя. Дефисная форма — это
+ * коды территорий FollowTheMoney: без неё `gb-sct` уходил на слайд дословно,
+ * потому что под форму не подходил, а ICU на нём бросал.
+ *
+ * Трёхбуквенный alpha-3 («RUS», «CHE») остаётся нераспознанным осознанно.
+ * Свести его к alpha-2 усечением нельзя: `CHN` → `CH` это Швейцария вместо
+ * Китая, `ARE` → `AR` — Аргентина вместо ОАЭ, `IRL` → `IR` — Иран вместо
+ * Ирландии. Таблицы alpha-3 в ICU нет, а руками это весь список стран заново.
  */
-const COUNTRY_CODE_SHAPE = /^[A-Za-z0-9]{2,4}$/u;
+const COUNTRY_CODE_SHAPE = /^[A-Za-z0-9]{2,4}(?:-[A-Za-z0-9]{2,4})?$/u;
 
 /** Страна есть, назвать её нечем — общая формулировка вместо кода. */
 const COUNTRY_NOT_RECOGNIZED_RU = "страна не распознана";
 
+/** Русское название одного значения; `undefined` — назвать нечем. */
+function countryNameRu(raw: string): string | undefined {
+  const upper = raw.toUpperCase();
+  if (/^[A-Za-z]{2}$/u.test(raw) && !ICU_PSEUDO_REGIONS.has(upper)) {
+    const icu = icuRegionName(REGION_NAMES_RU, upper);
+    if (icu) return icu;
+  }
+  return EXTRA_TERRITORY_NAMES_RU[upper] ?? countryByName().get(countryNameKey(raw));
+}
+
 /**
  * Список стран записи для клиентского текста.
  *
- * `Intl.DisplayNames` на неизвестном коде возвращает сам код («XX»), а на
- * некорректном бросает — оба случая сворачиваются в одну общую формулировку.
- * Именно в одну и без счёта: «ru» и «RUS» могут быть одной страной, и число
- * нераспознанных назвало бы две. Пустой список — пустой результат: строки о
- * странах в карточке тогда нет вовсе, потому что провайдер о них не говорил.
+ * Разбор идёт лестницей, и первый ответ выигрывает: код alpha-2 через ICU →
+ * дополнение к ICU → название словом. Не разобрали и похоже на машинный код —
+ * общая формулировка. Именно одна и без счёта: «ru» и «RUS» могут быть одной
+ * страной, и число нераспознанных назвало бы две. Пустой список — пустой
+ * результат: строки о странах в карточке тогда нет вовсе, потому что провайдер
+ * о них не говорил.
  */
 export function countryNamesRu(values: readonly string[]): string[] {
   const named: string[] = [];
@@ -1533,13 +1643,8 @@ export function countryNamesRu(values: readonly string[]): string[] {
   for (const value of values) {
     const raw = String(value ?? "").trim();
     if (!raw) continue;
-    let name = "";
-    try {
-      name = REGION_NAMES_RU.of(raw.toUpperCase()) ?? "";
-    } catch {
-      name = "";
-    }
-    if (name && name.toUpperCase() !== raw.toUpperCase()) {
+    const name = countryNameRu(raw);
+    if (name) {
       named.push(name);
     } else if (COUNTRY_CODE_SHAPE.test(raw)) {
       hasUnrecognized = true;

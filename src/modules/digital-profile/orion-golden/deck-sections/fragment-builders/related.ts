@@ -17,7 +17,7 @@ import type { FragmentKey, SectionType, SlideBody } from "../contracts";
 import type { ScopedEvidenceIndex, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import { collapseEmptySurfaceSlots } from "../empty-surface-collapse";
 import {

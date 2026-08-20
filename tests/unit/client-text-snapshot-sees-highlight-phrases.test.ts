@@ -56,6 +56,6 @@ describe("снимок клиентского текста и фразы бок�
   });
 
   it("версия снимка поднята — эталон без фраз считается устаревшим", () => {
-    expect(CLIENT_TEXT_SNAPSHOT_VERSION).toBe("client-text-snapshot-v3");
+    expect(CLIENT_TEXT_SNAPSHOT_VERSION).toBe("client-text-snapshot-v4");
   });
 });

@@ -21,7 +21,7 @@
  *   свои: очередь ограничена, между попытками пауза.
  */
 
-import { pluralRu } from "./finding-synthesizer";
+import { pluralRu } from "../../report/i18n/plural-ru";
 import {
   readLinkPage,
   type LinkPageRead,

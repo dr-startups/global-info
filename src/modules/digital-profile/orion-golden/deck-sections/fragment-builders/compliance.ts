@@ -216,7 +216,13 @@ export function buildComplianceFragment(
     // тем. Список тот же, что печатался раньше; вторым полем записи он не
     // становится.
     const countries = countryNamesRu((e.countries ?? []).map((c) => String(c)));
-    if (countries.length > 0) rows.push(["Страны в записи", countries.join(", ")]);
+    // Кламп тот же, что у строки алиасов, и по той же причине: это вторая
+    // многозначная строка карточки, а после перевода кодов в названия её
+    // значения выросли втрое-вшестеро. Без него ячейка переполнялась на записи
+    // с десятком стран.
+    if (countries.length > 0) {
+      rows.push(["Страны в записи", clampClientText(countries.join(", "), 200)]);
+    }
     const dates = (e.datesOfBirth ?? []).map((d) => String(d).trim()).filter(Boolean);
     if (dates.length > 0) rows.push(["Даты рождения в записи", dates.join(", ")]);
     const summary = String(e.summary ?? "").trim();
