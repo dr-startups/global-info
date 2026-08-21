@@ -51,6 +51,7 @@ from orion_golden_render.common import (  # noqa: E402
     CONTENT_W,
     EMU_PER_PT,
     FS_BODY,
+    RISK_BG,
     SLIDE_H,
     SLIDE_W,
     _Ctx,
@@ -203,6 +204,19 @@ def render_with_fitter(cards: list[dict[str, str]], fit: Any) -> tuple[Any, list
         executive_mod._fit_lines_to_height = original
 
 
+def card_fills(prs: Any) -> list[str]:
+    """Заливки карточек страницы в порядке отрисовки — шестнадцатеричными кодами."""
+    out: list[str] = []
+    for sh in prs.slides[0].shapes:
+        if not str(getattr(sh, "name", "")).startswith("orion_card_p"):
+            continue
+        try:
+            out.append(str(sh.fill.fore_color.rgb))
+        except Exception:  # noqa: BLE001 — форма без сплошной заливки нам не интересна
+            continue
+    return out
+
+
 def rects(prs: Any, width: int) -> list[tuple[int, int]]:
     """(верх, высота) прямоугольников карточек либо плашек — по их ширине."""
     return [
@@ -346,6 +360,27 @@ def main() -> int:
         int(e.get("droppedBullets") or 0) + int(e.get("droppedLines") or 0) for e in entries
     )
     check("К1д: потерь по телеметрии ноль", dropped == 0, f"потеряно {dropped}")
+
+    # BX: клиентская шкала метит верхнюю ступень тоном `danger`, а рендерер знал
+    # только `risk|warn|good|accent` — незнакомый тон красился дефолтом, то есть
+    # **белым**. Карточка «Высокий» выходила единственной без тревожного фона.
+    danger_prs, _ = render_page(
+        [
+            {"headline": "Тема ступени", "status": "Высокий", "detail": prose(120), "tone": "danger"},
+            {"headline": "Соседняя тема", "status": "Средний", "detail": prose(120), "tone": "warn"},
+        ]
+    )
+    fills = card_fills(danger_prs)
+    check(
+        "BX: верхняя ступень не красится белым",
+        len(fills) >= 1 and fills[0].upper() != "FFFFFF",
+        f"заливки: {fills}",
+    )
+    check(
+        "BX: `danger` красится так же, как `risk`",
+        len(fills) >= 1 and fills[0].upper() == str(RISK_BG).upper(),
+        f"верхняя карточка {fills[0] if fills else '—'} против RISK_BG {RISK_BG}",
+    )
     check(
         "К1е: инспектор геометрии молчит о потере содержимого",
         "CONTENT_DROPPED_BY_RENDERER" not in inspector_codes(prs, telemetry),

@@ -256,7 +256,25 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
 
 
 def _tone_fill(tone: str) -> RGBColor:
-    return {"risk": RISK_BG, "warn": WARN_BG, "good": GOOD_BG, "accent": ACCENT_SOFT}.get(tone, CARD_BG)
+    """Подложка карточки по тону.
+
+    Словарей тонов в проекте два, и это осознанно: плитки метрик говорят
+    `risk|warn|good|accent`, а клиентская шкала риска — `danger|warn|neutral`
+    (`orion-golden/client/risk-scale.ts`). Знать надо оба: `danger` был
+    рендереру неизвестен и красился дефолтом, то есть **белым**, — и карточка
+    «Высокий» выходила единственной без тревожного фона, при пяти красных
+    делениях шкалы (пункт BX бэклога).
+
+    `neutral` красится белым намеренно: нижняя ступень тревоги не несёт.
+    """
+    return {
+        "risk": RISK_BG,
+        "danger": RISK_BG,
+        "warn": WARN_BG,
+        "good": GOOD_BG,
+        "accent": ACCENT_SOFT,
+        "neutral": CARD_BG,
+    }.get(tone, CARD_BG)
 
 
 def _tone_value_color(tone: str) -> RGBColor:
