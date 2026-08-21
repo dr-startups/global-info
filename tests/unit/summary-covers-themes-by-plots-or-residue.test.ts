@@ -74,6 +74,7 @@ const ADVERSE_PLOT: ClientReadPlot = {
     {
       text: "Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
       domain: "affarsposten.se",
+      url: "https://affarsposten.se/2026/nordkap-tax-probe",
       evidenceRef: "inventory:obs-01",
     },
   ],

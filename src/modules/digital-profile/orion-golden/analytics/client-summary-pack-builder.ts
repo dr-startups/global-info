@@ -29,6 +29,7 @@ import {
 import type { LinkVerdict, VerdictThemeSummary } from "../contracts/link-verdict";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import { riskWord, verdictRiskWord } from "../client/risk-scale";
+import { sourceAttribution } from "../client/client-address";
 import { themeLabelRu } from "./canonical-themes";
 import {
   isQuotableEvidence,
@@ -57,13 +58,13 @@ export const INTERNAL_CLIENT_TOKEN_RE =
  *
  * Строки тем приходят как есть — названия и числа сюжетов берутся отсюда и
  * нигде не пересчитываются. Решения нужны только за тем, чем строка сама не
- * располагает: цитатами, доменами и позицией страницы в выдаче.
+ * располагает: цитатами, адресами, доменами и позицией страницы в выдаче.
  */
 export type ClientSummaryVerdictInput = {
   themes: readonly VerdictThemeSummary[];
   verdicts: readonly Pick<
     LinkVerdict,
-    "evidenceRef" | "domain" | "rank" | "tone" | "subjectMatch" | "quotes"
+    "evidenceRef" | "domain" | "url" | "rank" | "tone" | "subjectMatch" | "quotes"
   >[];
 };
 
@@ -366,6 +367,7 @@ function articleFromSelection(
   // Never borrow sourceDomains[0]: it belongs to some other material of the
   // same claim, and a misattributed source discredits the evidence (step 05.3).
   const cleanDomain = (domain || claim.originalDomain || "").trim();
+  const cleanUrl = (claim.originalUrl ?? "").trim();
   // Рекламная обвязка площадки и голые адреса — не содержание материала
   // (шаг 13, C4). Если после чистки цитировать нечего, описание строится по
   // заголовку, а не публикует обрывок призыва подписаться.
@@ -377,9 +379,7 @@ function articleFromSelection(
     cleanExcerpt ||
       cleanClaimExcerpt ||
       (cleanTitle
-        ? cleanDomain
-          ? `«${cleanTitle}» — источник ${clientSafeDomain(cleanDomain)}.`
-          : `«${cleanTitle}».`
+        ? `«${cleanTitle}»${sourceAttribution({ url: cleanUrl, domain: cleanDomain })}.`
         : "Описание материала сохранено в доказательной трассе.")
   );
   const allegation = stripInternalLeak(
@@ -392,6 +392,7 @@ function articleFromSelection(
   return {
     title: cleanTitle,
     domain: cleanDomain,
+    url: cleanUrl,
     sourceDate: claim.dates[0] ?? null,
     conciseCompleteDescription: description,
     sourceAllegationOrStatus: allegation,
@@ -626,6 +627,7 @@ function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
       quotes.push({
         text,
         domain: clientSafeDomain(v.domain) ?? "",
+        url: String(v.url ?? ""),
         evidenceRef: v.evidenceRef,
       });
     }

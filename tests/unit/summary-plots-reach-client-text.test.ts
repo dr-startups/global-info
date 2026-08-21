@@ -44,7 +44,10 @@ const STOCKHOLM_QUOTE =
 function verdict(over: Partial<LinkVerdict> & { evidenceRef: string }): LinkVerdict {
   return {
     schemaVersion: "link-verdict-v1",
-    url: `https://affarsposten.se/${over.evidenceRef}`,
+    // Адрес не строится из `evidenceRef`: «inventory:obs-01» внутри URL —
+    // машинный токен, которого в настоящем адресе не бывает, и сторож
+    // технических токенов справедливо на него срабатывает.
+    url: `https://affarsposten.se/text/${String(over.evidenceRef).replace(/[^a-z0-9]+/giu, "-")}`,
     domain: "affarsposten.se",
     subjectMatch: "subject",
     tone: "adverse",

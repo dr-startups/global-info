@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v102",
+  "contentVersion": "deck-sections-v103",
   "promptVersion": "uae-serp-analysis-v4",
-  "contentHash": "sha256:a1e2d57b49d0ca05f0b7a35f29564ff882a4dfbcf850a1192e6feb3ab23aedf0",
+  "contentHash": "sha256:972e2b4c3d3545a77de90d663b6973af1bfbf14d4ebe8eb9d2e19de6b1af3979",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
-  "generatedAt": "2026-08-20T22:46:19.237Z",
+  "generatedAt": "2026-08-20T23:55:01.442Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -382,7 +382,7 @@
           "rows": [
             [
               "13",
-              "x.com/rucriminalinfo/status/2008361452998914141",
+              "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
               "Связанный с Россией бизнесмен Сергей Глинка ...",
               "Соцсеть",
               "Нежелательный"
@@ -403,7 +403,7 @@
             ],
             [
               "16",
-              "labyrinth.ru/content/card.asp",
+              "labyrinth.ru/content/card.asp?cardid=92628",
               "ГЛИНКА Сергей Михайлович - Биография",
               "—",
               "Нейтральный"

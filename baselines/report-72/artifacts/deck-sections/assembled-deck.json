@@ -690,8 +690,8 @@
       "continuationOf": "p05_profile_dashboard",
       "continuationIndex": 1,
       "bullets": [
-        "Внимание по линии безопасности / оборонный контур 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие. [finding-security_scrutiny-subject_match-0ae970c7]",
-        "PEP / RCA / watchlist-сигналы 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+        "Внимание по линии безопасности / оборонный контур\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. [finding-security_scrutiny-subject_match-0ae970c7]",
+        "PEP / RCA / watchlist-сигналы\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
       ],
       "evidenceRefs": [],
       "findingIds": [
@@ -1807,7 +1807,7 @@
           ],
           [
             "11",
-            "labyrinth.ru/content/card.asp",
+            "labyrinth.ru/content/card.asp?cardid=92628",
             "https://labyrinth.ru/content/card.asp?cardid=92628",
             "—",
             "Нейтральный"
@@ -1919,7 +1919,7 @@
         "rows": [
           [
             "13",
-            "x.com/rucriminalinfo/status/2008361452998914141",
+            "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
             "https://x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
             "Соцсеть",
             "Нейтральный"
@@ -3213,7 +3213,7 @@
         "rows": [
           [
             "13",
-            "x.com/rucriminalinfo/status/2008361452998914141",
+            "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
             "Связанный с Россией бизнесмен Сергей Глинка ...",
             "Соцсеть",
             "Нежелательный"
@@ -3234,7 +3234,7 @@
           ],
           [
             "16",
-            "labyrinth.ru/content/card.asp",
+            "labyrinth.ru/content/card.asp?cardid=92628",
             "ГЛИНКА Сергей Михайлович - Биография",
             "—",
             "Нейтральный"

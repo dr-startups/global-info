@@ -9,7 +9,6 @@
 
 import { createHash } from "node:crypto";
 import {
-  clientSafeDomain,
   clientSafeDomains,
 } from "../../services/composite-serp-merge";
 import { pickDistinctTitles } from "./distinct-stories";
@@ -43,6 +42,7 @@ import {
 } from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
 import { sourceTypeFromDomain, type SourceType } from "./source-type";
+import { sourceAttribution } from "../client/client-address";
 import { publicDomainOf } from "./public-domain";
 import { pluralRu } from "../../report/i18n/plural-ru";
 
@@ -202,7 +202,14 @@ export const CLIENT_THEME_WHY: Record<string, string> = {
     "Для международных проверок это зона повышенного внимания.",
 };
 
-export type ClaimEvidenceExample = { title: string; domain: string };
+/**
+ * Пример-свидетельство для клиентского текста.
+ *
+ * `url` рядом с доменом — не дублирование: источник называется полным адресом
+ * («источник (msk1.ru/text/world/2026/02/02/76244926)»), а домен остаётся
+ * запасным ответом для материала, у которого адреса нет вовсе.
+ */
+export type ClaimEvidenceExample = { title: string; domain: string; url?: string };
 
 /**
  * PDF-46 I.1 — JS `\b` does NOT treat Cyrillic as word chars, so «…Путина в»
@@ -486,7 +493,7 @@ export function resolveExampleQuote(
       !hasDanglingTail(q) &&
       !isIncompleteClientQuote(q)
     ) {
-      return { title: q, domain };
+      return { title: q, domain, url: item.sourceUrl };
     }
   }
 
@@ -507,7 +514,7 @@ export function resolveExampleQuote(
       !isIncompleteClientQuote(headline)
     ) {
       const q = quoteForClaim(headline, 220) || (headline.length <= 220 ? headline : "");
-      if (q && !isIncompleteClientQuote(q)) return { title: q, domain };
+      if (q && !isIncompleteClientQuote(q)) return { title: q, domain, url: item.sourceUrl };
     }
   }
   return null;
@@ -561,12 +568,13 @@ export function buildClientFacingClaim(input: {
     CLIENT_THEME_WHY[input.theme.themeId] ??
     "Для банка, инвестора или контрагента это сигнал к углублённой проверке.";
 
-  let examples = (input.examples ?? [])
+  let examples: ClaimEvidenceExample[] = (input.examples ?? [])
     .map((e) => ({
       title: cleanExampleTitle(e.title),
       domain: String(e.domain ?? "")
         .replace(/^www\./iu, "")
         .trim(),
+      url: e.url,
     }))
     .filter(
       (e) =>
@@ -600,9 +608,10 @@ export function buildClientFacingClaim(input: {
   for (const e of pickDistinctTitles(examples, 2)) {
     const q = quoteForClaim(e.title, 220);
     if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
-    // Домен называется клиенту только если он не из демо-данных.
-    const safe = clientSafeDomain(e.domain);
-    quoteLines.push(safe ? `«${q}» — источник ${safe}` : `«${q}»`);
+    // Источник называется полным адресом: домен читается как «где-то на сайте
+    // есть, ищите сами» (замечание владельца к отчёту 20.08). Демо-имена не
+    // называются ни адресом, ни доменом — это внутри `sourceAttribution`.
+    quoteLines.push(`«${q}»${sourceAttribution({ url: e.url, domain: e.domain })}`);
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");

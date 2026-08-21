@@ -50,9 +50,16 @@ const MALTA_QUOTE =
 const SHORT_QUOTE = "иск подан в суде";
 
 function verdict(over: Partial<LinkVerdict> & { evidenceRef: string }): LinkVerdict {
+  // Адрес строится от домена решения: в настоящем вердикте они с одной
+  // страницы и разойтись не могут, а фикстура, где домен переопределён, а
+  // адрес нет, проверяла бы несуществующее состояние.
+  const host = String(over.domain ?? "affarsposten.se");
   return {
     schemaVersion: "link-verdict-v1",
-    url: `https://affarsposten.se/${over.evidenceRef}`,
+    // Адрес не строится из `evidenceRef`: «inventory:obs-01» внутри URL —
+    // машинный токен, которого в настоящем адресе не бывает, и сторож
+    // технических токенов справедливо на него срабатывает.
+    url: `https://${host}/2026/nordkap/${String(over.evidenceRef).replace(/^\D+/u, "")}`,
     domain: "affarsposten.se",
     subjectMatch: "subject",
     tone: "neutral",
@@ -171,7 +178,10 @@ describe("слова резюме из сюжетов", () => {
     expect(themeBlockText(stockholm.heading, stockholm.body)).toBe(
       `${STOCKHOLM}. По сюжету прочитано 5 публикаций, 4 из них нежелательные. ` +
         "Источники: affarsposten.se, pravo-obzor.ru. " +
-        `«${STOCKHOLM_QUOTE}» — источник affarsposten.se. ` +
+        // Источник называется полным адресом: домен читался как «где-то на
+        // сайте есть, ищите сами». Точка стоит снаружи скобок — иначе неясно,
+        // часть адреса она или конец предложения.
+        `«${STOCKHOLM_QUOTE}» — источник (affarsposten.se/2026/nordkap/01). ` +
         // Процитирована одна из пяти — блок называет это числом, а не молчит:
         // молчаливый срез читается как «это всё, что нашли».
         "Процитирована 1 публикация сюжета из 5 прочитанных. " +
@@ -182,7 +192,7 @@ describe("слова резюме из сюжетов", () => {
     expect(themeBlockText(malta.heading, malta.body)).toBe(
       `${MALTA}. По сюжету прочитано 2 публикации, 1 из них нежелательная. ` +
         "Источники: malta-registry-watch.org, nordic-review.se. " +
-        `«${MALTA_QUOTE}» — источник malta-registry-watch.org. ` +
+        `«${MALTA_QUOTE}» — источник (malta-registry-watch.org/2026/nordkap/06). ` +
         "Процитирована 1 публикация сюжета из 2 прочитанных."
     );
   });

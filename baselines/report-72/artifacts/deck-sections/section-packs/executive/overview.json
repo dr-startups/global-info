@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v102",
+  "contentVersion": "deck-sections-v103",
   "promptVersion": "digital-profile-overview-deterministic-v1",
-  "contentHash": "sha256:569feb97411334cfb1598a9feda214e6f2bd4a3bd4470fc325d1da13d65e2466",
+  "contentHash": "sha256:1eacd791c2440f7fc20045ffea0415705b4a390aab5bbc476b4991b99d6e636d",
   "inputHash": "sha256:3c34d67171cc0486f5c706c071e253770bfd3261cae14577103d477503fef180:df4c5b7b7245ce05",
-  "generatedAt": "2026-08-20T22:46:19.189Z",
+  "generatedAt": "2026-08-20T23:55:01.385Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -232,8 +232,8 @@
       "title": "Цифровой профиль: 3 темы повышенного внимания (продолжение 2/2)",
       "content": {
         "bullets": [
-          "Внимание по линии безопасности / оборонный контур 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие. [finding-security_scrutiny-subject_match-0ae970c7]",
-          "PEP / RCA / watchlist-сигналы 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+          "Внимание по линии безопасности / оборонный контур\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. [finding-security_scrutiny-subject_match-0ae970c7]",
+          "PEP / RCA / watchlist-сигналы\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
         ],
         "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
       },

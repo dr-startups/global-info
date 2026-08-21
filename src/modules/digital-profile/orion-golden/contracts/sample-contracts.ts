@@ -401,6 +401,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
           {
             title: "Sample investigation",
             domain: "news.example",
+            url: "https://news.example/material",
             sourceDate: "2024",
             conciseCompleteDescription:
               "«Sample investigation» — источник news.example. Публикация связывает сюжет с вопросами этики.",

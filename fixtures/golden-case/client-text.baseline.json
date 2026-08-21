@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 52,
-  "totalChars": 55327,
+  "totalChars": 55867,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -39,12 +39,12 @@
         {
           "headline": "",
           "status": "",
-          "detail": "Деловые связи, владение и контрагенты. Найдены конкретные материалы, в том числе «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» (difc-briefing.ae): «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se. В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту. Деловые связи и круг связанных лиц могут расширять периметр due diligence. Публикация (kapitalnytt.se, stockholm-kuriren.se) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения."
+          "detail": "Деловые связи, владение и контрагенты. Найдены конкретные материалы, в том числе «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» (difc-briefing.ae): «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23) В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту. Деловые связи и круг связанных лиц могут расширять периметр due diligence. Публикация (kapitalnytt.se, stockholm-kuriren.se) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения."
         },
         {
           "headline": "",
           "status": "",
-          "detail": "Криминальные и судебные материалы. Найдены конкретные материалы, в том числе «Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm» (affarsposten.se): «Подробности: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm» — источник pravo-obzor.ru. Для банка или партнёра судебные и криминальные сюжеты обычно становятся поводом для расширенной проверки статусов дел и первоисточников. Контекстный материал; не использовать как самостоятельное доказательство риска без дополнительной сверки."
+          "detail": "Криминальные и судебные материалы. Найдены конкретные материалы, в том числе «Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm» (affarsposten.se): «Подробности: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm» — источник (pravo-obzor.ru/anders-holmstr-m-founder-of-nordkap-capital-face-20) Для банка или партнёра судебные и криминальные сюжеты обычно становятся поводом для расширенной проверки статусов дел и первоисточников. Контекстный материал; не использовать как самостоятельное доказательство риска без дополнительной сверки."
         },
         {
           "headline": "",
@@ -189,7 +189,7 @@
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se Где видно: kapitalnytt.se, stockholm-kuriren.se."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5) «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник (stockholm-kuriren.se/stockholm-court-schedules-hearing-involving-ande-25)"
       ],
       "actions": [
         "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
@@ -212,8 +212,8 @@
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник reestr-novosti.ru Где видно: stockholm-kuriren.se, reestr-novosti.ru.",
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля."
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1) «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник (reestr-novosti.ru/nordkap-capital-board-appoints-independent-compl-10)",
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник (rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7)"
       ]
     },
     {
@@ -257,8 +257,8 @@
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Всего по теме: 4 материала, с негативным контекстом — 1.",
-        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1."
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник (rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7) Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала, с негативным контекстом — 1.",
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23) Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1."
       ]
     },
     {

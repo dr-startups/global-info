@@ -38,6 +38,7 @@ import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
+import { SOURCE_ATTRIBUTION_SOURCE } from "../client/client-address";
 
 /**
  * v18 — правило чисел в основном промпте: всё, что посчитано, остаётся вместе
@@ -481,8 +482,8 @@ export function rejectWeakQuoteLines(bullet: string): string | null {
  * in the deterministic draft (e.g. currenttime.tv / ФБК line).
  */
 export function rejectDroppedEvidenceQuotes(draft: string, next: string): string | null {
-  const srcRe = /—\s*источник\s+([A-Za-z0-9][A-Za-z0-9.-]*)/giu;
-  const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/giu;
+  const srcRe = new RegExp(SOURCE_ATTRIBUTION_SOURCE, "giu");
+  const quoteRe = new RegExp(`«[^»]{8,}»\\s*${SOURCE_ATTRIBUTION_SOURCE}`, "giu");
   const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase());
   if (draftDomains.length === 0) return null;
   const nextDomains = new Set(

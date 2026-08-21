@@ -25,6 +25,13 @@ export const RepresentativeArticleSchema = z.object({
    * attribution at all, never as another material's domain (step 05.3).
    */
   domain: z.string(),
+  /**
+   * Полный адрес ЭТОГО материала — им называется источник в тексте.
+   *
+   * Пусто — адреса нет вовсе; тогда источник называется доменом, а чужой адрес
+   * не подставляется никогда (то же правило, что у `domain`).
+   */
+  url: z.string().default(""),
   sourceDate: z.string().nullable(),
   conciseCompleteDescription: z.string().min(1),
   sourceAllegationOrStatus: z.string().min(1),
@@ -93,6 +100,8 @@ export const READ_PLOT_QUOTE_LIMIT = 6;
 export const ClientReadPlotQuoteSchema = z.object({
   text: z.string().min(1),
   domain: z.string(),
+  /** Адрес страницы, с которой снята цитата; пусто — адреса нет. */
+  url: z.string().default(""),
   evidenceRef: z.string().min(1),
 });
 export type ClientReadPlotQuote = z.infer<typeof ClientReadPlotQuoteSchema>;

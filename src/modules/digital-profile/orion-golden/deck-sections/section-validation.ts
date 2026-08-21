@@ -8,9 +8,9 @@ import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
 import { clientLink } from "./fragment-builders/serp";
 import {
   WIKIPEDIA_FRAGMENT_CATEGORY_LABELS,
-  clientAddress,
   pickWikipediaCheckEntry,
 } from "./fragment-builders/shared";
+import { clientAddress } from "../client/client-address";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {

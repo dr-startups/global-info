@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v102",
+  "contentVersion": "deck-sections-v103",
   "promptVersion": "ru-serp-analysis-v4",
-  "contentHash": "sha256:9afc369402ef0c0c416bcbb56938109191d54478fea8ae33534d4826dd8fb9b0",
+  "contentHash": "sha256:4ca874e61a8b8e09af7d4fafbe9bd49fce91f5c6917c9e35d927ed5a666a10c0",
   "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:a24473095f588937",
-  "generatedAt": "2026-08-20T22:46:19.221Z",
+  "generatedAt": "2026-08-20T23:55:01.422Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -693,7 +693,7 @@
             ],
             [
               "11",
-              "labyrinth.ru/content/card.asp",
+              "labyrinth.ru/content/card.asp?cardid=92628",
               "https://labyrinth.ru/content/card.asp?cardid=92628",
               "—",
               "Нейтральный"
@@ -791,7 +791,7 @@
           "rows": [
             [
               "13",
-              "x.com/rucriminalinfo/status/2008361452998914141",
+              "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
               "https://x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
               "Соцсеть",
               "Нейтральный"

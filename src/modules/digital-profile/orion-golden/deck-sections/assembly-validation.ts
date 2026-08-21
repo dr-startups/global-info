@@ -17,7 +17,8 @@ import {
   rankSourceBelongsToEngine,
   serpMaterialKey,
 } from "./fragment-builders/serp";
-import { clientAddress, sameSerpQuery } from "./fragment-builders/shared";
+import { sameSerpQuery } from "./fragment-builders/shared";
+import { clientAddress } from "../client/client-address";
 import {
   normalizeDomainForCompare,
   undeclaredClientTextDomains,

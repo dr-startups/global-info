@@ -28,6 +28,7 @@ import { looksLikeSearchQuery } from "./client-quote-hygiene";
 import { quoteForClaim } from "./finding-synthesizer";
 import { pluralRu } from "../../report/i18n/plural-ru";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
+import { sourceAttribution } from "../client/client-address";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
 const LEAD_THEME_COUNT = 3;
@@ -293,9 +294,9 @@ function composeReadPlotSection(
   const body = [
     counted,
     plot.sourceDomains.length > 0 ? `Источники: ${plot.sourceDomains.join(", ")}.` : "",
-    ...plot.quotes.map((q) =>
-      q.domain ? `«${q.text}» — источник ${q.domain}.` : `«${q.text}».`
-    ),
+    // Источник цитаты — полным адресом: страница, с которой она снята, должна
+    // открываться, а домен читается как «где-то на сайте есть, ищите сами».
+    ...plot.quotes.map((q) => `«${q.text}»${sourceAttribution({ url: q.url, domain: q.domain })}.`),
     quotedShare,
     once(CLIENT_MATERIAL_QUALIFICATION),
   ]

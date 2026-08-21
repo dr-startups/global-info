@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { toDisplayDate } from "../../providers/published-date";
 import { publicDomainOf } from "./public-domain";
-import { clientSafeDomain, clientSafeDomains } from "../../services/composite-serp-merge";
+import { clientSafeDomains } from "../../services/composite-serp-merge";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
 import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
@@ -29,6 +29,7 @@ import {
   themeLabelRu,
 } from "./canonical-themes";
 import { scoreMateriality } from "./materiality-scorer";
+import { sourceAttribution } from "../client/client-address";
 
 const ADVERSE_TEXT =
   /уголов|criminal|арест|санкц|sanction|корруп|corrupt|фбк|расследован|investigat|суд|court|офшор|offshore|pep|rca|скандал|scandal|yacht|рыбк|navalny|навальн|watch.?list|fraud|мошенн/iu;
@@ -387,7 +388,7 @@ function buildOrphanMaterialClaims(input: {
     const fullClaimText = [
       themeLabelRu(ensuredThemes[0]!),
       entry.originalTitle
-        ? `«${entry.originalTitle}»${clientSafeDomain(domains[0]) ? ` — источник ${clientSafeDomain(domains[0])}` : ""}`
+        ? `«${entry.originalTitle}»${sourceAttribution({ url: item?.sourceUrl, domain: domains[0] })}`
         : entry.originalSnippet.slice(0, 240),
     ]
       .filter(Boolean)

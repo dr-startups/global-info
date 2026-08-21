@@ -39,6 +39,12 @@ import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
 import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
+import {
+  clientAddress,
+  clientAddressText,
+  parseClientAddress,
+  SOURCE_ATTRIBUTION_SOURCE,
+} from "../../client/client-address";
 import { normalizeForCompare } from "../text-compare";
 import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
 import {
@@ -461,6 +467,36 @@ export function clientReadableUrl(url: string): string {
   }
 }
 
+/**
+ * Обрубленный хвост, начатый ярлыком, снимается целиком.
+ *
+ * «Где видно:», «Что делать:», «Всего по теме:» обещают содержимое, и рез
+ * посреди него — сломанный текст двух видов: ярлык без ничего («…Где видно:»)
+ * и список, оборванный на первом имени («Где видно: nordmarket-watch.se» там,
+ * где их было два). Второе хуже первого: читатель не видит, что список
+ * неполон. Модели это запрещено прямым указанием в промпте
+ * (`llm-slide-copy`), а детерминированный рез делал ровно то же самое.
+ *
+ * Срабатывает только когда рез пришёлся НЕ на конец предложения: текст,
+ * законченный точкой или закрывающей скобкой, не трогается.
+ *
+ * Ярлык — короткий: до трёх слов не длиннее двадцати знаков каждое, и ни одно
+ * не содержит конца предложения. Поэтому длинный токен (адрес, скажем) ярлыком
+ * не считается, а «Текст. Что делать: све» теряет ровно предложение с ярлыком.
+ *
+ * Если после снятия не осталось ничего — текст возвращается как был: пустой
+ * буллет хуже обрубленного, а случай «весь текст — один обрезанный ярлык»
+ * означает бюджет в пару десятков знаков, которого в деке нет.
+ */
+const INCOMPLETE_LABEL_TAIL_RE =
+  /(?:^|(?<=[.!?…»)]\s))[^\s:.!?…»]{1,20}(?:\s[^\s:.!?…»]{1,20}){0,2}:.*$/u;
+
+function withoutIncompleteLabelTail(text: string): string {
+  if (/[.!?…»)]$/u.test(text)) return text;
+  const cut = text.replace(INCOMPLETE_LABEL_TAIL_RE, "").replace(/[\s·;,—-]+$/u, "");
+  return cut || text;
+}
+
 export function clampClientText(text: string, max: number): string {
   if (text.length <= max) return text;
   // Цитата укорачивается внутри кавычек, с сохранением источника: обычная
@@ -475,6 +511,7 @@ export function clampClientText(text: string, max: number): string {
   let out = atSentenceBoundary ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
   out = out.replace(/[\s·;,.]+$/u, "");
   out = out.replace(DANGLING_TAIL_RE, "").replace(/[\s·;,.]+$/u, "");
+  out = withoutIncompleteLabelTail(out);
   if (!out) return "";
   // Кавычка, открытая до места реза, закрывается многоточием: висящая ёлочка
   // читается как наше утверждение, а не как сокращённая цитата.
@@ -1016,7 +1053,7 @@ export function reflowThemeBullet(text: string): string {
     .filter(Boolean)
     // Drop empty GPT stubs that render as «Что делать:.»
     .filter((l) => !/^(Что делать|Всего по теме|В корпусе)\s*:\s*\.?$/iu.test(l));
-  const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/gu;
+  const quoteRe = new RegExp(`«[^»]{8,}»\\s*${SOURCE_ATTRIBUTION_SOURCE}`, "gu");
   const lineNeedsReflow = (l: string): boolean => {
     const n = (l.match(quoteRe) ?? []).length;
     if (n > 1) return true;
@@ -2584,42 +2621,11 @@ export function panelStatusLine(input: {
 /** Длиннее этого адрес перестаёт читаться и ломает ширину колонки таблицы. */
 const LINK_MAX_CHARS = 62;
 
-/** Разбор адреса — один на всех; политику печати выбирает вызывающий. */
-function parseAddress(url: string | undefined): { host: string; path: string } | undefined {
-  const raw = String(url ?? "").trim();
-  if (!raw) return undefined;
-  let parsed: URL;
-  try {
-    parsed = new URL(raw);
-  } catch {
-    return undefined;
-  }
-  let path = parsed.pathname.replace(/\/$/u, "");
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // Битая процентная последовательность — печатаем путь как есть.
-  }
-  return { host: parsed.hostname.replace(/^www\./u, ""), path };
-}
-
 /**
- * Адрес источника так, как его читает клиент: читаемый хост и путь, без
- * протокола и без хвоста параметров, целиком.
- *
- * `undefined` — назвать нечего: пустой или неразбираемый адрес, либо хост из
- * демонстрационных данных. Имя демо-домена не должно оказаться в отчёте, и
- * прочерк вместо адреса тоже не годится — это сломанный текст.
- *
- * Кириллическая зона печатается кириллицей: в отчёте 28.07 клиент читал
- * `xn--h1ajim.xn--p1ai`. Формально верно, но документ показывают человеку.
+ * Разбор и печать адреса живут в `client/client-address.ts` — их видит и
+ * аналитика, а сюда ей ходить нельзя. Реэкспорта здесь нет: у вопроса «как
+ * выглядит адрес» один ответ и одно место.
  */
-export function clientAddress(url: string | undefined): string | undefined {
-  const parts = parseAddress(url);
-  if (!parts) return undefined;
-  const host = clientSafeDomain(parts.host);
-  return host ? `${host}${parts.path}` : undefined;
-}
 
 /**
  * Адрес для колонки таблицы: тот же разбор, обрезанный по ширине.
@@ -2636,12 +2642,26 @@ export function clientLink(
 ): string {
   const raw = String(url ?? "").trim();
   if (!raw) return domain ?? "—";
-  const parts = parseAddress(raw);
+  const parts = parseClientAddress(raw);
   const text = parts
     ? `${parts.host}${parts.path}`
     : // Не URL — печатаем как есть, обрезав по длине.
       raw.replace(/^https?:\/\//iu, "").replace(/\/$/u, "");
   if (text.length <= maxChars) return text;
+  /*
+   * В колонку целиком не влез — сначала снимаем строку параметров, и только
+   * потом режем.
+   *
+   * Обрезанный адрес не открывается: `tadviser.ru/…/Персона:Глинка?shem=r…`
+   * хуже, чем тот же адрес без параметров, который открывается и ведёт на ту
+   * же страницу. Порядок именно такой: параметры нужны там, где без них
+   * страницы нет (`youtube.com/watch?v=…`), а такие адреса коротки и в колонку
+   * помещаются.
+   */
+  if (parts) {
+    const withoutQuery = `${parts.host}${parts.path.replace(/[?#].*$/u, "")}`;
+    if (withoutQuery.length <= maxChars) return withoutQuery;
+  }
   return `${text.slice(0, maxChars - 1)}…`;
 }
 
@@ -2745,6 +2765,7 @@ export function highlightPhrase(input: {
   // ровно ради того, чтобы утверждение можно было проверить по первоисточнику.
   // Не поместился в узкую колонку — уйдёт на продолжение, но не пропадёт.
   const link = clientAddress(e?.url ?? input.row.url);
+  const linkText = clientAddressText(e?.url ?? input.row.url);
 
   // Непрочитанная страница решения не приносит: сюжет и цитата в артефакте
   // могли остаться от заголовка выдачи, но выдавать их за содержимое страницы,
@@ -2801,7 +2822,9 @@ export function highlightPhrase(input: {
     const opening = quote
       ? `${head}: «${quote}»${/[.!?…]$/u.test(quote) ? "" : "."}`
       : `${head}.`;
-    return [opening, caveat, withLink && link ? `${link}.` : undefined]
+    // Адрес в скобках, точка снаружи: `lenta.ru/tags/persons/prohorov-mihail.`
+    // не читается — то ли точка часть адреса, то ли конец предложения.
+    return [opening, caveat, withLink && linkText ? `${linkText}.` : undefined]
       .filter(Boolean)
       .join(" ");
   };
