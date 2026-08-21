@@ -353,6 +353,7 @@ export async function rebuildUnifiedReport(input: {
   });
   if (!claimed) throw new ConflictError("ACTIVE_LEASE");
 
+  let result: RebuildUnifiedReportResult;
   try {
     // Re-check after lease (fail-closed race).
     const job = await loadUnifiedCollectionJob(input.caseId);
@@ -452,7 +453,7 @@ export async function rebuildUnifiedReport(input: {
         warnings: [...job.warnings.filter((w) => w !== REBUILD_MARKER), REBUILD_MARKER],
       }) ?? job;
 
-    return {
+    result = {
       accepted: true,
       jobId: patched.jobId,
       unifiedJobId: patched.unifiedJobId,
@@ -462,6 +463,22 @@ export async function rebuildUnifiedReport(input: {
     };
   } finally {
     await releaseUnifiedJobLease(input.caseId, ownerId);
-    await scheduleRebuild(input.caseId, job0.unifiedJobId, input.deps);
   }
+
+  /*
+   * Пробуждение конвейера принадлежит **принятой** пересборке.
+   *
+   * Пока оно стояло в `finally`, шаги перепоставлялись и на отказе после
+   * взятия лизы — повторная проверка годности, пропавшая джоба, любой сбой
+   * записи. А `requeueStepsForRebuild` не только будит: она ставит строкам
+   * `PENDING`, обнуляет `attempts` и стирает `lastError`/`lastErrorCode`, то
+   * есть уносит память о том, кто упал. Дальше проснувшийся шаг на джобе в
+   * `FAILED_TERMINAL` закрывался, стадия дрейфовала в `REPORT_READY`, и
+   * «Возобновить» исчезало навсегда.
+   *
+   * Отказ сюда не доходит по устройству — он улетает из `try` мимо этой
+   * строки, — а не потому, что кто-то не забыл проверить флаг.
+   */
+  await scheduleRebuild(input.caseId, job0.unifiedJobId, input.deps);
+  return result;
 }

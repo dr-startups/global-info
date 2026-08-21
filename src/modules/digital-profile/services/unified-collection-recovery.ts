@@ -385,6 +385,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     throw new ConflictError("ACTIVE_LEASE");
   }
 
+  let result: RecoverUnifiedCollectionResult;
   try {
     // Re-check after lease (fail-closed race).
     const job = await loadUnifiedCollectionJob(input.caseId);
@@ -636,7 +637,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);
 
-    return {
+    result = {
       accepted: true,
       jobId: patched.jobId,
       unifiedJobId: patched.unifiedJobId,
@@ -649,12 +650,23 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     };
   } finally {
     await releaseUnifiedJobLease(input.caseId, ownerId);
-    // Разбудить остановившийся шаг до тика: иначе воркер не узнает, что
-    // работа снова готова, и восстановление осталось бы бумажным.
-    const current = await loadUnifiedCollectionJob(input.caseId);
-    if (current) await requeueResumeStep(current, nowFn());
-    await scheduleRecoverTick(input.caseId, input.deps);
   }
+
+  /*
+   * Разбудить остановившийся шаг до тика: иначе воркер не узнает, что работа
+   * снова готова, и восстановление осталось бы бумажным.
+   *
+   * Пробуждение принадлежит **принятому** восстановлению. Пока оно стояло в
+   * `finally`, шаг перепоставлялся и на отказе после взятия лизы, а
+   * проснувшийся шаг на джобе в `FAILED_TERMINAL` закрывался как сделанный —
+   * стадия дрейфовала в `REPORT_READY`, и «Возобновить» исчезало навсегда.
+   * Что пробуждение принадлежит успеху, видно и по идемпотентным ранним
+   * возвратам выше: они будят себя сами, отдельной строкой.
+   */
+  const current = await loadUnifiedCollectionJob(input.caseId);
+  if (current) await requeueResumeStep(current, nowFn());
+  await scheduleRecoverTick(input.caseId, input.deps);
+  return result;
 }
 
 /** Attach server-calculated recovery fields for GET status. */

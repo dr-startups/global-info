@@ -74,7 +74,7 @@ describe("шаг, который джоба переросла", () => {
     expect(tick).toHaveBeenCalledTimes(1);
   });
 
-  it("терминальный прогон работу не перезапускает", async () => {
+  it("терминальный прогон работу не перезапускает и сделанным не считается", async () => {
     const { unifiedStepHandlers } = await import(
       "@/modules/digital-profile/workflow/unified-step-handlers"
     );
@@ -83,9 +83,18 @@ describe("шаг, который джоба переросла", () => {
     // именно здесь: позиция `FAILED_TERMINAL` в конвейере нулевая, и проверка
     // «джоба ушла дальше шага» такой прогон не ловит. Без короткого замыкания
     // проснувшийся шаг подготовки запустил бы платный тик заново.
+    //
+    // Вердикт при этом — отказ, а не «сделано»: шаг, который не работал,
+    // сделанным не называется. Ожидание `done` стояло здесь до пункта BT и
+    // было побочным следствием короткого замыкания, а не решением; именно оно
+    // уводило стадию в `REPORT_READY` и убивало кнопку «Возобновить».
     loadJob.mockResolvedValue(job("FAILED_TERMINAL"));
     const outcome = await unifiedStepHandlers()["REPORT_PREPARE"]!(step("REPORT_PREPARE"));
     expect(tick).not.toHaveBeenCalled();
-    expect(outcome.kind).toBe("done");
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") throw new Error("недостижимо");
+    expect(outcome.retryable).toBe(false);
+    // У джобы фикстуры причины нет — берётся названный запасной код, а не пустота.
+    expect(outcome.code).toBe("STAGE_FAILED_TERMINAL");
   });
 });

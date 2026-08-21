@@ -25,13 +25,42 @@ import { UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
-/** Стадии, дальше которых конвейер не идёт. */
-const TERMINAL_STAGES = new Set([
-  "REPORT_READY",
-  "COMPLETED_PARTIAL",
-  "FAILED_TERMINAL",
-  "CANCELLED",
-]);
+/**
+ * Что конечная стадия джобы значит для шага — **один** ответ на весь модуль.
+ *
+ * Раньше отвечали дважды. `outcomeFromJob` (после вызова тика) различал:
+ * отмена — пропуск, терминальный отказ — отказ с кодом джобы, и только
+ * готовый отчёт — «сделано». Проверка перед вызовом тика различать перестала:
+ * любая конечная стадия давала `done`.
+ *
+ * Цена расхождения не косметическая. `completeStep` на `DONE` будит следующий
+ * шаг, поэтому один неверный `done` идёт каскадом до конца конвейера; все
+ * строки `DONE` дают `deriveJobStage` → `REPORT_READY` при джобе в
+ * `FAILED_TERMINAL`, а `planResumeFromSteps` отвечает `completed` **навсегда**:
+ * восстановление отдаёт `JOB_ALREADY_COMPLETED`, и кнопки «Возобновить» у
+ * оператора больше нет. Именно так выглядел дрейф на прогоне 19.08 — у
+ * владельца работала ровно одна кнопка не потому, что так задумано.
+ *
+ * `null` — стадия не конечная, шагу есть что делать.
+ */
+export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | null {
+  if (job.stage === "CANCELLED") return { kind: "skipped", reason: "Прогон отменён" };
+
+  if (job.stage === "FAILED_TERMINAL") {
+    return {
+      kind: "failed",
+      code: job.lastErrorCode ?? "STAGE_FAILED_TERMINAL",
+      message: job.lastError ?? "Стадия завершилась терминальным отказом",
+      retryable: false,
+    };
+  }
+
+  if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") {
+    return { kind: "done", outputRef: job.compositeDatasetId ?? job.baseReportRunId ?? null };
+  }
+
+  return null;
+}
 
 /**
  * Позиция стадии джобы в конвейере — чтобы понимать «дошли до сюда или дальше».
@@ -67,18 +96,14 @@ export function outcomeFromJob(
     };
   }
 
-  if (after.cancelRequested || after.stage === "CANCELLED") {
+  // Отмена запрошена, но тик ещё не успел перевести джобу в `CANCELLED`:
+  // признак живёт на джобе, а не на стадии, поэтому спрашивается отдельно.
+  if (after.cancelRequested) {
     return { kind: "skipped", reason: "Прогон отменён" };
   }
 
-  if (after.stage === "FAILED_TERMINAL") {
-    return {
-      kind: "failed",
-      code: after.lastErrorCode ?? "STAGE_FAILED_TERMINAL",
-      message: after.lastError ?? "Стадия завершилась терминальным отказом",
-      retryable: false,
-    };
-  }
+  const stopped = outcomeForStoppedJob(after);
+  if (stopped) return stopped;
 
   if (after.stage === "FAILED_RETRYABLE") {
     return {
@@ -95,9 +120,6 @@ export function outcomeFromJob(
   // шаг ещё до его исполнения, каждый вызов выглядел бы как «работа идёт», шаг
   // ждал бы вечно и сжёг бы бюджет попыток, остановив конвейер. Ровно это и
   // случилось на первом живом прогоне.
-  if (TERMINAL_STAGES.has(after.stage)) {
-    return { kind: "done", outputRef: after.compositeDatasetId ?? after.baseReportRunId ?? null };
-  }
   const stepPos = stepDefinition(step.name)?.position ?? 0;
   const jobPos = jobStagePosition(after.stage);
   if (jobPos > stepPos) {
@@ -155,9 +177,20 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
         retryable: false,
       };
     }
-    if (TERMINAL_STAGES.has(before.stage)) {
-      return { kind: "done", outputRef: before.compositeDatasetId ?? null };
-    }
+    /*
+     * Прогон уже остановлен — платный тик не запускаем.
+     *
+     * Ради этого короткое замыкание и заводили: без него проснувшийся шаг
+     * подготовки запускал бы сбор заново. Вердикт при этом берётся общий, тот
+     * же, что и после вызова тика: шаг, который не работал, сделанным не
+     * называется.
+     *
+     * `cancelRequested` здесь намеренно не спрашивается: в `CANCELLED` джобу
+     * переводит сам тик, и пропуск шага до вызова оставил бы отмену
+     * невыполненной.
+     */
+    const stopped = outcomeForStoppedJob(before);
+    if (stopped) return stopped;
 
     /*
      * Шаг, который джоба уже переросла, работу не запускает.
