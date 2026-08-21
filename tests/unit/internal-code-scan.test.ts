@@ -60,6 +60,52 @@ describe("клиентский текст слайда", () => {
   it("пустые строки не попадают", () => {
     expect(clientVisibleStrings({ title: "  ", narrative: "Текст" })).toEqual(["Текст"]);
   });
+
+  /*
+   * Пункт CG. Сторож читал пять полей из шестнадцати, и «замечаний нет» не
+   * означало «в клиентском тексте кода нет». Хуже всего, что вне проверки
+   * оставались буллеты — самый содержательный текст отчёта: фрагменты статьи
+   * Википедии, строки нейро-ответа, источники карточек.
+   *
+   * По случаю на поле, чтобы забыть одно было нельзя.
+   */
+  it.each([
+    ["bullets", { bullets: ["Строка с A_B кодом"] }],
+    ["whatWasFound", { whatWasFound: "Найдено A_B" }],
+    ["whyItMatters", { whyItMatters: "Важно из-за A_B" }],
+    ["whatToCheck", { whatToCheck: "Проверить A_B" }],
+    ["sourceNote", { sourceNote: "Источник A_B" }],
+    ["statusNote", { statusNote: "Статус A_B" }],
+    ["methodologyNote", { methodologyNote: "Методика A_B" }],
+    ["legend", { legend: ["Легенда A_B"] }],
+    ["kpis", { kpis: [{ label: "Плитка A_B", value: "7" }] }],
+    ["highlightExplanations", {
+      highlightExplanations: [{ clientReason: "Выделено из-за A_B", frameTone: "red" as const }],
+    }],
+  ])("читает поле %s", (_name, slide) => {
+    expect(clientVisibleStrings(slide).join(" ")).toContain("A_B");
+  });
+
+  it("значение плитки читается наравне с её подписью", () => {
+    expect(clientVisibleStrings({ kpis: [{ label: "Контуры", value: "RU_UAE" }] }).join(" "))
+      .toContain("RU_UAE");
+  });
+
+  it("машинные поля не читаются: их значения — коды по замыслу", () => {
+    /*
+     * `emptyStateReason` рендерер не рисует вовсе (в `renderer/*.py` имени нет,
+     * и ни у одного слайда золотого кейса его нет в снимке клиентского
+     * текста), а значения там кодовые по контракту — проверка ловила бы их
+     * всегда. Тон рамки и тон плитки — тоже не текст.
+     */
+    expect(clientVisibleStrings({ emptyStateReason: "VISUAL_ASSET_UNAVAILABLE" })).toEqual([]);
+    expect(
+      clientVisibleStrings({
+        highlightExplanations: [{ clientReason: "Причина", frameTone: "red" }],
+        kpis: [{ label: "Подпись", value: "7", tone: "accent" }],
+      })
+    ).toEqual(["Подпись", "7", "Причина"]);
+  });
 });
 
 describe("проверка деки", () => {

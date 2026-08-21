@@ -74,15 +74,43 @@ export function findInternalCodes(text: string | null | undefined): string[] {
   return found;
 }
 
-/** Клиентский текст слайда: то, что человек действительно прочитает. */
+/**
+ * Клиентский текст слайда: то, что человек действительно прочитает.
+ *
+ * Список ведётся по типу `RendererSlide` (см. `deck-assembler.ts`), а не по
+ * памяти. Пока полей было пять из шестнадцати, «замечаний нет» в отчёте
+ * проверки не означало «в клиентском тексте кода нет»: вне проверки оставались
+ * буллеты — самый содержательный текст отчёта, — все четыре поля панели
+ * («что обнаружено», «почему важно», «что проверить», «источник»), статусная
+ * строка, легенда, плитки, методика и фразы «Почему выделено».
+ */
 export interface ClientVisibleSlide {
   slideKey?: string;
   slideId?: string;
   title?: string;
   subtitle?: string;
   narrative?: string;
+  bullets?: unknown;
   staticBlocks?: unknown;
   table?: { headers?: unknown; rows?: unknown } | null;
+  whatWasFound?: string;
+  whyItMatters?: string;
+  whatToCheck?: string;
+  sourceNote?: string;
+  statusNote?: string;
+  methodologyNote?: string;
+  legend?: unknown;
+  kpis?: ReadonlyArray<{ label?: unknown; value?: unknown; tone?: unknown }> | null;
+  highlightExplanations?: ReadonlyArray<{ clientReason?: unknown; frameTone?: unknown }> | null;
+  /**
+   * Машинное поле контракта (`no-organic-data`, `VISUAL_ASSET_UNAVAILABLE`).
+   *
+   * Объявлено здесь, чтобы было видно, что о нём подумали, и **намеренно не
+   * читается**: рендерер его не рисует вовсе (в `renderer/*.py` имя не
+   * встречается), а значения там кодовые по замыслу — проверка ловила бы их
+   * всегда и на каждой странице пустого состояния.
+   */
+  emptyStateReason?: string;
 }
 
 /** Все строки слайда, доходящие до читателя. */
@@ -96,9 +124,24 @@ export function clientVisibleStrings(slide: ClientVisibleSlide): string[] {
   push(slide.title);
   push(slide.subtitle);
   push(slide.narrative);
+  push(slide.bullets);
   push(slide.staticBlocks);
   push(slide.table?.headers);
   push(slide.table?.rows);
+  push(slide.whatWasFound);
+  push(slide.whyItMatters);
+  push(slide.whatToCheck);
+  push(slide.sourceNote);
+  push(slide.statusNote);
+  push(slide.methodologyNote);
+  push(slide.legend);
+  // У составных полей берётся только клиентская часть: тон рамки и тон плитки
+  // читателю не печатаются, а под правило кода подошли бы.
+  for (const k of slide.kpis ?? []) {
+    push(k?.label);
+    push(k?.value);
+  }
+  for (const h of slide.highlightExplanations ?? []) push(h?.clientReason);
   return out.filter((s) => s.trim().length > 0);
 }
 
