@@ -69,7 +69,22 @@ function mapCheckState(raw: Record<string, unknown>): ArsenkinTaskState {
     if (/fail|error/.test(blob) && (raw.status === "Error" || raw.error)) return "FAILED";
   }
   const status = String(raw.status ?? raw.state ?? raw.code ?? "").toLowerCase();
-  if (status.includes("done") || status.includes("ready") || status === "task_result") {
+  /*
+   * `finish` — наблюдённое слово завершения (живой прогон 20.08,
+   * `{"code":"TASK_STATUS","status":"finish","progress":100}`).
+   *
+   * Раньше такое тело доходило до готовности окольно, через `progress >= 100`
+   * ниже. Ответ выходил верным, но вторым путём: пропади `progress` из тела —
+   * и завершённая задача читалась бы как «ещё считается» до конца бюджета
+   * ожидания. Проверка идёт по началу слова, чтобы `unfinished` под неё не
+   * попал.
+   */
+  if (
+    status.includes("done") ||
+    status.includes("ready") ||
+    /^finish/u.test(status) ||
+    status === "task_result"
+  ) {
     return "DONE";
   }
   // Результат уже в ответе `/check` — ждать больше нечего.
@@ -85,18 +100,30 @@ function mapCheckState(raw: Record<string, unknown>): ArsenkinTaskState {
 /**
  * Узнали ли мы форму ответа `/check`.
  *
- * Документация Arsenkin тел ответа не приводит, а фикстуры в репозитории были
- * выдуманы (`{"status":"done","progress":100}` — такого формата у провайдера
- * нет). Поэтому неизвестная форма не роняет опрос (ждать дальше — безопасное
- * поведение), но и не проходит молча: её видно в логе, и по живому прогону
- * контракт можно наконец записать по факту.
+ * Документация Arsenkin тел ответа не приводит, поэтому неизвестная форма не
+ * роняет опрос (ждать дальше — безопасное поведение), но и не проходит молча:
+ * её видно в логе строкой `arsenkin_check_shape_unknown`. Это и есть способ
+ * однажды записать контракт по факту.
+ *
+ * Наблюдённые тела лежат рядом фикстурами и в коде не читаются — они
+ * документация, и происхождение у них одно, живой прогон:
+ *
+ * - `check-pending.json` — `{"code":"TASK_STATUS","status":"process","progress":5,…}`;
+ * - `check-done.json` — `{"code":"TASK_STATUS","status":"finish","progress":100,…}`,
+ *   наблюдено 20.08. До этого файл содержал `{"status":"done","progress":100}` —
+ *   форму, которой у провайдера нет.
+ *
+ * **Форма отказа не наблюдалась ни разу и здесь не выдумана.** Тело, которого
+ * мы не знаем, читается как `RUNNING`; ожидание ограничено `maxWaitMs` шага, а
+ * не числом попыток, поэтому такой ответ стоит времени, но не вечности.
  */
 export function isRecognizedCheckShape(raw: Record<string, unknown>): boolean {
   if (raw.result != null) return true;
   const status = String(raw.status ?? raw.state ?? raw.code ?? "").toLowerCase();
   if (!status) return false;
-  // `process` — наблюдённое значение живого API, см. фикстуру check-pending.json.
-  return /done|ready|result|queue|wait|run|work|process|progress|error|cancel|fail/.test(status);
+  return /done|ready|result|queue|wait|run|work|process|progress|error|cancel|fail|finish|task_status/.test(
+    status
+  );
 }
 
 export function hashArsenkinRequest(body: unknown): string {
