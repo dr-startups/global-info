@@ -2891,6 +2891,19 @@ export function adverseVisualSidebar(
 ): AdverseVisualSidebar {
   const visibleRows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
   const adverseRows = visibleRows.filter((v) => v.adverse);
+  /*
+   * Объяснение — на каждую рамку, а не на каждую пару «находка + домен».
+   *
+   * Ключ дедупликации был `находка|домен`, а сопоставление строки с находкой
+   * идёт **в том числе по домену**: для двух видимых строк одного источника
+   * совпадение ключа было правилом, а не совпадением. Выходило три рамки на
+   * картинке и два объяснения под ней, причём схлопнутая строка не попадала и
+   * на слайд-продолжение — требование «под каждым выделенным результатом
+   * фраза» для неё не выполнялось (пункт BO).
+   *
+   * Осталась только защита от одной и той же строки, попавшей в видимые дважды:
+   * это уже не два выделенных результата, а один.
+   */
   const seen = new Set<string>();
   const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
   const phrases: HighlightPhrase[] = [];
@@ -2901,9 +2914,8 @@ export function adverseVisualSidebar(
     const f = findingForVisibleRow(row, scoped);
     const e = scoped.evidenceIndex[row.ref];
     const domain = clientSafeDomain(e?.domain ?? row.domain);
-    const dedupKey = `${f?.findingId ?? f?.theme ?? row.themeTitle ?? "—"}|${domain ?? row.title ?? ""}`;
-    if (seen.has(dedupKey)) continue;
-    seen.add(dedupKey);
+    if (seen.has(row.ref)) continue;
+    seen.add(row.ref);
     const phrase = highlightPhrase({ row, evidence: scoped.evidenceIndex, finding: f });
     phrases.push(phrase);
     explanations.push({

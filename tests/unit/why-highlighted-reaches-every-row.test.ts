@@ -115,6 +115,28 @@ describe("слайд-продолжение «Почему выделено»", 
     expect(validate(built).passed).toBe(true);
   });
 
+  it("две рамки одного источника — два объяснения, а не одно", () => {
+    /*
+     * Пункт BO. Ключ дедупликации был «находка|домен», а сопоставление строки
+     * с находкой идёт **в том числе по домену**: для двух видимых строк одного
+     * источника совпадение ключа — правило, а не совпадение. Выходило три
+     * рамки на картинке и два объяснения под ней, причём схлопнутая строка не
+     * попадала и на слайд-продолжение: требование владельца «под каждым
+     * выделенным результатом — фраза» для неё не выполнялось.
+     */
+    const sameDomain = ruRows.filter((r) => r.domain === "forbes.ru").slice(0, 2);
+    expect(sameDomain).toHaveLength(2);
+    const built = pack([
+      framed(sameDomain[0]!),
+      framed(sameDomain[1]!),
+      framed(xRow),
+      ...ruRows.slice(6, 9),
+    ]);
+    const base = built.slides.find((s) => !s.isContinuation)!;
+    expect(base.content.highlightExplanations?.length).toBe(3);
+    expect(validate(built).passed).toBe(true);
+  });
+
   it("две рамки и короткие адреса: продолжения нет", () => {
     const built = pack([framed(xRow), framed(rupepRow), ...ruRows.slice(4, 7)]);
     expect(built.slides.find((s) => !s.isContinuation)!.content.highlightExplanations?.length).toBe(2);
