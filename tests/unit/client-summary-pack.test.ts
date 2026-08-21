@@ -195,6 +195,22 @@ describe("следующие проверки не повторяют друг �
     expect(kyc[0]).toContain("пакет документов");
   });
 
+  it("без сюжетов основания называются основаниями", () => {
+    // Второй конец правила CP: когда перечисляются рубрики словаря — те же,
+    // что стоят строками матрицы, — заголовок остаётся прежним. Меняется он
+    // только там, где перечисляются сюжеты прочитанных страниц.
+    const corruption = item(CASE_A, {
+      title: "Тестов Иван уголовное дело о взятке",
+      sourceUrl: "https://news.example/corruption-3",
+    });
+    const force = new Map([
+      [`inventory:${corruption.inventoryId}`, "SUBJECT_MATCH" as const],
+    ]);
+    const { pack } = buildPack(CASE_A, SUBJECT_A, [corruption], force);
+    expect(pack.overallAssessment.conclusion).toContain("Основные основания:");
+    expect(pack.overallAssessment.conclusion).not.toContain("Основные сюжеты");
+  });
+
   it("проверка темы говорит о теме, а не о KYC вообще", () => {
     const corruption = item(CASE_A, {
       title: "Тестов Иван уголовное дело о взятке",

@@ -758,17 +758,28 @@ function buildOverallAssessment(
   const authoritative = overallVerdict ? verdictRiskWord(overallVerdict) : null;
   // Прочитанная страница сильнее заголовка и здесь: пока есть негативные
   // сюжеты, основания называются ими, а не рубриками словаря.
+  const byPlots = adversePlots.length > 0;
   const topTitles = (
-    adversePlots.length > 0
+    byPlots
       ? adversePlots.slice(0, 4).map((p) => p.title)
       : themes.slice(0, 4).map((t) => t.clientTitle)
   ).join("; ");
+  /*
+   * Заголовок называет то, что перечисляет.
+   *
+   * Сюжеты прочитанных страниц и рубрики словаря — разные сущности с разными
+   * счётчиками: плитка «Тем риска» считает строки матрицы, то есть рубрики. На
+   * живом отчёте 21.08 читатель видел «3 Темы риска» и тут же четыре названия
+   * под словом «основания» — два счёта одного, на первый взгляд, вопроса
+   * (пункт CP). Число менять нельзя, оба верны; развести надо слова.
+   */
+  const groundsLabel = byPlots ? "Основные сюжеты в выдаче" : "Основные основания";
   const conclusion = stripInternalLeak(
     riskLevel === "none" && adversePlots.length === 0
       ? `По собранным открытым источникам существенных рисковых тем по субъекту не выделено; вывод ограничен доступностью данных.`
       : `Итоговая оценка: ${
           authoritative ?? riskWord(riskLevel)
-        } риск. Основные основания: ${topTitles || "подтверждённые темы риска в открытых источниках"}.`
+        } риск. ${groundsLabel}: ${topTitles || "подтверждённые темы риска в открытых источниках"}.`
   );
   const reasons = themes.slice(0, 6).map((t) =>
     stripInternalLeak(
