@@ -1838,11 +1838,13 @@ const READ_SHARE_REGION_ORDER = ["RU", "UAE"];
  */
 export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
   const parts: string[] = [];
+  let excluded = 0;
   for (const regionKey of READ_SHARE_REGION_ORDER) {
     const b = ms.linkReadByRegion?.[regionKey];
     if (!b) continue;
     const denominator = readShareDenominator(b);
     if (denominator <= 0) continue;
+    excluded += b.readOther;
     parts.push(
       `${regionClientLabel(regionKey)} — ${readSharePercent(
         b.adverseRead,
@@ -1851,7 +1853,19 @@ export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
     );
   }
   if (parts.length === 0) return undefined;
-  return `Негатив среди прочитанных страниц: ${parts.join(", ")}.`;
+  const head = `Негатив среди прочитанных страниц: ${parts.join(", ")}.`;
+  /*
+   * Исключённые страницы названы теми же словами, что на странице региона.
+   *
+   * Знаменатель — прочитанные минус признанные чужими, и страница региона это
+   * говорит. Строка резюме молчала: на живом отчёте 21.08 читатель складывал
+   * «51» и «28», получал 79 при 80 прочитанных и не находил объяснения. Числа
+   * были верны, необъяснённой была разница — а необъяснённое число в отчёте
+   * для банка читается как ошибка (пункт CS).
+   */
+  return excluded > 0
+    ? `${head} Страницы о других людях (${excluded}) в долю не входят.`
+    : head;
 }
 
 /**

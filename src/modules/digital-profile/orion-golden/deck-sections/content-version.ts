@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v110" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v111" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` на момент последней сверки.
@@ -31,4 +31,4 @@ export const DECK_CONTENT_VERSION = "deck-sections-v110" as const;
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
  */
-export const DECK_BUILDER_FINGERPRINT = "05a3ebcbdb53662a" as const;
+export const DECK_BUILDER_FINGERPRINT = "c050ce597eace371" as const;

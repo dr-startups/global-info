@@ -20,10 +20,12 @@ import {
   fragmentScope,
 } from "@/modules/digital-profile/orion-golden/deck-sections";
 import { sampleComposedClientSummary } from "@/modules/digital-profile/orion-golden/contracts/sample-contracts";
+import { readShareExecutiveLine } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { MetricSnapshot, ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
 const SHARE_LINE =
-  "Негатив среди прочитанных страниц: Россия — 33% (5 из 15), ОАЭ — 5% (1 из 19).";
+  "Негатив среди прочитанных страниц: Россия — 33% (5 из 15), ОАЭ — 5% (1 из 19). " +
+  "Страницы о других людях (3) в долю не входят.";
 
 const BOTH_REGIONS: MetricSnapshot["linkReadByRegion"] = {
   RU: { requested: 20, read: 17, readOther: 2, adverseRead: 5 },
@@ -103,7 +105,10 @@ describe("строка доли в резюме", () => {
     const shareLine = narrative
       .split("\n")
       .find((p) => p.startsWith("Негатив среди прочитанных страниц:"));
-    expect(shareLine).toBe("Негатив среди прочитанных страниц: Россия — 33% (5 из 15).");
+    expect(shareLine).toBe(
+      "Негатив среди прочитанных страниц: Россия — 33% (5 из 15). " +
+        "Страницы о других людях (2) в долю не входят."
+    );
   });
 
   it("прогон без чтения страниц строки не печатает вовсе", () => {
@@ -156,6 +161,28 @@ describe("пост-проход держит строку доли после GP
     expect(narrative.match(/Негатив среди прочитанных/gu) ?? []).toHaveLength(1);
     // Числа целы: кламп режет соседнюю строку §7.2, но не долю.
     expect(narrative).toContain(SHARE_LINE);
+  });
+
+  it("исключённые страницы названы: знаменатель сходится с числом прочитанных", () => {
+    /*
+     * Знаменатель доли — прочитанные минус признанные чужими, и страница
+     * региона это говорит словами. Строка резюме молчала: на живом отчёте
+     * 21.08 читатель складывал «51» и «28», получал 79 при 80 прочитанных и
+     * не находил объяснения (пункт CS). Числа были верными, объяснения не
+     * было.
+     */
+    const line = readShareExecutiveLine(metricSnapshot(BOTH_REGIONS));
+    expect(line).toContain("Страницы о других людях (3) в долю не входят.");
+  });
+
+  it("без исключённых страниц оговорки нет", () => {
+    const line = readShareExecutiveLine(
+      metricSnapshot({
+        RU: { requested: 20, read: 17, readOther: 0, adverseRead: 5 },
+        UAE: { requested: 25, read: 20, readOther: 0, adverseRead: 1 },
+      })
+    );
+    expect(line).toBe("Негатив среди прочитанных страниц: Россия — 29% (5 из 17), ОАЭ — 5% (1 из 20).");
   });
 
   it("без данных о чтении пост-проход ничего не меняет", () => {
