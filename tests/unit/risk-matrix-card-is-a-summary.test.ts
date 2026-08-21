@@ -199,7 +199,10 @@ describe("оговорка о принадлежности", () => {
     const [card] = cards([
       finding({ findingId: "f-likely", subjectMatch: "LIKELY_SUBJECT", riskLevel: "low" }),
     ]);
-    expect(card).toContain("Принадлежность пока не подтверждена");
+    // Сам статус теперь сказан заголовком строки и чипом уровня; в теле
+    // карточки остаётся только его следствие (пункт CQ).
+    expect(card).toContain("До уточнения идентификации материал не включён в итог");
+    expect(card).not.toContain("Принадлежность пока не подтверждена");
     expect(card!.split("\n")[0]).toBe(STATS_LINE);
   });
 
@@ -207,7 +210,7 @@ describe("оговорка о принадлежности", () => {
     const all = cards([finding()], 55);
     const aggregate = all.at(-1)!;
     expect(aggregate).toContain("«вероятно об этом лице»");
-    expect(aggregate).not.toContain("Принадлежность пока не подтверждена");
+    expect(aggregate).not.toContain("До уточнения идентификации материал не включён в итог");
     expect(aggregate.length).toBeLessThanOrEqual(BODY_BUDGET);
   });
 

@@ -756,8 +756,28 @@ const RISK_MATRIX_TEMPLATE = DECK_TEMPLATE_REGISTRY["risk-matrix"];
 const RISK_MATRIX_PROBLEM_CHARS = 160;
 /** Подпись строки действия — она же считается в бюджете, поэтому объявлена раз. */
 const RISK_MATRIX_ACTION_PREFIX = "Что делать: ";
+/**
+ * Суффикс заголовка строки с неподтверждённой принадлежностью.
+ *
+ * Тема словаря у неподтверждённой строки та же, что у подтверждённой, поэтому
+ * в матрице выходили две карточки с одинаковым заголовком и разными вердиктами
+ * — на живом отчёте 21.08 это читалось как повтор (пункт CQ). Различие вынесено
+ * в заголовок: читатель просматривает их, а не чипы уровня.
+ */
+const UNCONFIRMED_TITLE_SUFFIX = " — принадлежность не подтверждена";
+/**
+ * Что остаётся в теле карточки.
+ *
+ * Только следствие статуса: сам статус теперь сказан заголовком и чипом
+ * уровня, и повторять его третий раз незачем.
+ */
 const LIKELY_CAVEAT =
-  "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».";
+  "До уточнения идентификации материал не включён в итог «об этом лице».";
+
+/** Строка, которой заголовок обязан назвать неподтверждённую принадлежность. */
+function isUnconfirmedRow(f: Finding): boolean {
+  return f.subjectMatch === "LIKELY_SUBJECT" && f.findingId !== RISK_MATRIX_LIKELY_AGGREGATE_ID;
+}
 
 /**
  * Тело карточки матрицы: сводка, а не выписка.
@@ -784,7 +804,7 @@ function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
   }
   const problem = clampClientText(head, RISK_MATRIX_PROBLEM_CHARS);
   const lines = [problem];
-  if (f.subjectMatch === "LIKELY_SUBJECT" && f.findingId !== RISK_MATRIX_LIKELY_AGGREGATE_ID) {
+  if (isUnconfirmedRow(f)) {
     // У темы с неподтверждённой принадлежностью действие одно — уточнить её,
     // и оговорка говорит об этом полнее рекомендации. У агрегата претензия
     // сама объясняет статус, второй раз повторять его незачем.
@@ -805,7 +825,7 @@ function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
 
 function riskMatrixRow(f: Finding): string[] {
   return [
-    f.theme,
+    isUnconfirmedRow(f) ? `${f.theme}${UNCONFIRMED_TITLE_SUFFIX}` : f.theme,
     f.subjectMatch === "LIKELY_SUBJECT" ? "Требует подтверждения" : riskLabel(f.riskLevel),
     f.promotionPriority,
     f.findingId === RISK_MATRIX_LIKELY_AGGREGATE_ID ? "сводка" : f.findingId,
