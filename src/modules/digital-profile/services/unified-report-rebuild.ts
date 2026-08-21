@@ -277,7 +277,38 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
     return { rebuildAllowed: false, rebuildBlockerReason: dataBlocker };
   }
 
+  /*
+   * Пересборка, которая уже провалилась ровно так же, второй раз не предлагается.
+   *
+   * `paidRecollectionRequired` возвращает `false`, пока пересборка доступна, —
+   * правило верное: платить за то, что уже собрано, предлагать нельзя. Но
+   * пересборка воспроизводит отказ, причина которого записана **на сборе**: она
+   * читает те же строки из базы и падает тем же кодом. Счётчика попыток у неё
+   * нет, поэтому цикл замыкался — провал, снова доступна, снова провал, — и
+   * платной кнопки оператор не видел никогда. Владелец упёрся в это 20.08.
+   *
+   * Признак лежит на самой джобе и второго ответа не требует: неудачная попытка
+   * оставляет `report-rebuild-failed:<код>`, а причину прогона возвращает на
+   * место `restoreStateAfterFailedRebuild`. Совпали — пересборка повторит отказ.
+   *
+   * Закрывает её только **та же** причина: отказ мог быть случайным (сорванная
+   * запись, недоступный рендерер), и на такой пересборку не запирают.
+   */
+  if (rebuildAlreadyFailedTheSameWay(job)) {
+    return { rebuildAllowed: false, rebuildBlockerReason: "REBUILD_ALREADY_FAILED" };
+  }
+
   return { rebuildAllowed: true, rebuildBlockerReason: null };
+}
+
+/** Отметка неудачной попытки пересборки: код отказа той попытки. */
+export const REBUILD_FAILED_MARKER_PREFIX = "report-rebuild-failed:";
+
+/** Провалилась ли пересборка ровно тем же кодом, что несёт прогон сейчас. */
+function rebuildAlreadyFailedTheSameWay(job: UnifiedCollectionJob): boolean {
+  const code = String(job.lastErrorCode ?? "").trim();
+  if (!code) return false;
+  return (job.warnings ?? []).includes(`${REBUILD_FAILED_MARKER_PREFIX}${code}`);
 }
 
 /**
