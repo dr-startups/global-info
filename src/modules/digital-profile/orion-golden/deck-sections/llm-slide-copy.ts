@@ -38,7 +38,7 @@ import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
-import { SOURCE_ATTRIBUTION_SOURCE } from "../client/client-address";
+import { SOURCE_ATTRIBUTION_SOURCE, sourceHostFromMatch } from "../client/client-address";
 
 /**
  * v18 — правило чисел в основном промпте: всё, что посчитано, остаётся вместе
@@ -484,11 +484,9 @@ export function rejectWeakQuoteLines(bullet: string): string | null {
 export function rejectDroppedEvidenceQuotes(draft: string, next: string): string | null {
   const srcRe = new RegExp(SOURCE_ATTRIBUTION_SOURCE, "giu");
   const quoteRe = new RegExp(`«[^»]{8,}»\\s*${SOURCE_ATTRIBUTION_SOURCE}`, "giu");
-  const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase());
+  const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map(sourceHostFromMatch);
   if (draftDomains.length === 0) return null;
-  const nextDomains = new Set(
-    [...String(next ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase())
-  );
+  const nextDomains = new Set([...String(next ?? "").matchAll(srcRe)].map(sourceHostFromMatch));
   for (const d of draftDomains) {
     if (!nextDomains.has(d)) return `dropped-evidence-domain:${d}`;
   }

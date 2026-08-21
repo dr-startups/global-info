@@ -1017,6 +1017,35 @@ const STRUCTURED_TAIL_RE =
   /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|О чём:|Принадлежность:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
 
 /** Разбить строку по служебным врезкам, сохранив порядок. */
+/** Только знаки препинания — своей строки такой кусок не заслуживает. */
+const PUNCTUATION_ONLY_RE = /^[^\p{L}\p{N}]+$/u;
+const LEADING_PUNCTUATION_RE = /^[.,;:!?…]+/u;
+
+/**
+ * Кусок клиентского текста в разбор буллета: содержательный — своей строкой,
+ * пунктуация — приклеенной к предыдущей.
+ */
+function appendClientFragment(out: string[], text: string): void {
+  if (!text) return;
+  if (PUNCTUATION_ONLY_RE.test(text)) {
+    if (out.length > 0) out[out.length - 1] = `${out[out.length - 1]}${text}`;
+    return;
+  }
+  out.push(text);
+}
+
+/** Хвост после последней цитаты: ведущая точка остаётся на строке своей цитаты. */
+function appendStructuredTail(out: string[], tail: string): void {
+  const parts = splitStructuredTail(tail);
+  if (parts.length === 0) return;
+  const lead = parts[0]!.match(LEADING_PUNCTUATION_RE)?.[0] ?? "";
+  if (lead && out.length > 0) {
+    out[out.length - 1] = `${out[out.length - 1]}${lead}`;
+    parts[0] = parts[0]!.slice(lead.length).trim();
+  }
+  out.push(...parts.filter(Boolean));
+}
+
 function splitStructuredTail(line: string): string[] {
   return line
     .split(STRUCTURED_TAIL_RE)
@@ -1099,26 +1128,35 @@ export function reflowThemeBullet(text: string): string {
       framing = `${framing.replace(/[.:]\s*$/u, "")}:`;
     }
     if (framing) out.push(framing);
-    // Цитата идёт вместе со своим пересказом: строка «О чём: …» объясняет
-    // именно её, и, оторванная от цитаты, объясняет неизвестно что. Прежде всё,
-    // что стояло между цитатами, при пересборке пропадало.
+    /*
+     * Между цитатами ничего не пропадает.
+     *
+     * Буллет пересобирается из совпадений, поэтому всё, что стоит между ними,
+     * жило ровно до тех пор, пока его кто-нибудь не назвал. Названа была одна
+     * строка — «О чём: …», объясняющая свою цитату; остальное выбрасывалось
+     * молча. На живом отчёте 21.08 так исчез хвост адреса с пробелом, а вместе
+     * с ним закрывающая скобка (шаг 0025).
+     *
+     * Специальной ветки больше нет: правило одно на любой кусок. Знаки
+     * препинания приклеиваются к предыдущей строке — точка принадлежит
+     * предложению, которое закончилось, а не тому, которое начинается.
+     */
     const matches = [...rest.matchAll(quoteRe)];
     let lastEnd = 0;
     matches.forEach((m, i) => {
       const start = m.index ?? 0;
       const end = start + m[0].length;
       out.push(m[0].trim());
-      const nextStart = i + 1 < matches.length ? matches[i + 1]!.index ?? rest.length : rest.length;
-      const between = rest.slice(end, nextStart).trim();
-      if (/^О чём:/u.test(between)) {
-        out.push(between);
-        lastEnd = nextStart;
-      } else {
+      if (i + 1 >= matches.length) {
         lastEnd = end;
+        return;
       }
+      const nextStart = matches[i + 1]!.index ?? rest.length;
+      lastEnd = nextStart;
+      appendClientFragment(out, rest.slice(end, nextStart).trim());
     });
     const tail = rest.slice(lastEnd).trim();
-    if (tail) out.push(...splitStructuredTail(tail));
+    if (tail) appendStructuredTail(out, tail);
   } else {
     // Шаг 13, C6 — тема уже вынесена в `out` отдельной строкой. Исходные
     // строки несут её же, поэтому без вычитания заголовок печатался дважды
