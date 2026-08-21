@@ -64,6 +64,9 @@ function previewFailureWords(reason: NotShownRow["reason"] | undefined): string 
   }
 }
 
+/** Ёмкость строки «что обнаружено» в боковой панели страницы изображений. */
+const SIDEBAR_FOUND_BUDGET = 400;
+
 /** Строки страницы, которые нашли, но не нарисовали, — с их доменами и находками. */
 type NotShownOnPage = {
   rows: Array<{ row: NotShownRow; item: VisibleAssetItem }>;
@@ -134,8 +137,20 @@ function notShownOnThisPage(
  * Порядок предложений — не вкусовщина: строка сайдбара режется по границе
  * предложения с конца, поэтому перечисление источников стоит последним. Платить
  * за длину приходится доменами, а не сигналом о негативе.
+ *
+ * **Бюджет держится устройством, а не совпадением длин.** Прежде перечисление
+ * причин ничем не ограничивалось и стояло до фразы о негативе: замер ревью дал
+ * 388 знаков из 400 — запас двенадцать, — и на трёх негативных строках с
+ * доменами под сорок знаков плюс семи прочих сигнал уже терялся (пункт BL).
+ * Теперь строка собирается вариантами: за длину платят сначала домены, потом
+ * перечисление причин, потом домены при самой фразе о негативе, — а сама фраза
+ * не платит никогда.
  */
-function notShownNote(page: NotShownOnPage, drawn: number): string | undefined {
+function notShownNote(
+  page: NotShownOnPage,
+  drawn: number,
+  budget: number
+): string | undefined {
   const missing = page.rows.length + page.unindexed;
   if (missing === 0) return undefined;
   // Причины сводятся по клиентским словам, а не по коду: `http_403` и
@@ -156,20 +171,33 @@ function notShownNote(page: NotShownOnPage, drawn: number): string | undefined {
     .map(([words, n]) => `${words} — ${n}`)
     .join(", ");
   const found = drawn + missing;
-  const head =
+  const headBase =
     `Из ${found} ${pluralRu(found, "строки", "строк", "строк")} этой страницы ` +
-    `показано ${drawn}: ${missing} без превью (${reasons}).`;
+    `показано ${drawn}: ${missing} без превью`;
   const adverseDomains = enumerateRu(
     clientSafeDomains(page.adverse.map((a) => a.item.domain)),
     3
   );
+  const adverseBare = page.adverse.length
+    ? ` Среди них ${page.adverse.length} с негативным признаком.`
+    : "";
   const adverseNote = page.adverse.length
     ? ` Среди них ${page.adverse.length} с негативным признаком${
         adverseDomains ? ` — ${adverseDomains}` : ""
       }.`
     : "";
   const domains = enumerateRu(page.domains, 3);
-  return `${head}${adverseNote}${domains ? ` Их источники: ${domains}.` : ""}`;
+  const sources = domains ? ` Их источники: ${domains}.` : "";
+  // Порядок отказа — от наименее ценного к самому ценному. Последний вариант
+  // печатается, даже если и он не влез: обрезать его будет вызывающий, но
+  // фраза о негативе к тому моменту стоит сразу за коротким заголовком.
+  const variants = [
+    `${headBase} (${reasons}).${adverseNote}${sources}`,
+    `${headBase} (${reasons}).${adverseNote}`,
+    `${headBase}.${adverseNote}`,
+    `${headBase}.${adverseBare}`,
+  ];
+  return variants.find((v) => v.length <= budget) ?? variants[variants.length - 1]!;
 }
 
 export function buildImagesFragment(
@@ -231,7 +259,6 @@ export function buildImagesFragment(
     const adverseOnGrid = Math.min(sidebar.adverseRows.length, shownOnGrid);
     const notShownOnPage = notShownOnThisPage(slot.slotId, extras, scoped);
     const adverseTotal = adverseOnGrid + notShownOnPage.adverse.length;
-    const note = notShownNote(notShownOnPage, shownOnGrid);
     /*
      * Не показанное называется первым.
      *
@@ -241,8 +268,15 @@ export function buildImagesFragment(
     const counted = sidebar.explanations.length
       ? `Изображения на этой странице: ${shownOnGrid}; выделено красным (ведут на негативные источники): ${adverseOnGrid}.`
       : pageBlocks.whatWasFound;
+    // Бюджет считается до сборки: что осталось от строки после обязательного
+    // счётчика, то и может занять рассказ о непоказанном.
+    const note = notShownNote(
+      notShownOnPage,
+      shownOnGrid,
+      Math.max(80, SIDEBAR_FOUND_BUDGET - (counted?.length ?? 0) - 1)
+    );
     const foundText = [note, counted].filter(Boolean).join(" ");
-    const whatWasFound = foundText ? clampClientText(foundText, 400) : undefined;
+    const whatWasFound = foundText ? clampClientText(foundText, SIDEBAR_FOUND_BUDGET) : undefined;
     const verdictTitle =
       shownOnGrid > 0 || adverseTotal > 0
         ? `${slot.title}: ${

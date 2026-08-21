@@ -76,7 +76,10 @@ function gridMeta(
   ];
 }
 
-function imagesPack(visualAssets: VisualAssetsBySlot) {
+function imagesPack(
+  visualAssets: VisualAssetsBySlot,
+  extraEvidence: Record<string, unknown> = {}
+) {
   const ctx: SectionBuildContext = {
     caseId: inputs.caseId,
     reportRunId: inputs.reportRunId,
@@ -86,7 +89,7 @@ function imagesPack(visualAssets: VisualAssetsBySlot) {
     bundle: inputs.mergedBundle,
     surfaceUnits: inputs.surfaceUnits,
     metricSnapshot: inputs.metricSnapshot,
-    evidenceIndex: inputs.evidenceIndex,
+    evidenceIndex: { ...inputs.evidenceIndex, ...extraEvidence } as typeof inputs.evidenceIndex,
     extras: {
       executiveSummary: inputs.executiveSummary as unknown as ExecutiveSummaryExtras,
       surfaceCollectionHints: inputs.surfaceCollectionHints,
@@ -97,8 +100,31 @@ function imagesPack(visualAssets: VisualAssetsBySlot) {
   return buildSectionPackForFragment("RU_IMAGES", ctx);
 }
 
-function imagesPages(visualAssets: VisualAssetsBySlot): Map<string, SlideContentContract> {
-  return new Map(imagesPack(visualAssets).slides.map((s) => [String(s.baseSlotId), s]));
+function imagesPages(
+  visualAssets: VisualAssetsBySlot,
+  extraEvidence: Record<string, unknown> = {}
+): Map<string, SlideContentContract> {
+  return new Map(
+    imagesPack(visualAssets, extraEvidence).slides.map((s) => [String(s.baseSlotId), s])
+  );
+}
+
+/**
+ * Строка изображения с заданным доменом — та же форма, что в индексе прогона.
+ *
+ * Нужна затем, что у корпуса `report-72` домены короткие, и на нём свойство
+ * «сигнал о негативе не теряется» держится совпадением длин. Длинный домен —
+ * не выдумка: `vitkvv2017.livejournal.com` в корпусе есть, а домены под сорок
+ * знаков встречаются на живых прогонах.
+ */
+function evidenceRow(ref: string, domain: string, adverse: boolean): Record<string, unknown> {
+  return {
+    kind: "image",
+    url: `https://${domain}/gallery/photo`,
+    domain,
+    title: `Фотография из галереи ${domain}`,
+    adverse,
+  };
 }
 
 function sidebarText(slide: SlideContentContract | undefined): string {
@@ -276,5 +302,64 @@ describe("обрезка съедает перечисление источни�
     expect(text).toMatch(/kompromat1\.online/u);
     // Перечисление источников — то, чем платят за длину.
     expect(text).not.toMatch(/Их источники/u);
+  });
+
+  it("фраза о негативе выживает и там, где перечисления причин уже не хватило", () => {
+    /*
+     * Пункт BL. Перечисление причин стояло до фразы о негативе и ничем не
+     * ограничивалось, а рез идёт по границе предложения с конца. Свойство
+     * держалось совпадением длин: замер ревью дал 388 знаков из 400 — запас
+     * двенадцать, — и соседний экземпляр (одна причина больше, домены длиннее)
+     * негатив уже терял.
+     *
+     * Здесь взят именно такой экземпляр: все семь причин и три негативные
+     * строки с самыми длинными доменами корпуса.
+     */
+    const reasons: PreviewFailureReason[] = [
+      "http_403",
+      "not_an_image",
+      "too_large",
+      "decode_failed",
+      "offline",
+      "budget_exhausted",
+      "no_url",
+    ];
+    // Свойство, а не экземпляр: сигнал обязан выживать при любом числе
+    // непоказанных строк, а не при том, на котором сошлись длины.
+    // Тот же корпус, но у трёх негативных строк домены длиннее: ровно та
+    // переменная, которую называет BL («домен на четыре десятка знаков
+    // сдвигает баланс»). Всё остальное — как в предыдущем случае.
+    const longDomains = [
+      "compromat-arhiv-severo-zapad.novosti-region.ru",
+      "rassledovaniya-po-regionam.dossier-portal.ru",
+      "kartoteka-sudebnyh-del.registry-open.ru",
+    ];
+    const adverseRefs = [adverseRow, adverseRow2, longDomainRow];
+    const extraEvidence: Record<string, unknown> = {};
+    adverseRefs.forEach((row, i) => {
+      extraEvidence[row.ref] = {
+        ...(inputs.evidenceIndex as Record<string, Record<string, unknown>>)[row.ref],
+        domain: longDomains[i],
+        url: `https://${longDomains[i]}/gallery/photo`,
+      };
+    });
+    const failures: string[] = [];
+    for (let extra = 0; extra <= plainRows.length - 2; extra += 1) {
+      const notShown = [
+        missed(adverseRow, "http_403"),
+        missed(adverseRow2, "http_500"),
+        missed(longDomainRow, "network"),
+        ...plainRows.slice(2, 2 + extra).map((r, i) => missed(r, reasons[i % reasons.length]!)),
+      ];
+      const text = sidebarText(
+        imagesPages(
+          { p14_ru_images_1: gridMeta("p14_ru_images_1", plainRows.slice(0, 2), notShown) },
+          extraEvidence
+        ).get("p14_ru_images_1")
+      );
+      if (!/с негативным признаком/u.test(text)) failures.push(`+${extra}: ${text.slice(-120)}`);
+      if (!/Из \d+ строк/u.test(text)) failures.push(`+${extra} (число): ${text.slice(0, 80)}`);
+    }
+    expect(failures).toEqual([]);
   });
 });
