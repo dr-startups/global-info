@@ -37,6 +37,17 @@ const INTERNAL_CODE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/gu;
  * английской прозе его не бывает. В адресе — бывает, и там оно законно:
  * `banki.ru/news/story/person/leonid_mihelson` это ссылка на материал, а не
  * имя набора. Адреса из проверки исключены целиком.
+ *
+ * **Форма имени набора неотличима от ника в соцсети,** и это выяснилось на
+ * живом прогоне 21.08 (кейс Кремлёв): ворота остановили оплаченный отчёт на
+ * последнем шаге из-за `umar_kremlev` и `shara_bullet77` — так подписаны
+ * аккаунты, попавшие в заголовки страниц выдачи. В корпусе прогона Ким такие
+ * же: `tangerina_kim`, `rbc_ru`, `aleko_n`. Отличить `ru_billionaires_2021` от
+ * `umar_kremlev` по форме нельзя.
+ *
+ * Поэтому нижний регистр **не останавливает сборку** (решение владельца
+ * 21.08): он остаётся замечанием в отчёте проверки. Наши собственные коды
+ * пишутся ЗАГЛАВНЫМИ и ловятся `INTERNAL_CODE` — их блокировка не тронута.
  */
 const DATASET_CODE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gu;
 
@@ -53,18 +64,34 @@ const URL_LIKE = /(?:https?:\/\/)?(?:[\p{L}\d-]+\.)+[a-z]{2,}(?:\/[^\s|]*)?/giu;
  */
 const ALLOWED = new Set<string>(["ID_CARD", "PEP_RCA"]);
 
+/**
+ * Токен нижнего регистра из чужого текста: ник, слаг, имя набора.
+ *
+ * Отдельной функцией, потому что отвечает на другой вопрос: не «наш ли это
+ * код», а «похоже ли на машинное имя». Первый вопрос останавливает сборку,
+ * второй — нет.
+ */
+export function findLowercaseCodeLikeTokens(text: string | null | undefined): string[] {
+  return collect(text, [DATASET_CODE]);
+}
+
 /** Найденные в тексте внутренние коды (без повторов, в порядке появления). */
 export function findInternalCodes(text: string | null | undefined): string[] {
   // Маркер находки — служебная связь блока с доказательной базой. Встречается
   // и в скобках в конце блока, и голым — колонкой таблицы матрицы рисков. До
   // бумаги он не доходит ни в том, ни в другом виде: в отчёте 72 строка
   // «finding-» не встречается ни разу, отрисовщик её снимает.
+  return collect(text, [INTERNAL_CODE]);
+}
+
+/** Общий разбор: маркер находки и адреса снимаются до поиска. */
+function collect(text: string | null | undefined, patterns: RegExp[]): string[] {
   const value = String(text ?? "")
     .replace(/\[?finding-[\p{L}\d_-]+\]?/gu, " ")
     .replace(URL_LIKE, " ");
   if (!value.trim()) return [];
   const found: string[] = [];
-  for (const re of [INTERNAL_CODE, DATASET_CODE]) {
+  for (const re of patterns) {
     for (const m of value.matchAll(re)) {
       const code = m[0];
       if (ALLOWED.has(code) || found.includes(code)) continue;
@@ -159,11 +186,31 @@ export interface InternalCodeFinding {
 export function scanDeckForInternalCodes(
   slides: readonly ClientVisibleSlide[]
 ): InternalCodeFinding[] {
+  return scanDeck(slides, findInternalCodes);
+}
+
+/**
+ * Машинно выглядящие токены нижнего регистра в клиентском тексте.
+ *
+ * Замечание, а не приговор: ник в соцсети и имя набора по форме неотличимы, и
+ * останавливать оплаченный отчёт на последнем шаге из-за чужой подписи нельзя
+ * (решение владельца 21.08, живой прогон Кремлёва).
+ */
+export function scanDeckForCodeLikeTokens(
+  slides: readonly ClientVisibleSlide[]
+): InternalCodeFinding[] {
+  return scanDeck(slides, findLowercaseCodeLikeTokens);
+}
+
+function scanDeck(
+  slides: readonly ClientVisibleSlide[],
+  find: (text: string) => string[]
+): InternalCodeFinding[] {
   const findings: InternalCodeFinding[] = [];
   for (const slide of slides) {
     const name = slide.slideKey ?? slide.slideId ?? "<без имени>";
     for (const text of clientVisibleStrings(slide)) {
-      for (const code of findInternalCodes(text)) {
+      for (const code of find(text)) {
         findings.push({ slide: name, code });
       }
     }

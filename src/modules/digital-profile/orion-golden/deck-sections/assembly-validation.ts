@@ -10,7 +10,7 @@ import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
-import { scanDeckForInternalCodes } from "./internal-code-scan";
+import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
 import {
   SERP_TABLE_TOP_N,
@@ -41,6 +41,14 @@ const PANEL_ROW_TEMPLATES = new Set(["related-queries", "suggestions"]);
 export type AssemblyValidationReport = {
   passed: boolean;
   issues: string[];
+  /**
+   * Замеченное, что сборку не останавливает и `passed` не роняет.
+   *
+   * Заведено отдельным полем не для красоты: от `issues` зависит `passed`, а от
+   * него — ворота приёмки эталона. Положить сюда ложное срабатывание значило бы
+   * переселить блокировку из одной двери в другую, а не снять её.
+   */
+  notes: string[];
   checks: Record<string, boolean>;
   /**
    * Проверки, из-за которых сборку нельзя отдавать клиенту.
@@ -297,6 +305,8 @@ export function validateAssembly(input: {
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
 }): AssemblyValidationReport {
   const issues: string[] = [];
+  /** Замеченное, что сборку не останавливает и `passed` не роняет. */
+  const notes: string[] = [];
   const checks: Record<string, boolean> = {};
   const skipped: string[] = [];
   const { deckManifest, rendererSlides } = input;
@@ -432,6 +442,21 @@ export function validateAssembly(input: {
   checks.noInternalCodesInClientText = internalCodes.length === 0;
   for (const f of internalCodes.slice(0, 10)) {
     issues.push(`internal code ${f.code} in client text of ${f.slide}`);
+  }
+  /*
+   * Токены нижнего регистра — замечание, а не приговор.
+   *
+   * Ник в соцсети и имя набора по форме неотличимы: живой прогон 21.08 (кейс
+   * Кремлёв) встал на `umar_kremlev` и `shara_bullet77` — так подписаны
+   * аккаунты в заголовках страниц выдачи. Останавливать оплаченный отчёт на
+   * последнем шаге из-за чужой подписи нельзя (решение владельца 21.08).
+   *
+   * В `issues` они не идут намеренно: от `issues` зависит `passed`, а от него —
+   * ворота приёмки эталона. Иначе блокировка просто переехала бы в другую дверь.
+   */
+  const codeLike = scanDeckForCodeLikeTokens(rendererSlides);
+  for (const f of codeLike.slice(0, 10)) {
+    notes.push(`code-like token ${f.code} in client text of ${f.slide}`);
   }
 
   // --- Manual-quality gates (fail closed) ---
@@ -813,5 +838,5 @@ export function validateAssembly(input: {
     panelMismatchSlides,
   });
 
-  return { passed: issues.length === 0, issues, checks, blocking, skipped };
+  return { passed: issues.length === 0, issues, notes, checks, blocking, skipped };
 }

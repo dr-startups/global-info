@@ -13,7 +13,10 @@ import {
   looksLikeSurfaceBlockHeading,
   pageQuoteForClient,
 } from "@/modules/digital-profile/orion-golden/analytics/client-quote-hygiene";
-import { findInternalCodes } from "@/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
+import {
+  findInternalCodes,
+  findLowercaseCodeLikeTokens,
+} from "@/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
 import { localizedThemedClaim } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import {
   isWeakExampleTitle,
@@ -86,11 +89,22 @@ describe("машинные имена наборов данных", () => {
     expect(looksLikeMachineDump("Проверка PEP / RCA по спискам наблюдения")).toBe(false);
   });
 
-  it("внутренние коды ловятся проверкой деки в любом регистре", () => {
+  it("наши коды ловятся проверкой деки и останавливают сборку", () => {
     expect(findInternalCodes("сбой VISUAL_ASSET_UNAVAILABLE на странице")).toEqual([
       "VISUAL_ASSET_UNAVAILABLE",
     ]);
-    expect(findInternalCodes("источники: ext_gb_coh_psc, us_trade_csl")).toEqual([
+  });
+
+  it("имя набора остаётся видимым, но сборку не останавливает", () => {
+    /*
+     * До живого прогона 21.08 имена наборов ловились тем же правилом, что и
+     * наши коды, и блокировали сборку. По форме они неотличимы от ников в
+     * соцсетях (`umar_kremlev`, `shara_bullet77`), и на кейсе Кремлёва ворота
+     * остановили оплаченный отчёт на последнем шаге из-за чужой подписи.
+     * Решение владельца 21.08: нижний регистр — замечание, не приговор.
+     */
+    expect(findInternalCodes("источники: ext_gb_coh_psc, us_trade_csl")).toEqual([]);
+    expect(findLowercaseCodeLikeTokens("источники: ext_gb_coh_psc, us_trade_csl")).toEqual([
       "ext_gb_coh_psc",
       "us_trade_csl",
     ]);
@@ -117,10 +131,14 @@ describe("адрес в клиентском тексте кодом не счи
     ).toEqual([]);
   });
 
-  it("имя набора рядом с адресом всё равно ловится", () => {
+  it("имя набора рядом с адресом всё равно видно — замечанием", () => {
     expect(
-      findInternalCodes("источники: ext_gb_coh_psc — см. opensanctions.org/entities/Q1")
+      findLowercaseCodeLikeTokens("источники: ext_gb_coh_psc — см. opensanctions.org/entities/Q1")
     ).toEqual(["ext_gb_coh_psc"]);
+    // Сам адрес по-прежнему не токен: подчёркивание в пути законно.
+    expect(
+      findLowercaseCodeLikeTokens("banki.ru/news/story/person/leonid_mihelson")
+    ).toEqual([]);
   });
 });
 
