@@ -755,6 +755,51 @@ export function buildReportQualityWarnings(
   return out;
 }
 
+/**
+ * Семейства предупреждений, которые прогон вычисляет заново целиком.
+ *
+ * Токен такого семейства описывает **этот** прогон, а не задание: клип на
+ * четвёртой странице, откат стадии GPT, число пустых страниц. Пока их снимали
+ * только при появлении нового токена того же семейства, починенный прогон
+ * оставлял их висеть навсегда — новых-то нет, — и оператор читал завершённый
+ * отчёт как сломанный (пункт AV бэклога).
+ *
+ * Семейства ворот телеметрии (`renderer-clip:`, `renderer-layout:`) отличаются
+ * от прочих тем, что токенов у них на прогоне бывает несколько — по одному на
+ * страницу. Поэтому замена «по одному», которую делает `mergeJobWarnings`, для
+ * них не годится: от семейства осталась бы одна последняя страница.
+ */
+export const REFRESHED_WARNING_FAMILIES = [
+  "visual-asset-warning:",
+  "gpt-stage1-fallback:",
+  "gpt-stage2-fallback:",
+  "empty-state-slides:",
+  "sidebar-degraded:",
+  "renderer-clip:",
+  "renderer-layout:",
+] as const;
+
+function isRefreshedFamily(warning: string): boolean {
+  return REFRESHED_WARNING_FAMILIES.some((f) => warning.startsWith(f));
+}
+
+/**
+ * Предупреждения прогона поверх состояния задания.
+ *
+ * Отличается от `mergeJobWarnings` тем, что снимает семейства **целиком** до
+ * записи новых: `previous` здесь — накопленное состояние задания, а `fresh` —
+ * итог нынешнего прогона. Соединять два свежих источника одного прогона этой
+ * функцией нельзя: она сняла бы токены, приехавшие первым аргументом.
+ */
+export function refreshRunWarnings(previous: string[], fresh: string[]): string[] {
+  return mergeJobWarnings(previous.filter((w) => !isRefreshedFamily(w)), fresh);
+}
+
+/** Семейства, у которых на прогоне ровно один токен: их можно заменять по одному. */
+const SINGLE_TOKEN_FAMILIES = REFRESHED_WARNING_FAMILIES.filter(
+  (f) => f !== "renderer-clip:" && f !== "renderer-layout:"
+);
+
 /** Merge quality warnings into an existing list without duplicates (prefix-stable). */
 export function mergeJobWarnings(existing: string[], qualityWarnings: string[]): string[] {
   const seen = new Set(existing);
@@ -762,12 +807,9 @@ export function mergeJobWarnings(existing: string[], qualityWarnings: string[]):
   for (const w of qualityWarnings) {
     // Replace prior warning with the same machine prefix (e.g. gpt-stage1-fallback:*).
     const prefix = w.includes(":") ? `${w.split(":")[0]}:` : w;
-    const isPrefixed =
-      prefix.startsWith("visual-asset-warning:") ||
-      prefix.startsWith("gpt-stage1-fallback:") ||
-      prefix.startsWith("gpt-stage2-fallback:") ||
-      prefix.startsWith("empty-state-slides:") ||
-      prefix.startsWith("sidebar-degraded:");
+    // Замена «по одному» годится только для семейств с одним токеном на
+    // прогон: у ворот телеметрии их несколько, и замена оставила бы последний.
+    const isPrefixed = SINGLE_TOKEN_FAMILIES.some((f) => prefix.startsWith(f));
     if (isPrefixed) {
       for (let i = out.length - 1; i >= 0; i -= 1) {
         if (out[i]!.startsWith(prefix)) {

@@ -62,6 +62,7 @@ import {
   buildReportQualitySummary,
   buildReportQualityWarnings,
   mergeJobWarnings,
+  refreshRunWarnings,
   toJobReportQuality,
   type JobReportQuality,
 } from "./report-quality-summary";
@@ -839,7 +840,10 @@ export function warningsSurvivingSuccessfulPrepare(input: {
   enrichmentComplete: boolean;
   failedAgentCount: number;
 }): string[] {
-  return mergeJobWarnings(input.jobWarnings, input.qualityWarnings).filter((w) => {
+  // Здесь проходит граница «состояние задания ↔ итог прогона»: семейства,
+  // которые прогон вычисляет заново, снимаются целиком, иначе токены прошлой
+  // попытки переживают починку (пункт AV).
+  return refreshRunWarnings(input.jobWarnings, input.qualityWarnings).filter((w) => {
     // Возрастной останов — свойство прошлой попытки: на готовом отчёте жалоба
     // на застой читается как «собрано сломанным».
     if (w === "STALE_NO_PROGRESS") return false;
