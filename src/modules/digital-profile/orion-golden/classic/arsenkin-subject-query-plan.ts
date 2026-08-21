@@ -84,6 +84,21 @@ function transliteratedFioVariants(input: string): string[] {
   return [input, `${parts[1]} ${parts[0]}`];
 }
 
+/**
+ * Обрезка набора по пределу, не выбрасывающая обязательную строку.
+ *
+ * Пределы платного сбора считаются в запросах, поэтому набор режется. Но
+ * собственное написание субъекта резать нельзя: без него в регионе не ищется
+ * настоящее имя человека, о котором пишут отчёт. Если оно не влезло, место ему
+ * освобождает последний из подтверждённых алиасов — их несколько, а имя одно.
+ */
+function capKeeping(list: string[], required: string, max: number): string[] {
+  if (list.length <= max) return list;
+  const head = list.slice(0, max);
+  if (!required || head.includes(required)) return head;
+  return [...list.slice(0, max - 1), required];
+}
+
 /** Build deterministic Arsenkin RU/UAE query lists from subject identity. */
 export function buildArsenkinSubjectQueryPlan(
   input: ArsenkinSubjectQueryInput
@@ -139,13 +154,29 @@ export function buildArsenkinSubjectQueryPlan(
   // goes as it is, transliterated when Cyrillic: changing the alphabet keeps
   // the order, guessing the order does not.
   const latinFromOwnFio = ownFio ? transliterateRuToEn(ownFio) : "";
+  /*
+   * Собственное написание субъекта латиницей ищется **рядом** с алиасом.
+   *
+   * Пока набор ОАЭ был ровно алиасами, настоящее имя субъекта в регионе не
+   * искалось вовсе: у `Mohammed bin Rashid Al Maktoum` с алиасом
+   * `Sheikh Mohammed` контур искал только алиас. В живом корпусе Тинькова то
+   * же самое — `oleg tinkov`, `tinkov oleg`, `oleg tinkoff` и ни одной строки
+   * `Tinkov Oleg Yurevich` (пункт BI).
+   *
+   * Решение владельца 19.08: добавлять собственное написание. Плюс один запрос
+   * на прогон; взамен исчезает дыра, о которой отчёт нигде не говорил.
+   *
+   * Первым остаётся алиас: его подтвердил аналитик, и он же печатается
+   * клиенту как `primaryIdentityUae`.
+   */
+  const ownLatin = latinFromOwnFio || (hasCyrillic(name) ? transliterateRuToEn(name) : name);
   const uaeBase =
     latinAliases.length > 0
-      ? latinAliases
+      ? [...latinAliases, ...(ownLatin ? [ownLatin] : [])]
       : latinFromOwnFio
         ? transliteratedFioVariants(latinFromOwnFio)
-        : [hasCyrillic(name) ? transliterateRuToEn(name) : name];
-  const queriesUae = dedupePreserve(uaeBase).slice(0, 4);
+        : [ownLatin];
+  const queriesUae = capKeeping(dedupePreserve(uaeBase), ownLatin, 4);
 
   const blockers: string[] = [];
   if (queriesRu.length === 0) blockers.push("empty-queries-ru");

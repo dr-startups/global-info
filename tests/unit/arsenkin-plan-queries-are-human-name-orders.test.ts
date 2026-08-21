@@ -59,7 +59,10 @@ describe("план запросов Arsenkin строит только чело�
       aliases: ["Oleg Tinkov"],
     });
 
-    expect(plan.queriesUae).toEqual(["Oleg Tinkov"]);
+    // Собственное написание идёт рядом с алиасом, а не вместо него: решение
+    // владельца 19.08 (пункт BI). Первым остаётся алиас — его подтвердил
+    // аналитик, и он же печатается клиенту.
+    expect(plan.queriesUae).toEqual(["Oleg Tinkov", "Tinkov Oleg Yurevich"]);
     expect(plan.primaryIdentityUae).toBe("Oleg Tinkov");
   });
 
@@ -69,7 +72,10 @@ describe("план запросов Arsenkin строит только чело�
       aliases: ["Oleg Yuryevich Tinkov"],
     });
 
-    expect(plan.queriesUae).toEqual(["Oleg Yuryevich Tinkov"]);
+    expect(plan.queriesUae).toEqual(["Oleg Yuryevich Tinkov", "Tinkov Oleg Yurevich"]);
+    // Сам алиас не переставлен — это и проверяется; добавка рядом с ним не
+    // перестановка, а собственное написание субъекта (пункт BI).
+    expect(plan.queriesUae).not.toContain("Yuryevich Oleg Tinkov");
   });
 
   it("UAE: латинское имя субъекта без алиасов не переставляется", () => {
@@ -88,7 +94,7 @@ describe("план запросов Arsenkin строит только чело�
       aliases: ["Oleg Tinkov", "Oleg Tinkoff"],
     });
 
-    expect(plan.queriesUae).toEqual(["Oleg Tinkov", "Oleg Tinkoff"]);
+    expect(plan.queriesUae).toEqual(["Oleg Tinkov", "Oleg Tinkoff", "Tinkov Oleg Yurevich"]);
   });
 
   it("двухчастное имя даёт два порядка, оба человеческие", () => {
