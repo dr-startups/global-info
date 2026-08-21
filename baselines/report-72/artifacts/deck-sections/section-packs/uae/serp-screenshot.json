@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v111",
+  "contentVersion": "deck-sections-v112",
   "promptVersion": "uae-serp-screenshot-analysis-v4",
   "contentHash": "sha256:fd11eaebe065511c666b49933bf3f9c3413e3e8fac4d4df5c9047d7a6813e34a",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:37183645885cd73f",
-  "generatedAt": "2026-08-21T13:45:49.511Z",
+  "generatedAt": "2026-08-21T16:15:42.172Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [

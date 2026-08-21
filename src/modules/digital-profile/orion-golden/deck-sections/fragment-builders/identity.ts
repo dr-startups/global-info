@@ -459,14 +459,33 @@ export function buildIdentityFragment(
   // не подтверждена, её фрагменты не печатаются вовсе.
   /** Сколько фрагментов разбор выделил, но до листа они не дошли. */
   const droppedFragments = review?.status === "REVIEWED" ? review.audit.dropped : 0;
+  /*
+   * Рекомендация к фрагменту зависит только от его категории — значит, на
+   * странице она нужна один раз.
+   *
+   * Печаталась она на каждом фрагменте, и у четырёх негативных выходило одно и
+   * то же предложение четыре раза подряд: страница «Россия — Википедия
+   * (продолжение 3/3)» живого отчёта 21.08 состояла из четырёх буллетов, каждый
+   * из которых заканчивался «Рекомендация: сверить формулировку с
+   * первоисточниками…». Повтор вытесняет содержание и читается как небрежность
+   * в документе, который показывают банку.
+   *
+   * Несёт её первый фрагмент своей категории: у категорий рекомендации разные,
+   * и обе обязаны прозвучать.
+   */
+  const adviceGiven = new Set<string>();
   const fragmentBullets =
     review?.status === "REVIEWED" && checkSubjectConfirmed
       ? review.fragments
           .map((f) => {
             const section = f.section ? ` (раздел «${f.section}»)` : "";
+            const advice = adviceGiven.has(f.category)
+              ? ""
+              : ` ${WIKIPEDIA_FRAGMENT_RECOMMENDATIONS[f.category]}`;
+            adviceGiven.add(f.category);
             return `${WIKIPEDIA_FRAGMENT_CATEGORY_LABELS[f.category]}: «${f.quote}» — ${
               f.gloss
-            }${section}. ${WIKIPEDIA_FRAGMENT_RECOMMENDATIONS[f.category]}`;
+            }${section}.${advice}`;
           })
       : [];
 

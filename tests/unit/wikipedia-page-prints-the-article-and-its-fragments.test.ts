@@ -170,6 +170,19 @@ function pageText(input: ScopedInput): string {
     .join(" ");
 }
 
+/**
+ * Рекомендация к фрагменту зависит только от его категории, поэтому у четырёх
+ * негативных фрагментов она одна и та же. На живом отчёте 21.08 страница
+ * «Россия — Википедия (продолжение 3/3)» печатала одно и то же предложение
+ * **четыре раза подряд** — по разу на буллет.
+ */
+const FOUR_NEGATIVE = [
+  { quote: QUOTE_NEGATIVE, category: "negative" as const, gloss: "налоговая проверка", section: "Деятельность" },
+  { quote: `${QUOTE_NEGATIVE} Второй.`, category: "negative" as const, gloss: "спор о доле", section: "Санкции" },
+  { quote: `${QUOTE_NEGATIVE} Третий.`, category: "negative" as const, gloss: "санкции Польши", section: "Санкции" },
+  { quote: `${QUOTE_NEGATIVE} Четвёртый.`, category: "negative" as const, gloss: "внесение в базу", section: "Санкции" },
+];
+
 const NEGATIVE_FRAGMENT = {
   quote: QUOTE_NEGATIVE,
   category: "negative" as const,
@@ -520,5 +533,47 @@ describe("каждая строка лида помечена как досло�
     for (const bullet of leadBullets) {
       expect(bullet.startsWith("Начало статьи (дословно")).toBe(true);
     }
+  });
+});
+
+describe("рекомендация к фрагментам не повторяется", () => {
+  function timesSaid(bullets: string[], sentence: string): number {
+    return bullets.join(" ").split(sentence).length - 1;
+  }
+
+  it("одна на все негативные фрагменты страницы", () => {
+    const bullets = allBullets({ review: { fragments: FOUR_NEGATIVE } });
+    const fragments = bullets.filter((b) => b.startsWith("Негативный фрагмент:"));
+    expect(fragments).toHaveLength(4);
+    expect(timesSaid(bullets, WIKIPEDIA_FRAGMENT_RECOMMENDATIONS.negative)).toBe(1);
+  });
+
+  it("у каждой категории своя, и тоже по одной", () => {
+    const bullets = allBullets({
+      review: {
+        fragments: [
+          ...FOUR_NEGATIVE.slice(0, 2),
+          {
+            quote: `${QUOTE_NEGATIVE} Пятый.`,
+            category: "needs_update" as const,
+            gloss: "устаревшие сведения",
+            section: "Биография",
+          },
+          {
+            quote: `${QUOTE_NEGATIVE} Шестой.`,
+            category: "needs_update" as const,
+            gloss: "устаревшая должность",
+            section: "Биография",
+          },
+        ],
+      },
+    });
+    expect(timesSaid(bullets, WIKIPEDIA_FRAGMENT_RECOMMENDATIONS.negative)).toBe(1);
+    expect(timesSaid(bullets, WIKIPEDIA_FRAGMENT_RECOMMENDATIONS.needs_update)).toBe(1);
+  });
+
+  it("единственный фрагмент рекомендацию несёт", () => {
+    const bullets = allBullets(REVIEWED_WITH_NEGATIVE);
+    expect(timesSaid(bullets, WIKIPEDIA_FRAGMENT_RECOMMENDATIONS.negative)).toBe(1);
   });
 });
