@@ -40,9 +40,11 @@ const GRID_TILE_CAPACITY = 6;
  * `offline` значит «мы не спрашивали»: выдать его за отказ площадки нельзя,
  * иначе офлайн-пересборка обвиняет источник в том, чего он не делал. Машинный
  * код (`http_403`, `not_an_image`) клиенту не показывается — перевод один на
- * все причины и живёт здесь.
+ * все причины и живёт здесь. `undefined` — законный вход: у строки, которой нет
+ * в доказательствах страницы, причину предъявить нечем.
  */
-function previewFailureWords(reason: NotShownRow["reason"]): string {
+function previewFailureWords(reason: NotShownRow["reason"] | undefined): string {
+  if (!reason) return "причина не установлена";
   if (reason.startsWith("http_") || reason === "network") return "источник не отдал файл";
   switch (reason) {
     case "offline":
@@ -67,6 +69,14 @@ type NotShownOnPage = {
   rows: Array<{ row: NotShownRow; item: VisibleAssetItem }>;
   domains: string[];
   adverse: Array<{ row: NotShownRow; item: VisibleAssetItem }>;
+  /**
+   * Строки, которых нет в индексе доказательств этой страницы.
+   *
+   * Назвать о них нечего — ни домена, ни ссылки, — но и молчать нельзя:
+   * страница обязана сосчитать всё, что на ней нашли (пункт BK). Поэтому они
+   * входят в число и получают общую причину, а домена не получают.
+   */
+  unindexed: number;
 };
 
 /**
@@ -76,18 +86,27 @@ type NotShownOnPage = {
  * сверяют каждый названный домен именно с ним, и домен, добытый другим
  * способом (например, хост CDN у строки без адреса страницы), обрушил бы
  * обязательную секцию. По той же причине строка, которой в индексе нет, не
- * попадает ни в счёт, ни в текст: сказать о ней нечего и сослаться не на что.
+ * получает ни домена, ни ссылки среди доказательств — сказать о ней нечего.
+ *
+ * Но **в счёт она входит**: прежде такая строка отбрасывалась целиком и не
+ * оставляла следа нигде — ни в числе «Из N строк», ни в причинах, ни в
+ * предупреждениях. Потеря обязана быть слышна, а «Из 4 строк» вместо «Из 3» —
+ * самый дешёвый способ её услышать.
  */
 function notShownOnThisPage(
   slotId: string,
   extras: FragmentExtras,
   scoped: ScopedFragmentInput
 ): NotShownOnPage {
-  const rows = (extras.visualAssets?.[slotId] ?? [])
-    .flatMap((m) => m.notShown ?? [])
+  const all = (extras.visualAssets?.[slotId] ?? []).flatMap((m) => m.notShown ?? []);
+  let unindexed = 0;
+  const rows = all
     .flatMap((row) => {
       const e = scoped.evidenceIndex[row.ref];
-      if (!e) return [];
+      if (!e) {
+        unindexed += 1;
+        return [];
+      }
       const item: VisibleAssetItem = {
         ref: row.ref,
         url: e.url,
@@ -101,6 +120,7 @@ function notShownOnThisPage(
     rows,
     domains: [...new Set(clientSafeDomains(rows.map((r) => r.item.domain)))],
     adverse: rows.filter((r) => r.row.adverse),
+    unindexed,
   };
 }
 
@@ -116,7 +136,7 @@ function notShownOnThisPage(
  * за длину приходится доменами, а не сигналом о негативе.
  */
 function notShownNote(page: NotShownOnPage, drawn: number): string | undefined {
-  const missing = page.rows.length;
+  const missing = page.rows.length + page.unindexed;
   if (missing === 0) return undefined;
   // Причины сводятся по клиентским словам, а не по коду: `http_403` и
   // `network` — одна новость для читателя и одна строка в перечислении.
@@ -124,6 +144,12 @@ function notShownNote(page: NotShownOnPage, drawn: number): string | undefined {
   for (const { row } of page.rows) {
     const words = previewFailureWords(row.reason);
     byWords.set(words, (byWords.get(words) ?? 0) + 1);
+  }
+  if (page.unindexed > 0) {
+    // Причина отказа превью у такой строки может быть какой угодно, но
+    // предъявить её нечем: самой строки в доказательствах страницы нет.
+    const words = previewFailureWords(undefined);
+    byWords.set(words, (byWords.get(words) ?? 0) + page.unindexed);
   }
   const reasons = [...byWords.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))

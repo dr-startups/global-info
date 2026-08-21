@@ -105,6 +105,37 @@ function sidebarText(slide: SlideContentContract | undefined): string {
   return [slide?.content.whatWasFound, slide?.content.statusNote].filter(Boolean).join(" ");
 }
 
+describe("строка без прослеживаемого источника", () => {
+  it("считается, а не исчезает молча", () => {
+    /*
+     * Пункт BK. Строка, которой нет в индексе доказательств, отбрасывалась
+     * фильтром `if (!e) return []`: она не попадала ни в счёт «Из N строк», ни
+     * в причины, ни в негатив, ни в `evidenceRefs`, и предупреждения о ней не
+     * писалось нигде. Правило проекта требует, чтобы потеря была слышна.
+     *
+     * Домен у неё по-прежнему не называется — сослаться не на что, а домен,
+     * добытый другим способом, обрушил бы ворота области. Но число она меняет:
+     * «Из 4 строк» вместо «Из 3».
+     */
+    const drawn = plainRows.slice(0, 2);
+    const notShown = [
+      missed(plainRows[3]!, "http_403"),
+      { ref: "inventory:obs-нет-такого-в-индексе", adverse: false, reason: "http_403" as const },
+    ];
+    const slide = imagesPages({
+      p14_ru_images_1: gridMeta("p14_ru_images_1", drawn, notShown),
+    }).get("p14_ru_images_1");
+    const text = sidebarText(slide);
+
+    expect(text).toMatch(/Из 4 строк/u);
+    expect(text).toMatch(/2 без превью/u);
+    // Причину для неё назвать нечем: она сводится в общую формулировку.
+    expect(text).toMatch(/причина не установлена — 1/u);
+    // Ссылки на неё среди доказательств нет: её нет в индексе.
+    expect(slide?.evidenceRefs).not.toContain("inventory:obs-нет-такого-в-индексе");
+  });
+});
+
 describe("счётчик страницы считает нарисованное", () => {
   it("запасная ветка композиции: показано столько, сколько плиток", () => {
     const drawn = plainRows.slice(0, 3);
@@ -188,7 +219,7 @@ describe("негатив без превью не исчезает из заго
 });
 
 describe("домены не показанных строк выводятся из доказательств страницы", () => {
-  it("ссылка вне индекса не даёт странице ни домена, ни счёта", () => {
+  it("ссылка вне индекса не даёт странице ни домена, ни ссылки — но считается", () => {
     const alien: NotShownRow = { ref: "inventory:ss-not-in-this-index", adverse: false, reason: "http_403" };
     const pack = imagesPack({
       p14_ru_images_1: gridMeta("p14_ru_images_1", plainRows.slice(0, 2), [
@@ -199,8 +230,10 @@ describe("домены не показанных строк выводятся �
     const slide = pack.slides.find((s) => s.baseSlotId === "p14_ru_images_1");
     const text = sidebarText(slide);
 
-    // Считается и называется только то, что страница может проследить.
-    expect(text).toMatch(/1 без превью/u);
+    // Называется только то, что страница может проследить: домена и ссылки у
+    // чужой строки нет. Но в числе она есть — молча терять её нельзя (BK).
+    expect(text).toMatch(/2 без превью/u);
+    expect(text).toMatch(/причина не установлена — 1/u);
     expect(slide?.evidenceRefs ?? []).not.toContain(alien.ref);
     const report = validateSectionPack({
       pack,
