@@ -568,11 +568,21 @@ function buildThemeBlock(
     representativeArticles: articles,
     whyItMatters: whyItMatters(themeId),
     qualification: qualification || CLIENT_MATERIAL_QUALIFICATION,
+    /*
+     * Проверка темы говорит о **теме**.
+     *
+     * Рядом стояла строка «Подготовить согласованную позицию для KYC…» —
+     * одинаковая у всех тем и ничего о теме не сообщающая. В общий список она
+     * попадала наравне с глобальной «Подготовить единый пакет документов для
+     * KYC…», а `collapseRecommendations` склеивает по форме предложения:
+     * формы разные, поэтому клиент читал два пункта подряд об одном и том же
+     * (пункт CR, живой отчёт 21.08). Подготовка к KYC названа один раз и
+     * там, где она общая для отчёта.
+     */
     recommendedChecks: [
       stripInternalLeak(
         `Сверить первоисточники и статус материалов по теме «${clientTitle}».`
       ),
-      "Подготовить согласованную позицию для KYC и партнёрских запросов.",
     ],
     materialityLevel: ceiling,
     evidenceRefs: [...evidenceRefs],
@@ -894,7 +904,9 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     ),
     ...materialThemes.flatMap((t) => t.recommendedChecks),
     "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
-    "Подготовить единый пакет документов для KYC и партнёрских запросов.",
+    // Позиция и документы — одно действие подготовки, названное одной строкой:
+    // порознь они читались как дубль (пункт CR).
+    "Подготовить согласованную позицию и единый пакет документов для KYC и партнёрских запросов.",
   ]).slice(0, 8);
 
   const scope = {
