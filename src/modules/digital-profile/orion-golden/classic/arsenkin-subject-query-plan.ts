@@ -52,7 +52,18 @@ function permutationsOfName(fullName: string): string[] {
   if (parts.length < 2) return [fullName];
   const firstLast = `${parts[1]} ${parts[0]}`;
   if (parts.length === 2) return [fullName, firstLast];
-  return [fullName, `${parts[1]} ${parts[2]} ${parts[0]}`, firstLast];
+  /*
+   * Длинная форма переносит фамилию в конец, **не теряя остального**.
+   *
+   * Прежде она собиралась из ровно трёх частей (`parts[1] parts[2] parts[0]`),
+   * и у имени «Иванов Иван Иванович Оглы» второй строкой уходило «Иван
+   * Иванович Иванов» — имя другого человека: «Оглы» молча отбрасывалось. Вход
+   * редкий, но запрос платный (пункт BF).
+   *
+   * Короткая форма «Имя Фамилия» рядом остаётся: это законное сокращение, а
+   * не огрызок — так человек и печатает.
+   */
+  return [fullName, `${parts.slice(1).join(" ")} ${parts[0]}`, firstLast];
 }
 
 /**
