@@ -86,19 +86,45 @@ const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3
 export function blockingIssues(input: {
   quoteDefectSlides: ReadonlySet<string>;
   codeSlides: ReadonlySet<string>;
+  /** Сами коды — без них по сообщению нельзя понять, что чинить. */
+  codes?: ReadonlySet<string>;
   /** Страницы, чей текст спорит с нарисованной на них панелью. */
   panelMismatchSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
-  const name = (s: ReadonlySet<string>): string => [...s].slice(0, 5).join(", ");
+  /*
+   * Перечень объявляет, что он неполон.
+   *
+   * Печаталось «на 6 страницах: <пять имён>» — шестая не называлась, и по
+   * строке нельзя было понять, что список обрезан. Читатель отчёта об отказе
+   * такой же читатель, как читатель отчёта: недоговорённость он принимает за
+   * полный список.
+   */
+  const name = (s: ReadonlySet<string>, limit = 5): string => {
+    const all = [...s];
+    if (all.length <= limit) return all.join(", ");
+    return `${all.slice(0, limit).join(", ")} и ещё ${all.length - limit}`;
+  };
   if (input.quoteDefectSlides.size >= SYSTEMIC_DEFECT_PAGES) {
     out.push(
       `цитаты разорваны на ${input.quoteDefectSlides.size} страницах: ${name(input.quoteDefectSlides)}`
     );
   }
   if (input.codeSlides.size >= SYSTEMIC_DEFECT_PAGES) {
+    /*
+     * Код называется в сообщении.
+     *
+     * Прежде отказ печатал только страницы, и оператор — как и тот, кто пришёл
+     * разбираться, — видел «внутренние коды на 6 страницах» без единого
+     * намёка, какие именно. Строка, по которой нельзя действовать, останавливает
+     * платный прогон на последнем шаге и ничего не сообщает; сами коды при этом
+     * лежат в артефакте сборки и до человека не доходят.
+     */
+    const codes = input.codes && input.codes.size > 0 ? `; коды: ${name(input.codes, 5)}` : "";
     out.push(
-      `внутренние коды в клиентском тексте на ${input.codeSlides.size} страницах: ${name(input.codeSlides)}`
+      `внутренние коды в клиентском тексте на ${input.codeSlides.size} страницах: ${name(
+        input.codeSlides
+      )}${codes}`
     );
   }
   const panels = input.panelMismatchSlides ?? new Set<string>();
@@ -783,6 +809,7 @@ export function validateAssembly(input: {
   const blocking = blockingIssues({
     quoteDefectSlides,
     codeSlides: new Set(internalCodes.map((f) => f.slide)),
+    codes: new Set(internalCodes.map((f) => f.code)),
     panelMismatchSlides,
   });
 
