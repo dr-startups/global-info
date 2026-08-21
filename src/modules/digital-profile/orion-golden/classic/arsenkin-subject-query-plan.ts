@@ -101,9 +101,25 @@ export function buildArsenkinSubjectQueryPlan(
   // subject name is an alias, and its part order was set by whoever wrote it:
   // "Олег Юрьевич Тиньков" would give "Юрьевич Тиньков Олег" and "Юрьевич Олег".
   const ownFio = fullName && hasCyrillic(fullName) ? fullName : "";
+  /*
+   * Латинское имя ищется латиницей и в русском контуре.
+   *
+   * У субъекта с латинским именем и без кириллических алиасов набор оставался
+   * пуст, и заявка уходила с единственной строкой `"subject"` — платный
+   * `check-top` по английскому слову: блокер `empty-queries-ru` не спасает,
+   * план блокируется только при **обоих** пустых наборах (пункт BH).
+   *
+   * Решение владельца 19.08: искать латинское имя. Русскоязычные источники
+   * часто пишут имя латиницей, риск нулевой — ищем то, что точно существует.
+   * Транслитерация в кириллицу отвергнута: она неоднозначна, и можно заплатить
+   * за написание, которым его никто не называет.
+   *
+   * Порядок частей при этом не трогается — правило модуля: переставлять можно
+   * только собственное ФИО, чей порядок мы знаем.
+   */
   const ruBase = hasCyrillic(name)
     ? [name, ...(ownFio ? permutationsOfName(ownFio) : []), ...cyrAliases]
-    : [...cyrAliases];
+    : [name, ...cyrAliases];
   const queriesRu = dedupePreserve(ruBase).slice(0, 5);
 
   // UAE plan: confirmed Latin aliases go as the analyst wrote them; with no
