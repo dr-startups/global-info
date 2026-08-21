@@ -49,6 +49,7 @@ import {
 } from "../orion-golden/assets/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
 import { YANDEX_GEN_ANSWER_URL_SCHEME } from "../providers/yandex-gen-search";
+import { plainAiAnswerText } from "../orion-golden/client/ai-answer-text";
 import {
   pickRealSerpScreenshot,
   type RealSerpScreenshotInput,
@@ -705,8 +706,8 @@ export async function buildCanonicalVisualAssets(input: {
     title: string
   ): Promise<boolean> => {
     // Сводкой панели становится тело ответа: у названного источника есть свой
-    // адрес, и его описание — не ответ поисковика. Панель рисует одну строку
-    // (известное ограничение) — полноту несёт текст страницы.
+    // адрес, и его описание — не ответ поисковика. Панель рисует абзац с
+    // переносом по словам; полный ответ по-прежнему несёт текст страницы.
     const answer =
       rows.find(
         (r) =>
@@ -722,7 +723,11 @@ export async function buildCanonicalVisualAssets(input: {
     const png = await svgToPngBase64(
       buildKnowledgePanelSvg({
         title,
-        summary: String(answer?.snippet ?? answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
+        // Та же чистка, что у текста страницы: панель и страница не могут
+        // показывать один ответ по-разному.
+        summary:
+          plainAiAnswerText(answer?.snippet) ||
+          String(answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
         facts,
       })
     );

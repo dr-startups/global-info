@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
-import { COLORS, FONT_STACK, truncateToWidth } from "../../serp-snapshot/layout";
+import { COLORS, FONT_STACK, truncateToWidth, wrapToWidth } from "../../serp-snapshot/layout";
 
 function esc(text: string): string {
   return text
@@ -331,16 +331,33 @@ export function buildKnowledgePanelSvg(input: {
 }): string {
   const width = 1200;
   const height = 420;
+  const facts = input.facts.slice(0, 4);
+  /*
+   * Сводка — абзац, а не строка.
+   *
+   * Панель рисовала ответ поисковика одним `<text>` с обрезкой по ширине, и на
+   * живом прогоне 20.08 клиент видел «…предприниматель, миллиардер и политик»
+   * и обрыв. Высота картинки при этом не растёт: рендерер вписывает её в тот
+   * же бокс, и более высокая картинка означала бы мельче текст.
+   *
+   * Строк тем больше, чем меньше фактов: свободное место под сводкой — это
+   * место, отведённое фактам, которых нет.
+   */
+  const summaryLines = wrapToWidth(input.summary, 1072, 14, facts.length > 0 ? 7 : 11);
+  const factsTop = 112 + summaryLines.length * 20 + 18;
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
     `<rect width="100%" height="100%" fill="${COLORS.pageBg}"/>`,
     `<rect x="40" y="40" width="1120" height="340" rx="12" fill="${COLORS.panel}" stroke="${COLORS.panelBorder}"/>`,
     `<text x="64" y="84" font-family="${FONT_STACK}" font-size="22" fill="${COLORS.text}">${esc(input.title)}</text>`,
-    `<text x="64" y="118" font-family="${FONT_STACK}" font-size="14" fill="${COLORS.muted}">${esc(truncateToWidth(input.summary, 1000, 14))}</text>`,
+    ...summaryLines.map(
+      (line, idx) =>
+        `<text x="64" y="${112 + idx * 20}" font-family="${FONT_STACK}" font-size="14" fill="${COLORS.muted}">${esc(line)}</text>`
+    ),
   ];
-  input.facts.slice(0, 4).forEach((fact, idx) => {
+  facts.forEach((fact, idx) => {
     parts.push(
-      `<text x="64" y="${160 + idx * 28}" font-family="${FONT_STACK}" font-size="13" fill="${COLORS.text}">• ${esc(truncateToWidth(fact, 900, 13))}</text>`
+      `<text x="64" y="${factsTop + idx * 28}" font-family="${FONT_STACK}" font-size="13" fill="${COLORS.text}">• ${esc(truncateToWidth(fact, 900, 13))}</text>`
     );
   });
   parts.push("</svg>");

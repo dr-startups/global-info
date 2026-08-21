@@ -10,6 +10,7 @@ import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import { packSentencesNoTruncate } from "../semantic-summary-pagination";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { isPublicUrl, publicDomainOf } from "../../analytics/public-domain";
+import { plainAiAnswerText } from "../../client/ai-answer-text";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import {
   buildPageEvidenceView,
@@ -115,7 +116,11 @@ export function buildKnowledgeAiFragment(
         // строкой: разбивка по страницам иначе оставляет её на одном листе, а
         // ответ начинается на следующем — и текст читается как утверждение
         // отчёта, без указания, чей это ответ.
-        const body = `${answerCaption(e)} ${String(e.snippet ?? "").trim()}`.trim();
+        // Разметка снимается перед укладкой, а не после: `packSentencesNoTruncate`
+        // режет по границам предложений, и в размеченном ответе разрыв
+        // приходился между предложением и его сноской — буллет начинался с
+        // «[2]», а звёздочки жирного доезжали до бумаги.
+        const body = `${answerCaption(e)} ${plainAiAnswerText(e.snippet)}`.trim();
         // Метка ставится **после** укладки: на продолжениях её иначе нет, и со
         // второй страницы чужой материал читается как материал о субъекте.
         return packSentencesNoTruncate(body, answerBudget).map(mark);
