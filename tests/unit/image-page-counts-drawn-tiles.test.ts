@@ -274,6 +274,31 @@ describe("домены не показанных строк выводятся �
   });
 });
 
+describe("страница без плиток, но с негативом", () => {
+  it("заголовок-вывод не выбрасывается", () => {
+    /*
+     * Пункт BJ. Заголовок строился при `shownOnGrid > 0 || adverseTotal > 0`,
+     * но `shownOnGrid === 0` уводит слайд в ветку `VISUAL_ASSET_UNAVAILABLE`,
+     * которая `title` не передавала вовсе. Второй дизъюнкт был недостижим:
+     * всякий раз, когда он единственный истинный, вычисленный заголовок молча
+     * отбрасывался — и самый заметный элемент страницы молчал там, где новость
+     * тяжелее всего.
+     */
+    const notShown = [
+      missed(adverseRow, "http_403"),
+      missed(adverseRow2, "http_500"),
+      missed(plainRows[0]!, "network"),
+    ];
+    const slide = imagesPages({
+      p14_ru_images_1: gridMeta("p14_ru_images_1", [], notShown),
+    }).get("p14_ru_images_1");
+
+    expect(slide?.title).toMatch(/ведут на негативные источники/u);
+    // Статус по-прежнему несёт число — заголовок его не подменяет.
+    expect(sidebarText(slide)).toMatch(/2/u);
+  });
+});
+
 describe("обрезка съедает перечисление источников, а не сигнал", () => {
   it("длинная строка сохраняет фразу о негативе", () => {
     const reasons: PreviewFailureReason[] = [
