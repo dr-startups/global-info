@@ -85,9 +85,11 @@ describe("исход шага выводится из состояния джо�
     expect(out).toMatchObject({ kind: "failed", retryable: false });
   });
 
-  it("отмена прогона пропускает шаг, а не роняет его", () => {
-    expect(outcomeFromJob(STEP, job(), job({ cancelRequested: true }), NOW).kind).toBe("skipped");
-    expect(outcomeFromJob(STEP, job(), job({ stage: "CANCELLED" }), NOW).kind).toBe("skipped");
+  it("пауза прогона останавливает шаг, сохраняя место остановки", () => {
+    // `skipped` считался улаженным состоянием и каскадом уносил конвейер в
+    // «всё готово»; отказ конвейер останавливает и оставляет что возобновлять.
+    expect(outcomeFromJob(STEP, job(), job({ cancelRequested: true }), NOW).kind).toBe("failed");
+    expect(outcomeFromJob(STEP, job(), job({ stage: "CANCELLED" }), NOW).kind).toBe("failed");
   });
 
   it("готовый отчёт закрывает шаг", () => {

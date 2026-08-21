@@ -431,6 +431,12 @@ export interface Dictionary {
     downloadPptx: string;
     downloadContactSheet: string;
     suggestionsGap: string;
+    /** Пауза идущего прогона: собранное сохраняется (шаг 0027). */
+    pause: string;
+    pausing: string;
+    pauseHint: string;
+    pauseConfirm: string;
+    pauseUnavailable: string;
     rebuild: string;
     rebuilding: string;
     rebuildHint: string;

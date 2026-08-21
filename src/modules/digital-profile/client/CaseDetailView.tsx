@@ -14,6 +14,7 @@ import {
   getOrionGoldenPrepareStatus,
   startUnifiedOrionCollection,
   recoverUnifiedOrionCollection,
+  pauseUnifiedCollection,
   rebuildUnifiedReport,
   retryUnifiedGptCopy,
   retryUnifiedEnrichmentSuggestionsTask,
@@ -82,6 +83,7 @@ export function CaseDetailView({
   const [auditing, setAuditing] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [retryingGptCopy, setRetryingGptCopy] = useState(false);
   const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
@@ -418,6 +420,40 @@ export function CaseDetailView({
     tError,
   ]);
 
+  /*
+   * Пауза — единственное действие, доступное посреди работы, поэтому оно не
+   * ждёт, пока освободятся остальные кнопки: смысл его именно в том, чтобы
+   * нажать его на идущем прогоне (шаг 0027).
+   */
+  const handlePauseRun = useCallback(async () => {
+    if (pausing) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.pauseAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.pauseUnavailable", {
+          reason: unifiedJob?.pauseBlockerReason ? ` (${unifiedJob.pauseBlockerReason})` : "",
+        }),
+      });
+      return;
+    }
+    const ok = window.confirm(t("unified.pauseConfirm"));
+    if (!ok) return;
+    setPausing(true);
+    setBanner(null);
+    try {
+      await pauseUnifiedCollection(caseId, jobId);
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setPausing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [pausing, caseId, unifiedJob, t, tError]);
+
   const handleRetryGptCopy = useCallback(async () => {
     if (auditing || recovering || rebuilding || retryingGptCopy) return;
     const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
@@ -644,9 +680,11 @@ export function CaseDetailView({
           onRetrySuggestions={handleRetrySuggestions}
           onPaidRecollection={handlePaidRecollection}
           onRebuildReport={handleRebuildReport}
+          onPauseRun={handlePauseRun}
           auditing={auditing}
           recovering={recovering}
           rebuilding={rebuilding}
+          pausing={pausing}
           unifiedJob={unifiedJob}
         />
       </Card>

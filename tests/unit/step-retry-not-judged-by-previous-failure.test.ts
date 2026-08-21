@@ -100,9 +100,13 @@ describe("вердикт прошлой попытки и исход новой"
     if (o.kind === "failed") expect(o.retryable).toBe(false);
   });
 
-  it("отмена остаётся отменой", () => {
-    const cancelled = job({ stage: "CANCELLED" });
-    expect(outcomeFromJob(step(), cancelled, cancelled, NOW).kind).toBe("skipped");
+  it("пауза останавливает шаг, а не пропускает его", () => {
+    // До шага 0027 отмена давала `skipped`. Пропуск считается улаженным
+    // состоянием: `completeStep` будит следующий шаг, тот тоже пропускается,
+    // и каскад `SKIPPED` уносил прогон в «всё готово» — возобновить паузу было
+    // бы нечем. Отказ конвейер останавливает и место остановки сохраняет.
+    const paused = job({ stage: "CANCELLED" });
+    expect(outcomeFromJob(step(), paused, paused, NOW).kind).toBe("failed");
   });
 
   it("перед новой попыткой повторяемый отказ джобы снимается", () => {

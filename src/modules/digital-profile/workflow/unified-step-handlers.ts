@@ -26,6 +26,28 @@ import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
 /**
+ * Исход шага приостановленного прогона.
+ *
+ * Пауза — решение оператора, и `skipped` для неё не годится: пропуск считается
+ * улаженным состоянием, `completeStep` будит следующий шаг, тот тоже
+ * пропускается — каскад до конца конвейера. Все строки `SKIPPED` дают
+ * `planResumeFromSteps` ответ `completed`, то есть возобновить паузу было бы
+ * нечем **никогда**, а собранное осталось бы оплаченным и недоступным.
+ *
+ * Отказ конвейер останавливает (`nextRunnableStep` возвращает `null` на
+ * `FAILED`) и оставляет «где мы остановились» отвечать местом остановки. Из
+ * шести состояний шага это единственное, которое умеет и то и другое. Слово
+ * `FAILED` внутреннее и клиенту не печатается; строка шага несёт код и текст,
+ * которые говорят, что произошло на самом деле.
+ */
+const PAUSED_OUTCOME: StepOutcome = {
+  kind: "failed",
+  code: "RUN_PAUSED",
+  message: "Прогон приостановлен оператором",
+  retryable: false,
+};
+
+/**
  * Что конечная стадия джобы значит для шага — **один** ответ на весь модуль.
  *
  * Раньше отвечали дважды. `outcomeFromJob` (после вызова тика) различал:
@@ -44,7 +66,7 @@ import type { StepOutcome, WorkflowStepRow } from "./step-types";
  * `null` — стадия не конечная, шагу есть что делать.
  */
 export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | null {
-  if (job.stage === "CANCELLED") return { kind: "skipped", reason: "Прогон отменён" };
+  if (job.stage === "CANCELLED") return PAUSED_OUTCOME;
 
   if (job.stage === "FAILED_TERMINAL") {
     return {
@@ -96,11 +118,9 @@ export function outcomeFromJob(
     };
   }
 
-  // Отмена запрошена, но тик ещё не успел перевести джобу в `CANCELLED`:
+  // Пауза запрошена, но тик ещё не успел перевести джобу в `CANCELLED`:
   // признак живёт на джобе, а не на стадии, поэтому спрашивается отдельно.
-  if (after.cancelRequested) {
-    return { kind: "skipped", reason: "Прогон отменён" };
-  }
+  if (after.cancelRequested) return PAUSED_OUTCOME;
 
   const stopped = outcomeForStoppedJob(after);
   if (stopped) return stopped;

@@ -493,6 +493,13 @@ export const en: Dictionary = {
     downloadPptx: "Download PPTX",
     downloadContactSheet: "Download contact sheet",
     suggestionsGap: "Suggestions: no result received",
+    pause: "Pause collection",
+    pausing: "Pausing…",
+    pauseHint:
+      "The run stops after the current step. Collected data is kept: you can resume from where it stopped or build the report from what is already collected.",
+    pauseConfirm:
+      "The run will be paused after the current step. Collected data is kept and paid collection is not restarted. Continue?",
+    pauseUnavailable: "Pause unavailable{reason}",
     rebuild: "Rebuild the report",
     rebuilding: "Rebuilding the report…",
     rebuildHint:

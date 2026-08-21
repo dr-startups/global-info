@@ -1408,6 +1408,9 @@ export type UnifiedCollectionJobStatus = {
   /** Server-side eligibility for «Пересобрать отчёт» (analytics+render only, no paid collection). */
   rebuildAllowed?: boolean;
   rebuildBlockerReason?: string | null;
+  /** Пауза идущего прогона: собранное остаётся, сбор продолжается с места остановки. */
+  pauseAllowed?: boolean;
+  pauseBlockerReason?: string | null;
   /** REMEDIATION §4.3 — selective GPT stage-2 FALLBACK_* retry (no paid collection). */
   gptCopyRetryAllowed?: boolean;
   gptCopyRetryBlockerReason?: string | null;
@@ -1521,6 +1524,29 @@ export function rebuildUnifiedReport(
   // Rebuild only re-runs analytics/assembly/render from persisted composite —
   // never POST /unified-collection (paid) and never /recover.
   return request(`/cases/${caseId}/unified-collection/rebuild-report`, {
+    method: "POST",
+    body: JSON.stringify({ jobId }),
+  });
+}
+
+/**
+ * Просит идущий прогон остановиться.
+ *
+ * Пауза — не отмена: собранное остаётся, прогон возобновляется с места
+ * остановки, и отчёт из уже собранного собрать можно. Денег не тратит —
+ * никакого `POST /unified-collection`.
+ */
+export function pauseUnifiedCollection(
+  caseId: string,
+  jobId: string
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+}> {
+  return request(`/cases/${caseId}/unified-collection/pause`, {
     method: "POST",
     body: JSON.stringify({ jobId }),
   });

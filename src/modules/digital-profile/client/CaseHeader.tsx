@@ -162,9 +162,11 @@ export function CaseHeader({
   onRetrySuggestions,
   onPaidRecollection,
   onRebuildReport,
+  onPauseRun,
   auditing,
   recovering,
   rebuilding,
+  pausing,
   unifiedJob,
 }: {
   caseDetail: CaseDetail;
@@ -174,9 +176,12 @@ export function CaseHeader({
   onPaidRecollection?: () => void;
   /** Re-run analytics/assembly/render from the persisted composite (no paid collection). */
   onRebuildReport?: () => void;
+  /** Пауза идущего прогона: собранное сохраняется (шаг 0027). */
+  onPauseRun?: () => void;
   auditing: boolean;
   recovering: boolean;
   rebuilding?: boolean;
+  pausing?: boolean;
   /** Current unified job (not legacy AgentRun). */
   unifiedJob: UnifiedCollectionJobStatus | null;
 }) {
@@ -297,6 +302,26 @@ export function CaseHeader({
               {unifiedJob.stage === "REPORT_READY" ||
               unifiedJob.stage === "COMPLETED_PARTIAL" ? (
                 <UnifiedCanonicalDownloadButtons caseId={caseDetail.id} job={unifiedJob} />
+              ) : null}
+              {/*
+                * Пауза стоит рядом с остальными действиями прогона, но не
+                * ждёт их: её нажимают именно на идущем сборе, когда все
+                * прочие кнопки заблокированы работой (шаг 0027).
+                */}
+              {can("agents.run") && unifiedJob.pauseAllowed && onPauseRun ? (
+                <div className="dp-inline" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="dp-btn"
+                    onClick={onPauseRun}
+                    disabled={Boolean(pausing)}
+                    title={t("unified.pauseHint")}
+                    data-testid="unified-pause-cta"
+                  >
+                    {pausing ? <span className="dp-spinner" /> : null}
+                    {pausing ? t("unified.pausing") : t("unified.pause")}
+                  </button>
+                </div>
               ) : null}
               {can("agents.run") && unifiedJob.rebuildAllowed && onRebuildReport ? (
                 <div className="dp-inline" style={{ marginTop: 8 }}>

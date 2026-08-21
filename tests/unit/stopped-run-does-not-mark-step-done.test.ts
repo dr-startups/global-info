@@ -113,11 +113,16 @@ describe("шаг на остановленном прогоне", () => {
     expect(outcome.kind).toBe("done");
   });
 
-  it("отменённый прогон шаг пропускает, а не засчитывает", async () => {
+  it("приостановленный прогон шаг останавливает, а не засчитывает", async () => {
+    // Отмена значит паузу (решение владельца 21.08), поэтому шаг обязан
+    // сохранить место остановки: пропуск считается улаженным и уносит прогон
+    // в «всё готово» (шаг 0027).
     const outcome = await outcomeFor("REPORT_PREPARE", { ...stoppedJob(), stage: "CANCELLED" });
 
     expect(tick).not.toHaveBeenCalled();
-    expect(outcome.kind).toBe("skipped");
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") throw new Error("недостижимо");
+    expect(outcome.code).toBe("RUN_PAUSED");
   });
 
   it("кнопка «Возобновить» переживает отказанную пересборку", async () => {

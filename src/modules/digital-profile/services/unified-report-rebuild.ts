@@ -256,7 +256,10 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
     (job.stage === "REPORT_READY" ||
       job.stage === "COMPLETED_PARTIAL" ||
       job.stage === "FAILED_RETRYABLE" ||
-      job.stage === "FAILED_TERMINAL") &&
+      job.stage === "FAILED_TERMINAL" ||
+      // Пауза — тоже «работа не идёт»: собранное цело, и собрать из него отчёт
+      // оператор вправе, не доплачивая за новый сбор (шаг 0027).
+      job.stage === "CANCELLED") &&
     job.status !== "RUNNING";
   if (!settled) {
     return { rebuildAllowed: false, rebuildBlockerReason: "JOB_NOT_COMPLETED" };

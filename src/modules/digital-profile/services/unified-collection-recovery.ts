@@ -156,13 +156,17 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
       recoveryReason: null,
     };
   }
-  if (job.stage === "CANCELLED" || job.status === "CANCELLED") {
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "JOB_CANCELLED",
-      recoveryReason: null,
-    };
-  }
+  /*
+   * Пауза восстановлению не мешает.
+   *
+   * Отмена значит «приостановить», а не «выбросить»: решение владельца 21.08.
+   * Пока здесь стоял отказ `JOB_CANCELLED`, приостановленный прогон оставался
+   * без единой бесплатной кнопки, и оплаченный сбор становился недоступен —
+   * ровно то, что запрещает правило о сохранности оплаченной работы.
+   *
+   * Признак паузы снимается при возобновлении (ниже, в патче джобы): иначе
+   * первый же тик остановил бы прогон снова.
+   */
   if (!input.ignoreLease && leaseIsActive(job, now)) {
     const ownLease =
       input.leaseOwnerId && job.leaseOwnerId && job.leaseOwnerId === input.leaseOwnerId;
@@ -583,6 +587,9 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       await patchUnifiedCollectionJob(job.caseId, {
         stage: nextStage,
         status: "WAITING",
+        // Возобновление снимает паузу: иначе первый же тик остановил бы прогон
+        // снова, и кнопка «Продолжить» ничего бы не значила (шаг 0027).
+        cancelRequested: false,
         baseReportRunId,
         resumeCheckpoint,
         // Ingest recovery must rebuild composite/analytics/render after observations land.
