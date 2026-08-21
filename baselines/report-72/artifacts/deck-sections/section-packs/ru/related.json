@@ -11,7 +11,7 @@
   "promptVersion": "ru-related-analysis-v4",
   "contentHash": "sha256:50d9bd31424efc6a98f1ee3099668a255af9fb9dfaa90d34ea3c58e1217d43a8",
   "inputHash": "sha256:dc4b21c340a92b0dbcda08bfb79f8521394c4be628c36633b0c652ec51a978e9:a01f4089fef7ecf3",
-  "generatedAt": "2026-08-21T00:38:02.340Z",
+  "generatedAt": "2026-08-21T01:10:13.919Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],

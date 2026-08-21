@@ -11,7 +11,7 @@
   "promptVersion": "risk-matrix-deterministic-v2",
   "contentHash": "sha256:39a948257e17ccc3b06b91a4f3699609a248d54a1f3d15cc9b278def967e7ae4",
   "inputHash": "sha256:6c59220f6deff8603c5871b4fbb99e5cdc8dc4cc518d9832ec375f3fe7ded111:c94bbd25243767aa",
-  "generatedAt": "2026-08-21T00:38:02.296Z",
+  "generatedAt": "2026-08-21T01:10:13.875Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [

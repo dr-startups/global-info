@@ -11,7 +11,7 @@
   "promptVersion": "uae-regional-summary-v4",
   "contentHash": "sha256:85eea29f48e532b608c3866c1ce17de96a33a9ae3dc2ec3e84ff8600b634d3ac",
   "inputHash": "sha256:ea0caa501e8dd331b17326684529f48eefcf8422b5905c4fc40322936ab950ea:34c806b75f673376",
-  "generatedAt": "2026-08-21T00:38:02.345Z",
+  "generatedAt": "2026-08-21T01:10:13.924Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [

@@ -22,6 +22,15 @@ export type LinkUsage =
   | "заголовок из выдачи"
   /** Материал в отчёте есть, но без цитаты — строкой таблицы или счётчиком. */
   | "без цитаты"
+  /**
+   * Своих слов в отчёте нет, но страница стоит на этом наблюдении.
+   *
+   * Так выглядит материал, свёрнутый в сюжет: страница печатает число
+   * публикаций и перечень доменов, а самой цитаты и заголовка на ней нет.
+   * Это **не потеря** — на живом прогоне 20.08 трасса объявила «не дошла» 42
+   * ссылки из 80, и по деке проверено, что в отчёте есть все 42.
+   */
+  | "в составе страницы"
   /** Материала в отчёте нет вовсе. */
   | "не дошла";
 
@@ -50,6 +59,8 @@ export type LinkUsageTrace = {
     quotedFromPage: number;
     quotedFromTitle: number;
     withoutQuote: number;
+    /** Учтён страницей, но своих слов в отчёте не имеет. Это не потеря. */
+    countedOnly: number;
     missing: number;
   };
   rows: LinkUsageRow[];
@@ -61,6 +72,12 @@ type TracedSlide = {
   narrative?: string;
   bullets?: string[];
   table?: { rows?: string[][] } | null;
+  /**
+   * Основания страницы. Признак точный: список не зависит от того, как сложился
+   * её текст, — в отличие от поиска по словам, который материал, вошедший
+   * числом и доменом, не находит вовсе.
+   */
+  evidenceRefs?: readonly string[];
 };
 
 function slideText(slide: TracedSlide): string {
@@ -89,6 +106,7 @@ export function buildLinkUsageTrace(input: {
   const texts = input.slides.map((s) => ({
     slideKey: s.slideKey ?? "",
     text: key(slideText(s)),
+    refs: new Set(s.evidenceRefs ?? []),
   }));
 
   const rows: LinkUsageRow[] = [];
@@ -105,13 +123,19 @@ export function buildLinkUsageTrace(input: {
     const urlNeedle = e.url ? key(e.url).replace(/^https?:\/\/(www\.)?/u, "").slice(0, 40) : "";
 
     const slides: string[] = [];
+    const countedOn: string[] = [];
     let quotedPage = false;
     let quotedTitle = false;
     for (const s of texts) {
       const hasQuote = quoteNeedle.length >= 20 && s.text.includes(quoteNeedle);
       const hasTitle = titleNeedle.length >= 12 && s.text.includes(titleNeedle);
       const hasUrl = urlNeedle.length >= 12 && s.text.includes(urlNeedle);
-      if (!hasQuote && !hasTitle && !hasUrl) continue;
+      if (!hasQuote && !hasTitle && !hasUrl) {
+        // Своих слов на странице нет — но страница может стоять на этом
+        // наблюдении, и тогда материал учтён, а не потерян.
+        if (s.refs.has(ref)) countedOn.push(s.slideKey);
+        continue;
+      }
       slides.push(s.slideKey);
       quotedPage = quotedPage || hasQuote;
       quotedTitle = quotedTitle || hasTitle;
@@ -123,7 +147,9 @@ export function buildLinkUsageTrace(input: {
         ? "заголовок из выдачи"
         : slides.length > 0
           ? "без цитаты"
-          : "не дошла";
+          : countedOn.length > 0
+            ? "в составе страницы"
+            : "не дошла";
 
     rows.push({
       evidenceRef: ref,
@@ -136,7 +162,7 @@ export function buildLinkUsageTrace(input: {
       ...(pageQuote ? { pageQuote } : {}),
       ...(serpTitle ? { serpTitle } : {}),
       usage,
-      slides,
+      slides: slides.length > 0 ? slides : countedOn,
     });
   }
 
@@ -149,6 +175,7 @@ export function buildLinkUsageTrace(input: {
       quotedFromPage: count("цитата со страницы"),
       quotedFromTitle: count("заголовок из выдачи"),
       withoutQuote: count("без цитаты"),
+      countedOnly: count("в составе страницы"),
       missing: count("не дошла"),
     },
     rows,
@@ -161,6 +188,7 @@ export function linkUsageLogLine(trace: LinkUsageTrace): string {
   return (
     `[digital-profile][ссылки→отчёт] разобрано ${s.total}: ` +
     `цитата со страницы — ${s.quotedFromPage}, заголовок — ${s.quotedFromTitle}, ` +
-    `без цитаты — ${s.withoutQuote}, не дошло — ${s.missing}`
+    `без цитаты — ${s.withoutQuote}, в составе страницы — ${s.countedOnly}, ` +
+    `не дошло — ${s.missing}`
   );
 }

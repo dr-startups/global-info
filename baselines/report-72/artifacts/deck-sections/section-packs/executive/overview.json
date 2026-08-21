@@ -11,7 +11,7 @@
   "promptVersion": "digital-profile-overview-deterministic-v1",
   "contentHash": "sha256:1eacd791c2440f7fc20045ffea0415705b4a390aab5bbc476b4991b99d6e636d",
   "inputHash": "sha256:3c34d67171cc0486f5c706c071e253770bfd3261cae14577103d477503fef180:df4c5b7b7245ce05",
-  "generatedAt": "2026-08-21T00:38:02.298Z",
+  "generatedAt": "2026-08-21T01:10:13.877Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [

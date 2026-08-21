@@ -45,6 +45,15 @@ const evidenceIndex = {
     title: "Биография Алишера Бурхановича Усманова",
     readVerdictTone: "supportive",
   },
+  "inventory:counted-only": {
+    url: "https://msk1.ru/text/world/2026/02/02/76244926/",
+    domain: "msk1.ru",
+    rank: 7,
+    region: "RU",
+    title: "Миллиардер засветился в файлах Эпштейна",
+    readVerdictTone: "adverse",
+    verdictTheme: "Упоминание в файлах Эпштейна",
+  },
   "inventory:missing": {
     url: "https://example.org/nothing",
     domain: "example.org",
@@ -66,6 +75,13 @@ const slides = [
     bullets: [`«Криминальные / судебные материалы»\n«${QUOTE}» — источник ru.wikipedia.org`],
   },
   {
+    slideKey: "p03_executive",
+    // Сюжет свёрнут в число и перечень доменов: своих слов у материала на
+    // странице нет, но страница стоит на нём — это и есть его основание.
+    bullets: ["По сюжету прочитано 9 публикаций, 9 из них нежелательных."],
+    evidenceRefs: ["inventory:counted-only"],
+  },
+  {
     slideKey: "p09_ru_serp_table",
     table: {
       rows: [
@@ -81,7 +97,7 @@ describe("след использования ссылок", () => {
 
   it("в след попадают только ссылки с решением модели", () => {
     expect(trace.rows.map((r) => r.evidenceRef)).not.toContain("inventory:not-judged");
-    expect(trace.summary.total).toBe(4);
+    expect(trace.summary.total).toBe(5);
   });
 
   it("цитата со страницы узнаётся", () => {
@@ -102,6 +118,19 @@ describe("след использования ссылок", () => {
     expect(row.usage).toBe("без цитаты");
   });
 
+  it("материал, вошедший числом, — не потеря", () => {
+    /*
+     * Живой прогон 20.08: трасса объявила «не дошла» 42 ссылки из 80, среди них
+     * разбор файлов Эпштейна с прочитанной цитатой. По деке проверено, что все
+     * 42 в отчёте есть — свёрнуты в сюжет с числом публикаций и перечнем
+     * источников. Сводка читалась как отчёт о потере, и на разборе на неё уже
+     * попались.
+     */
+    const row = trace.rows.find((r) => r.evidenceRef === "inventory:counted-only")!;
+    expect(row.usage).toBe("в составе страницы");
+    expect(row.slides).toContain("p03_executive");
+  });
+
   it("не дошедшая до отчёта ссылка названа прямо", () => {
     const row = trace.rows.find((r) => r.evidenceRef === "inventory:missing")!;
     expect(row.usage).toBe("не дошла");
@@ -110,8 +139,13 @@ describe("след использования ссылок", () => {
 
   it("свод сходится с построчным разбором", () => {
     const s = trace.summary;
-    expect(s.quotedFromPage + s.quotedFromTitle + s.withoutQuote + s.missing).toBe(s.total);
-    expect(linkUsageLogLine(trace)).toContain("разобрано 4");
+    expect(
+      s.quotedFromPage + s.quotedFromTitle + s.withoutQuote + s.countedOnly + s.missing
+    ).toBe(s.total);
+    expect(linkUsageLogLine(trace)).toContain("разобрано 5");
+    // Потерей считается только последнее состояние: «в составе страницы» —
+    // это учтено, а не потеряно.
+    expect(linkUsageLogLine(trace)).toContain("в составе страницы — 1");
     expect(linkUsageLogLine(trace)).toContain("не дошло — 1");
   });
 

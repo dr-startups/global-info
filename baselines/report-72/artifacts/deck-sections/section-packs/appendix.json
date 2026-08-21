@@ -11,7 +11,7 @@
   "promptVersion": "appendix-deterministic-v1",
   "contentHash": "sha256:55aab50f9c2d03ed4286e6af27a6e3c1321423f545b679d607999bcaf93a3574",
   "inputHash": "sha256:30cf23cfc86992a82904cfcc9184826a21a4fcac3e6c399306bbc1547dbe8fb6:b1055881e262c383",
-  "generatedAt": "2026-08-21T00:38:02.356Z",
+  "generatedAt": "2026-08-21T01:10:13.935Z",
   "required": false,
   "status": "READY",
   "sourceFindingIds": [
