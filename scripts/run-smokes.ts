@@ -30,9 +30,9 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { findPythonInterpreter } from "./lib/python";
 
-type Tier = "offline" | "full";
+export type Tier = "offline" | "full";
 
-type Smoke = {
+export type Smoke = {
   name: string;
   /** Команда и аргументы. `PYTHON` подставляется найденным интерпретатором. */
   argv: string[];
@@ -44,7 +44,12 @@ type Smoke = {
 /** Один прогон не должен висеть вечно: CI-таймаут не объясняет, кто именно встал. */
 const SMOKE_TIMEOUT_MS = 10 * 60 * 1000;
 
-const SMOKES: Smoke[] = [
+/**
+ * Список смоков — единственный. Он же читается проверкой «офлайн-контур не
+ * требует Python»: копия списка рядом разошлась бы с настоящим на первом же
+ * новом смоке.
+ */
+export const SMOKES: Smoke[] = [
   {
     name: "report-quality-summary",
     argv: ["tsx", "--test", "scripts/smoke-report-quality-summary.ts"],

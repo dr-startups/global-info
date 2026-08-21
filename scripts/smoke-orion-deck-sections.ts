@@ -54,6 +54,7 @@ import type {
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
 import { printedIntroSentences } from "./lib/search-table-intro";
+import { findPythonInterpreter } from "./lib/python";
 
 const inputs = loadReport72DeckInputs();
 
@@ -671,16 +672,30 @@ describe("rendered artifacts parity", () => {
   const rendered =
     existsSync(join(root, "rendered-client.pptx")) && existsSync(join(root, "rendered-client.pdf"));
   const parityName = "PDF/PPTX/PNG have the same pageCount (report-72 deck)";
+  /*
+   * Причин не выполнить проверку две, и они разные: нет отрендеренных
+   * артефактов и нет интерпретатора. Сводка обязана их различать, а не
+   * говорить «пропущено» одинаково.
+   *
+   * До этого интерпретатор звался зашитой строкой мимо общего поиска, и на
+   * машине без Python подтест падал — вместе со всем офлайн-контуром, который
+   * обязан проходить без рендерера.
+   */
+  const python = findPythonInterpreter();
   if (!rendered) {
     skippedForAssets.push(`${parityName} — нет отрендеренных артефактов`);
+  } else if (!python) {
+    skippedForAssets.push(`${parityName} — интерпретатор Python не найден`);
   }
-  (rendered ? it : it.skip)(parityName, () => {
+  (rendered && python ? it : it.skip)(parityName, () => {
     const pptx = join(root, "rendered-client.pptx");
     const pdf = join(root, "rendered-client.pdf");
     const pages = join(root, "pages-png");
     const out = execFileSync(
-      // `python` есть не везде; тот же дефект чинился в двух других смоках.
-      process.env.PYTHON || "python3",
+      // Интерпретатор — из общего поиска (`scripts/lib/python.ts`); зашитое имя
+      // было третьим ответом на тот же вопрос и разошлось с двумя другими.
+      // Не `null`: подтест не заводится, пока интерпретатора нет.
+      python!,
       [
         "-X",
         "utf8",

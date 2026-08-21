@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { pythonInterpreter } from "./lib/python";
+import { findPythonInterpreter } from "./lib/python";
 import {
   evaluateClientText,
   getClientTextContract,
@@ -111,7 +111,24 @@ describe("client-text-contract §6.1", () => {
     );
   });
 
-  it("TS ↔ Python evaluateClientText parity on fixtures", () => {
+  /*
+   * Сверка двух реализаций без Python не выполняется — и это «не проверяли», а
+   * не «сломано». `CLAUDE.md` требует, чтобы офлайн-контур проходил на чистой
+   * машине без рендерера; пока подтест звал бросающий `pythonInterpreter()`,
+   * весь смок падал вместе с ним, и обещание не выполнялось.
+   *
+   * Пропуск объявляется строкой, которую читает сводка раннера: молчаливый
+   * пропуск неотличим от выполненной проверки.
+   */
+  const python = findPythonInterpreter();
+  // Имя объявленного пропуска обязано начинаться с имени теста: раннер по нему
+  // вытесняет штатный маркер node, иначе одна невыполненная проверка считается
+  // дважды.
+  const parityName = "TS ↔ Python evaluateClientText parity on fixtures";
+  if (!python) {
+    console.log(`# SKIP ${parityName} — интерпретатор Python не найден`);
+  }
+  (python ? it : it.skip)(parityName, () => {
     const fixtures: Array<{ text: string; surface: "body" | "sidebar" }> = [
       { text: "Чистый клиентский вывод о субъекте.", surface: "body" },
       { text: "pipeline datasetId leaked", surface: "body" },
@@ -125,7 +142,7 @@ describe("client-text-contract §6.1", () => {
     ];
 
     const py = spawnSync(
-      pythonInterpreter(),
+      python!,
       [
         join(ROOT, "scripts/smoke-client-text-contract.py"),
         "--json",
