@@ -337,6 +337,28 @@ export function isComposedSummaryPack(pack: SectionPackV2): boolean {
   );
 }
 
+/**
+ * Почему модель не переписывает пак — **один ответ на весь конвейер**.
+ *
+ * Причин две, и обе давние: признак фрагмента (`prompt.deterministic`) и признак
+ * пака (`isComposedSummaryPack`). Спрашивали их порознь: стадия 2 знала обе,
+ * редактор деки — только первую. Поэтому пак резюме, который стадия 2 не трогает
+ * намеренно, редактор отдавал модели целиком.
+ *
+ * Цена видна на живом отчёте 22.08: модель переписала название темы, которое
+ * приходит данными и печатается ещё на трёх страницах, и документ разошёлся сам
+ * с собой — на стр. 3 одна тема названа дважды по-разному (пункт CW).
+ *
+ * `null` — переписывать можно.
+ */
+export type PackRewriteBlock = "deterministic-fragment" | "composed-summary";
+
+export function packRewriteBlock(pack: SectionPackV2): PackRewriteBlock | null {
+  if (getFragmentPrompt(pack.fragmentKey).deterministic) return "deterministic-fragment";
+  if (isComposedSummaryPack(pack)) return "composed-summary";
+  return null;
+}
+
 /** Offline metric for §7.5 — field fill + length-vs-budget on data slides. */
 export type SlideCopyDensityStats = {
   dataSlides: number;
@@ -889,17 +911,13 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       rejectedFields: [],
     };
 
-    if (prompt.deterministic) {
+    // Причина спрашивается одной функцией: у редактора деки тот же вопрос, и
+    // пока ответов было два, он знал только половину (шаг 0028). Пак при этом
+    // не штампуется вовсе, чтобы остаться байт в байт прежним.
+    const rewriteBlock = packRewriteBlock(pack);
+    if (rewriteBlock) {
       report.status = "SKIPPED_DETERMINISTIC";
-      byKey.set(pack.fragmentKey, { pack, report });
-      continue;
-    }
-    // Тот же случай: текст уже написан детерминированно, только признак не у
-    // фрагмента целиком, а у пака — составленное резюме бывает не в каждом
-    // прогоне. Пак не штампуется вовсе, чтобы остаться байт в байт прежним.
-    if (isComposedSummaryPack(pack)) {
-      report.status = "SKIPPED_DETERMINISTIC";
-      report.detail = "composed-summary";
+      if (rewriteBlock === "composed-summary") report.detail = "composed-summary";
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }

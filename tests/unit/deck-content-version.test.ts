@@ -51,9 +51,9 @@ const BUILDERS_DIR = join(SECTIONS_DIR, "fragment-builders");
  * `deck-sections/`, но решает, какими словами напечатан уровень, — правка в нём
  * меняет пакеты секций ровно так же, как правка построителя.
  *
- * `run-deck-build.ts`, `llm-slide-copy.ts`, `gpt-deck-composer.ts` и
+ * `run-deck-build.ts`, `llm-slide-copy.ts`, `gpt-deck-composer.ts`, `gpt-deck-editor.ts` и
  * `../gpt/client-payload-labels.ts` — по той же причине: первый решает тон
- * бейджа и склейку текста слайда, остальные три переписывают копию страниц
+ * бейджа и склейку текста слайда, остальные четыре переписывают копию страниц
  * моделью и задают словарь, которым модель отвечает.
  *
  * `../client/ai-answer-text.ts` — какими словами напечатан ответ поискового ИИ:
@@ -93,6 +93,10 @@ const EXTRA_SOURCES = [
   "run-deck-build.ts",
   "llm-slide-copy.ts",
   "gpt-deck-composer.ts",
+  // Редактор деки переписывает клиентский текст поверх готовых паков, а в
+  // отпечаток не входил — рядом со своим же композером. Правка 22.08, снявшая
+  // с него пак резюме, прошла бы мимо сторожа, и кэш отдал бы прежний текст.
+  "gpt-deck-editor.ts",
   "../gpt/client-payload-labels.ts",
   "../../report/i18n/plural-ru.ts",
   "../client/client-address.ts",
