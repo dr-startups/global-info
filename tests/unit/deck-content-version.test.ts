@@ -83,6 +83,11 @@ const EXTRA_SOURCES = [
   "continuation-slide.ts",
   "deck-assembler.ts",
   "measured-bullet-fit.ts",
+  // Укладка резюме по страницам формирует клиентский текст (заголовки частей,
+  // нарезка тем), но в отпечаток не входила: правка 22.08, снявшая повтор
+  // заголовка на странице-продолжении, прошла бы мимо сторожа, и кэш паков
+  // отдал бы прежний текст.
+  "semantic-summary-pagination.ts",
   "template-registry.ts",
   "../client/risk-scale.ts",
   "run-deck-build.ts",

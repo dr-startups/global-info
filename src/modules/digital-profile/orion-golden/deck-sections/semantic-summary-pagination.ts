@@ -445,6 +445,32 @@ export function countClientTextTruncations(
  * Overview keeps overall + scope narrative and up to 3 lead theme blocks;
  * remaining blocks go to adjacent continuation pages (never dropped).
  */
+/**
+ * Заголовок не повторяется на соседних блоках одной страницы.
+ *
+ * Длинная тема нарезается на части, и каждая после первой получает
+ * «<тема> (продолжение)». Заголовок нужен, когда часть оторвана от начала темы:
+ * без него читатель страницы-продолжения не поймёт, о чём блок. Но две части,
+ * попавшие на одну страницу подряд, печатают его дважды — на живых отчётах
+ * 21–22.08 это видно на стр. 5 обоих: «Удары по складам Wildberries и риски для
+ * бизнеса (продолжение).» и «Руководство боксерскими организациями и конфликты
+ * вокруг IBA (продолжение).» стоят по два раза (пункт CX).
+ *
+ * Снимается только **повтор подряд**: первая часть темы на странице заголовок
+ * несёт всегда, иначе блок теряет связь со своей темой. Текст от этого только
+ * короче, поэтому бюджет буллета не задет — он и так считался по самому
+ * длинному варианту заголовка.
+ */
+function withoutRepeatedHeading(page: readonly SemanticBlock[]): SemanticBlock[] {
+  let previous: string | undefined;
+  return page.map((block) => {
+    const heading = (block.heading ?? "").trim();
+    const repeated = Boolean(heading) && heading === previous;
+    previous = heading || undefined;
+    return repeated ? { ...block, heading: undefined } : block;
+  });
+}
+
 export function paginateComposedClientSummary(
   summary: ComposedClientSummary,
   opts?: { leadThemeCount?: number }
@@ -522,7 +548,10 @@ export function paginateComposedClientSummary(
     );
   }
 
-  const continuationPages = packContinuationPages([...narrativeOverflow, ...rest], budgets.bullet);
+  const continuationPages = packContinuationPages(
+    [...narrativeOverflow, ...rest],
+    budgets.bullet
+  ).map(withoutRepeatedHeading);
 
   const preserved =
     1 + // overall+scope source

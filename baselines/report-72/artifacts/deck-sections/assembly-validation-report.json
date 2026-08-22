@@ -1,6 +1,7 @@
 {
   "passed": true,
   "issues": [],
+  "notes": [],
   "checks": {
     "requiredSectionsPresent": true,
     "sectionOrderCorrect": true,
