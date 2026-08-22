@@ -44,6 +44,7 @@ from .common import (
     _wrapped_line_count,
     font_line_step_emu,
     measure_text_height,
+    record_bullet_measure,
     record_text_layout,
 )
 from .layout_cleeq import (
@@ -63,11 +64,17 @@ from .visual import (
     _tone_value_color,
 )
 
+# Ниже этого остатка `ctx.body` всё равно нарисует абзац — у него пол `avail`
+# в 200 000 EMU. Значит, решение «места больше нет» принимается здесь: одна
+# строка тела с подложкой коробки стоит примерно столько.
+_NARRATIVE_MIN_ROOM = 240_000
+
+
 def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:
     ctx.light_bg()
     y = ctx.title(title, 240000, NAVY, FS_SECTION)
     raw_narrative = str(slide.get("narrative") or "")
-    paras = [p.strip() for p in re.split(r"\n+", raw_narrative) if p.strip()][:3]
+    paras = [p.strip() for p in re.split(r"\n+", raw_narrative) if p.strip()]
     if not paras and raw_narrative:
         # Split long single paragraph into ~3 chunks on sentence boundaries.
         parts = re.split(r"(?<=[.!?])\s+", _safe(raw_narrative))
@@ -80,11 +87,9 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
                 buf = part
             else:
                 buf = trial
-            if len(paras) >= 3:
-                break
-        if buf and len(paras) < 3:
+        if buf:
             paras.append(buf)
-        paras = paras[:3] or [_clip_words(_safe(raw_narrative), 420)]
+        paras = paras or [_clip_words(_safe(raw_narrative), 420)]
     # Резюме в языке cleeq: ключевые цифры ведут страницу, всё остальное лежит
     # на одной белой сцене — лид, темы, следующий шаг. Прежняя раскладка (текст
     # слева, метрики справа, две карточки внизу) держала одно и то же
@@ -98,10 +103,35 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
         )
         y = metrics_bottom + 140_000
     content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None, corner_marks=True)
+    dropped_paras = 0
     for idx, para in enumerate(paras):
         # PDF-36 D.3 — высоту считает мерка, а не предварительная обрезка по
         # знакам: 420 знаков морили строку §7.2 и выводы лида.
+        #
+        # Сколько абзацев показать, решено на стороне TS: там нарратив режется
+        # по трём, а остаток переезжает блоками на ту же страницу. Здесь стоял
+        # второй срез `[:3]` — и он молча выбрасывал **четвёртый** абзац,
+        # которым построитель приписывает строку фактов: долю негатива со своим
+        # знаменателем. Тот же второй ответ, что стоил матрице карточки, а
+        # темам — среза `[:2]` десятью строками ниже. Рисуем всё, что дали.
+        if CONTENT_BOTTOM - y < _NARRATIVE_MIN_ROOM:
+            # Пол `avail` в `ctx.body` — 200 000 EMU: текст будет нарисован даже
+            # там, где места нет, то есть за нижней границей полосы. Останавливаться
+            # надо до этого и называть остаток потерей, а не после и молча.
+            dropped_paras = len(paras) - idx
+            break
         y = ctx.body(_safe(para), y, max_h=1_100_000, bold=idx == 0) + 30_000
+    if dropped_paras:
+        record_bullet_measure(
+            slide_key=ctx.slide_key,
+            page=ctx.page,
+            available_height=max(0, CONTENT_BOTTOM - y),
+            max_items=len(paras),
+            item_heights=[],
+            kept_items=len(paras) - dropped_paras,
+            dropped_bullets=dropped_paras,
+            dropped_lines=0,
+        )
     # Сколько тем влезет на лист, решает мерка высоты в `ctx.bullets` — она же
     # считает невлезшее потерей. Срез `[:2]` был вторым ответом на тот же
     # вопрос и молчаливым: на стр. 3 живого прогона он выбросил третью тему

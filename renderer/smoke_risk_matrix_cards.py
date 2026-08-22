@@ -57,14 +57,17 @@ from orion_golden_render.common import (  # noqa: E402
     _Ctx,
     _split_structured_bullet,
     _wrapped_line_count,
+    get_bullet_measure,
     get_layout_telemetry,
     measure_text_height,
+    reset_bullet_measure,
     reset_layout_telemetry,
 )
 from orion_golden_render.executive import (  # noqa: E402
     _card_body_height,
     _card_line_style,
     _card_paragraph_spacing,
+    _render_executive_dashboard,
     _render_risk_matrix_grid,
 )
 
@@ -702,6 +705,89 @@ def main() -> int:
         "К10в: сводная карточка стоит столько, сколько записано в реестре",
         abs(summary_h - 906_117) <= 906_117 * 0.05,
         f"высота {summary_h} против 906 117",
+    )
+
+    # --- К11. Нарратив дашборда режется мерой, а не числом абзацев -----------
+    #
+    # Абзацы отбирались срезом `[:3]` — тем же вторым ответом, что стоил
+    # матрице молча выброшенной карточки. А построитель отдаёт до трёх абзацев
+    # резюме **плюс** строку фактов: четвёртой оказывается доля негатива со
+    # своим знаменателем. Живой прогон 22.08 дал ровно три абзаца, то есть
+    # срез не сработал по случайности, а не по устройству (пункт N).
+    prs_dash = Presentation()
+    prs_dash.slide_width = Emu(SLIDE_W)
+    prs_dash.slide_height = Emu(SLIDE_H)
+    ctx_dash = _Ctx(prs_dash, 3, 48)
+    facts = "Негатив среди прочитанных страниц: Россия — 17 % (10 из 58). Страницы о других людях (1) в долю не входят."
+    _render_executive_dashboard(
+        ctx_dash,
+        {
+            "narrative": "\n".join(
+                [
+                    "Итоговая оценка: высокий риск. Основные сюжеты в выдаче: репутационные риски.",
+                    "Данные собраны 22.08.2026; самый свежий материал — 22.08.2026.",
+                    "Вывод основан на открытых и импортированных источниках.",
+                    facts,
+                ]
+            ),
+            "metrics": [],
+            "keyFindings": [],
+            "actions": [],
+        },
+        "Резюме",
+    )
+    drawn_dash = "\n".join(
+        sh.text_frame.text
+        for sh in prs_dash.slides[0].shapes
+        if getattr(sh, "has_text_frame", False)
+    )
+    check(
+        "К11: четвёртый абзац нарратива не выбрасывается числом",
+        "в долю не входят" in drawn_dash,
+        f"строка фактов {'есть' if 'в долю не входят' in drawn_dash else 'потеряна'}",
+    )
+    check(
+        "К11б: первые три абзаца на месте",
+        all(
+            part in drawn_dash
+            for part in ("Итоговая оценка", "Данные собраны", "Вывод основан")
+        ),
+        "",
+    )
+
+    # --- К11в. Остановка по месту, а не по полу `avail` ----------------------
+    #
+    # Сняв срез `[:3]`, легко получить обратную беду: `ctx.body` рисует абзац
+    # даже там, где места нет (пол `avail` = 200 000 EMU), то есть за нижней
+    # границей полосы. Дашборд обязан остановиться раньше и назвать остаток
+    # потерей — молчаливого выброса не должно быть ни в одну сторону.
+    reset_bullet_measure()
+    prs_long = Presentation()
+    prs_long.slide_width = Emu(SLIDE_W)
+    prs_long.slide_height = Emu(SLIDE_H)
+    ctx_long = _Ctx(prs_long, 3, 48)
+    huge = " ".join(["Развёрнутое наблюдение по открытым источникам."] * 40)
+    _render_executive_dashboard(
+        ctx_long,
+        {"narrative": "\n".join([huge] * 6), "metrics": [], "keyFindings": [], "actions": []},
+        "Резюме",
+    )
+    bottoms = [
+        sh.top + sh.height
+        for sh in prs_long.slides[0].shapes
+        if getattr(sh, "has_text_frame", False) and sh.text_frame.text.strip()
+    ]
+    check(
+        "К11в: длинный нарратив не уходит за нижнюю границу полосы",
+        bottoms and max(bottoms) <= CONTENT_BOTTOM,
+        f"низ {max(bottoms) if bottoms else 0} против границы {CONTENT_BOTTOM}",
+    )
+    measures = get_bullet_measure()
+    dropped = sum(int(m.get("droppedBullets") or 0) for m in measures)
+    check(
+        "К11г: невлезшие абзацы записаны потерей, а не выброшены молча",
+        dropped > 0,
+        f"записано потерь {dropped}",
     )
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
