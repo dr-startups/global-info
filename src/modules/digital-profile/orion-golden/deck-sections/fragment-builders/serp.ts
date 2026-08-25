@@ -39,8 +39,6 @@ import {
   makeSlotSlide,
   packBulletPages,
   pageFindingBlocks,
-  pageRowCompositionBlocks,
-  pageScopedConclusion,
   pageSourceLine,
   sourceLine,
   normalizeSerpQuery,
@@ -261,13 +259,12 @@ export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): st
 /**
  * Проза страницы выдачи, разложенная по важности печати.
  *
- * Шаблон `orion_golden_search_table` рисует **два первых законченных
- * предложения** нарратива, поэтому порядок здесь — не оформление, а выбор
- * того, что увидит читатель. Перед выводом страницы стоит только то, без чего
- * таблица читается неверно: по какому запросу собрана выдача (иначе номер
- * строки — число без знаменателя, а выделение на снимке соседней страницы
- * выглядит противоречием) и почему в нумерации дыры. Всё остальное — после
- * вывода: тематическая строка это заключение, а перечень запросов — справка.
+ * Порядок здесь — не оформление, а выбор того, что читатель увидит первым.
+ * Перед выводом страницы стоит только то, без чего таблица читается неверно:
+ * по какому запросу собрана выдача (иначе номер строки — число без
+ * знаменателя, а выделение на снимке соседней страницы выглядит
+ * противоречием) и почему в нумерации дыры. Всё остальное — после вывода:
+ * тематическая строка это заключение, а перечень запросов — справка.
  *
  * Справка не печатается, когда ничего не добавляет: при единственном запросе
  * прогона она дословно повторяет заголовок выдачи («Показана выдача Google по
@@ -740,7 +737,11 @@ export function buildSerpFragment(
     // Renderer `orion_golden_search_table` paints only `narrative` above the
     // table (not whatWasFound/bullets when rows exist) — put the §7.1 sidebar
     // conclusion there so the page composition is visible in PDF/PPTX.
-    const pageBlocks = pageFindingBlocks(scoped, view);
+    //
+    // Домены абзац не называет, и это единственное место, где так: полосы
+    // адресов под строками печатают их целиком и все, а перечень в абзаце
+    // режется тремя элементами — страница противоречила бы своему же листу.
+    const pageBlocks = pageFindingBlocks(scoped, view, { namePageDomains: false });
     const slide = makeSlotSlide({
       slot,
       sectionId,
@@ -792,9 +793,9 @@ export function buildSerpFragment(
   }
   if (themesPage) {
     const adverseTotal = linkThemes.reduce((n, t) => n + t.adverseCount, 0);
-    // Утверждение и оговорка о его неполноте — одно целое, и целиком помещаются
-    // в те два предложения, которые печатает шаблон. Слова собирает агент
-    // чтения: они принадлежат тем же числам, что и его отчёт.
+    // Утверждение и оговорка о его неполноте — одно целое: оговорка стоит
+    // рядом с утверждением, а не там, где для неё нашлось место. Слова
+    // собирает агент чтения: они принадлежат тем же числам, что и его отчёт.
     const reading = scoped.metricSnapshot.linkReading;
     slides.push({
       ...makeSlotSlide({

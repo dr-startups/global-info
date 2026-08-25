@@ -56,7 +56,6 @@ import type {
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
-import { printedIntroSentences } from "./lib/search-table-intro";
 import { findPythonInterpreter } from "./lib/python";
 
 const inputs = loadReport72DeckInputs();
@@ -1526,7 +1525,7 @@ describe("страницы говорят, сколько прочитано", (
     } as SectionBuildContext;
   }
 
-  it("страница тем печатает базу, прочитанное и причины в первых двух предложениях", () => {
+  it("страница тем называет базу, прочитанное и причины отказов двумя предложениями", () => {
     const ctx = ctxWithReading();
     const scoped = {
       subject: ctx.subject,
@@ -1540,9 +1539,11 @@ describe("страницы говорят, сколько прочитано", (
     const themes = out.slides.find((x) => x.slideId.endsWith("__themes"));
     assert.ok(themes, "страница тем обязана появиться при непустых темах региона");
     const narrative = String(themes.content.narrative);
-    const printed = printedIntroSentences(narrative);
-    assert.equal(printed.length, 2);
-    assert.equal(printed.join(" "), narrative, "покрытие не должно выходить за печатаемые два предложения");
+    const printed = narrative
+      .split(/(?<=[.!?…])\s+/u)
+      .map((x) => x.trim())
+      .filter(Boolean);
+    assert.equal(printed.length, 2, "интро страницы тем — два предложения");
     assert.match(printed[0]!, /120/u);
     assert.match(printed[0]!, /74/u);
     assert.match(printed[1]!, /23 закрыли доступ/u);

@@ -789,19 +789,47 @@ const NON_QUOTABLE_SURFACES = new Set([
 ]);
 
 /**
+ * Настройки блоков, собираемых по одной странице.
+ *
+ * `namePageDomains: false` — перечень доменов в абзац не идёт. Так делает
+ * **только** построитель таблицы выдачи: полосы адресов под строками печатают
+ * те же домены целиком и все, а перечень режется тремя элементами и потому
+ * противоречит собственному листу — на стр. 15 эталона он называл три домена
+ * из четырёх, лежащих на странице. У изображений, подсказок, панели знаний,
+ * AI-ответов и идентичности полос адресов нет, и без перечня такая страница не
+ * скажет, откуда материал; поэтому по умолчанию домены называются.
+ */
+export type PageBlockOptions = {
+  namePageDomains?: boolean;
+};
+
+/** Вывод по теме без указания источников: тема и ступень внимания. */
+function themeAttentionLine(f: Finding): string {
+  // Было: «тема»: уровень внимания — критический — материалы на этой странице:
+  // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
+  // а не как предложение. Теперь это два коротких предложения.
+  return `«${f.theme}» — ${riskAttentionPhrase(f.riskLevel)}.`;
+}
+
+/** Перечень доменов страницы, поддерживающих эту тему. */
+function pageDomainsLine(f: Finding, view: PageEvidenceView): string {
+  // Демо-домены вычищались только из строк источников, а сюда протекали.
+  const where = clientSafeDomains(view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
+  return where.length ? `Материалы по теме на этой странице — ${enumerateRu(where)}.` : "";
+}
+
+/**
  * Page-specific conclusion for one finding: theme + risk + the on-page
  * source domains. Deliberately NOT the finding's global claim text — the
  * claim may cite evidence from other pages/regions.
  */
-export function pageScopedConclusion(f: Finding, view: PageEvidenceView): string {
-  // Демо-домены вычищались только из строк источников, а сюда протекали.
-  const where = clientSafeDomains(view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
-  // Было: «тема»: уровень внимания — критический — материалы на этой странице:
-  // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
-  // а не как предложение. Теперь это два коротких предложения.
-  const level = `«${f.theme}» — ${riskAttentionPhrase(f.riskLevel)}.`;
-  const src = where.length ? ` Материалы по теме на этой странице — ${enumerateRu(where)}.` : "";
-  return clampClientText(`${level}${src}`, 400);
+export function pageScopedConclusion(
+  f: Finding,
+  view: PageEvidenceView,
+  opts: PageBlockOptions = {}
+): string {
+  const src = opts.namePageDomains === false ? "" : pageDomainsLine(f, view);
+  return clampClientText([themeAttentionLine(f), src].filter(Boolean).join(" "), 400);
 }
 
 /** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
@@ -864,7 +892,7 @@ export function composePageRowComposition(
 export function pageRowCompositionBlocks(
   composition: PageRowComposition,
   view: PageEvidenceView,
-  extraCheck?: string
+  opts: PageBlockOptions = {}
 ): Partial<SlideBody> {
   const resultWord = pluralRu(
     composition.shown,
@@ -878,7 +906,10 @@ export function pageRowCompositionBlocks(
   // двоеточие, за которым нет ни одного названия. Условие смотрело на
   // `topDomains`, печатался результат отбора: проверялось одно, печаталось
   // другое.
-  const domainsList = enumerateRu(clientSafeDomains(composition.topDomains));
+  const domainsList =
+    opts.namePageDomains === false
+      ? ""
+      : enumerateRu(clientSafeDomains(composition.topDomains));
   const domainsNote = domainsList ? `; преобладающие источники: ${domainsList}` : "";
   return {
     whatWasFound: clampClientText(
@@ -894,10 +925,9 @@ export function pageRowCompositionBlocks(
       320
     ),
     whatToCheck: clampClientText(
-      extraCheck ??
-        (composition.subjectMatch > 0 || composition.likelySubject > 0
-          ? "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
-          : "Мониторить изменения выдачи."),
+      composition.subjectMatch > 0 || composition.likelySubject > 0
+        ? "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+        : "Мониторить изменения выдачи.",
       220
     ),
     // Клиенту говорим о странице, а не о том, что с ней сделала наша сборка.
@@ -928,13 +958,13 @@ export function pageRowCompositionBlocks(
 export function pageFindingBlocks(
   scoped: ScopedFragmentInput,
   view: PageEvidenceView,
-  extraCheck?: string
+  opts: PageBlockOptions = {}
 ): Partial<SlideBody> {
   const adverse = view.findings.filter(isAdverse);
   const top = view.findings[0];
   if (top) {
     return {
-      whatWasFound: pageScopedConclusion(top, view),
+      whatWasFound: pageScopedConclusion(top, view, opts),
       whyItMatters: clampClientText(
         adverse.length
           ? // Было: «затрагивают тем повышенного внимания: 3» — падеж не
@@ -946,7 +976,7 @@ export function pageFindingBlocks(
         320
       ),
       whatToCheck: clampClientText(
-        top.recommendedAction ?? extraCheck ?? "Мониторить изменения выдачи.",
+        top.recommendedAction ?? "Мониторить изменения выдачи.",
         220
       ),
       statusNote: statusLine(top),
@@ -954,11 +984,7 @@ export function pageFindingBlocks(
     };
   }
   if (view.refs.length > 0) {
-    return pageRowCompositionBlocks(
-      composePageRowComposition(scoped, view.refs),
-      view,
-      extraCheck
-    );
+    return pageRowCompositionBlocks(composePageRowComposition(scoped, view.refs), view, opts);
   }
   return {
     whatWasFound:
@@ -967,10 +993,7 @@ export function pageFindingBlocks(
       "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       320
     ),
-    whatToCheck: clampClientText(
-      extraCheck ?? "Мониторить изменения выдачи.",
-      220
-    ),
+    whatToCheck: clampClientText("Мониторить изменения выдачи.", 220),
     statusNote: statusLine(undefined),
     sourceNote: pageSourceLine(view),
   };

@@ -89,15 +89,14 @@ function scopedWithSeveralQueries(): ScopedFragmentInput {
 }
 
 /**
- * Предложения, которые доедут до листа.
+ * Абзац страницы в том порядке, в каком его увидит читатель.
  *
- * Правило то же, которым режет шаблон `orion_golden_search_table`
- * (`renderer/orion_golden_render/slides.py`): нарратив страницы — это то, что
- * построитель положил плюс склейка `composeFindingProse`; из него берутся
- * первые два законченных предложения. Считать клип по одному лишь построителю
- * значит мерить не то, что видит клиент.
+ * Счётчика предложений в шаблоне больше нет — над таблицей печатается весь
+ * абзац, помещающийся в объявленный потолок, — поэтому проверяется **порядок**
+ * предложений, а не «какие два доедут». Склейка `composeFindingProse` в
+ * порядок входит: она приписывает к абзацу текст находки.
  */
-function printedSentences(slide: SlideContentContract): string[] {
+function pageSentences(slide: SlideContentContract): string[] {
   const content = slide.content;
   const payload = [
     content.narrative,
@@ -107,15 +106,15 @@ function printedSentences(slide: SlideContentContract): string[] {
       whatToCheck: content.whatToCheck,
       narrative: content.narrative,
       bullets: content.bullets,
+      tableCells: content.table?.rows.flat(),
     }),
   ]
     .filter((part): part is string => Boolean(part && part.trim()))
     .join("\n");
-  const complete = payload
-    .split(/(?<=[.!?…])\s+/u)
+  return payload
+    .split(/(?<=[.!?…])\s+|\n+/u)
     .map((x) => x.trim())
-    .filter((x) => /[.!?…]$/u.test(x) && !/(?:\bкак|\bи|\bс|\bв|\bпо|,|;|—)\s*$/iu.test(x));
-  return complete.slice(0, 2);
+    .filter(Boolean);
 }
 
 /** Сколько листов займут N строк — по ёмкости из реестра, а не числом здесь. */
@@ -189,7 +188,7 @@ describe("страница называет запрос своей таблиц
      */
     const slide = slidesOf(FULL_TABLE)[0]!;
     expect(String(slide.content.narrative ?? "")).not.toContain("Выдача проверена по");
-    const printed = printedSentences(slide);
+    const printed = pageSentences(slide);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
     expect(printed[1]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
   });
@@ -208,7 +207,7 @@ describe("страница называет запрос своей таблиц
     ).slides[0]!;
     const narrative = String(slide.content.narrative ?? "");
     expect(narrative).toContain("Выдача проверена по 2 запросам:");
-    const printed = printedSentences(slide);
+    const printed = pageSentences(slide);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
     expect(printed[1]).not.toContain("Выдача проверена по");
     expect(printed[1]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
@@ -216,7 +215,7 @@ describe("страница называет запрос своей таблиц
 
   it("на неполной таблице второе предложение — причина пропусков", () => {
     // Порядок владельца: честность о потере важнее и вывода, и справки.
-    const printed = printedSentences(slidesOf([4, 6, 7, 8, 9, 10])[0]!);
+    const printed = pageSentences(slidesOf([4, 6, 7, 8, 9, 10])[0]!);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
     expect(printed[1]).toBe(
       "Позиции 1–3, 5, 11–20 в собранных данных отсутствуют: эти строки потеряны при сборе, а не пусты в выдаче."

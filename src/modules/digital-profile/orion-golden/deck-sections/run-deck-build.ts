@@ -547,9 +547,10 @@ export function toRendererPayload(input: {
     // стояло дважды — в «Статусе сбора» и в «Что проверить».
     const composedNarrative = [
       raw.narrative,
-      composeFindingProse(
-        CARD_STRUCTURED_TEMPLATES.has(raw.template) ? { ...raw, whatToCheck: undefined } : raw
-      ),
+      composeFindingProse({
+        ...(CARD_STRUCTURED_TEMPLATES.has(raw.template) ? { ...raw, whatToCheck: undefined } : raw),
+        tableCells: raw.table?.rows.flat(),
+      }),
     ]
       .filter((part): part is string => Boolean(part && part.trim()))
       .join("\n");
@@ -990,6 +991,13 @@ export function composeFindingProse(s: {
   /** Уже показанный на странице текст: вводный абзац и буллеты. */
   narrative?: string;
   bullets?: string[];
+  /**
+   * Ячейки таблицы этого слайда. Страница печатает свою таблицу, значит всё,
+   * что в ней стоит, на странице уже есть: у профильных карточек комплаенса
+   * «Почему важно» и «Что сделать» — это строки «Параметр | Значение», и тем
+   * же текстом они уезжали в абзац.
+   */
+  tableCells?: string[];
 }): string | undefined {
   /*
    * Дедупликация обязательна, а не желательна.
@@ -998,18 +1006,20 @@ export function composeFindingProse(s: {
    * буллетом. Пока текст ехал под подписью «Что обнаружено:», повтор выглядел
    * как отдельная графа и в глаза не бросался. Стоило подпись убрать — и один
    * и тот же факт пошёл в абзаце дважды подряд.
+   *
+   * Сравнение идёт **по предложениям**, а не по целому полю. Целыми полями оно
+   * срабатывало только при побайтном равенстве `narrative` и `whatWasFound`:
+   * на прогоне без записанного запроса выдачи лида нет, поля совпадают и
+   * повтора не видно, а на любом прогоне с записанным запросом лид сдвигает
+   * строку — и вывод страницы печатается вторым экземпляром подряд.
    */
-  const seen = new Set<string>();
-  for (const shown of [s.narrative ?? "", ...(s.bullets ?? [])]) {
-    const k = normalizeForCompare(shown);
-    if (k) seen.add(k);
+  const said = new Set<string>();
+  for (const shown of [s.narrative ?? "", ...(s.bullets ?? []), ...(s.tableCells ?? [])]) {
+    withoutRepeatedSentences(shown, said);
   }
   const take = (part?: string): string => {
-    if (!part || !part.trim()) return "";
-    const k = normalizeForCompare(part);
-    if (!k || seen.has(k)) return "";
-    seen.add(k);
-    return asSentence(part);
+    const kept = withoutRepeatedSentences(part, said);
+    return kept ? asSentence(kept) : "";
   };
 
   const paragraph = [take(s.whatWasFound), take(s.whyItMatters)].filter(Boolean).join(" ");

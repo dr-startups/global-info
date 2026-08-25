@@ -1417,7 +1417,7 @@
       "totalPageCount": 56,
       "baseSlotId": "p09_ru_serp_table",
       "isContinuation": false,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — tadviser.ru, runews24.ru и forbes.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -1504,7 +1504,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — tadviser.ru, runews24.ru и forbes.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru и tadviser.ru.",
@@ -1521,7 +1521,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 1,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — klerk.ru, piter.tv и argumenti.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -1601,7 +1601,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — klerk.ru, piter.tv и argumenti.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — yandex.ru, klerk.ru, piter.tv и argumenti.ru.",
@@ -1618,7 +1618,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 2,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и runews24.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -1700,7 +1700,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и runews24.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — kulturologia.ru, nakanune.ru, runews24.ru и osnmedia.ru.",
@@ -1717,7 +1717,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 3,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и klerk.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -1799,7 +1799,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и klerk.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — klerk.ru, kulturologia.ru, argumenti.ru и nakanune.ru.",
@@ -1816,7 +1816,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 4,
-      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -1898,7 +1898,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники — shkolazhizni.ru, audit-it.ru, ru.wikipedia.org и zachestnyibiznes.ru.",
@@ -1915,7 +1915,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 5,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — tadviser.ru, runews24.ru и forbes.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -2006,7 +2006,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — tadviser.ru, runews24.ru и forbes.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — forbes.ru, tadviser.ru, piter.tv и runews24.ru.",
@@ -2023,7 +2023,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 6,
-      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -2110,7 +2110,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники — osnmedia.ru, klerk.ru, audit-it.ru и zachestnyibiznes.ru.",
@@ -2127,7 +2127,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 7,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — techcult.ru и labyrinth.ru.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -2207,7 +2207,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — techcult.ru и labyrinth.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — techcult.ru, moskva.bezformata.com, labyrinth.ru и utro.ru.",
@@ -2224,7 +2224,7 @@
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "continuationIndex": 8,
-      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -2288,7 +2288,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники — x.com и rupep.org.",
@@ -3353,7 +3353,7 @@
       "totalPageCount": 56,
       "baseSlotId": "p26_uae_serp_table",
       "isContinuation": false,
-      "narrative": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания. Материалы по теме на этой странице — rupep.org.",
+      "narrative": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -3435,7 +3435,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания. Материалы по теме на этой странице — rupep.org.",
+      "whatWasFound": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания.",
       "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
       "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org и klerk.ru.",
@@ -3452,7 +3452,7 @@
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "continuationIndex": 1,
-      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -3533,7 +3533,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники — tadviser.com, audit-it.ru, techcult.ru и instagram.com.",
@@ -3550,7 +3550,7 @@
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "continuationIndex": 2,
-      "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — runews24.ru, forbes.ru и piter.tv.",
+      "narrative": "«Деловой профиль» — низкий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -3629,7 +3629,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — runews24.ru, forbes.ru и piter.tv.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
       "sourceNote": "Источники — runews24.ru, bitva.wiki, forbes.ru и piter.tv.",
@@ -3646,7 +3646,7 @@
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "continuationIndex": 3,
-      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+      "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "bullets": [],
       "table": {
         "headers": [
@@ -3726,7 +3726,7 @@
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+      "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания.",
       "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники — x.com, ru.wikipedia.org, utro.ru и labyrinth.ru.",

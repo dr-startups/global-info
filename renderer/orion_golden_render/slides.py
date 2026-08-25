@@ -49,7 +49,6 @@ from .common import (
     _resolve_image_bytes,
     _safe,
     _safe_preserve_breaks,
-    _trim_dangling_tail,
     record_text_layout,
 )
 from .executive import (
@@ -71,6 +70,22 @@ from .visual import (
     _render_visual_with_sidebar,
     _tone_value_color,
 )
+
+#: Потолок вводного абзаца страницы выдачи и отбивка под ним.
+#:
+#: Ёмкость листа (`maxTableRowsPerSlide` шаблона `serp-table`) выведена от
+#: **объявленного** потолка, а не от фактической высоты абзаца: `ctx.body`
+#: за `max_h` выйти не может, поэтому рост абзаца ёмкость не двигает. Предел
+#: подъёма — 1 157 200 EMU: выше бюджет строк становится меньше четырёх худших
+#: законных пар «строка результата + полоса адреса», и на каждой таблице
+#: выдачи прибавляется страница. Обоснование целиком — в комментарии к
+#: `maxTableRowsPerSlide` и в `docs/ENGINEERING.md` §8.
+#:
+#: Число объявлено здесь один раз: смок `renderer/smoke_search_table_layout.py`
+#: импортирует его, а не повторяет. Копия числа зеленела бы и врала вместе с
+#: оригиналом.
+SEARCH_TABLE_INTRO_MAX_H = 1_000_000
+SEARCH_TABLE_INTRO_GAP = 40_000
 
 
 def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
@@ -655,22 +670,31 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         stage_bottom = content_stage(ctx, y)
         table_bottom_budget = stage_bottom if stage_bottom > y else None
         if narrative:
-            # Keep 1–2 complete sentences above the table; never end on «как/и/с».
-            intro = _safe(narrative)
-            sentences = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", intro) if s.strip()]
-            complete = [
-                s
-                for s in sentences
-                if s.endswith((".", "!", "?", "…"))
-                and not re.search(r"(?:\bкак|\bи|\bс|\bв|\bпо|,|;|—)\s*$", s, re.I)
-            ]
-            if complete:
-                intro = " ".join(complete[:2])
-            else:
-                intro = "Таблица фиксирует сохранённые позиции поисковой выдачи."
-            intro = _trim_dangling_tail(intro)
-            y = ctx.body(intro, y, max_h=900000, color=MUTED_COLOR)
-            y = y + 40000
+            # Сколько абзаца влезет — решает мера `ctx.body` в пределах
+            # объявленного потолка, а не счётчик предложений здесь. Счётчик
+            # был вторым редактором, спрятанным в отрисовщике: он выбрасывал
+            # «почему важно» и «что проверить» страниц выдачи без записи в
+            # телеметрию, а на пустом отборе подставлял выдуманную фразу,
+            # которая ни до какого наблюдения не прослеживалась.
+            #
+            # **Абзац здесь один, а не три, и считать его высоту надо так.**
+            # Склейка кладёт «что найдено», «почему важно» и «что проверить»
+            # через `\n`, но `_safe` схлопывает любые пробелы, включая перевод
+            # строки (`re.sub(r"\s+", " ", …)`), — и `ctx.body` зовёт `_safe`
+            # сам, для всех вызывающих. Многоабзацного тела в деке не бывает
+            # вообще, отбивки между абзацами в мере нет. Посчитав её (6 pt × 1,18
+            # за каждый лишний абзац ≈ 180 000 EMU, почти строка 11 pt), легко
+            # решить, что законный состав в потолок не влезает, и поднять
+            # потолок до предельных 1 157 200, потратив весь запас бюджета
+            # строк на несуществующую проблему. Замер на настоящем листе при
+            # потолке 1 000 000: 621 знак прозы 11 pt, 941 знак 9 pt.
+            y = ctx.body(
+                _safe(narrative),
+                y,
+                max_h=SEARCH_TABLE_INTRO_MAX_H,
+                color=MUTED_COLOR,
+            )
+            y = y + SEARCH_TABLE_INTRO_GAP
         table = slide.get("table") if isinstance(slide.get("table"), dict) else None
         headers = list((table or {}).get("headers") or [])
         rows = list((table or {}).get("rows") or [])
