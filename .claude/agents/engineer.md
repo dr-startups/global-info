@@ -285,6 +285,10 @@ turns out to be wrong.
 
 ## What you return
 
+**Write your report to `$ARTIFACTS/report-round-N.md` before you return it**, and return the same
+text. A report that exists only as a returned message is lost when your run stops more than once,
+and the reviewer then checks a fragment. The logs are already files; the report is one too.
+
 Russian, short. **The orchestrator relays it to the owner verbatim**, so write for a person:
 
 1. **Красная фаза** — the path to `red.log`, plus the failing test names and their messages quoted

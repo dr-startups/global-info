@@ -55,7 +55,8 @@ export type ClientTextSlide = {
    * было молча.
    */
   keyFindings?: Array<{ headline: string; status: string; detail: string }>;
-  table?: { headers: string[]; rows: string[][] };
+  /** Полоса адреса под каждой строкой — часть напечатанного клиенту текста. */
+  table?: { headers: string[]; rows: string[][]; rowAddresses?: string[] };
   highlights?: string[];
 };
 
@@ -129,13 +130,18 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       if (metrics.length) slide.metrics = metrics;
     }
 
-    const table = raw.table as { headers?: unknown; rows?: unknown } | undefined;
+    const table = raw.table as
+      | { headers?: unknown; rows?: unknown; rowAddresses?: unknown }
+      | undefined;
     if (table && (Array.isArray(table.headers) || Array.isArray(table.rows))) {
       slide.table = {
         headers: Array.isArray(table.headers) ? table.headers.map(norm) : [],
         rows: Array.isArray(table.rows)
           ? (table.rows as unknown[][]).map((r) => (Array.isArray(r) ? r.map(norm) : []))
           : [],
+        ...(Array.isArray(table.rowAddresses)
+          ? { rowAddresses: table.rowAddresses.map(norm) }
+          : {}),
       };
     }
 
@@ -164,7 +170,11 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       ...(s.actions ?? []),
       ...(s.keyFindings ?? []).flatMap((k) => [k.headline, k.status, k.detail]),
       ...(s.highlights ?? []),
-      ...(s.table ? [...s.table.headers, ...s.table.rows.flat()] : []),
+      // Полоса адреса — напечатанный клиенту текст: пока адрес был колонкой,
+      // он попадал в счёт вместе с `rows.flat()`.
+      ...(s.table
+        ? [...s.table.headers, ...s.table.rows.flat(), ...(s.table.rowAddresses ?? [])]
+        : []),
     ];
     return sum + parts.reduce((a, p) => a + p.length, 0);
   }, 0);

@@ -73,6 +73,8 @@ function tableRows(scoped: ScopedFragmentInput): string[][] {
 }
 
 const RATING = SERP_TABLE_HEADERS.indexOf("Оценка");
+/** Колонка заголовка — по имени: адрес уехал из таблицы в полосу, и номера сдвинулись. */
+const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 describe("ТОП-20 без дыр в нумерации", () => {
   it("позиция берётся по запросу таблицы, а не по лучшему наблюдению", () => {
@@ -139,7 +141,7 @@ describe("ТОП-20 без дыр в нумерации", () => {
     const extra: Row[] = [
       { rank: 3, title: "Чужой запрос", url: "https://d.ru/9", query: "тимати" },
     ];
-    const printed = tableRows(scopedSerp(rows, extra)).map((r) => r[2]);
+    const printed = tableRows(scopedSerp(rows, extra)).map((r) => r[TITLE]);
     expect(printed).toEqual(["Первый", "Второй"]);
   });
 });
@@ -213,7 +215,7 @@ describe("списки ТОП-20 — только из выдачи родног
       { rank: 3, title: "Родной третий", url: "https://c.ru/3", query: QUERY, rankSource: "yandex" },
     ];
     const printed = tableRows(scopedWithSources(rows));
-    expect(printed.map((r) => r[2])).toEqual(["Родной первый", "Родной третий"]);
+    expect(printed.map((r) => r[TITLE])).toEqual(["Родной первый", "Родной третий"]);
   });
 
   it("старый набор без источника позиции таблицу не теряет", () => {

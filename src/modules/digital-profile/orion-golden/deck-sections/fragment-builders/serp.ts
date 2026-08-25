@@ -93,12 +93,36 @@ export const SERP_TABLE_TOP_N = 20;
 /**
  * Колонки таблицы выдачи.
  *
- * Ссылка стоит вместо домена: домен — её начало, а проверяющему нужен адрес,
- * по которому можно открыть материал. Тип источника отвечает на вопрос, ради
- * которого читатель и открывает ссылку: запись в санкционном реестре, статья
- * в СМИ и пост в блоге требуют разной реакции, а в таблице выглядят одинаково.
+ * Адреса среди них нет: он печатается полосой во всю ширину листа под своей
+ * строкой результата (`rowAddresses`). Колонкой он быть не может — в её 22 %
+ * ширины входят 62 знака, а половина адресов корпуса длиннее, и проверяющий
+ * получал ссылку, которая не открывается. Тип источника отвечает на вопрос,
+ * ради которого читатель и открывает адрес: запись в санкционном реестре,
+ * статья в СМИ и пост в блоге требуют разной реакции, а в таблице выглядят
+ * одинаково.
  */
-export const SERP_TABLE_HEADERS = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"];
+export const SERP_TABLE_HEADERS = ["№", "Заголовок", "Тип источника", "Оценка"];
+
+/**
+ * Предел заголовка строки — по ширине его колонки (0.59 листа).
+ *
+ * 95 знаков — столько влезает в две нарисованные строки при 9 pt, и это же
+ * половина худшей законной пары, из которой выведена ёмкость листа
+ * (`template-registry.ts`, `serp-table`). Рез стоит здесь, а не в рендерере:
+ * `_clip_words(text, 200)` резал молча и невидимо для текстового эталона, а
+ * подрезанный заголовок — это то, что читает клиент.
+ */
+const SERP_TITLE_MAX_CHARS = 95;
+
+/** Заголовок строки: рез по границе слова, с многоточием. */
+function serpRowTitle(raw: string): string {
+  const text = raw.trim();
+  if (text.length <= SERP_TITLE_MAX_CHARS) return text;
+  const slice = text.slice(0, SERP_TITLE_MAX_CHARS - 1);
+  const boundary = slice.lastIndexOf(" ");
+  const kept = (boundary > 0 ? slice.slice(0, boundary) : slice).replace(/[\s.,;:—–-]+$/u, "");
+  return `${kept}…`;
+}
 
 /**
  * Оценка материала о другом лице.
@@ -515,7 +539,11 @@ export function buildSerpFragment(
   const namedTables = engineTables.filter((t) => t.engine);
   const tables = namedTables.length > 0 ? namedTables : engineTables;
 
-  const rowOf = (group: { refs: string[] }, rank: number): string[] => {
+  /** Строка результата и её адрес: адрес печатается полосой, а не ячейкой. */
+  const rowOf = (
+    group: { refs: string[] },
+    rank: number
+  ): { cells: string[]; address: string } => {
     const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
     // A row is marked when its evidence backs an adverse finding OR its own
     // title carries an adverse pattern (sanctions/criminal/court wording) —
@@ -573,20 +601,24 @@ export function buildSerpFragment(
     // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
     // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
     // по другому запросу.
-    return [
-      String(rank),
-      clientLink(e.url, e.domain),
-      e.title ?? "(без заголовка)",
-      resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—",
-      rating,
-    ];
+    return {
+      cells: [
+        String(rank),
+        serpRowTitle(e.title ?? "(без заголовка)"),
+        resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—",
+        rating,
+      ],
+      address: clientLink(e.url, e.domain),
+    };
   };
   // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
   // strip of the first page's finding blocks).
-  const maxRows =
-    DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide > 0
-      ? DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide
-      : 12;
+  // Ёмкость листа объявлена реестром, и второго числа здесь нет: прежние
+  // запасные «12» пережили вывод ёмкости и стали бы тихим вторым ответом.
+  // Ноль в реестре значит «не разбивать» — тот же смысл, что у общего
+  // пагинатора `withContinuations`.
+  const maxRows = DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide;
+  const cut = <T,>(list: T[]): T[][] => (maxRows > 0 ? chunk(list, maxRows) : [list]);
   const queriesLine = subjectQueriesLine(scoped);
   const queryList = subjectQueries(scoped);
   // Страницы не смешивают поисковики: каждая таблица листается отдельно и
@@ -594,6 +626,8 @@ export function buildSerpFragment(
   const pages: Array<{
     title: string;
     rows: string[][];
+    /** Адрес каждой строки этой страницы — полосой под ней. */
+    addresses: string[];
     refs: string[];
     /** Первые предложения страницы: чья это выдача и чего в ней не хватает. */
     lead: string;
@@ -613,10 +647,13 @@ export function buildSerpFragment(
   }> = [];
   for (const table of tables) {
     const label = serpEngineLabel(table.engine);
-    const tableRows = table.displayed.map((x) => rowOf(x.group, x.rank));
+    const printed = table.displayed.map((x) => rowOf(x.group, x.rank));
     const tableRefs = table.displayed.map((x) => x.group.refs);
-    const rowChunks = chunk(tableRows, maxRows);
-    const refChunks = chunk(tableRefs, maxRows).map((c) => c.flat());
+    // Строки, адреса и ссылки режутся одним разрезом: соответствие «строка →
+    // адрес» держится индексом, и разъехавшиеся куски остановили бы сборку.
+    const rowChunks = cut(printed.map((p) => p.cells));
+    const addressChunks = cut(printed.map((p) => p.address));
+    const refChunks = cut(tableRefs).map((c) => c.flat());
     const printedRanks = table.positional ? table.displayed.map((x) => x.rank) : [];
     const missing = table.positional ? missingSerpRanks(printedRanks) : "";
     const prose = serpTablePageProse({
@@ -649,6 +686,7 @@ export function buildSerpFragment(
       pages.push({
         title: `${head}${suffix}`,
         rows: rowChunks[i] ?? [],
+        addresses: addressChunks[i] ?? [],
         refs: refChunks[i] ?? [],
           lead: prose.head,
         ...(prose.tail ? { note: prose.tail } : {}),
@@ -708,7 +746,11 @@ export function buildSerpFragment(
       sectionId,
       title: pages[i]!.title,
       content: {
-        table: { headers: [...SERP_TABLE_HEADERS], rows: pageRows },
+        table: {
+          headers: [...SERP_TABLE_HEADERS],
+          rows: pageRows,
+          rowAddresses: pages[i]!.addresses,
+        },
         ...pageBlocks,
         // Клиент должен видеть, чью выдачу смотрит: без запроса позиция в
         // таблице — число без знаменателя, а противоречие со снимком соседней

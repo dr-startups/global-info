@@ -28,6 +28,7 @@ import {
 import { createLocalPythonMeasureAdapter } from "../src/modules/digital-profile/services/render-deck-artifacts";
 import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
 import { normalizeForCompare } from "../src/modules/digital-profile/orion-golden/deck-sections/text-compare";
+import { scanDeckForLeakedIdentifiers } from "../src/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import type {
   ExecutiveSummaryExtras,
@@ -425,15 +426,17 @@ async function main(): Promise<void> {
   const ruShotFooter = ruShot?.sourceNote ?? "";
   const uaeShotText = slideText(uaeShot);
   const RU_CRIMINAL_DOMAINS = ["audit-it.ru", "x.com", "m.sledst.org", "sledst.org"];
-  const internalTokenRegex = /orion-canary|cmreamy|reportRunId|datasetId|inventory:|obs-[a-z0-9]{6,}/u;
-  const internalTokenHits = rSlides.filter((s) =>
-    internalTokenRegex.test(
-      JSON.stringify([s.title, s.narrative, s.bullets, s.table?.rows])
-        .replace(/\[finding-[^\]]*\]/gu, "")
-        .replace(/evidence:[^"]*/gu, "")
-        .replace(/inventory:[^"]*/gu, "")
-    )
-  );
+  /*
+   * «Что видит клиент» — один ответ на весь проект (`clientVisibleStrings`), и
+   * шаблон утёкших идентификаторов живёт рядом с остальными правилами о
+   * клиентском тексте. Пока скрипт держал свой список полей, он смотрел четыре
+   * поля слайда из шестнадцати и не видел ни панелей, ни плиток, ни полосы
+   * адреса — то есть ворота были зелёными по построению на всём, что мимо
+   * заголовка, нарратива, буллетов и ячеек таблицы.
+   */
+  const internalTokenSlideKeys = [
+    ...new Set(scanDeckForLeakedIdentifiers(rSlides).map((f) => f.slide)),
+  ];
   const pageLevelChecks = {
     version: "deck-page-level-checks-v1",
     tocNoPerLinePageCounts: result.assembly.deckManifest.toc.every(
@@ -456,8 +459,8 @@ async function main(): Promise<void> {
       .filter((s) => s.emptyStateReason)
       .every((s) => Boolean(s.narrative || (s.bullets ?? []).length > 0)),
     continuationsAdjacent: result.assemblyValidation?.checks.continuationAdjacency ?? false,
-    noInternalTokensInClientCopy: internalTokenHits.length === 0,
-    internalTokenSlides: internalTokenHits.map((s) => s.slideKey),
+    noInternalTokensInClientCopy: internalTokenSlideKeys.length === 0,
+    internalTokenSlides: internalTokenSlideKeys,
     // Sidebar evidence-scope gates (fail closed):
     page13FooterListsHighlightDomains:
       ruShotFooter.includes("x.com") && ruShotFooter.includes("rupep.org"),

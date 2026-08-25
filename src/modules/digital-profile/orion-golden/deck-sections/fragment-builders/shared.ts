@@ -336,10 +336,17 @@ export function withContinuations(
         firstCharCap
       )
     : [bullets];
-  const rowChunks =
-    tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
-      ? chunk(rows, tpl.maxTableRowsPerSlide)
-      : [rows];
+  const addresses = base.content.table?.rowAddresses;
+  const needsRowPaging = tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide;
+  const rowChunks = needsRowPaging ? chunk(rows, tpl.maxTableRowsPerSlide) : [rows];
+  // Адреса режутся тем же разрезом, что и строки: иначе строки уезжают на
+  // продолжение, а их адреса остаются на первой странице — и обе страницы
+  // печатают чужие ссылки.
+  const addressChunks = addresses
+    ? needsRowPaging
+      ? chunk(addresses, tpl.maxTableRowsPerSlide)
+      : [addresses]
+    : undefined;
   const narrativeChunks =
     narrative.length > narrativeBudget
       ? splitClientParagraphs(narrative, narrativeBudget, 4)
@@ -351,7 +358,11 @@ export function withContinuations(
       ...base.content,
       bullets: bulletChunks[i] ?? [],
       table: base.content.table
-        ? { headers: base.content.table.headers, rows: rowChunks[i] ?? [] }
+        ? {
+            headers: base.content.table.headers,
+            rows: rowChunks[i] ?? [],
+            ...(addressChunks ? { rowAddresses: addressChunks[i] ?? [] } : {}),
+          }
         : undefined,
     };
     if (i === 0) {
@@ -2684,8 +2695,32 @@ export function panelStatusLine(input: {
   return "Строк с негативной формулировкой на этой странице нет.";
 }
 
-/** Длиннее этого адрес перестаёт читаться и ломает ширину колонки таблицы. */
-const LINK_MAX_CHARS = 62;
+/**
+ * Граница полосы адреса в таблице выдачи.
+ *
+ * Число выведено из ширины, а не подобрано: полоса идёт во всю ширину контента
+ * (998 px по модели переноса рендерера), самый широкий знак 9 pt — 12,15 px,
+ * значит в три нарисованные строки гарантированно укладываются 246 знаков тем
+ * письмом, которое встречается в разобранных адресах (латиница, кириллица,
+ * цифры, знаки URL). Взято 240 — тот же вывод с запасом на смену гарнитуры.
+ * Оговорка честная: `№` (U+2116) шире принятого порога, 13,1 px, и 240 таких
+ * знаков подряд дали бы четыре строки; в адресах такой строки не бывает.
+ *
+ * Три строки, а не две: чтобы гарантировать две, предел пришлось бы опустить
+ * до 164 знаков, а в корпусе прогона 72 (243 уникальных `host+path`) длиннее
+ * 163 знаков 16 адресов, и шесть из них — обычные читаемые адреса статей
+ * (169…186). Резать их значит вернуть тот самый дефект, ради которого адрес и
+ * уехал из колонки.
+ *
+ * На корпусе ветка среза срабатывает семь раз из 243 — на процентно
+ * закодированных путях facebook, instagram и kiosk-31 (280…864 знака). Ни один
+ * из них сегодня не доезжает до печатаемых таблиц, поэтому в деке обрезанных
+ * нет; обещание полосы — про то, что печатается, а не про всё мыслимое.
+ *
+ * Прежние 62 знака были шириной **колонки**, и обрезанный адрес не
+ * открывался — 17 строк из 50 на эталоне, 60 из 60 в золотом кейсе.
+ */
+const ADDRESS_BAND_MAX_CHARS = 240;
 
 /**
  * Разбор и печать адреса живут в `client/client-address.ts` — их видит и
@@ -2694,40 +2729,39 @@ const LINK_MAX_CHARS = 62;
  */
 
 /**
- * Адрес для колонки таблицы: тот же разбор, обрезанный по ширине.
+ * Адрес для полосы под строкой таблицы: тот же разбор, та же политика печати.
  *
  * Отбор демо-имён здесь не делается намеренно: строки таблицы отфильтрованы
- * выше по течению, а ячейка обязана что-то напечатать. Фраза «Почему выделено»
- * пользуется `clientAddress`, у которого политика строже — там адрес стоит
- * рядом с утверждением о лице.
+ * выше по течению, а полоса обязана что-то напечатать. Фраза «Почему выделено»
+ * и предложения о конкретной статье пользуются `clientAddress`, у которого
+ * политика строже — там адрес стоит рядом с утверждением о лице.
  */
 export function clientLink(
   url: string | undefined,
   domain: string | undefined,
-  maxChars = LINK_MAX_CHARS
+  maxChars = ADDRESS_BAND_MAX_CHARS
 ): string {
   const raw = String(url ?? "").trim();
   if (!raw) return domain ?? "—";
   const parts = parseClientAddress(raw);
-  const text = parts
-    ? `${parts.host}${parts.path}`
-    : // Не URL — печатаем как есть, обрезав по длине.
-      raw.replace(/^https?:\/\//iu, "").replace(/\/$/u, "");
+  // Не публичная схема — не адрес: `arsenkin://suggestion/17` открыть нельзя,
+  // и клиенту он читается внутренним кодом. Называется площадка, если она
+  // известна. Тот же ответ даёт `clientAddress`, возвращая здесь `undefined`.
+  if (!parts) return domain ?? "—";
+  const text = `${parts.host}${parts.path}`;
   if (text.length <= maxChars) return text;
   /*
-   * В колонку целиком не влез — сначала снимаем строку параметров, и только
+   * В полосу целиком не влез — сначала снимаем строку параметров, и только
    * потом режем.
    *
    * Обрезанный адрес не открывается: `tadviser.ru/…/Персона:Глинка?shem=r…`
    * хуже, чем тот же адрес без параметров, который открывается и ведёт на ту
    * же страницу. Порядок именно такой: параметры нужны там, где без них
-   * страницы нет (`youtube.com/watch?v=…`), а такие адреса коротки и в колонку
+   * страницы нет (`youtube.com/watch?v=…`), а такие адреса коротки и в полосу
    * помещаются.
    */
-  if (parts) {
-    const withoutQuery = `${parts.host}${parts.path.replace(/[?#].*$/u, "")}`;
-    if (withoutQuery.length <= maxChars) return withoutQuery;
-  }
+  const withoutQuery = `${parts.host}${parts.path.replace(/[?#].*$/u, "")}`;
+  if (withoutQuery.length <= maxChars) return withoutQuery;
   return `${text.slice(0, maxChars - 1)}…`;
 }
 

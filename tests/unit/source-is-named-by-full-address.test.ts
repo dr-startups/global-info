@@ -77,19 +77,28 @@ describe("адрес источника", () => {
     expect(sourceAttribution({ url: "arsenkin://suggestion/1", domain: "" })).toBe("");
   });
 
-  it("в колонке таблицы параметры снимаются раньше, чем адрес режется", () => {
-    // Обрезанный адрес не открывается вовсе, а тот же адрес без параметров
-    // ведёт на ту же страницу. Порядок: сначала снять параметры, потом резать.
+  it("в полосе таблицы адрес прогона печатается целиком, вместе с параметрами", () => {
+    // Полоса идёт во всю ширину листа, и адрес корпуса в неё входит целиком:
+    // резать нечего, а адрес с параметрами открывает ту же страницу.
     const long =
       "https://tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович?shem=rbrand_ru&utm=1";
     expect(clientLink(long, "tadviser.ru")).toBe(
-      "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович"
+      "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович?shem=rbrand_ru&utm=1"
     );
-    // Короткий адрес с параметрами помещается целиком — параметры остаются.
     expect(clientLink("https://youtube.com/watch?v=dQw4w9WgXcQ", "youtube.com")).toBe(
       "youtube.com/watch?v=dQw4w9WgXcQ"
     );
-    // Не помещается и без параметров — только тогда многоточие.
-    expect(clientLink("https://snob.ru/" + "a".repeat(80), "snob.ru")).toMatch(/…$/u);
+    // 96 знаков — вдвое больше прежнего предела колонки — по-прежнему целиком.
+    expect(clientLink("https://snob.ru/" + "a".repeat(80), "snob.ru")).toBe(
+      "snob.ru/" + "a".repeat(80)
+    );
+  });
+
+  it("за границей полосы параметры снимаются раньше, чем адрес режется", () => {
+    // Обрезанный адрес не открывается вовсе, а тот же адрес без параметров
+    // ведёт на ту же страницу. Порядок: сначала снять параметры, потом резать.
+    const path = "b".repeat(220);
+    const long = `https://tadviser.ru/${path}?shem=rbrand_ru&utm=1`;
+    expect(clientLink(long, "tadviser.ru")).toBe(`tadviser.ru/${path}`);
   });
 });

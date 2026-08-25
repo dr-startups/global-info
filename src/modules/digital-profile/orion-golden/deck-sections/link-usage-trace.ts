@@ -71,7 +71,7 @@ type TracedSlide = {
   title?: string;
   narrative?: string;
   bullets?: string[];
-  table?: { rows?: string[][] } | null;
+  table?: { rows?: string[][]; rowAddresses?: string[] } | null;
   /**
    * Основания страницы. Признак точный: список не зависит от того, как сложился
    * её текст, — в отличие от поиска по словам, который материал, вошедший
@@ -81,7 +81,12 @@ type TracedSlide = {
 };
 
 function slideText(slide: TracedSlide): string {
-  const table = (slide.table?.rows ?? []).map((r) => r.join(" ")).join(" ");
+  const table = [
+    ...(slide.table?.rows ?? []).map((r) => r.join(" ")),
+    // Адрес материала печатается полосой под своей строкой — это по-прежнему
+    // слова страницы, и след ссылок обязан их видеть.
+    ...(slide.table?.rowAddresses ?? []),
+  ].join(" ");
   return [slide.title, slide.narrative, ...(slide.bullets ?? []), table]
     .filter(Boolean)
     .join("\n");

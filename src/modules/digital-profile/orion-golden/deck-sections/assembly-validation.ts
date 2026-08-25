@@ -169,7 +169,7 @@ function bareDomain(raw: string | undefined): string {
     .replace(/^www\./u, "");
 }
 
-/** Домен из напечатанной ссылки: `clientLink` печатает «домен/путь» без www. */
+/** Домен из напечатанного адреса: `clientLink` печатает «домен/путь» без www. */
 function printedDomain(link: string): string {
   return bareDomain(link).split("/")[0]!.trim();
 }
@@ -213,11 +213,22 @@ export function serpPrintMatchesObservations(input: {
       slide.sectionKey === "RU_PROFILE" ? "RU" : slide.sectionKey === "UAE_PROFILE" ? "UAE" : null;
     const key = `${slide.sectionKey}|${engine}|${query.trim().toLowerCase()}`;
     const table = tables.get(key) ?? { engine, query, region, rows: [] };
-    for (const row of slide.table.rows) {
+    /*
+     * Домен строки берётся из её полосы адреса — оттуда же, откуда его читает
+     * клиент. Полосы нет — сверять нечем, и строка попадает в сверку с пустым
+     * доменом: молчаливый пропуск сделал бы ворота вакуумно зелёными ровно
+     * там, где печать перестала называть источник.
+     */
+    const addresses = slide.table.rowAddresses ?? [];
+    slide.table.rows.forEach((row, index) => {
       const rank = Number(row[0]);
-      if (!Number.isFinite(rank) || rank <= 0) continue;
-      table.rows.push({ rank, domain: printedDomain(String(row[1] ?? "")), slideKey: slide.slideKey });
-    }
+      if (!Number.isFinite(rank) || rank <= 0) return;
+      table.rows.push({
+        rank,
+        domain: printedDomain(String(addresses[index] ?? "")),
+        slideKey: slide.slideKey,
+      });
+    });
     tables.set(key, table);
   }
   if (tables.size === 0) {

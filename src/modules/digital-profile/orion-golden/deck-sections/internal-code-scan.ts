@@ -119,7 +119,7 @@ export interface ClientVisibleSlide {
   narrative?: string;
   bullets?: unknown;
   staticBlocks?: unknown;
-  table?: { headers?: unknown; rows?: unknown } | null;
+  table?: { headers?: unknown; rows?: unknown; rowAddresses?: unknown } | null;
   whatWasFound?: string;
   whyItMatters?: string;
   whatToCheck?: string;
@@ -155,6 +155,9 @@ export function clientVisibleStrings(slide: ClientVisibleSlide): string[] {
   push(slide.staticBlocks);
   push(slide.table?.headers);
   push(slide.table?.rows);
+  // Полоса адреса — такой же напечатанный текст, как ячейка: пока адрес был
+  // колонкой, он попадал сюда вместе со строками, и слепой зоны быть не должно.
+  push(slide.table?.rowAddresses);
   push(slide.whatWasFound);
   push(slide.whyItMatters);
   push(slide.whatToCheck);
@@ -190,6 +193,35 @@ export function scanDeckForInternalCodes(
 }
 
 /**
+ * Внутренние идентификаторы прогона, утёкшие в клиентский текст.
+ *
+ * Вопрос другой, чем у `findInternalCodes`: не «наш ли это код по форме», а
+ * «не уехало ли клиенту имя нашей внутренней сущности». Поэтому и разбор
+ * другой — **адреса не вырезаются**. Идентификатор наблюдения умеет попасть
+ * в путь напечатанной ссылки (`example.org/materials/obs-9f3a71c2/view`), и
+ * именно там его никто не искал: приёмочный скрипт держал этот шаблон у себя
+ * и смотрел четыре поля слайда из шестнадцати, а полосу адреса не смотрел
+ * вовсе.
+ *
+ * Прежний разбор снимал `inventory:…` и `evidence:…` перед тем, как их же
+ * искать, — альтернатива в шаблоне была мёртвой по построению.
+ */
+const RUN_IDENTIFIER =
+  /orion-canary|cmreamy|reportRunId|datasetId|inventory:|evidence:|obs-[a-z0-9]{6,}/giu;
+
+/** Найденные в тексте внутренние идентификаторы (без повторов). */
+export function findLeakedIdentifiers(text: string | null | undefined): string[] {
+  // Маркер находки — служебная связь блока с доказательной базой; до бумаги он
+  // не доходит, его снимает отрисовщик.
+  const value = String(text ?? "").replace(/\[?finding-[\p{L}\d_-]+\]?/gu, " ");
+  const found: string[] = [];
+  for (const m of value.matchAll(RUN_IDENTIFIER)) {
+    if (!found.includes(m[0])) found.push(m[0]);
+  }
+  return found;
+}
+
+/**
  * Машинно выглядящие токены нижнего регистра в клиентском тексте.
  *
  * Замечание, а не приговор: ник в соцсети и имя набора по форме неотличимы, и
@@ -200,6 +232,19 @@ export function scanDeckForCodeLikeTokens(
   slides: readonly ClientVisibleSlide[]
 ): InternalCodeFinding[] {
   return scanDeck(slides, findLowercaseCodeLikeTokens);
+}
+
+/**
+ * Внутренние идентификаторы в клиентском тексте деки.
+ *
+ * Пустой список — обязательное состояние: `noInternalTokensInClientCopy`
+ * приёмки считается по нему, и второго ответа на «что видит клиент» больше
+ * нет — поля перечисляет `clientVisibleStrings`, один список на весь проект.
+ */
+export function scanDeckForLeakedIdentifiers(
+  slides: readonly ClientVisibleSlide[]
+): InternalCodeFinding[] {
+  return scanDeck(slides, findLeakedIdentifiers);
 }
 
 function scanDeck(

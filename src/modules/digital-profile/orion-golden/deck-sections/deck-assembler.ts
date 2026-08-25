@@ -103,6 +103,8 @@ export type RendererSlide = {
   table?: {
     headers: string[];
     rows: string[][];
+    /** Адрес материала под своей строкой; длина равна числу строк. */
+    rowAddresses?: string[];
     groups?: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }>;
   };
   evidenceRefs: string[];
@@ -263,6 +265,20 @@ export function assembleDeck(input: {
     if (!slide.isContinuation) {
       if (seenBaseSlots.has(slide.baseSlotId)) errors.push(`duplicate baseSlotId: ${slide.baseSlotId}`);
       seenBaseSlots.add(slide.baseSlotId);
+    }
+    /*
+     * Адрес привязан к строке индексом, и разъехавшиеся длины — потеря.
+     *
+     * Рендерер нарисует столько полос, сколько ему дали, и промолчит: часть
+     * строк останется без адреса, а страница будет выглядеть собранной. Такую
+     * потерю нельзя чинить догадкой (какая строка осталась без адреса, знает
+     * только построитель), поэтому сборка останавливается и называет слайд.
+     */
+    const table = slide.content.table;
+    if (table?.rowAddresses && table.rowAddresses.length !== table.rows.length) {
+      errors.push(
+        `slide ${slide.slideId}: адресов строк ${table.rowAddresses.length}, строк таблицы ${table.rows.length}`
+      );
     }
   }
   if (errors.length > 0) {

@@ -51,11 +51,19 @@ from .common import (
     _fit_text_to_height,
     _resolve_image_bytes,
     _safe,
+    _wrapped_line_count,
     measure_text_height,
     plural_ru,
     record_text_layout,
 )
 from .layout_cleeq import level_step
+
+#: Поля ячейки python-pptx: по 0.1″ с каждой стороны. Перенос случается по
+#: полезной ширине, а не по ширине колонки.
+CELL_MARGINS_EMU = 2 * 91_440
+
+#: Кегль бейджа статуса — на полступени крупнее подписи; тем же и меряется.
+BADGE_PT = 9.5
 
 try:
     from client_text_contract import sidebar_check_failures
@@ -520,12 +528,14 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
 
 
 def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
-    """Word-aware line estimate for one table cell, capped at `max_lines`.
+    """Грубая оценка числа строк с потолком `max_lines`.
 
-    The only place a table row height is decided — the TS mirror this used to
-    quote is gone. The estimate is deliberately coarse: a single oversized
-    token (a URL with no spaces) counts as `max_lines` at any column width, so
-    column proportions, not this function, are what keep addresses readable.
+    Единственный потребитель — плашка темы в карточке матрицы рисков
+    (`executive.py`), где потолок и есть смысл: плашка не вправе расти выше
+    трёх строк. Высоты таблиц считает не она, а `_wrapped_line_count` — тем же
+    переносом и тем же шрифтом, которыми рисуют; здешняя модель занижала строку
+    (потолок «две строки» при 10 pt на ячейке, которую красят 9-м), и таблица
+    уезжала ниже поля при «чистой» объявленной геометрии.
     """
     text = (text or "").strip()
     if not text:
@@ -616,16 +626,28 @@ def _add_search_table(
     headers: list[str],
     rows: list[list[str]],
     groups: list[dict[str, Any]] | None = None,
+    *,
+    row_addresses: list[str] | None = None,
+    bottom: int | None = None,
 ) -> None:
     """
     Grouped SERP position table. Renders EVERY row the slide carries (no cap) —
     TS pagination already guaranteed geometric fit. Query is shown as a compact
     group-header band (spec §4), status as a colored badge (spec §5).
+
+    `row_addresses` — адрес материала под своей строкой, полосой во всю ширину
+    контента. Колонкой адрес быть не может: в 22 % ширины входит 62 знака, а
+    половина адресов прогона длиннее, и напечатанный обрезок не открывается.
+
+    `bottom` — низ бюджета страницы (низ белой сцены). Превышение пишется
+    событием разметки уровня CRITICAL: таблица, нарисованная ниже поля, — это
+    та же тихая потеря содержимого, что и невлезший буллет.
     """
     # Body layout is 4 cols: Позиция | Домен | Заголовок | Статус.
     # If TS sends a leading «Запрос» column, drop it — query lives in group bands.
     hdr = [str(h) for h in headers]
     data_rows = [list(r) for r in rows]
+    addresses = [str(a) for a in (row_addresses or [])]
     if len(hdr) >= 5 and re.search(r"запрос|query", hdr[0], re.I):
         hdr = hdr[1:]
         data_rows = [r[1:] if len(r) > 1 else r for r in data_rows]
@@ -634,7 +656,15 @@ def _add_search_table(
     groups = groups or []
 
     # Row plan: header + interleaved group bands + data rows.
+    # Полоса адреса идёт сразу за своей строкой — тем же приёмом, что и полоса
+    # запроса: слияние ячеек 0…cols−1.
     plan: list[tuple[str, Any]] = [("header", headers)]
+
+    def _emit(row: list[str], index: int) -> None:
+        plan.append(("data", row))
+        if index < len(addresses):
+            plan.append(("address", addresses[index]))
+
     if groups:
         for g in groups:
             start = int(g.get("rowStart", 0))
@@ -643,36 +673,39 @@ def _add_search_table(
             qtag = g.get("qTag")
             band = f"Запрос: {label}" if not qtag else f"{qtag} — {label}"
             plan.append(("group", band))
-            for r in data_rows[start : start + count]:
-                plan.append(("data", r))
+            for offset, r in enumerate(data_rows[start : start + count]):
+                _emit(r, start + offset)
     else:
-        for r in data_rows:
-            plan.append(("data", r))
+        for index, r in enumerate(data_rows):
+            _emit(r, index)
 
     # Ширины колонок выбираются по смыслу заголовков, а не по их длине.
     # Прежний признак `len(headers[0]) > 3` был прокси вопроса «первая колонка
     # номерная?», и прокси ошибался в обе стороны: «Тема» (4 буквы) уходила в
     # номерную ветку и получала 14 % ширины при двух счётчиках на 86 %, а
     # «Поз.» — в текстовую и получала 14 % под двузначное число.
-    if cols == 2:
+    if addresses and cols == 4:
+        # № | Заголовок | Тип источника | Оценка — таблица выдачи с полосами
+        # адреса. Ветка узнаётся по **наличию полос в данных**, а не по словам
+        # заголовков: у запасного разбора первая колонка тоже номерная («Поз.»),
+        # и разбирать таблицы по именам значит снова угадывать. Доли выверены
+        # настоящими метриками шрифта при 9 pt и за вычетом полей ячейки
+        # (2×91 440 EMU): самый длинный «Тип источника» — «Официальный сайт /
+        # госресурс», 184 px при полезных 186; самый широкий бейдж оценки —
+        # «● Нежелательный», 118 px при полезных 145; заголовку остаётся 582 px,
+        # и предельные 95 знаков строителя ложатся в две строки.
+        #
+        # Условие про число колонок — не перестраховка: `slides.py` пропускает
+        # до пяти заголовков, а список долей здесь четырёхэлементный, и пятая
+        # колонка роняла бы всю страницу `IndexError`ом при подсчёте высот.
+        prop = [0.05, 0.59, 0.20, 0.16]
+    elif cols == 2:
         prop = [0.24, 0.76]
     elif cols == 5:
-        # № | Ссылка | Заголовок | Тип источника | Оценка.
-        # Адрес обрезан строителем до 62 символов и всё равно переносится — не
-        # обрывается, а именно переносится. Доли подобраны по настоящим метрикам
-        # шрифта, а не по приблизительной модели `_title_line_estimate`: самый
-        # широкий 62-символьный адрес деки — 432 px при 10pt, и за вычетом полей
-        # ячейки (2×91 440 EMU) 0.22 оставляет ему 229 px на строку, то есть он
-        # укладывается в бюджет двух строк по суммарной ширине. Гарантии «не
-        # больше двух строк» здесь нет и быть не может: LibreOffice рвёт адрес
-        # после «/», и обрывок первой строки может пропасть почти впустую —
-        # в эталоне такие адреса рисуются тремя строками (так же было и на
-        # прежних 0.27), запас страницы это покрывает. На 0.20 запаса не
-        # оставалось совсем: строка растягивалась по содержимому и таблица
-        # выезжала за границу контента. Настоящая линия обороны тут —
-        # растровый смок: объявленная геометрия растяжения строки не видит.
-        # Освободившиеся у адреса проценты уходят заголовку: его читают
-        # глазами, а адрес открывают ссылкой.
+        # Пятиколоночная таблица. Своих построителей у неё сегодня нет — на ней
+        # жила прежняя выдача с адресом-колонкой, — но ветка не мёртвая: это
+        # единственный набор долей на пять колонок, а `slides.py` пропускает
+        # `headers[:5]`. Без неё пятиколоночный вход уронил бы страницу.
         prop = [0.05, 0.22, 0.44, 0.15, 0.14]
     elif cols == 3:
         # Текст плюс счётчики («Тема | Публикаций | Из них нежелательных»):
@@ -699,9 +732,44 @@ def _add_search_table(
     if leftover != 0 and widths:
         widths[2 if cols > 2 else len(widths) - 1] += leftover
 
+    # C.4 — the colored status badge belongs only to a genuine status column;
+    # generic value columns («Значение», «Комментарий») stay plain text so
+    # negative categories never receive a misleading green marker.
+    last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
+    # E.6 — «Оценка» is the SERP verdict column and must carry the badge too.
+    badge_last_col = bool(re.search(r"статус|риск|провер|оценк", last_header, re.I))
+
+    def _is_badge(col: int) -> bool:
+        return col == cols - 1 and badge_last_col
+
+    def _cell_font_pt(col: int) -> float:
+        """Кегль ячейки — тот, которым её и красят: у бейджа он свой."""
+        return BADGE_PT if _is_badge(col) else float(FS_CAPTION)
+
+    def _painted(col: int, value: str) -> str:
+        """Текст ячейки в том виде, в каком он будет нарисован.
+
+        У бейджа впереди точка и пробел — два знака, которых мера не видела.
+        Щель та же, что была у кегля: меряем одно, рисуем другое.
+        """
+        return f"{_status_tone(value)[0]} {value}" if _is_badge(col) else value
+
+    def _cell_height(text: str, width_emu: int, pt: float) -> int:
+        """Сколько займёт ячейка: настоящий перенос по полезной ширине."""
+        lines = _wrapped_line_count(text, max(1, width_emu - CELL_MARGINS_EMU), pt)
+        return lines * int(pt * EMU_PER_PT * 1.2)
+
     # Per-row heights.
-    body_pt = 10.0
-    line_h = int(body_pt * EMU_PER_PT * 1.2)
+    #
+    # Высота считается тем же переносом и тем же шрифтом, которыми ячейку
+    # рисуют (`_wrapped_line_count`), и **тем кеглем, которым она красится**.
+    # Прежде здесь стояла своя модель с потолком в две строки при 10 pt, а
+    # красили при 9: строка в три нарисованных строки объявлялась двумя,
+    # LibreOffice тянул её по содержимому, таблица уезжала вниз — и объявленная
+    # геометрия при этом оставалась «чистой».
+    #
+    # Поля ячейки python-pptx (0.1″ с каждой стороны) вычитаются: перенос
+    # случается по полезной ширине, а не по ширине колонки.
     pad = int(6 * EMU_PER_PT)
     header_h = int(26 * EMU_PER_PT)
     group_h = int(18 * EMU_PER_PT)
@@ -711,21 +779,50 @@ def _add_search_table(
             heights.append(header_h)
         elif kind == "group":
             heights.append(group_h)
+        elif kind == "address":
+            # Полоса объединяет все колонки, поэтому её ширина — весь контент.
+            heights.append(_cell_height(str(payload), CONTENT_W, float(FS_CAPTION)) + pad)
         else:
             # Высота строки — по самой высокой ячейке, по всем колонкам сразу.
             # Списка «измеряемых колонок» здесь нет намеренно: он расходился с
             # пропорциями (мерили колонку 2 — а текст жил в колонке 0) и строка
             # объявлялась в разы ниже своего содержимого.
-            lines = max(
-                _title_line_estimate(
-                    str(payload[c]) if c < len(payload) else "", widths[c], body_pt
+            heights.append(
+                max(
+                    _cell_height(
+                        _painted(c, str(payload[c]) if c < len(payload) else ""),
+                        widths[c],
+                        _cell_font_pt(c),
+                    )
+                    for c in range(cols)
                 )
-                for c in range(cols)
+                + pad
             )
-            heights.append(lines * line_h + pad)
 
     table_rows = len(plan)
     table_h = sum(heights)
+    # Бюджет листа — низ белой сцены, а не низ слайда.
+    #
+    # Прежде отрисовщик бюджета не знал вовсе: `slides.py` звал `content_stage`
+    # и выбрасывал возвращаемое значение, а таблица рисовала ту высоту, которая
+    # получилась. Нарисованное мимо страницы — та же тихая потеря содержимого,
+    # что и невлезший буллет, поэтому превышение объявляется событием CRITICAL
+    # (`TABLE_ROW_PARTIALLY_VISIBLE`), а не остаётся молча на растре.
+    if bottom is not None and y + table_h > bottom:
+        record_text_layout(
+            page=ctx.page,
+            name=f"orion_search_table_p{ctx.page}",
+            role="table",
+            font_family=FONT,
+            font_size_pt=FS_CAPTION,
+            box_width=CONTENT_W,
+            box_height=table_h,
+            available_height=max(0, bottom - y),
+            required_height=table_h,
+            measured_lines=len(plan),
+            text_length=sum(len(str(payload)) for _kind, payload in plan),
+            clipped=True,
+        )
     shape = ctx.slide.shapes.add_table(table_rows, cols, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(table_h))
     tbl = shape.table
     for i, w in enumerate(widths):
@@ -748,13 +845,10 @@ def _add_search_table(
         fill.solid()
         fill.fore_color.rgb = bg
 
-    # C.4 — the colored status badge belongs only to a genuine status column;
-    # generic value columns («Значение», «Комментарий») stay plain text so
-    # negative categories never receive a misleading green marker.
-    last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
-    # E.6 — «Оценка» is the SERP verdict column and must carry the badge too.
-    badge_last_col = bool(re.search(r"статус|риск|провер|оценк", last_header, re.I))
-
+    #: Фон строки, к которой относится следующая полоса адреса. Полоса всегда
+    #: идёт сразу за своей строкой, но фон считается при её отрисовке — держим
+    #: его явной переменной, а не полагаемся на живучесть локальной.
+    band_bg = WHITE
     for r_idx, (kind, payload) in enumerate(plan):
         if kind == "header":
             for c in range(cols):
@@ -767,6 +861,17 @@ def _add_search_table(
             merged = tbl.cell(r_idx, 0)
             merged.merge(tbl.cell(r_idx, cols - 1))
             paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=FS_CAPTION)
+        elif kind == "address":
+            # Полоса адреса: приглушённый цвет и **без `_clip_words`** — резать
+            # адрес нечем и незачем, полоса идёт во всю ширину контента.
+            #
+            # Фон — от своей строки, а не белый. Проверяющий сканирует страницу
+            # по красному: белая полоса разрезала бы плашку нежелательной
+            # строки пополам, и её адрес читался бы уже как часть следующей,
+            # нейтральной строки.
+            band = tbl.cell(r_idx, 0)
+            band.merge(tbl.cell(r_idx, cols - 1))
+            paint(band, str(payload), color=MUTED_COLOR, bg=band_bg, size=FS_CAPTION, clip=False)
         else:
             row = payload
             status = str(row[cols - 1] if len(row) >= cols else "").strip()
@@ -787,11 +892,12 @@ def _add_search_table(
                 row_bg = RGBColor(0xFF, 0xF7, 0xED)  # soft amber for LIKELY
             else:
                 row_bg = WHITE
+            band_bg = row_bg
             for c in range(cols):
                 val = str(row[c]) if c < len(row) else ""
                 if c == cols - 1 and badge_last_col:
                     dot, tone = _status_tone(val)
-                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5, clip=False)
+                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=BADGE_PT, clip=False)
                 else:
                     paint(tbl.cell(r_idx, c), val, bg=row_bg, size=FS_CAPTION)
 

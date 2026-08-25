@@ -234,6 +234,12 @@ After the engineer closes your findings you are invoked again, on the same task.
 
 ## What you return
 
+**Write your report to `<artefacts>/review-round-N.md` before you return it**, and return the same
+text. This is not bookkeeping: a report that exists only as a returned message is lost when your run
+stops more than once, and the orchestrator then acts on whatever fragment survived — closing five
+findings out of thirteen and calling the work done. That happened twice in one night. The file is
+the copy that survives.
+
 Russian, ordered most severe first. **The orchestrator relays it to the owner verbatim.** For each
 finding: `file:line`, one sentence on the defect, the failure scenario, severity, confidence.
 

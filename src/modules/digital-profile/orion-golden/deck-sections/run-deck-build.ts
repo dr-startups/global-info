@@ -712,7 +712,12 @@ export function toRendererPayload(input: {
       metrics,
       visualAnalysis,
       table: s.table
-        ? { headers: s.table.headers, rows: s.table.rows, groups: s.table.groups }
+        ? {
+            headers: s.table.headers,
+            rows: s.table.rows,
+            rowAddresses: s.table.rowAddresses,
+            groups: s.table.groups,
+          }
         : undefined,
       evidenceRefs: s.evidenceRefs,
       assetRefs: boundAssets,

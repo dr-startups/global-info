@@ -14,7 +14,8 @@ import { pluralRu } from "../../../report/i18n/plural-ru";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import { formatRuDate } from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput } from "./shared";
-import { clientLink, serpEngineLabel } from "./serp";
+import { serpEngineLabel } from "./serp";
+import { clientAddress } from "../../client/client-address";
 import {
   WIKIPEDIA_ARTICLE_LEAD_PREFIX,
   WIKIPEDIA_ARTICLE_LEAD_PREFIX_CONTINUED,
@@ -307,7 +308,11 @@ export function buildIdentityFragment(
         contradictingRows.length === 1 ? "зафиксирована статья" : "зафиксированы статьи"
       } ${enumerateRu(
         contradictingRows.map(
-          (row) => `${clientLink(row!.url, row!.domain)}${serpSourceParenthetical(row!)}`
+          // Адрес внутри предложения печатается целиком (§«Источник называется
+          // полным адресом»): узкой колонки, ради которой существовал предел
+          // печати, здесь нет. Ту же строку ищут ворота секционной валидации —
+          // обрезок в полном адресе не находится.
+          (row) => `${clientAddress(row!.url) ?? String(row!.domain)}${serpSourceParenthetical(row!)}`
         ),
         contradictingRows.length
       )}`

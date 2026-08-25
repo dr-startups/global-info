@@ -5,7 +5,6 @@ import { domainToASCII } from "node:url";
  */
 
 import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
-import { clientLink } from "./fragment-builders/serp";
 import {
   WIKIPEDIA_FRAGMENT_CATEGORY_LABELS,
   pickWikipediaCheckEntry,
@@ -232,11 +231,14 @@ export function validateSectionPack(input: {
       const budget = slide.templateId === "ai-overview" ? Number.MAX_SAFE_INTEGER : TEXT_BUDGETS.bullet;
       checkText(issues, slide.slideId, "bullet", b, budget);
     }
-    for (const row of slide.content.table?.rows ?? []) {
-      for (const cell of row) {
-        if (matchInternalClientToken(stripFindingMarkers(cell))) {
-          issues.push(`internal token in table cell on ${slide.slideId}: "${cell.slice(0, 60)}"`);
-        }
+    // Полоса адреса — такой же напечатанный текст, как ячейка: пока адрес был
+    // колонкой, он проверялся вместе со строками.
+    for (const cell of [
+      ...(slide.content.table?.rows ?? []).flat(),
+      ...(slide.content.table?.rowAddresses ?? []),
+    ]) {
+      if (matchInternalClientToken(stripFindingMarkers(cell))) {
+        issues.push(`internal token in table cell on ${slide.slideId}: "${cell.slice(0, 60)}"`);
       }
     }
   }
@@ -421,7 +423,11 @@ function wikipediaDenialIssue(
         deniedDomains.has(String(e?.domain ?? "").toLowerCase()) &&
         /\/wiki\//u.test(String(e?.url ?? ""))
     )
-    .map((e) => clientLink(e!.url, e!.domain))
+    // Игла — ровно то, что печатает построитель в предложении о статье
+    // (`identity.ts`): полный адрес, а если разобрать нечего — площадка.
+    // Обрезок в полном адресе не находится, и ворота роняли бы обязательную
+    // секцию на здоровом тексте.
+    .map((e) => clientAddress(e!.url) ?? String(e!.domain))
     .filter((link) => !text.includes(link));
   return unnamed.length === 0
     ? null

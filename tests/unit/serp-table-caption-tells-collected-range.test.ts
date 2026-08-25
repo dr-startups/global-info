@@ -16,6 +16,7 @@ import {
   SERP_TABLE_TOP_N,
   buildSerpFragment,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import { DECK_TEMPLATE_REGISTRY } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
 import type { SlideContentContract } from "@/modules/digital-profile/orion-golden/deck-sections/contracts";
@@ -117,21 +118,30 @@ function printedSentences(slide: SlideContentContract): string[] {
   return complete.slice(0, 2);
 }
 
+/** Сколько листов займут N строк — по ёмкости из реестра, а не числом здесь. */
+function pageSuffix(rowCount: number): string {
+  const cap = DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide;
+  const pages = Math.ceil(rowCount / cap);
+  return pages > 1 ? ` (1/${pages})` : "";
+}
+
 describe("заголовок таблицы называет собранный диапазон", () => {
   it("полная двадцатка подписана как ТОП-20", () => {
     const ranks = Array.from({ length: SERP_TABLE_TOP_N }, (_, i) => i + 1);
-    expect(slidesOf(ranks)[0]!.title).toBe("Россия — Google, ТОП-20 (1/2)");
+    expect(slidesOf(ranks)[0]!.title).toBe(
+      `Россия — Google, ТОП-20${pageSuffix(SERP_TABLE_TOP_N)}`
+    );
   });
 
   it("десять собранных позиций подписаны диапазоном", () => {
     const titles = slidesOf([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).map((s) => s.title);
-    expect(titles[0]).toBe("Россия — Google, ТОП-20: позиции 1–10");
+    expect(titles[0]).toBe(`Россия — Google, ТОП-20: позиции 1–10${pageSuffix(10)}`);
   });
 
   it("диапазон считается по напечатанным номерам, а не по их числу", () => {
     // Россия прогона 76: собраны 4, 6, 7, 8, 9, 10 — дыры 1, 2, 3, 5.
     expect(slidesOf([4, 6, 7, 8, 9, 10])[0]!.title).toBe(
-      "Россия — Google, ТОП-20: позиции 4–10"
+      `Россия — Google, ТОП-20: позиции 4–10${pageSuffix(6)}`
     );
   });
 });

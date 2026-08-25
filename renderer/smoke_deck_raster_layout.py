@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -32,8 +33,10 @@ from smoke_counters import print_tap_counters  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from orion_golden_render.common import FONT, TYPE_SCALE_PT  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
-    CONTENT_BOTTOM,
+    INK_BOTTOM,
     SLIDE_H,
+    STAGE_BOTTOM,
+    _ink_row_counts,
     check_pages,
     detect_furniture_top,
 )
@@ -41,7 +44,17 @@ from deck_raster_layout import (  # noqa: E402
 W, H = 1844, 1152
 FURNITURE_RULE_Y = int(H * 0.934)
 FURNITURE_TEXT_Y = int(H * 0.950)
-CONTENT_BOTTOM_PX = int(CONTENT_BOTTOM / SLIDE_H * H)
+INK_BOTTOM_PX = int(INK_BOTTOM / SLIDE_H * H)
+
+#: Полоса, в которой лежит нижняя кромка белой сцены вместе со своей тенью:
+#: от низа сцены до последнего ряда тени. Числами не задаётся — обе границы
+#: выведены из той же геометрии, что и `INK_BOTTOM`.
+#: Замер на эталоне 25.08: у здоровых страниц ряды 962…968 несут 823–850
+#: отсчётов чернил, ниже 969 — ноль; у испорченной стр. 17 там 46–71.
+STAGE_EDGE_FROM_PX = int(STAGE_BOTTOM / SLIDE_H * H)
+STAGE_EDGE_TO_PX = INK_BOTTOM_PX - 1
+#: Полноширинная линия: при шаге выборки 2 это ~920 отсчётов на всю ширину.
+STAGE_EDGE_INK = 600
 
 failures: list[str] = []
 
@@ -184,7 +197,7 @@ def make_page(path: Path, *, spill: bool = False, outside: bool = False) -> None
     d.rectangle([90, FURNITURE_TEXT_Y, 400, FURNITURE_TEXT_Y + 14], fill=(120, 130, 150))
     if spill:
         # Текст, вышедший за нижнюю границу своего блока.
-        d.rectangle([120, CONTENT_BOTTOM_PX + 8, 900, CONTENT_BOTTOM_PX + 40], fill=(51, 65, 85))
+        d.rectangle([120, INK_BOTTOM_PX + 8, 900, INK_BOTTOM_PX + 40], fill=(51, 65, 85))
     if outside:
         # Текст, вылезший за боковое поле.
         d.rectangle([2, 300, 40, 420], fill=(51, 65, 85))
@@ -263,6 +276,52 @@ def main() -> int:
             rep.passed,
             f"проверено страниц: {rep.pages_checked}, дефектов: {len(rep.findings)}",
         )
+
+        # --- Нижняя кромка сцены видна на страницах таблицы выдачи -----------
+        #
+        # Таблица лежит на белой сцене. Если она объявила высоту меньше
+        # нарисованной, LibreOffice тянет строку по содержимому, таблица едет
+        # вниз и закрашивает кромку сцены собой — сцена «пропадает», а
+        # содержимое уходит ниже неё. Прежний порог растровых ворот лежал
+        # почти на десяток пикселей ниже кромки и такую страницу пропускал:
+        # на эталоне 25.08 стр. 17 шла до y=972 при кромке 962, и ворота
+        # молчали.
+        #
+        # Какая страница является таблицей выдачи — берётся из манифеста
+        # (указатель, а не измерение); сама кромка ищется по растру.
+        manifest_path = (
+            Path(__file__).resolve().parent.parent
+            / "baselines/report-72/artifacts/deck-sections/report-deck-manifest.json"
+        )
+        if not manifest_path.is_file():
+            print("# SKIP кромка сцены на страницах выдачи — нет манифеста деки")
+        else:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            serp_pages = {
+                int(s["pageNumber"])
+                for s in manifest.get("slides", [])
+                if s.get("templateId") == "serp-table"
+            }
+            missing_edge: list[str] = []
+            # Считаются **осмотренные** страницы, а не объявленные манифестом:
+            # наборы расходятся (страницы не отрисованы, файл переименован), и
+            # «ноль дефектов на ноль осмотренных» — это «не проверяли».
+            inspected = 0
+            for path in real:
+                number = int(path.stem.split("-")[-1])
+                if number not in serp_pages:
+                    continue
+                inspected += 1
+                rows, _w, _h = _ink_row_counts(path)
+                if max(rows[STAGE_EDGE_FROM_PX : STAGE_EDGE_TO_PX + 1], default=0) < STAGE_EDGE_INK:
+                    lowest = max((y for y, n in enumerate(rows) if n > 0), default=0)
+                    missing_edge.append(f"{path.name} (самый низкий ряд чернил y={lowest})")
+            check(
+                "нижняя кромка сцены видна на каждой странице таблицы выдачи",
+                not missing_edge and inspected == len(serp_pages) and inspected > 0,
+                f"осмотрено {inspected} из {len(serp_pages)} объявленных; "
+                f"без кромки: {missing_edge or 'нет'}",
+            )
 
     # --- Шкала делений принадлежит ступени, а не статусу ------------------
     #

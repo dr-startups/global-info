@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  SERP_TABLE_HEADERS,
   buildSerpFragment,
   pickSerpTableQuery,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
@@ -56,6 +57,9 @@ function tableRows(scoped: ScopedFragmentInput): string[][] {
   const { slides } = buildSerpFragment("RU_SERP", "RU_PROFILE", "Россия", scoped);
   return slides.flatMap((s) => s.content.table?.rows ?? []);
 }
+
+/** Колонка заголовка — по имени: адрес уехал из таблицы в полосу под строкой. */
+const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 describe("выбор запроса таблицы", () => {
   it("складывает варианты написания в один запрос", () => {
@@ -111,7 +115,7 @@ describe("таблица собирается по запросу, а не по 
         { ref: "i3", rank: 3, title: "Чужой", url: "https://d.ru/3", query: "рашников яхта" },
       ])
     );
-    expect(rows.map((r) => r[2])).toEqual(["Первый", "Второй"]);
+    expect(rows.map((r) => r[TITLE])).toEqual(["Первый", "Второй"]);
   });
 });
 

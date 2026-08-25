@@ -64,11 +64,11 @@ describe("ссылка для клиента", () => {
     );
   });
 
-  it("длинный адрес обрезается, а не ломает колонку", () => {
+  it("длинный адрес печатается целиком: полоса идёт во всю ширину листа", () => {
     const long = `https://example.org/${"a".repeat(200)}`;
     const text = clientLink(long, "example.org");
-    expect(text.length).toBeLessThanOrEqual(62);
-    expect(text.endsWith("…")).toBe(true);
+    expect(text).toBe(`example.org/${"a".repeat(200)}`);
+    expect(text.endsWith("…")).toBe(false);
   });
 
   it("без адреса печатается домен, а не пустота", () => {

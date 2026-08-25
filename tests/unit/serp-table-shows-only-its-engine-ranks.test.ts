@@ -19,7 +19,10 @@ import { join } from "node:path";
 import { loadDeckInputsFromAnalyticsDir } from "@/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import { buildScopedInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
-import { buildSerpFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import {
+  SERP_TABLE_HEADERS,
+  buildSerpFragment,
+} from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import {
   UAE_UNCATEGORIZED_REFS,
   run76UaeObservations,
@@ -33,7 +36,7 @@ afterEach(() => {
 });
 
 /** Таблицы деки на срезе прогона 76 — тем же путём, что и у продукта. */
-function uaeTableRows(): string[][] {
+function uaeTableRows(): { rows: string[][]; rowAddresses: string[] } {
   const dir = mkdtempSync(join(tmpdir(), "serp-own-ranks-"));
   tempDirs.push(dir);
   writeSerpAnalyticsDir(dir, {
@@ -50,13 +53,27 @@ function uaeTableRows(): string[][] {
     evidenceIndex: inputs.evidenceIndex,
   });
   const { slides } = buildSerpFragment("UAE_SERP", "UAE_PROFILE", "ОАЭ", scoped);
-  return slides.flatMap((s) => s.content.table?.rows ?? []);
+  return {
+    rows: slides.flatMap((s) => s.content.table?.rows ?? []),
+    rowAddresses: slides.flatMap((s) => s.content.table?.rowAddresses ?? []),
+  };
 }
 
-/** Строка таблицы: номер и адрес — то, что читает клиент. */
-function printed(rows: string[][]): Array<{ rank: number; link: string }> {
-  return rows.map((r) => ({ rank: Number(r[0]), link: String(r[1]) }));
+/** Строка таблицы: номер и адрес — то, что читает клиент.
+ *
+ * Адрес переехал из колонки в полосу под строкой, поэтому берётся из
+ * `rowAddresses` — оттуда же, откуда его берёт рендерер. */
+function printed(
+  table: { rows: string[][]; rowAddresses?: string[] }
+): Array<{ rank: number; link: string }> {
+  return table.rows.map((r, i) => ({
+    rank: Number(r[0]),
+    link: String(table.rowAddresses?.[i] ?? ""),
+  }));
 }
+
+/** Колонка заголовка — по имени: адрес уехал из таблицы в полосу под строкой. */
+const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 describe("таблица ОАЭ — Google на срезе прогона 76", () => {
   it("не содержит ни одной строки с арсенкинским рангом", () => {
@@ -144,11 +161,11 @@ describe("материал, найденный обоими поисковика
     const tables = tablesOf(scoped);
     const yandex = tables.find((t) => t.title.includes("Яндекс"))!;
     const google = tables.find((t) => t.title.includes("Google"))!;
-    expect(yandex.rows.map((r) => [r[0], r[2]])).toEqual([
+    expect(yandex.rows.map((r) => [r[0], r[TITLE]])).toEqual([
       ["1", "Forbes"],
       ["2", "РБК"],
     ]);
-    expect(google.rows.map((r) => [r[0], r[2]])).toEqual([
+    expect(google.rows.map((r) => [r[0], r[TITLE]])).toEqual([
       ["1", "ММК"],
       ["5", "Forbes"],
     ]);
@@ -172,7 +189,7 @@ describe("датасетная политика неизвестного ист�
       { ref: "i2", rank: 2, engine: "YANDEX", query: "рашников", title: "Безымянный", url: "https://b.ru/2" },
       { ref: "i3", rank: 3, rankSource: "arsenkin", engine: "YANDEX", query: "рашников", title: "Обогатитель", url: "https://c.ru/3" },
     ]);
-    expect(tablesOf(scoped)[0]!.rows.map((r) => r[2])).toEqual(["Свой"]);
+    expect(tablesOf(scoped)[0]!.rows.map((r) => r[TITLE])).toEqual(["Свой"]);
   });
 });
 
@@ -193,7 +210,7 @@ describe("наблюдение без запроса не получает чу�
       { ref: "i3", rank: 7, rankSource: "serper", engine: "GOOGLE", query: "рашников", title: "Седьмой", url: "https://tadviser.ru/7" },
     ]);
     const rows = tablesOf(scoped)[0]!.rows;
-    expect(rows.map((r) => r[2])).toEqual(["Шестой", "Седьмой"]);
+    expect(rows.map((r) => r[TITLE])).toEqual(["Шестой", "Седьмой"]);
   });
 
   it("безымянная строка не занимает и свободный номер", () => {
@@ -203,7 +220,7 @@ describe("наблюдение без запроса не получает чу�
       { ref: "i1", rank: 6, rankSource: "serper", engine: "GOOGLE", query: "рашников", title: "Шестой", url: "https://a.ru/6" },
       { ref: "i2", rank: 9, rankSource: "serper", engine: "GOOGLE", title: "Безымянный", url: "https://lenta.ru/9" },
     ]);
-    expect(tablesOf(scoped)[0]!.rows.map((r) => r[2])).toEqual(["Шестой"]);
+    expect(tablesOf(scoped)[0]!.rows.map((r) => r[TITLE])).toEqual(["Шестой"]);
   });
 
   it("набор целиком без запросов работает как раньше", () => {

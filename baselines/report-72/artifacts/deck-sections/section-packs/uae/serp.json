@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:4cdb3512d6186889d5fd1c8d5d02f2f2ee5b683e6282495c563ed909eafa6b69",
-  "contentVersion": "deck-sections-v114",
+  "contentHash": "sha256:477e3aa8cb36894fab8d717d07030dc3dd969e7396b5306699f1a52e5011eff1",
+  "contentVersion": "deck-sections-v116",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -91,7 +91,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SERP",
-  "generatedAt": "2026-08-22T18:54:11.542Z",
+  "generatedAt": "2026-08-25T04:28:09.512Z",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
   "inputs": {
     "evidenceRefs": [
@@ -241,107 +241,52 @@
     {
       "baseSlotId": "p26_uae_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
-        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org, klerk.ru и ещё 1.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "narrative": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания. Материалы по теме на этой странице — rupep.org.",
+        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org и klerk.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — средний; оценка достоверна.",
         "table": {
           "headers": [
             "№",
-            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
+          "rowAddresses": [
+            "highways.today/2025/11/06/biography-of-glinka-sergei",
+            "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович",
+            "rupep.org/en/person/8095",
+            "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-i-mnenie-o-razvitii-transportnoy-oblasti"
+          ],
           "rows": [
             [
               "1",
-              "highways.today/2025/11/06/biography-of-glinka-sergei",
               "Biography of Glinka Sergei - A Transportation Pioneer Few ...",
               "—",
               "Нейтральный"
             ],
             [
               "2",
-              "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович",
               "Глинка Сергей Михайлович",
               "Энциклопедия / справочник",
               "Нейтральный"
             ],
             [
               "3",
-              "rupep.org/en/person/8095",
               "PEP: Glinka Sergey Mikhaylovich",
               "База данных / реестр",
               "Нежелательный"
             ],
             [
               "4",
-              "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biograf…",
               "Бизнесмен Сергей Глинка - биография, личная жизнь и ...",
-              "—",
-              "Нейтральный"
-            ],
-            [
-              "5",
-              "tadviser.com/index.php/Person:Sergey_Mikhailovich_Glinka",
-              "Glinka Sergei Mikhailovich - TAdviser",
-              "Энциклопедия / справочник",
-              "Нейтральный"
-            ],
-            [
-              "6",
-              "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
-              "Глинка Сергей: в каких юридических лицах значится, ИП",
-              "База данных / реестр",
-              "Нейтральный"
-            ],
-            [
-              "7",
-              "techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-…",
-              "Биография бизнесмена Сергея Глинки: фото, история ...",
-              "—",
-              "Нейтральный"
-            ],
-            [
-              "8",
-              "instagram.com/popular/сергей-михайлович-глинка",
-              "сергей михайлович глинка",
-              "Соцсеть",
-              "Нейтральный"
-            ],
-            [
-              "9",
-              "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-serge…",
-              "Интервью с бизнесменом Сергеем Глинкой: биография ...",
-              "—",
-              "Нейтральный"
-            ],
-            [
-              "10",
-              "bitva.wiki/ru/person/5678",
-              "Глинка Сергей Михайлович - Битва за Украину",
-              "—",
-              "Нейтральный"
-            ],
-            [
-              "11",
-              "forbes.ru/profile/sergei-glinka",
-              "Сергей Глинка",
-              "Новостное СМИ",
-              "Нейтральный"
-            ],
-            [
-              "12",
-              "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_…",
-              "Глинка Сергей Михайлович: биография, карьерный путь ...",
               "—",
               "Нейтральный"
             ]
           ]
         },
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
-        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
+        "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+        "whatWasFound": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания. Материалы по теме на этой странице — rupep.org.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
       "continuationIndex": null,
       "continuationOf": null,
@@ -351,33 +296,21 @@
         "inventory:serp-obs-cmrjsczit006tvd9gs4uo2h4s",
         "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
         "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
-        "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf",
-        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
-        "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
-        "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
-        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
-        "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
-        "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky",
-        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
-        "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
-        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
-        "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue"
+        "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf"
       ],
       "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
         "finding-business_profile-subject_match-a59d6fee",
-        "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "isContinuation": false,
       "metrics": {
         "adverseDisplayed": 1,
         "datasetCount": 20,
-        "displayedCount": 12,
+        "displayedCount": 4,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 2,
+        "pageCount": 4,
         "pageIndex": 1,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
@@ -387,7 +320,173 @@
       "sectionId": "UAE_PROFILE",
       "slideId": "p26_uae_serp_table",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (1/2)",
+      "title": "ОАЭ / международный — Google: собранная выдача (1/4)",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p26_uae_serp_table",
+      "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "sourceNote": "Источники — tadviser.com, audit-it.ru, techcult.ru и instagram.com.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "table": {
+          "headers": [
+            "№",
+            "Заголовок",
+            "Тип источника",
+            "Оценка"
+          ],
+          "rowAddresses": [
+            "tadviser.com/index.php/Person:Sergey_Mikhailovich_Glinka",
+            "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
+            "techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-foto-istoriya-uspeha-i-novye-proekty",
+            "instagram.com/popular/сергей-михайлович-глинка"
+          ],
+          "rows": [
+            [
+              "5",
+              "Glinka Sergei Mikhailovich - TAdviser",
+              "Энциклопедия / справочник",
+              "Нейтральный"
+            ],
+            [
+              "6",
+              "Глинка Сергей: в каких юридических лицах значится, ИП",
+              "База данных / реестр",
+              "Нейтральный"
+            ],
+            [
+              "7",
+              "Биография бизнесмена Сергея Глинки: фото, история ...",
+              "—",
+              "Нейтральный"
+            ],
+            [
+              "8",
+              "сергей михайлович глинка",
+              "Соцсеть",
+              "Нейтральный"
+            ]
+          ]
+        },
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
+      },
+      "continuationIndex": 1,
+      "continuationOf": "p26_uae_serp_table",
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
+        "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
+        "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-business_profile-subject_match-a59d6fee"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseDisplayed": 0,
+        "datasetCount": 20,
+        "displayedCount": 4,
+        "likelyDisplayed": 0,
+        "otherSubjectDisplayed": 0,
+        "pageCount": 4,
+        "pageIndex": 2,
+        "serpEngine": "GOOGLE",
+        "serpPositional": 0,
+        "uniqueMaterials": 16
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p26_uae_serp_table__cont1",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (2/4)",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p26_uae_serp_table",
+      "content": {
+        "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — runews24.ru, forbes.ru и piter.tv.",
+        "sourceNote": "Источники — runews24.ru, bitva.wiki, forbes.ru и piter.tv.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
+        "table": {
+          "headers": [
+            "№",
+            "Заголовок",
+            "Тип источника",
+            "Оценка"
+          ],
+          "rowAddresses": [
+            "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta",
+            "bitva.wiki/ru/person/5678",
+            "forbes.ru/profile/sergei-glinka",
+            "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_put_i_investicii_v_innovacii"
+          ],
+          "rows": [
+            [
+              "9",
+              "Интервью с бизнесменом Сергеем Глинкой: биография ...",
+              "—",
+              "Нейтральный"
+            ],
+            [
+              "10",
+              "Глинка Сергей Михайлович - Битва за Украину",
+              "—",
+              "Нейтральный"
+            ],
+            [
+              "11",
+              "Сергей Глинка",
+              "Новостное СМИ",
+              "Нейтральный"
+            ],
+            [
+              "12",
+              "Глинка Сергей Михайлович: биография, карьерный путь ...",
+              "—",
+              "Нейтральный"
+            ]
+          ]
+        },
+        "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — runews24.ru, forbes.ru и piter.tv.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
+      },
+      "continuationIndex": 2,
+      "continuationOf": "p26_uae_serp_table",
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue"
+      ],
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseDisplayed": 0,
+        "datasetCount": 20,
+        "displayedCount": 4,
+        "likelyDisplayed": 0,
+        "otherSubjectDisplayed": 0,
+        "pageCount": 4,
+        "pageIndex": 3,
+        "serpEngine": "GOOGLE",
+        "serpPositional": 0,
+        "uniqueMaterials": 16
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p26_uae_serp_table__cont2",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (3/4)",
       "visualAssetRefs": []
     },
     {
@@ -399,36 +498,37 @@
         "table": {
           "headers": [
             "№",
-            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
+          "rowAddresses": [
+            "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
+            "ru.wikipedia.org/wiki/Глинка,_Сергей_Николаевич",
+            "utro.ru/release/2025/08/01/1563439.shtml",
+            "labyrinth.ru/content/card.asp?cardid=92628"
+          ],
           "rows": [
             [
               "13",
-              "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
               "Связанный с Россией бизнесмен Сергей Глинка ...",
               "Соцсеть",
               "Нежелательный"
             ],
             [
               "14",
-              "ru.wikipedia.org/wiki/Глинка,_Сергей_Николаевич",
               "Глинка, Сергей Николаевич",
               "Энциклопедия / справочник",
               "Нейтральный"
             ],
             [
               "15",
-              "utro.ru/release/2025/08/01/1563439.shtml",
               "Бизнесмен Сергей Глинка: биография, личная жизнь ...",
               "—",
               "Нейтральный"
             ],
             [
               "16",
-              "labyrinth.ru/content/card.asp?cardid=92628",
               "ГЛИНКА Сергей Михайлович - Биография",
               "—",
               "Нейтральный"
@@ -439,7 +539,7 @@
         "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
         "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
-      "continuationIndex": 1,
+      "continuationIndex": 3,
       "continuationOf": "p26_uae_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -459,17 +559,17 @@
         "displayedCount": 4,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 2,
-        "pageIndex": 2,
+        "pageCount": 4,
+        "pageIndex": 4,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 16
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "UAE_PROFILE",
-      "slideId": "p26_uae_serp_table__cont1",
+      "slideId": "p26_uae_serp_table__cont3",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (2/2)",
+      "title": "ОАЭ / международный — Google: собранная выдача (4/4)",
       "visualAssetRefs": []
     }
   ],

@@ -36,6 +36,22 @@ SLIDE_H = 7_315_200
 MARGIN_X = 480_000
 CONTENT_BOTTOM = SLIDE_H - 1_100_000
 
+#: Низ белой сцены страницы и низ её тени — те же значения, что у рендерера
+#: (`layout_cleeq.content_stage`: высота сцены = граница контента минус смещение
+#: тени 45 000 минус зазор 60 000; тень рисуется на 45 000 ниже сцены).
+STAGE_BOTTOM = CONTENT_BOTTOM - 45_000 - 60_000
+STAGE_SHADOW_BOTTOM = STAGE_BOTTOM + 45_000
+
+#: Ниже этой линии чернил не бывает ни на одной странице деки.
+#:
+#: Не `CONTENT_BOTTOM`: сцена кончается на 6 110 200, её тень — на 6 155 200, и
+#: ниже не рисует никто. Прежний порог лежал ещё на 60 000 EMU (девять
+#: пикселей) ниже тени, и в этот зазор помещалась целая строка таблицы: на
+#: эталоне 25.08 стр. 17 доходила до y=972 при кромке сцены 962 — таблица была
+#: нарисована поверх кромки, а ворота молчали. Замер того же дня: при пороге
+#: 6 155 200 из 49 страниц краснеет ровно эта одна.
+INK_BOTTOM = STAGE_SHADOW_BOTTOM
+
 #: Насколько пиксель должен отличаться от фона, чтобы считаться чернилами.
 #: Сумма модулей по каналам: подписи серым (0x64748B) на белом дают ~380.
 INK_TOLERANCE = 28
@@ -129,15 +145,15 @@ def check_pages(paths: Iterable[Path]) -> RasterLayoutReport:
 
     for path, rows, w, h in scans:
         report.pages_checked += 1
-        content_bottom_px = int(CONTENT_BOTTOM / SLIDE_H * h)
-        # Ниже объявленной границы контента, но выше мебели, содержимого быть
-        # не должно: это текст, вышедший за свой блок.
+        ink_bottom_px = int(INK_BOTTOM / SLIDE_H * h)
+        # Ниже последней законной линии чернил, но выше мебели, содержимого
+        # быть не должно: это текст, вышедший за свой блок.
         limit = furniture_top if furniture_top is not None else h
-        spill = sum(rows[y] for y in range(min(content_bottom_px, limit), limit))
+        spill = sum(rows[y] for y in range(min(ink_bottom_px, limit), limit))
         if spill > INK_NOISE_FLOOR:
             lowest = max(
-                (y for y in range(content_bottom_px, limit) if rows[y] > 0),
-                default=content_bottom_px,
+                (y for y in range(ink_bottom_px, limit) if rows[y] > 0),
+                default=ink_bottom_px,
             )
             report.findings.append(
                 PageFinding(
@@ -145,7 +161,7 @@ def check_pages(paths: Iterable[Path]) -> RasterLayoutReport:
                     code="TEXT_BELOW_CONTENT_AREA",
                     detail=(
                         f"{spill} отсчётов чернил ниже границы контента "
-                        f"(y={content_bottom_px}), самый низкий y={lowest} "
+                        f"(y={ink_bottom_px}), самый низкий y={lowest} "
                         f"при мебели с y={furniture_top}"
                     ),
                 )

@@ -40,14 +40,16 @@ function serpSlide(input: {
     baseSlotId: "p09_uae_serp",
     isContinuation: false,
     table: {
-      headers: ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"],
+      // Адрес строки — полоса под ней, а не колонка: ворота читают домен
+      // оттуда же, откуда его читает клиент.
+      headers: ["№", "Заголовок", "Тип источника", "Оценка"],
       rows: input.ranks.map((rank) => [
         String(rank),
-        input.links?.[rank] ?? `example.org/${rank}`,
         `Материал ${rank}`,
         "СМИ",
         "Нейтральный",
       ]),
+      rowAddresses: input.ranks.map((rank) => input.links?.[rank] ?? `example.org/${rank}`),
     },
     evidenceRefs: [],
     findingIds: [],
@@ -114,6 +116,27 @@ describe("печать сверяется с наблюдениями", () => {
       observations: [...run76SerperRows(), ...run76ArsenkinRows()],
     });
     expect(result.issues).toEqual([]);
+  });
+
+  it("строка без своего адреса — отказ, а не молчаливый пропуск", () => {
+    /*
+     * Домен строки ворота берут из полосы адреса. Полосы нет — сверять нечем,
+     * и ворота обязаны сказать это вслух: молчаливый пропуск сделал бы их
+     * вакуумно зелёными ровно там, где печать перестала называть источник.
+     */
+    const slide = serpSlide({
+      engine: "GOOGLE",
+      query: UAE_QUERY,
+      ranks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      links: linksOf(run76SerperRows()),
+    });
+    delete (slide.table as unknown as { rowAddresses?: string[] }).rowAddresses;
+    const result = serpPrintMatchesObservations({
+      rendererSlides: [slide],
+      observations: run76SerperRows(),
+    });
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues.join(" | ")).toContain("без адреса");
   });
 
   it("регистр написания запроса ворота не смущает", () => {

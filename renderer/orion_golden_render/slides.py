@@ -644,8 +644,16 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         # Сцена под таблицей: строки таблицы лежат на белой плоскости, а не
-        # висят на мятном фоне.
-        content_stage(ctx, y)
+        # висят на мятном фоне. Её низ — бюджет страницы: он уходит в
+        # отрисовщик, а не выбрасывается.
+        #
+        # `content_stage` отвечает одним значением на два вопроса: низ сцены —
+        # или свой вход, если рисовать сцену отказался. Поданное как бюджет,
+        # сентинельное значение дало бы ложный CRITICAL с нулевым запасом,
+        # поэтому бюджет объявляется только тогда, когда сцена действительно
+        # нарисована.
+        stage_bottom = content_stage(ctx, y)
+        table_bottom_budget = stage_bottom if stage_bottom > y else None
         if narrative:
             # Keep 1–2 complete sentences above the table; never end on «как/и/с».
             intro = _safe(narrative)
@@ -667,6 +675,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         headers = list((table or {}).get("headers") or [])
         rows = list((table or {}).get("rows") or [])
         groups = list((table or {}).get("groups") or [])
+        row_addresses = list((table or {}).get("rowAddresses") or [])
         if not rows and bullets:
             # Fallback: parse bullet lines into a compact table
             headers = ["Поз.", "Домен", "Заголовок", "Риск"]
@@ -687,7 +696,15 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             # Render every row the (paginated) slide carries — no hidden cap.
             # Keep up to 5 headers so Запрос can be stripped inside the helper
             # without also dropping Статус.
-            _add_search_table(ctx, y, headers[:5], rows, groups)
+            _add_search_table(
+                ctx,
+                y,
+                headers[:5],
+                rows,
+                groups,
+                row_addresses=row_addresses,
+                bottom=table_bottom_budget,
+            )
         elif bullets:
             avail = max(400000, CONTENT_BOTTOM - y)
             box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
