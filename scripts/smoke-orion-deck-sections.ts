@@ -26,6 +26,7 @@ import {
   buildUaeProfileSection,
   composeExecutivePageStructure,
   composePageRowComposition,
+  contentHashOf,
   coverageContent,
   fragmentScope,
   pageRowCompositionBlocks,
@@ -33,8 +34,10 @@ import {
   runDeckBuild,
   validateAssembly,
   validateSectionPack,
+  FRAGMENT_ARTIFACT_PATHS,
   SECTION_PACK_SCHEMA_VERSION,
   SECTION_PACK_V2_SCHEMA_VERSION,
+  SectionPackV2Schema,
   type FragmentKey,
   type LegacySectionPackV2,
   type SectionBuildContext,
@@ -145,6 +148,35 @@ function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
       visualAssets,
     },
   };
+}
+
+/**
+ * Вторая запись Dow Jones — чтобы таблица базы поехала полосами записей.
+ *
+ * `providerParamTable` строит `groups` только при `totalRecords > 1`, а в
+ * report-72 у каждой базы ровно одно совпадение. Переклеивается ярлык уже
+ * существующего наблюдения, а не заводится новое: новый `evidenceRef` не
+ * прошёл бы `knownEvidenceRefs`, обязательная секция отвалилась бы, дека
+ * вышла бы пустой — и сравнение двух пустых дек прошло бы, ничего не проверив.
+ * Имя записи меняется тоже: `dedupeComplianceHits` считает записи по
+ * провайдеру, категории, баллу и имени.
+ */
+function ctxWithComplianceRecordBands(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
+  const ctx = makeCtx();
+  const found = Object.entries(ctx.evidenceIndex).find(
+    ([, e]) => e.kind === "compliance_hit" && String(e.providerLabel ?? "") === "WORLD_CHECK"
+  );
+  if (!found) throw new Error("report-72 data must contain a WORLD_CHECK compliance hit");
+  const [ref, entry] = found;
+  ctx.evidenceIndex = {
+    ...ctx.evidenceIndex,
+    [ref]: {
+      ...entry,
+      providerLabel: "DOW_JONES",
+      title: "Глинка Сергей Михайлович, 1968 г. р.",
+    },
+  };
+  return ctx;
 }
 
 function buildOnce(outputRoot: string, ctx = makeCtx()) {
@@ -655,6 +687,99 @@ describe("regression scenario: change only the RU AI fixture (report-72 data)", 
     const tocRu3 = build3.assembly.deckManifest.toc.find((t) => t.title.includes("Россия"))!;
     assert.notEqual(tocRu3.title, tocRu1.title, "RU TOC range must shift");
     assert.equal(build3.assemblyValidation?.passed, true);
+  });
+});
+
+/*
+ * Пересборка на тёплом кэше не двигает ни одного файла пакета.
+ *
+ * Это дословный сценарий, которым ворота приёмки портили эталон: второй прогон
+ * возвращает все 22 фрагмента из кэша, а на диск пишет ту форму, в которой они
+ * лежат в памяти. Пока форм было две, 18 из 22 файлов переписывались другим
+ * порядком ключей и переставали сходиться со своим `contentHash` — и следующий
+ * `npm run ci` краснел на эталоне, которого никто не менял.
+ *
+ * Свой каталог и свой `it`: соседний сценарий делает третью сборку на
+ * изменённой фикстуре, и проверка, дописанная в него, зависела бы от порядка.
+ * Метаданных ассетов сценарий не требует — он про байты файлов, поэтому под
+ * пропуск `assetsAvailable` не уходит.
+ */
+describe("пересборка на тёплом кэше", () => {
+  const dir = mkdtempSync(join(tmpdir(), "orion-deck-warm-"));
+
+  it("не двигает файлы пакетов и не рассогласовывает их с contentHash", () => {
+    buildOnce(dir);
+    const rels = Object.values(FRAGMENT_ARTIFACT_PATHS);
+    const before = new Map(rels.map((rel) => [rel, readFileSync(join(dir, rel), "utf8")]));
+
+    const build2 = buildOnce(dir);
+    assert.equal(build2.buildLog.length, rels.length);
+    assert.deepEqual(
+      build2.buildLog.filter((l) => l.action !== "REUSED_CACHE"),
+      [],
+      "вторая сборка обязана взять все фрагменты из кэша"
+    );
+
+    const moved: string[] = [];
+    const mismatched: string[] = [];
+    for (const rel of rels) {
+      const bytes = readFileSync(join(dir, rel), "utf8");
+      if (bytes !== before.get(rel)) moved.push(rel);
+      const pack = SectionPackV2Schema.parse(JSON.parse(bytes));
+      if (contentHashOf(pack.slides) !== pack.contentHash) mismatched.push(rel);
+    }
+    assert.deepEqual(moved, [], `файлы пакетов изменились на пересборке из кэша: ${moved.length}`);
+    assert.deepEqual(
+      mismatched,
+      [],
+      `файлы пакетов не сходятся со своим contentHash: ${mismatched.length}`
+    );
+  });
+
+  /*
+   * Дека, собранная из пакетов с диска, — та же дека, что из свежесобранных.
+   *
+   * `metrics` слайда — единственное поле пакета типа `z.record`: zod сохраняет
+   * в нём порядок ключей входа, поэтому пакет с диска и пакет из построителя
+   * приносили в сборку разный порядок. Байты `assembled-deck.json` — это то,
+   * что штампует приёмка сборки: разойдясь, они заставляют «Повторить рендер»
+   * рендерить заново уже принятую деку.
+   */
+  it("собирает из кэша ту же деку побайтово", () => {
+    const own = mkdtempSync(join(tmpdir(), "orion-deck-warm-deck-"));
+    buildOnce(own);
+    const first = readFileSync(join(own, "assembled-deck.json"), "utf8");
+    buildOnce(own);
+
+    assert.equal(readFileSync(join(own, "assembled-deck.json"), "utf8"), first);
+  });
+
+  /*
+   * То же самое, но на таблице с группами.
+   *
+   * `metrics` — не единственное, что сборщик выносит из пакета: у таблицы
+   * комплаенса есть полосы записей (`table.groups[]`), и построитель пишет их
+   * литералом `{rowStart, rowCount, qTag, queryDisplay}`, а схема объявляет
+   * `{rowStart, rowCount, queryDisplay, qTag}`. У report-72 по одной записи на
+   * базу, поэтому групп там ноль и предыдущая проверка этот класс не держит —
+   * данные заводятся здесь.
+   */
+  it("собирает из кэша ту же деку побайтово, когда в таблице есть группы", () => {
+    const own = mkdtempSync(join(tmpdir(), "orion-deck-warm-groups-"));
+    const ctx = ctxWithComplianceRecordBands();
+    buildOnce(own, ctx);
+    const first = readFileSync(join(own, "assembled-deck.json"), "utf8");
+
+    // Полосы обязаны доехать до самой деки: проверка сравнивает её байты, и на
+    // деке без групп она прошла бы, не проверив ничего.
+    const banded = (JSON.parse(first) as { slides: Array<{ table?: { groups?: unknown[] } }> }).slides
+      .filter((s) => (s.table?.groups ?? []).length > 0)
+      .length;
+    assert.ok(banded > 0, "в собранной деке нет ни одной таблицы с полосами записей");
+
+    buildOnce(own, ctx);
+
+    assert.equal(readFileSync(join(own, "assembled-deck.json"), "utf8"), first);
   });
 });
 

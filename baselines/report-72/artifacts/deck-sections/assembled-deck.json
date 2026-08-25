@@ -146,28 +146,28 @@
       "kpis": [
         {
           "label": "Материалов собрано",
-          "value": "343",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "343"
         },
         {
           "label": "О субъекте",
-          "value": "149",
-          "tone": "good"
+          "tone": "good",
+          "value": "149"
         },
         {
           "label": "Вероятно о субъекте",
-          "value": "0",
-          "tone": "warn"
+          "tone": "warn",
+          "value": "0"
         },
         {
           "label": "Тем риска",
-          "value": "3",
-          "tone": "risk"
+          "tone": "risk",
+          "value": "3"
         },
         {
           "label": "Ключевых тем",
-          "value": "6",
-          "tone": "accent"
+          "tone": "accent",
+          "value": "6"
         }
       ]
     },
@@ -457,11 +457,11 @@
         "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
       "metrics": {
-        "themes": 6,
+        "adverse": 3,
         "likelyThemes": 0,
         "page": 1,
         "pages": 2,
-        "adverse": 3
+        "themes": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -585,10 +585,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "themes": 6,
         "likelyThemes": 0,
         "page": 2,
-        "pages": 2
+        "pages": 2,
+        "themes": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -627,10 +627,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
+        "adverseFindingCount": 3,
         "compositeCount": 343,
-        "subjectMatchCount": 149,
         "likelySubjectCount": 0,
-        "adverseFindingCount": 3
+        "subjectMatchCount": 149
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -643,38 +643,38 @@
       "kpis": [
         {
           "label": "Материалов собрано",
-          "value": "343",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "343"
         },
         {
           "label": "Связаны с проверяемым лицом",
-          "value": "149",
-          "tone": "good"
+          "tone": "good",
+          "value": "149"
         },
         {
           "label": "Вероятно о субъекте",
-          "value": "0",
-          "tone": "warn"
+          "tone": "warn",
+          "value": "0"
         },
         {
           "label": "Требуют идентификации",
-          "value": "161",
-          "tone": "warn"
+          "tone": "warn",
+          "value": "161"
         },
         {
           "label": "Относятся к другим лицам",
-          "value": "33",
-          "tone": "warn"
+          "tone": "warn",
+          "value": "33"
         },
         {
           "label": "Тем повышенного внимания",
-          "value": "3",
-          "tone": "risk"
+          "tone": "risk",
+          "value": "3"
         },
         {
           "label": "Региональные контуры",
-          "value": "Россия · ОАЭ",
-          "tone": "accent"
+          "tone": "accent",
+          "value": "Россия · ОАЭ"
         }
       ]
     },
@@ -703,10 +703,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
+        "adverseFindingCount": 3,
         "compositeCount": 343,
-        "subjectMatchCount": 149,
         "likelySubjectCount": 0,
-        "adverseFindingCount": 3
+        "subjectMatchCount": 149
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -889,10 +889,10 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "materials": 246,
+        "adverse": 3,
         "findings": 5,
         "likely": 0,
-        "adverse": 3,
+        "materials": 246,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -907,23 +907,23 @@
       "kpis": [
         {
           "label": "Собрано по региону",
-          "value": "246",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "246"
         },
         {
           "label": "Тем повышенного внимания",
-          "value": "3",
-          "tone": "risk"
+          "tone": "risk",
+          "value": "3"
         },
         {
           "label": "Тем подтверждено",
-          "value": "5",
-          "tone": "accent"
+          "tone": "accent",
+          "value": "5"
         },
         {
           "label": "Вероятно о субъекте",
-          "value": "0",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "0"
         }
       ]
     },
@@ -1086,10 +1086,10 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "materials": 246,
+        "adverse": 3,
         "findings": 5,
         "likely": 0,
-        "adverse": 3,
+        "materials": 246,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -1257,10 +1257,10 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "materials": 246,
+        "adverse": 3,
         "findings": 5,
         "likely": 0,
-        "adverse": 3,
+        "materials": 246,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -1388,8 +1388,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "urlAuditRows": 3,
-        "materials": 246
+        "materials": 246,
+        "urlAuditRows": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -1547,16 +1547,16 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 12,
         "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 1,
         "pageCount": 4,
+        "pageIndex": 1,
         "serpEngine": "YANDEX",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -1681,16 +1681,16 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 8,
         "adverseDisplayed": 1,
+        "datasetCount": 50,
+        "displayedCount": 8,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 2,
         "pageCount": 4,
+        "pageIndex": 2,
         "serpEngine": "YANDEX",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -1863,16 +1863,16 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 12,
         "adverseDisplayed": 1,
+        "datasetCount": 50,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 3,
         "pageCount": 4,
+        "pageIndex": 3,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -1943,16 +1943,16 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 2,
         "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 2,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 4,
         "pageCount": 4,
+        "pageIndex": 4,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -2025,8 +2025,8 @@
         "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
       "metrics": {
-        "screenshots": 2,
-        "adverseHighlights": 2
+        "adverseHighlights": 2,
+        "screenshots": 2
       },
       "visualAssetRefs": [
         "ru_provider_serp_synserp_mrjsdb6i_af88a1f851",
@@ -2087,8 +2087,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 10,
-        "adverseSuggestions": 0
+        "adverseSuggestions": 0,
+        "items": 10
       },
       "visualAssetRefs": [
         "ru_suggestions_yandex"
@@ -2135,8 +2135,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 8,
-        "adverseSuggestions": 0
+        "adverseSuggestions": 0,
+        "items": 8
       },
       "visualAssetRefs": [
         "ru_suggestions_google"
@@ -2179,8 +2179,8 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "items": 9,
-        "adverseImages": 0
+        "adverseImages": 0,
+        "items": 9
       },
       "visualAssetRefs": [
         "ru_image_grid"
@@ -2223,8 +2223,8 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "items": 9,
-        "adverseImages": 1
+        "adverseImages": 1,
+        "items": 9
       },
       "visualAssetRefs": [
         "ru_image_grid_2"
@@ -2269,8 +2269,8 @@
         "finding-security_scrutiny-subject_match-0ae970c7"
       ],
       "metrics": {
-        "items": 6,
-        "adverseImages": 1
+        "adverseImages": 1,
+        "items": 6
       },
       "visualAssetRefs": [
         "ru_image_grid_3"
@@ -2319,8 +2319,8 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "items": 9,
-        "adverseImages": 1
+        "adverseImages": 1,
+        "items": 9
       },
       "visualAssetRefs": [
         "ru_image_grid_4"
@@ -2359,11 +2359,11 @@
       ],
       "findingIds": [],
       "metrics": {
-        "subjectClaims": 0,
         "identityPollution": 0,
-        "wikipediaCheckExists": -1,
+        "subjectClaims": 0,
         "wikipediaArticleFragments": 0,
-        "wikipediaArticleFragmentsDropped": 0
+        "wikipediaArticleFragmentsDropped": 0,
+        "wikipediaCheckExists": -1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -2468,8 +2468,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 4,
-        "adverseQueries": 0
+        "adverseQueries": 0,
+        "items": 4
       },
       "visualAssetRefs": [
         "ru_related_1"
@@ -2505,8 +2505,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 3,
-        "adverseQueries": 0
+        "adverseQueries": 0,
+        "items": 3
       },
       "visualAssetRefs": [
         "ru_related_2"
@@ -2542,8 +2542,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 3,
-        "adverseQueries": 0
+        "adverseQueries": 0,
+        "items": 3
       },
       "visualAssetRefs": [
         "ru_related_3"
@@ -2675,10 +2675,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "materials": 97,
+        "adverse": 3,
         "findings": 6,
         "likely": 0,
-        "adverse": 3,
+        "materials": 97,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -2693,23 +2693,23 @@
       "kpis": [
         {
           "label": "Собрано по региону",
-          "value": "97",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "97"
         },
         {
           "label": "Тем повышенного внимания",
-          "value": "3",
-          "tone": "risk"
+          "tone": "risk",
+          "value": "3"
         },
         {
           "label": "Тем подтверждено",
-          "value": "6",
-          "tone": "accent"
+          "tone": "accent",
+          "value": "6"
         },
         {
           "label": "Вероятно о субъекте",
-          "value": "0",
-          "tone": "neutral"
+          "tone": "neutral",
+          "value": "0"
         }
       ]
     },
@@ -2816,10 +2816,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "materials": 97,
+        "adverse": 3,
         "findings": 6,
         "likely": 0,
-        "adverse": 3,
+        "materials": 97,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -2932,10 +2932,10 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "materials": 97,
+        "adverse": 3,
         "findings": 6,
         "likely": 0,
-        "adverse": 3,
+        "materials": 97,
         "uncategorized": 0
       },
       "visualAssetRefs": [],
@@ -3005,8 +3005,8 @@
       "evidenceRefs": [],
       "findingIds": [],
       "metrics": {
-        "urlAuditRows": 0,
-        "materials": 97
+        "materials": 97,
+        "urlAuditRows": 0
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -3157,16 +3157,16 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "datasetCount": 20,
-        "uniqueMaterials": 16,
-        "displayedCount": 12,
         "adverseDisplayed": 1,
+        "datasetCount": 20,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 1,
         "pageCount": 2,
+        "pageIndex": 1,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 16
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -3253,16 +3253,16 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "datasetCount": 20,
-        "uniqueMaterials": 16,
-        "displayedCount": 4,
         "adverseDisplayed": 1,
+        "datasetCount": 20,
+        "displayedCount": 4,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 2,
         "pageCount": 2,
+        "pageIndex": 2,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 16
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -3312,8 +3312,8 @@
         "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
       "metrics": {
-        "screenshots": 0,
-        "adverseHighlights": 1
+        "adverseHighlights": 1,
+        "screenshots": 0
       },
       "visualAssetRefs": [
         "uae_provider_serp_synserp_mrjsdba7_1de34deb20"
@@ -3351,8 +3351,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 1,
-        "adverseSuggestions": 0
+        "adverseSuggestions": 0,
+        "items": 1
       },
       "visualAssetRefs": [
         "uae_suggestions"
@@ -3438,8 +3438,8 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "items": 42,
-        "adverseImages": 4
+        "adverseImages": 4,
+        "items": 42
       },
       "visualAssetRefs": [
         "uae_image_grid"
@@ -3549,8 +3549,8 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 1,
-        "adverseQueries": 0
+        "adverseQueries": 0,
+        "items": 1
       },
       "visualAssetRefs": [
         "uae_related"

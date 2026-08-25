@@ -1,27 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "UAE_PROFILE",
-  "sectionType": "UAE_PROFILE",
-  "fragmentKey": "UAE_SERP",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:4cdb3512d6186889d5fd1c8d5d02f2f2ee5b683e6282495c563ed909eafa6b69",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "uae-serp-analysis-v4",
-  "contentHash": "sha256:972e2b4c3d3545a77de90d663b6973af1bfbf14d4ebe8eb9d2e19de6b1af3979",
-  "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
-  "generatedAt": "2026-08-22T18:54:11.542Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53",
-    "finding-offshore_corporate-subject_match-1b4c64c7"
-  ],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -109,15 +90,10 @@
     "serp_observation:cmrjsczk2007lvd9g7fldgn6p",
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
+  "fragmentKey": "UAE_SERP",
+  "generatedAt": "2026-08-22T18:54:11.542Z",
+  "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53",
-      "finding-offshore_corporate-subject_match-1b4c64c7"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -205,20 +181,69 @@
       "serp_observation:cmrjsczk2007lvd9g7fldgn6p",
       "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53",
+      "finding-offshore_corporate-subject_match-1b4c64c7"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3,
+    "datasetCount": 85,
+    "displayedCount": 20
+  },
+  "promptVersion": "uae-serp-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+      "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7",
+      "inventory:serp-obs-cmrjsczit006tvd9gs4uo2h4s",
+      "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+      "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+      "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf",
+      "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+      "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
+      "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
+      "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+      "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
+      "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky",
+      "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+      "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
+      "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+      "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:serp-obs-cmrjsczjv007hvd9ggkgijmo1",
+      "inventory:serp-obs-cmrjsczk2007lvd9g7fldgn6p",
+      "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "UAE_PROFILE",
+  "sectionType": "UAE_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p26_uae_serp_table",
       "baseSlotId": "p26_uae_serp_table",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (1/2)",
       "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org, klerk.ru и ещё 1.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -314,13 +339,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
-        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org, klerk.ru и ещё 1.",
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru."
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
         "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7",
@@ -346,31 +370,32 @@
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
+      "isContinuation": false,
       "metrics": {
-        "datasetCount": 20,
-        "uniqueMaterials": 16,
-        "displayedCount": 12,
         "adverseDisplayed": 1,
+        "datasetCount": 20,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 1,
         "pageCount": 2,
+        "pageIndex": 1,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 16
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p26_uae_serp_table",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (1/2)",
       "visualAssetRefs": []
     },
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p26_uae_serp_table__cont1",
       "baseSlotId": "p26_uae_serp_table",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": true,
-      "continuationOf": "p26_uae_serp_table",
-      "continuationIndex": 1,
-      "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (2/2)",
       "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+        "sourceNote": "Источники — x.com, ru.wikipedia.org, utro.ru и labyrinth.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -410,13 +435,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
-        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники — x.com, ru.wikipedia.org, utro.ru и labyrinth.ru.",
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com."
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
+      "continuationIndex": 1,
+      "continuationOf": "p26_uae_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
         "inventory:serp-obs-cmrjsczjv007hvd9ggkgijmo1",
@@ -428,63 +452,39 @@
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-business_profile-subject_match-a59d6fee"
       ],
+      "isContinuation": true,
       "metrics": {
-        "datasetCount": 20,
-        "uniqueMaterials": 16,
-        "displayedCount": 4,
         "adverseDisplayed": 1,
+        "datasetCount": 20,
+        "displayedCount": 4,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 2,
         "pageCount": 2,
+        "pageIndex": 2,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 16
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p26_uae_serp_table__cont1",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (2/2)",
       "visualAssetRefs": []
     }
   ],
-  "metrics": {
-    "datasetCount": 85,
-    "displayedCount": 20,
-    "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 3
-  },
-  "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
-      "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7",
-      "inventory:serp-obs-cmrjsczit006tvd9gs4uo2h4s",
-      "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
-      "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
-      "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf",
-      "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
-      "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
-      "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
-      "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
-      "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
-      "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky",
-      "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
-      "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
-      "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
-      "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue",
-      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-      "inventory:serp-obs-cmrjsczjv007hvd9ggkgijmo1",
-      "inventory:serp-obs-cmrjsczk2007lvd9g7fldgn6p",
-      "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53",
+    "finding-offshore_corporate-subject_match-1b4c64c7"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

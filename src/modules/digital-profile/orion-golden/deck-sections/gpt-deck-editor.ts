@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { contentHashOf } from "./contracts";
 import type { FragmentKey, SectionPackV2, SlideContentContract } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import type { ScopedEvidenceIndex, SubjectProfileInput } from "./scoped-input";
@@ -24,7 +25,6 @@ import type { GptJsonCaller } from "../gpt/gpt-case-analysis";
 import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-queue";
 import {
   allowedDomainsForSlide,
-  contentHashOf,
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   isHonestEmptyStateSlide,
   packRewriteBlock,

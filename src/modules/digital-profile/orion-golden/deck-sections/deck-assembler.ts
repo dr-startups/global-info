@@ -18,7 +18,12 @@ import type {
   SectionPackV2,
   SlideContentContract,
 } from "./contracts";
-import { REPORT_DECK_MANIFEST_VERSION, SECTION_TITLES, type PageKind } from "./contracts";
+import {
+  canonicalSectionPack,
+  REPORT_DECK_MANIFEST_VERSION,
+  SECTION_TITLES,
+  type PageKind,
+} from "./contracts";
 import {
   DECK_TEMPLATE_REGISTRY,
   isAllowedLayoutVariant,
@@ -151,7 +156,18 @@ export function assembleDeck(input: {
 }): DeckAssemblyResult {
   const rejections: AssemblyRejection[] = [];
   const errors: string[] = [];
-  const byKey = new Map(input.packs.map((p) => [p.fragmentKey, p]));
+  /*
+   * Дека собирается из пакета в канонической форме — той же, что у его файла.
+   *
+   * Всё, что сборщик выносит из пакета в деку (таблица с полосами записей,
+   * метрики, KPI, объяснения рамок), иначе приносит порядок ключей своего
+   * происхождения: у пакета с диска он схемный, у свежесобранного — авторский.
+   * `assembled-deck.json` от этого расходился побайтово между прогоном,
+   * собравшим секции заново, и следующим, взявшим их из кэша, — а эти байты
+   * штампует приёмка сборки. Ответ здесь один и на любое поле, включая то,
+   * которое появится в пакете завтра.
+   */
+  const byKey = new Map(input.packs.map((p) => [p.fragmentKey, canonicalSectionPack(p)]));
 
   // 4. Required sections must not be failed.
   if (input.manifest.buildBlocked) {

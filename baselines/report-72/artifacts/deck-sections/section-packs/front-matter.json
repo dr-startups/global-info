@@ -1,79 +1,79 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "FRONT_MATTER",
-  "sectionType": "FRONT_MATTER",
-  "fragmentKey": "FRONT_MATTER_MAIN",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:6a899597f872a6fec69af40dfe9ed9f3f45b50ca83f1b147c8af07ed5509e64b",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "front-matter-deterministic-v1",
-  "contentHash": "sha256:72d6a53023319939042f7416d6e55dfc550d0af801268edc9002b9984f09417a",
-  "inputHash": "sha256:4796189f4ffb98b638f788642600b2a19f44ed541ed378ffc4f897fe12ae074b:feb89090d26f2158",
-  "generatedAt": "2026-08-22T18:54:11.483Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [],
+  "fragmentKey": "FRONT_MATTER_MAIN",
+  "generatedAt": "2026-08-22T18:54:11.483Z",
+  "inputHash": "sha256:4796189f4ffb98b638f788642600b2a19f44ed541ed378ffc4f897fe12ae074b:feb89090d26f2158",
   "inputs": {
-    "findingIds": [],
     "evidenceRefs": [],
+    "findingIds": [],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
-  "slides": [
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p01_cover",
-      "baseSlotId": "p01_cover",
-      "sectionId": "FRONT_MATTER",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "cover",
-      "title": "Отчёт о цифровом профиле — Сергей Глинка",
-      "content": {
-        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
-      },
-      "evidenceRefs": [],
-      "findingIds": [],
-      "metrics": {},
-      "visualAssetRefs": []
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p02_toc",
-      "baseSlotId": "p02_toc",
-      "sectionId": "FRONT_MATTER",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "toc",
-      "title": "Содержание отчёта",
-      "content": {
-        "bullets": []
-      },
-      "evidenceRefs": [],
-      "findingIds": [],
-      "metrics": {},
-      "visualAssetRefs": []
-    }
-  ],
   "metrics": {
-    "datasetCount": 0,
-    "displayedCount": 0,
     "adverseDatasetCount": 0,
-    "adverseDisplayedCount": 0
+    "adverseDisplayedCount": 0,
+    "datasetCount": 0,
+    "displayedCount": 0
   },
+  "promptVersion": "front-matter-deterministic-v1",
   "provenance": {
+    "evidenceRefs": [],
     "providers": [],
     "reportRunIds": [
       "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": []
+    ]
   },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "FRONT_MATTER",
+  "sectionType": "FRONT_MATTER",
+  "slides": [
+    {
+      "baseSlotId": "p01_cover",
+      "content": {
+        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {},
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p01_cover",
+      "templateId": "cover",
+      "title": "Отчёт о цифровом профиле — Сергей Глинка",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p02_toc",
+      "content": {
+        "bullets": []
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {},
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p02_toc",
+      "templateId": "toc",
+      "title": "Содержание отчёта",
+      "visualAssetRefs": []
+    }
+  ],
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

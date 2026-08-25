@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import type { FragmentKey, SectionPackV2, SectionType } from "./contracts";
-import { SECTION_PACK_SCHEMA_VERSION } from "./contracts";
+import { contentHashOf, SECTION_PACK_SCHEMA_VERSION } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import {
   buildScopedInput,
@@ -41,6 +41,23 @@ import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
 
+/**
+ * Пакет не сходился со своим хэшем, и хэш перештампован.
+ *
+ * Так выглядит либо пакет, записанный прежней формулой хэша, либо правка файла
+ * руками. Пересчёт стирает единственный след этого состояния, поэтому след
+ * переносится в журнал сборки: он уезжает в `section-build-log.json`, то есть
+ * остаётся в артефактах прогона.
+ */
+export const CONTENT_HASH_REPAIRED = "content-hash-repaired" as const;
+
+export type SectionBuildLogEntry = {
+  fragmentKey: FragmentKey;
+  action: "REGENERATED" | "REUSED_CACHE";
+  /** `content-hash-repaired:<прежний хэш>` — иначе поля нет вовсе. */
+  warning?: string;
+};
+
 export type SectionBuildContext = {
   caseId: string;
   reportRunId: string;
@@ -55,7 +72,7 @@ export type SectionBuildContext = {
   /** Previously persisted packs for cache reuse (contentHash/inputHash). */
   previousPacks?: Map<FragmentKey, SectionPackV2>;
   /** Build log: which fragments were regenerated vs reused. */
-  buildLog?: Array<{ fragmentKey: FragmentKey; action: "REGENERATED" | "REUSED_CACHE" }>;
+  buildLog?: SectionBuildLogEntry[];
   /**
    * Уже собранные разделы — доступны фрагментам, которые строятся последними.
    *
@@ -278,6 +295,21 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
     .slice(0, 16);
 }
 
+/**
+ * Пакет со своим собственным хэшем — и признак того, что хэш пришлось починить.
+ *
+ * Один ответ для обоих входов: ветки реюза и записи на диск (`prebuiltPacks`
+ * точечного ретрая стадии 2 приходят из `loadPreviousPacks` мимо реюза).
+ */
+export function packWithOwnContentHash(pack: SectionPackV2): {
+  pack: SectionPackV2;
+  repairedFrom: string | null;
+} {
+  const own = contentHashOf(pack.slides);
+  if (own === pack.contentHash) return { pack, repairedFrom: null };
+  return { pack: { ...pack, contentHash: own }, repairedFrom: pack.contentHash };
+}
+
 export function buildSectionPackForFragment(
   key: FragmentKey,
   ctx: SectionBuildContext
@@ -309,14 +341,25 @@ export function buildSectionPackForFragment(
     previous.status !== "INSUFFICIENT_DATA" &&
     previous.status !== "FAILED"
   ) {
-    ctx.buildLog?.push({ fragmentKey: key, action: "REUSED_CACHE" });
-    return previous;
+    // Хэш пересчитывается о слайды, которые реюзятся. На пакете, записанном
+    // каноном, это тождественная операция; пакет, лежащий на боевом томе с
+    // хэшем прежней формулы, за один прогон приходит в согласие с собственным
+    // содержимым — без пересборки и без обращения к модели. Иначе «файл сходится
+    // со своим хэшем» осталось бы обещанием только для файлов, записанных после
+    // выката.
+    const repaired = packWithOwnContentHash(previous);
+    ctx.buildLog?.push({
+      fragmentKey: key,
+      action: "REUSED_CACHE",
+      ...(repaired.repairedFrom
+        ? { warning: `${CONTENT_HASH_REPAIRED}:${repaired.repairedFrom}` }
+        : {}),
+    });
+    return repaired.pack;
   }
 
   const output = composeFragment(key, scoped, ctx.extras);
-  const contentHash = `sha256:${createHash("sha256")
-    .update(JSON.stringify(output.slides))
-    .digest("hex")}`;
+  const contentHash = contentHashOf(output.slides);
 
   const adverseFindings = scoped.findings.filter((f) => (RISK_ORDER[f.riskLevel] ?? 0) >= 2);
   const displayedFindingIds = new Set(output.slides.flatMap((s) => s.findingIds));

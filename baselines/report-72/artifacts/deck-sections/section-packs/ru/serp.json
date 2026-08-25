@@ -1,26 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "RU_PROFILE",
-  "sectionType": "RU_PROFILE",
-  "fragmentKey": "RU_SERP",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:532fb6a4996d22c0ce2d3aaf32b05d21a3d081ae8d2f87317f60d69cbcf1e985",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "ru-serp-analysis-v4",
-  "contentHash": "sha256:4ca874e61a8b8e09af7d4fafbe9bd49fce91f5c6917c9e35d927ed5a666a10c0",
-  "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:a24473095f588937",
-  "generatedAt": "2026-08-22T18:54:11.525Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53"
-  ],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -166,14 +148,10 @@
     "serp_observation:cmrjsczb50021vd9gbe5a8wit",
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
+  "fragmentKey": "RU_SERP",
+  "generatedAt": "2026-08-22T18:54:11.525Z",
+  "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:a24473095f588937",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -319,20 +297,97 @@
       "serp_observation:cmrjsczb50021vd9gbe5a8wit",
       "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 2,
+    "datasetCount": 143,
+    "displayedCount": 49
+  },
+  "promptVersion": "ru-serp-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+      "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+      "inventory:serp-obs-cmrjsczdh003hvd9gvlsj2u4p",
+      "inventory:serp-obs-cmrjscz9v0019vd9g9uhnex45",
+      "inventory:serp-obs-cmrjsczf9004lvd9glj3vakkt",
+      "inventory:serp-obs-cmrjsczbi0029vd9gikisshot",
+      "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+      "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
+      "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p",
+      "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
+      "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+      "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n",
+      "inventory:serp-obs-cmrjsdc6d00chvd9gcbkvorwo",
+      "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+      "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+      "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
+      "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
+      "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+      "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+      "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+      "inventory:serp-obs-cmrjsczdo003lvd9gdb1aen9m",
+      "inventory:serp-obs-cmrjsczb50021vd9gbe5a8wit",
+      "inventory:serp-obs-cmrjsczcy0035vd9gbds3eue0",
+      "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
+      "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
+      "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
+      "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
+      "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
+      "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+      "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
+      "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+      "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
+      "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
+      "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+      "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+      "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
+      "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+      "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
+      "inventory:serp-obs-cmrjsczas001tvd9g7erp79qd",
+      "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
+      "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76",
+      "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
+      "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
+      "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
+      "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
+      "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
+      "inventory:serp-obs-cmrjsczcl002xvd9gn4tmpo53",
+      "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
+      "inventory:serp-obs-cmrjsczcr0031vd9ghi5pad2i"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p09_ru_serp_table",
       "baseSlotId": "p09_ru_serp_table",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (1/2)",
       "content": {
+        "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и tadviser.ru.",
+        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 1.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -428,13 +483,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и tadviser.ru.",
-        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 1.",
-        "narrative": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и tadviser.ru."
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — kulturologia.ru, nakanune.ru и tadviser.ru.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
         "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
@@ -467,31 +521,32 @@
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
+      "isContinuation": false,
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 12,
         "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 1,
         "pageCount": 4,
+        "pageIndex": 1,
         "serpEngine": "YANDEX",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table",
+      "templateId": "serp-table",
+      "title": "Россия — Яндекс: собранная выдача (1/2)",
       "visualAssetRefs": []
     },
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p09_ru_serp_table__cont1",
       "baseSlotId": "p09_ru_serp_table",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": true,
-      "continuationOf": "p09_ru_serp_table",
-      "continuationIndex": 1,
-      "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (2/2)",
       "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "sourceNote": "Источники — klerk.ru, kulturologia.ru, argumenti.ru, nakanune.ru и ещё 1.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -559,13 +614,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
-        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники — klerk.ru, kulturologia.ru, argumenti.ru, nakanune.ru и ещё 1.",
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru."
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
+      "continuationIndex": 1,
+      "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
         "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
@@ -587,31 +641,32 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-business_profile-subject_match-a59d6fee"
       ],
+      "isContinuation": true,
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 8,
         "adverseDisplayed": 1,
+        "datasetCount": 50,
+        "displayedCount": 8,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 2,
         "pageCount": 4,
+        "pageIndex": 2,
         "serpEngine": "YANDEX",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont1",
+      "templateId": "serp-table",
+      "title": "Россия — Яндекс: собранная выдача (2/2)",
       "visualAssetRefs": []
     },
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p09_ru_serp_table__cont2",
       "baseSlotId": "p09_ru_serp_table",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": true,
-      "continuationOf": "p09_ru_serp_table",
-      "continuationIndex": 2,
-      "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (1/2)",
       "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "sourceNote": "Источники — forbes.ru, tadviser.ru, piter.tv, runews24.ru и ещё 1.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -707,13 +762,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
-        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники — forbes.ru, tadviser.ru, piter.tv, runews24.ru и ещё 1.",
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru."
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — audit-it.ru.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
+      "continuationIndex": 2,
+      "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
         "inventory:serp-obs-cmrjsczdh003hvd9gvlsj2u4p",
@@ -755,31 +809,32 @@
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
+      "isContinuation": true,
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 12,
         "adverseDisplayed": 1,
+        "datasetCount": 50,
+        "displayedCount": 12,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 3,
         "pageCount": 4,
+        "pageIndex": 3,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont2",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (1/2)",
       "visualAssetRefs": []
     },
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p09_ru_serp_table__cont3",
       "baseSlotId": "p09_ru_serp_table",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": true,
-      "continuationOf": "p09_ru_serp_table",
-      "continuationIndex": 3,
-      "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (2/2)",
       "content": {
+        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+        "sourceNote": "Источники — x.com и rupep.org.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
@@ -805,13 +860,12 @@
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
-        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники — x.com и rupep.org.",
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com."
+        "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания. Материалы по теме на этой странице — x.com.",
+        "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
+      "continuationIndex": 3,
+      "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
         "inventory:serp-obs-cmrjsczcr0031vd9ghi5pad2i"
@@ -821,92 +875,38 @@
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-business_profile-subject_match-a59d6fee"
       ],
+      "isContinuation": true,
       "metrics": {
-        "datasetCount": 50,
-        "uniqueMaterials": 27,
-        "displayedCount": 2,
         "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 2,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageIndex": 4,
         "pageCount": 4,
+        "pageIndex": 4,
         "serpEngine": "GOOGLE",
-        "serpPositional": 0
+        "serpPositional": 0,
+        "uniqueMaterials": 27
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont3",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (2/2)",
       "visualAssetRefs": []
     }
   ],
-  "metrics": {
-    "datasetCount": 143,
-    "displayedCount": 49,
-    "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 2
-  },
-  "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
-      "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
-      "inventory:serp-obs-cmrjsczdh003hvd9gvlsj2u4p",
-      "inventory:serp-obs-cmrjscz9v0019vd9g9uhnex45",
-      "inventory:serp-obs-cmrjsczf9004lvd9glj3vakkt",
-      "inventory:serp-obs-cmrjsczbi0029vd9gikisshot",
-      "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
-      "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
-      "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p",
-      "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
-      "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
-      "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n",
-      "inventory:serp-obs-cmrjsdc6d00chvd9gcbkvorwo",
-      "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
-      "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
-      "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
-      "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
-      "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
-      "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
-      "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
-      "inventory:serp-obs-cmrjsczdo003lvd9gdb1aen9m",
-      "inventory:serp-obs-cmrjsczb50021vd9gbe5a8wit",
-      "inventory:serp-obs-cmrjsczcy0035vd9gbds3eue0",
-      "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
-      "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
-      "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
-      "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
-      "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
-      "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
-      "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
-      "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
-      "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
-      "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
-      "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
-      "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
-      "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
-      "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
-      "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
-      "inventory:serp-obs-cmrjsczas001tvd9g7erp79qd",
-      "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
-      "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76",
-      "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
-      "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
-      "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
-      "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
-      "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
-      "inventory:serp-obs-cmrjsczcl002xvd9gn4tmpo53",
-      "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
-      "inventory:serp-obs-cmrjsczcr0031vd9ghi5pad2i"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

@@ -1,26 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "RU_PROFILE",
-  "sectionType": "RU_PROFILE",
-  "fragmentKey": "RU_SERP_SCREENSHOT",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:f89845d1fe2fdda1aab048908dfdde9787a4feb5388fd2fd91ef1968dadf772c",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "ru-serp-screenshot-analysis-v4",
-  "contentHash": "sha256:45f093c4f8e8b49112fb37653222aac97254994406287011e7d52dd21341f05a",
-  "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:f96d5ef7957cf2f6",
-  "generatedAt": "2026-08-22T18:54:11.527Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53"
-  ],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -166,14 +148,10 @@
     "serp_observation:cmrjsczb50021vd9gbe5a8wit",
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
+  "fragmentKey": "RU_SERP_SCREENSHOT",
+  "generatedAt": "2026-08-22T18:54:11.527Z",
+  "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:f96d5ef7957cf2f6",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -319,26 +297,77 @@
       "serp_observation:cmrjsczb50021vd9gbe5a8wit",
       "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 2,
+    "datasetCount": 143,
+    "displayedCount": 32
+  },
+  "promptVersion": "ru-serp-screenshot-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "inventory:ss-cmreatcmu00dpo30fzyx2zf5r",
+      "inventory:ss-cmreatcmu00doo30fr4gvxj3h",
+      "serp_observation:cmrjsczbi0029vd9gikisshot",
+      "serp_observation:cmrjscz9k0015vd9gqo6bp8d1",
+      "serp_observation:cmrjsczbp002dvd9g79q2nu9n",
+      "serp_observation:cmrjscz9v0019vd9g9uhnex45",
+      "serp_observation:cmrjsczbv002hvd9gqun2ybp6",
+      "serp_observation:cmrjscza2001dvd9g5sqot0m6",
+      "serp_observation:cmrjsczc2002lvd9gc3asn746",
+      "serp_observation:cmrjscza8001hvd9gawc65f0k",
+      "serp_observation:cmrjsczaf001lvd9gxr0qnaqg",
+      "serp_observation:cmrjsczc8002pvd9gmhc3fpzl",
+      "serp_observation:cmrjsczam001pvd9gh10qwdoz",
+      "serp_observation:cmrjsczcf002tvd9gv5r4s5e7",
+      "serp_observation:cmrjsczas001tvd9g7erp79qd",
+      "serp_observation:cmrjsczcl002xvd9gn4tmpo53",
+      "serp_observation:cmrjsczcr0031vd9ghi5pad2i",
+      "serp_observation:cmrjsczaz001xvd9gzmgv31ip",
+      "serp_observation:cmrjsczcy0035vd9gbds3eue0",
+      "serp_observation:cmrjsczb50021vd9gbe5a8wit",
+      "serp_observation:cmrjsczd40039vd9gfhls8b76",
+      "serp_observation:cmrjsczbc0025vd9gob9ld7u8",
+      "serp_observation:cmrjsdc5i00c1vd9g3v409tty",
+      "serp_observation:cmrjsdc5q00c5vd9g7s7j5esb",
+      "serp_observation:cmrjsdc5z00c9vd9gp5l9a3jx",
+      "serp_observation:cmrjsdc6600cdvd9gvynaunda",
+      "serp_observation:cmrjsdc6d00chvd9gcbkvorwo",
+      "serp_observation:cmrjsdc6j00clvd9grmx000wx",
+      "serp_observation:cmrjsdc6q00cpvd9g6b2ijkz3",
+      "serp_observation:cmrjsdc6x00ctvd9gjc1oqvjs",
+      "serp_observation:cmrjsdc7300cxvd9gxanvg8jn",
+      "serp_observation:cmrjsdc7a00d1vd9ghvae5x4w"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p10_ru_serp_visual",
       "baseSlotId": "p10_ru_serp_visual",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "serp-screenshot-analysis",
-      "title": "Россия — снимок выдачи",
       "content": {
-        "narrative": "Состояние первой страницы выдачи (Россия).",
-        "whatWasFound": "На снимке выделено результатов повышенного внимания: 2 (x.com, rupep.org); остальные результаты — нейтральные или деловые.",
-        "whyItMatters": "Выделенные материалы (2) видны при первичной проверке субъекта в этом регионе.",
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
-        "sourceNote": "Источники на снимке — x.com и rupep.org.",
         "highlightExplanations": [
           {
             "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
@@ -348,8 +377,16 @@
             "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
             "frameTone": "red"
           }
-        ]
+        ],
+        "narrative": "Состояние первой страницы выдачи (Россия).",
+        "sourceNote": "Источники на снимке — x.com и rupep.org.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "whatWasFound": "На снимке выделено результатов повышенного внимания: 2 (x.com, rupep.org); остальные результаты — нейтральные или деловые.",
+        "whyItMatters": "Выделенные материалы (2) видны при первичной проверке субъекта в этом регионе."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "inventory:ss-cmreatcmu00dpo30fzyx2zf5r",
         "inventory:ss-cmreatcmu00doo30fr4gvxj3h",
@@ -388,70 +425,33 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
+      "isContinuation": false,
       "metrics": {
-        "screenshots": 2,
-        "adverseHighlights": 2
+        "adverseHighlights": 2,
+        "screenshots": 2
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p10_ru_serp_visual",
+      "templateId": "serp-screenshot-analysis",
+      "title": "Россия — снимок выдачи",
       "visualAssetRefs": [
         "ru_provider_serp_synserp_mrjsdb6i_af88a1f851",
         "ru_provider_serp_synserp_mrjsdcak_818ce2d1c1"
       ]
     }
   ],
-  "metrics": {
-    "datasetCount": 143,
-    "displayedCount": 32,
-    "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 2
-  },
-  "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "inventory:ss-cmreatcmu00dpo30fzyx2zf5r",
-      "inventory:ss-cmreatcmu00doo30fr4gvxj3h",
-      "serp_observation:cmrjsczbi0029vd9gikisshot",
-      "serp_observation:cmrjscz9k0015vd9gqo6bp8d1",
-      "serp_observation:cmrjsczbp002dvd9g79q2nu9n",
-      "serp_observation:cmrjscz9v0019vd9g9uhnex45",
-      "serp_observation:cmrjsczbv002hvd9gqun2ybp6",
-      "serp_observation:cmrjscza2001dvd9g5sqot0m6",
-      "serp_observation:cmrjsczc2002lvd9gc3asn746",
-      "serp_observation:cmrjscza8001hvd9gawc65f0k",
-      "serp_observation:cmrjsczaf001lvd9gxr0qnaqg",
-      "serp_observation:cmrjsczc8002pvd9gmhc3fpzl",
-      "serp_observation:cmrjsczam001pvd9gh10qwdoz",
-      "serp_observation:cmrjsczcf002tvd9gv5r4s5e7",
-      "serp_observation:cmrjsczas001tvd9g7erp79qd",
-      "serp_observation:cmrjsczcl002xvd9gn4tmpo53",
-      "serp_observation:cmrjsczcr0031vd9ghi5pad2i",
-      "serp_observation:cmrjsczaz001xvd9gzmgv31ip",
-      "serp_observation:cmrjsczcy0035vd9gbds3eue0",
-      "serp_observation:cmrjsczb50021vd9gbe5a8wit",
-      "serp_observation:cmrjsczd40039vd9gfhls8b76",
-      "serp_observation:cmrjsczbc0025vd9gob9ld7u8",
-      "serp_observation:cmrjsdc5i00c1vd9g3v409tty",
-      "serp_observation:cmrjsdc5q00c5vd9g7s7j5esb",
-      "serp_observation:cmrjsdc5z00c9vd9gp5l9a3jx",
-      "serp_observation:cmrjsdc6600cdvd9gvynaunda",
-      "serp_observation:cmrjsdc6d00chvd9gcbkvorwo",
-      "serp_observation:cmrjsdc6j00clvd9grmx000wx",
-      "serp_observation:cmrjsdc6q00cpvd9g6b2ijkz3",
-      "serp_observation:cmrjsdc6x00ctvd9gjc1oqvjs",
-      "serp_observation:cmrjsdc7300cxvd9gxanvg8jn",
-      "serp_observation:cmrjsdc7a00d1vd9ghvae5x4w"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

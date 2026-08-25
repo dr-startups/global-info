@@ -3,9 +3,8 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
-import { createHash } from "node:crypto";
-import type { SlideBody, SlideContentContract, SectionType } from "../contracts";
-import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
+import type { SlideContentContract, SectionType } from "../contracts";
+import { contentHashOf, SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import type { MetricSnapshot, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
@@ -175,18 +174,7 @@ function isMeaningfulExecNarrativePara(text: string): boolean {
  * narrative with one long paragraph and drop the dedicated short card (PDF 29).
  */
 export function applyExecutiveFreshnessChangeToPacks<
-  T extends {
-    fragmentKey: string;
-    contentHash?: string;
-    slides: Array<{
-      isContinuation?: boolean;
-      content: {
-        narrative?: string;
-        bullets?: string[];
-        sourceNote?: string;
-      };
-    }>;
-  },
+  T extends { fragmentKey: string; contentHash?: string; slides: SlideContentContract[] },
 >(packs: T[], extras?: FragmentExtras, ms?: MetricSnapshot): T[] {
   const line = executiveVisibleFactsLine(extras, ms);
   if (!line) return packs;
@@ -216,10 +204,7 @@ export function applyExecutiveFreshnessChangeToPacks<
         },
       };
     });
-    const contentHash = `sha256:${createHash("sha256")
-      .update(JSON.stringify(slides))
-      .digest("hex")}`;
-    return { ...pack, slides, contentHash };
+    return { ...pack, slides, contentHash: contentHashOf(slides) };
   });
 }
 

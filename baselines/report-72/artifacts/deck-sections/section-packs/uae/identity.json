@@ -1,73 +1,73 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "UAE_PROFILE",
-  "sectionType": "UAE_PROFILE",
-  "fragmentKey": "UAE_IDENTITY_WIKIPEDIA",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:5627e39b24572bf63e9b1aba0e97b3ad724867273dd82f2c2aadad19b4238972",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "uae-identity-analysis-deterministic-v1",
-  "contentHash": "sha256:54b2238cd63070282f33ff56e173f53b7d8de27730a8d0470f3869c79745a35f",
-  "inputHash": "sha256:11f6ac45b9a7bd2144ea0f4e25c0ea41966feda85b2d81a010738bd2a93132ad:a57542c6bb816e68",
-  "generatedAt": "2026-08-22T18:54:11.548Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:wiki-1",
     "inventory:wiki-3"
   ],
+  "fragmentKey": "UAE_IDENTITY_WIKIPEDIA",
+  "generatedAt": "2026-08-22T18:54:11.548Z",
+  "inputHash": "sha256:11f6ac45b9a7bd2144ea0f4e25c0ea41966feda85b2d81a010738bd2a93132ad:a57542c6bb816e68",
   "inputs": {
-    "findingIds": [],
     "evidenceRefs": [
       "inventory:wiki-1",
       "inventory:wiki-3"
     ],
+    "findingIds": [],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0,
+    "datasetCount": 2,
+    "displayedCount": 0
+  },
+  "promptVersion": "uae-identity-analysis-deterministic-v1",
+  "provenance": {
+    "evidenceRefs": [],
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "UAE_PROFILE",
+  "sectionType": "UAE_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p29_uae_wikipedia",
       "baseSlotId": "p29_uae_wikipedia",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "coverage-empty-state",
-      "title": "ОАЭ — Википедия",
       "content": {
-        "narrative": "Наличие статьи о субъекте в Википедии и связанных энциклопедических материалов проверено: материалов нет — это результат проверки.",
         "bullets": [
           "Статья в Википедии — опорный источник «официальной» биографии: её содержимое поисковые системы показывают в панелях знаний и используют в ответах ИИ, а СМИ и контрагенты сверяются с ней в первую очередь.",
           "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков."
         ],
+        "narrative": "Наличие статьи о субъекте в Википедии и связанных энциклопедических материалов проверено: материалов нет — это результат проверки.",
         "whatToCheck": "Мы предлагаем проверить наличие статьи вручную: при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "emptyStateReason": "no-identity-data",
       "evidenceRefs": [],
       "findingIds": [],
+      "isContinuation": false,
       "metrics": {},
-      "visualAssetRefs": [],
-      "emptyStateReason": "no-identity-data"
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p29_uae_wikipedia",
+      "templateId": "coverage-empty-state",
+      "title": "ОАЭ — Википедия",
+      "visualAssetRefs": []
     }
   ],
-  "metrics": {
-    "datasetCount": 2,
-    "displayedCount": 0,
-    "adverseDatasetCount": 0,
-    "adverseDisplayedCount": 0
-  },
-  "provenance": {
-    "providers": [],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": []
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

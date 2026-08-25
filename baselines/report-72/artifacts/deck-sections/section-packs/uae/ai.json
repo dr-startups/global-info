@@ -1,80 +1,80 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "UAE_PROFILE",
-  "sectionType": "UAE_PROFILE",
-  "fragmentKey": "UAE_KNOWLEDGE_AI",
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentHash": "sha256:2ddcd510311724c71c6733e0123fca901efb498cb80b59ba9f6014da195bff86",
   "contentVersion": "deck-sections-v114",
-  "promptVersion": "uae-ai-analysis-v4",
-  "contentHash": "sha256:48d9906cd8d855627aebc4cdcf05d5bd99b4f5be63fbf18fa85d43f92d88c8c4",
-  "inputHash": "sha256:e12937f313fcf83805cdc78ddcb1c707fd177151f1e4668732796efc40284164:f146453708771fc1",
-  "generatedAt": "2026-08-22T18:54:11.549Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [],
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
   ],
+  "fragmentKey": "UAE_KNOWLEDGE_AI",
+  "generatedAt": "2026-08-22T18:54:11.549Z",
+  "inputHash": "sha256:e12937f313fcf83805cdc78ddcb1c707fd177151f1e4668732796efc40284164:f146453708771fc1",
   "inputs": {
-    "findingIds": [],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
     ],
+    "findingIds": [],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0,
+    "datasetCount": 1,
+    "displayedCount": 1
+  },
+  "promptVersion": "uae-ai-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
+    ],
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "UAE_PROFILE",
+  "sectionType": "UAE_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p31_uae_knowledge",
       "baseSlotId": "p31_uae_knowledge",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "ai-overview",
-      "title": "ОАЭ — панель знаний и AI Overview",
       "content": {
         "bullets": [
           "ИИ-ответ (AI Overview): не найден"
         ],
-        "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
-        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
-        "whatToCheck": "Мониторить изменения выдачи.",
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
         "statusNote": "Негативных заголовков на этой странице нет.",
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении."
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
       ],
       "findingIds": [],
+      "isContinuation": false,
       "metrics": {
         "answers": 0
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p31_uae_knowledge",
+      "templateId": "ai-overview",
+      "title": "ОАЭ — панель знаний и AI Overview",
       "visualAssetRefs": [
         "uae_knowledge_panel"
       ]
     }
   ],
-  "metrics": {
-    "datasetCount": 1,
-    "displayedCount": 1,
-    "adverseDatasetCount": 0,
-    "adverseDisplayedCount": 0
-  },
-  "provenance": {
-    "providers": [],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

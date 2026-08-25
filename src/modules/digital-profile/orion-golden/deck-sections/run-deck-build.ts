@@ -10,8 +10,14 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { FragmentKey, ReportDeckManifest, ReportSectionManifest, SectionPackV2 } from "./contracts";
-import { FRAGMENT_ARTIFACT_PATHS, SectionPackV2Schema } from "./contracts";
-import { buildAllSections, type SectionBuildContext } from "./section-builders";
+import { FRAGMENT_ARTIFACT_PATHS, sectionPackJson, SectionPackV2Schema } from "./contracts";
+import {
+  buildAllSections,
+  packWithOwnContentHash,
+  CONTENT_HASH_REPAIRED,
+  type SectionBuildContext,
+  type SectionBuildLogEntry,
+} from "./section-builders";
 import { validateSectionPack, type SectionValidationReport } from "./section-validation";
 import { buildReportSectionManifest } from "./section-manifest";
 import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./deck-assembler";
@@ -46,7 +52,7 @@ export type DeckBuildResult = {
   manifest: ReportSectionManifest;
   assembly: DeckAssemblyResult;
   assemblyValidation: AssemblyValidationReport | null;
-  buildLog: Array<{ fragmentKey: FragmentKey; action: "REGENERATED" | "REUSED_CACHE" }>;
+  buildLog: SectionBuildLogEntry[];
   artifacts: Record<string, string>;
 };
 
@@ -66,6 +72,15 @@ export function loadPreviousPacks(outputRoot: string): Map<FragmentKey, SectionP
 }
 
 /**
+ * Единственный писатель файла пакета: продуктовая запись, снятие штампа
+ * GPT-копии и офлайн-миграция v2→v3 зовут его, поэтому одно значение пакета
+ * даёт один и тот же файл, кем бы он ни был записан.
+ */
+export function writeSectionPackFile(path: string, pack: SectionPackV2): void {
+  writeFileSync(path, sectionPackJson(pack), "utf8");
+}
+
+/**
  * Drop persisted gptCopy stamps from section-packs on disk so a subsequent
  * full prepare cannot revive SKIPPED_CACHED if forceRefresh is skipped.
  * Used by unified «Пересобрать отчёт».
@@ -79,7 +94,9 @@ export function stripGptCopyFromSectionPacksOnDisk(outputRoot: string): number {
       const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
       if (!raw || typeof raw !== "object" || !("gptCopy" in raw)) continue;
       const { gptCopy: _drop, ...rest } = raw;
-      writeFileSync(path, `${JSON.stringify(rest, null, 2)}\n`, "utf8");
+      // На диске лежит пакет; схемой он здесь намеренно не проверяется — снятие
+      // штампа не должно ронять пак, который потом пересоберут или отбракуют.
+      writeSectionPackFile(path, rest as SectionPackV2);
       stripped += 1;
     } catch {
       // leave pack for rebuild / schema validation
@@ -134,7 +151,22 @@ export function runDeckBuild(input: {
     const rel = FRAGMENT_ARTIFACT_PATHS[pack.fragmentKey];
     const path = join(input.outputRoot, rel);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(pack, null, 2), "utf8");
+    // Файл сходится со своим хэшем, каким бы путём пакет сюда ни попал. Ветка
+    // реюза пересчитывает хэш сама, но она не единственный вход: точечный ретрай
+    // стадии 2 отдаёт `prebuiltPacks` прямо из `loadPreviousPacks`, минуя её.
+    const { pack: written, repairedFrom } = packWithOwnContentHash(pack);
+    if (repairedFrom) {
+      pack.contentHash = written.contentHash;
+      const warning = `${CONTENT_HASH_REPAIRED}:${repairedFrom}`;
+      const entry = buildLog.find((l) => l.fragmentKey === pack.fragmentKey);
+      // Журнал может прийти пустым: `prebuiltPacks` и `prebuiltBuildLog` —
+      // независимые поля входа. След важнее того, что о фрагменте больше нечего
+      // сказать, поэтому запись заводится; действие — то же, каким помечает эти
+      // пакеты точечный ретрай: этим прогоном они не собирались.
+      if (entry) entry.warning = warning;
+      else buildLog.push({ fragmentKey: pack.fragmentKey, action: "REUSED_CACHE", warning });
+    }
+    writeSectionPackFile(path, written);
     artifacts[rel] = path;
   }
   const sectionReportsPath = join(input.outputRoot, "section-validation-reports.json");

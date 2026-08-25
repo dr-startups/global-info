@@ -20,8 +20,8 @@
  *    improve text, never block the report.
  */
 
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { contentHashOf } from "./contracts";
 import type { FragmentKey, SectionPackV2, SlideContentContract } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex, type SubjectProfileInput } from "./scoped-input";
@@ -545,10 +545,6 @@ export function rejectDroppedNumbers(draft: string, next: string): string | null
     if (!present.has(token)) return `dropped-number:${token}`;
   }
   return null;
-}
-
-export function contentHashOf(slides: SlideContentContract[]): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
 }
 
 function buildFragmentPayload(input: {
