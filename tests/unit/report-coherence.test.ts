@@ -7,10 +7,8 @@ import {
   reflowThemeBullet,
   themedClaim,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
-import {
-  mergeSerpRowsByMaterial,
-  serpMaterialKey,
-} from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import { serpMaterialKey } from "../../src/modules/digital-profile/serp-observation/material-key";
+import { mergeSerpRowsByMaterial } from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import { countIdentityByObservation } from "../../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import {
   boilerplateShape,
@@ -259,6 +257,17 @@ describe("D7 — одна страница выдачи это одна стро
     expect(
       serpMaterialKey({ domain: "rbc.ru", title: "Первый" })
     ).not.toBe(serpMaterialKey({ domain: "rbc.ru", title: "Второй" }));
+  });
+
+  it("пустой домен значит то же, что отсутствующий", () => {
+    // Два написания одной и той же строки обязаны дать один ключ: при переносе
+    // ключа из построителей `??` держал пустую строку как значение, и запись
+    // `domain: ""` переставала опознаваться по адресу.
+    const url = "https://rbc.ru/a";
+    expect(serpMaterialKey({ domain: "", url })).toBe(serpMaterialKey({ url }));
+    expect(serpMaterialKey({ domain: "", url, title: "Т" })).toBe(
+      serpMaterialKey({ url, title: "Т" })
+    );
   });
 
   it("без заголовка материал опознаётся по адресу", () => {

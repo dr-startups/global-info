@@ -12,12 +12,9 @@ import type { VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
-import {
-  SERP_TABLE_TOP_N,
-  rankSourceBelongsToEngine,
-  serpMaterialKey,
-} from "./fragment-builders/serp";
+import { SERP_TABLE_TOP_N, rankSourceBelongsToEngine } from "./fragment-builders/serp";
 import { sameSerpQuery } from "./fragment-builders/shared";
+import { serpMaterialKey } from "../../serp-observation/material-key";
 import { clientAddress } from "../client/client-address";
 import {
   normalizeDomainForCompare,

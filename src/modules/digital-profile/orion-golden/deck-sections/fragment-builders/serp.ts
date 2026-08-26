@@ -54,36 +54,7 @@ import {
   withContinuations,
 } from "./shared";
 import { continuationTitle } from "../continuation-slide";
-
-/**
- * Ключ материала для таблицы выдачи (шаг 13, D7).
- *
- * Один и тот же материал приходит из разных запросов с разными идентификаторами
- * наблюдения, поэтому объединяем по тому, что видит читатель: домен и
- * заголовок. Без заголовка ориентируемся на адрес — иначе в одну строку
- * склеились бы разные страницы одного сайта.
- */
-export function serpMaterialKey(e: {
-  url?: string;
-  domain?: string;
-  title?: string;
-}): string {
-  const domain = String(e.domain ?? domainOfUrl(e.url) ?? "")
-    .toLowerCase()
-    .replace(/^www\./u, "");
-  const title = String(e.title ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/gu, " ");
-  if (title) return `${domain}|${title}`;
-  const url = String(e.url ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//u, "")
-    .replace(/^www\./u, "")
-    .replace(/\/+$/u, "");
-  return url ? `url:${url}` : `domain:${domain}`;
-}
+import { serpMaterialKey } from "../../../serp-observation/material-key";
 
 /** Сколько строк выдачи показывает таблица: глубина аудита, не больше. */
 export const SERP_TABLE_TOP_N = 20;
@@ -900,9 +871,13 @@ export function buildSerpScreenshotFragment(
   // Rows actually rendered on the bound snapshot, with the SAME red-frame
   // marking the snapshot generator produced. Sidebar copy is derived from
   // these rows only — never from region- or bundle-level findings.
-  const visibleRows = (extras.visualAssets?.[slot.slotId] ?? []).flatMap(
-    (a) => a.visibleItems ?? []
-  );
+  //
+  // Разбор один на всю страницу: и строки, и объяснения, и число выделенного
+  // берутся из него. Рядом стоял второй перебор `visibleItems`, отвечавший на
+  // тот же вопрос своими словами; пока оба ответа совпадали, это было просто
+  // лишней работой, но любая правка одного из них разводила подпись с текстом.
+  const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
+  const visibleRows = sidebar.visibleRows;
   const boundAssetRefs = assetsFor(extras, slot.slotId);
   // Fail-closed: no bound visual → never invent «на этом снимке / деловые материалы».
   if (boundAssetRefs.length === 0 && visibleRows.length === 0) {
@@ -928,11 +903,8 @@ export function buildSerpScreenshotFragment(
     });
     return { slides: [slide], status: "READY" };
   }
-  const adverseRows = visibleRows.filter((v) => v.adverse);
-
   // Объяснение на каждую строку в рамке — тем же разбором, что у панелей и
   // сеток изображений: фразу «Почему выделено» пишет один помощник.
-  const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
   const explanations = sidebar.explanations;
   const explainedFindings = [...sidebar.explainedFindings];
   const explainedDomains = sidebar.explainedDomains;
@@ -952,7 +924,9 @@ export function buildSerpScreenshotFragment(
   // Headline: page-specific summary of what is framed on THIS snapshot —
   // details per theme live in the highlight explanations (no duplication).
   const headlineDomains = explainedDomains.slice(0, 4);
-  const whatWasFound = adverseRows.length
+  // Ветка и число — из одного списка: у каждой выделенной строки ровно одно
+  // объяснение, и «выделено N» обязано считать то же, чем страница объясняет.
+  const whatWasFound = explanations.length
     ? clampClientText(
         `На снимке выделено результатов повышенного внимания: ${explanations.length}` +
           (headlineDomains.length
@@ -1008,7 +982,7 @@ export function buildSerpScreenshotFragment(
     evidenceRefs: [
       ...new Set([
         ...screenshots.map(([ref]) => ref),
-        ...visibleRows.map((v) => v.ref).filter((r) => Boolean(scoped.evidenceIndex[r])),
+        ...sidebar.gridRefs,
         ...explainedRefs,
       ]),
     ],

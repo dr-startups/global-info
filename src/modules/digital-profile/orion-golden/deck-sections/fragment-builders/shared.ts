@@ -3013,9 +3013,8 @@ export function adverseVisualSidebar(
   scoped: ScopedFragmentInput
 ): AdverseVisualSidebar {
   const visibleRows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
-  const adverseRows = visibleRows.filter((v) => v.adverse);
   /*
-   * Объяснение — на каждую рамку, а не на каждую пару «находка + домен».
+   * Объяснение — на каждую нарисованную рамку, и считает их не дека.
    *
    * Ключ дедупликации был `находка|домен`, а сопоставление строки с находкой
    * идёт **в том числе по домену**: для двух видимых строк одного источника
@@ -3024,10 +3023,25 @@ export function adverseVisualSidebar(
    * на слайд-продолжение — требование «под каждым выделенным результатом
    * фраза» для неё не выполнялось (пункт BO).
    *
-   * Осталась только защита от одной и той же строки, попавшей в видимые дважды:
+   * Сводить строки по материалу здесь **нельзя**, хотя соблазн есть: разбор
+   * обслуживает три поверхности сразу и не знает, чем на каждой рисуется рамка.
+   * Один материал занимает две строки снимка законно — колонки Яндекса и Google
+   * показывают выдачу, а не список материалов, — и две плитки сетки законно
+   * ведут на одну статью. Сведение по материалу отняло бы у второй рамки
+   * объяснение, а у подписи — единицу счёта: «выделено красным: 1» под двумя
+   * красными плитками. Сводит тот, кто выбирает строки для показа
+   * (`selectVisibleObservationsForEngine` и соседи в `canonical-visual-assets`),
+   * — там единица рисования известна.
+   *
+   * Осталась одна защита — от одной и той же строки, попавшей в видимые дважды:
    * это уже не два выделенных результата, а один.
    */
   const seen = new Set<string>();
+  const adverseRows = visibleRows.filter((v) => {
+    if (!v.adverse || seen.has(v.ref)) return false;
+    seen.add(v.ref);
+    return true;
+  });
   const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
   const phrases: HighlightPhrase[] = [];
   const explainedFindings: Finding[] = [];
@@ -3037,8 +3051,6 @@ export function adverseVisualSidebar(
     const f = findingForVisibleRow(row, scoped);
     const e = scoped.evidenceIndex[row.ref];
     const domain = clientSafeDomain(e?.domain ?? row.domain);
-    if (seen.has(row.ref)) continue;
-    seen.add(row.ref);
     const phrase = highlightPhrase({ row, evidence: scoped.evidenceIndex, finding: f });
     phrases.push(phrase);
     explanations.push({

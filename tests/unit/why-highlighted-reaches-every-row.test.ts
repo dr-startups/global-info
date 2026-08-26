@@ -124,11 +124,22 @@ describe("слайд-продолжение «Почему выделено»", 
      * попадала и на слайд-продолжение: требование владельца «под каждым
      * выделенным результатом — фраза» для неё не выполнялось.
      */
-    const sameDomain = ruRows.filter((r) => r.domain === "forbes.ru").slice(0, 2);
-    expect(sameDomain).toHaveLength(2);
+    const forbes = ruRows.find((r) => r.domain === "forbes.ru")!;
+    /*
+     * Две **разные страницы** одного источника, а не одна под двумя ref-ами:
+     * в фикстуре forbes.ru лежит трижды одним и тем же адресом с одним
+     * заголовком, то есть одним материалом, — а материал получает одно
+     * объяснение и одну рамку.
+     */
+    const secondPage: VisibleAssetItem = {
+      ...forbes,
+      ref: `${forbes.ref}-second-page`,
+      url: "https://www.forbes.ru/profile/sergei-glinka-investitsii",
+      title: "Сергей Глинка: инвестиции | Forbes.ru",
+    };
     const built = pack([
-      framed(sameDomain[0]!),
-      framed(sameDomain[1]!),
+      framed(forbes),
+      framed(secondPage),
       framed(xRow),
       ...ruRows.slice(6, 9),
     ]);

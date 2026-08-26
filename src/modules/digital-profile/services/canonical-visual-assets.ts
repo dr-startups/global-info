@@ -26,6 +26,7 @@ import type {
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
 import { buildSyntheticSerpViewModelFromObservations } from "../serp-observation/synthetic-asset";
+import { serpMaterialKey } from "../serp-observation/material-key";
 import {
   filterObservationsForSyntheticSerp,
 } from "../serp-observation/filter-synthetic-serp-noise";
@@ -125,6 +126,23 @@ function surfaceOf(item: RawInventoryItem): string {
 
 function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
+}
+
+/**
+ * Первое наблюдение каждого материала, в порядке набора.
+ *
+ * Ключ общий с таблицей выдачи и с отбором строк для синтетического снимка:
+ * ответ на вопрос «одна ли это строка» в продукте один. Строка, не называющая
+ * материала, остаётся собой — иначе она пропала бы молча.
+ */
+function firstPerMaterial(items: RawInventoryItem[]): RawInventoryItem[] {
+  const seen = new Set<string>();
+  return items.filter((it) => {
+    const key = serpMaterialKey({ url: it.sourceUrl, title: it.title }, refOf(it));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function domainOf(url: string | undefined): string {
@@ -514,7 +532,19 @@ export async function buildCanonicalVisualAssets(input: {
         const organic = by(
           (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
         );
-        const visibleItems = organic.slice(0, 10).map((it) => toVisibleItem(it, input.verdictByRef));
+        /*
+         * Настоящий скриншот перечисляет материалы, а не наблюдения.
+         *
+         * Рамок мы на нём не рисуем, и `visibleItems` здесь — утверждение о
+         * том, что читатель видит на снимке выдачи. Поисковик одну и ту же
+         * страницу дважды не показывает, а в наборе она лежит отдельным
+         * наблюдением на каждый запрос, которым найдена, — без сведения
+         * страница печатала бы два дословно одинаковых объяснения под одним
+         * результатом.
+         */
+        const visibleItems = firstPerMaterial(organic)
+          .slice(0, 10)
+          .map((it) => toVisibleItem(it, input.verdictByRef));
         const asset: RendererAssetEntry = {
           assetRef: `${assetRef}_real_${real.id}`,
           kind: "live_serp",

@@ -10,6 +10,7 @@ import {
   observationToResultView,
   type ObservationVerdictByRef,
 } from "./resolve-observation-highlights";
+import { serpMaterialKey } from "./material-key";
 import {
   SERP_SNAPSHOT_CAPTION,
   type PersistedSerpObservation,
@@ -46,9 +47,24 @@ export function selectVisibleObservationsForEngine(
 
   const picked: PersistedSerpObservation[] = [];
   const seen = new Set<string>();
+  /*
+   * Один материал — одна строка колонки, и место схлопнутой занимает следующая.
+   *
+   * Ключ наблюдения включает запрос, поэтому один и тот же адрес приходит
+   * несколькими наблюдениями: колонка рисовала его дважды, обещая читателю, что
+   * поисковик показал этот результат два раза. Сводим тем же ключом, что дека и
+   * таблица выдачи; повтор идентификатора он покрывает заодно. Место схлопнутой
+   * строки не пропадает — цикл идёт дальше, пока не наберёт `limit`, иначе
+   * снимок молча укоротился бы.
+   *
+   * Наблюдение, у которого нет ни адреса, ни заголовка, ни домена, материал не
+   * называет: сводить его не с чем, и строка у него своя.
+   */
   const push = (o: PersistedSerpObservation) => {
-    if (picked.length >= limit || seen.has(o.id)) return;
-    seen.add(o.id);
+    if (picked.length >= limit) return;
+    const key = serpMaterialKey(o, `id:${o.id}`);
+    if (seen.has(key)) return;
+    seen.add(key);
     picked.push(o);
   };
   for (const o of highlighted) push(o);
