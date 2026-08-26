@@ -17,6 +17,8 @@ export type ThemeDef = {
   keywords: RegExp;
   baseRisk: RiskLevel;
   recommendedAction: string;
+  /** Тема обвиняет (по умолчанию) или описывает — см. `isAccusingTheme`. */
+  accusing: boolean;
 };
 
 const RiskLevelSchema = z.enum(["none", "low", "medium", "high", "critical"]);
@@ -29,6 +31,11 @@ const ThemeDefJsonSchema = z.object({
   flags: z.string().default("iu"),
   baseRisk: RiskLevelSchema,
   recommendedAction: z.string().min(1),
+  /**
+   * Обвиняет ли тема. Умолчание строгое: тема, про которую каталог молчит
+   * (в том числе заведённая файлом переопределения), считается обвиняющей.
+   */
+  accusing: z.boolean().default(true),
 });
 
 export const FindingThemesConfigJsonSchema = z.object({
@@ -122,6 +129,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
     themes: [
       {
         themeId: "security_scrutiny",
+        accusing: true,
         label: "Внимание по линии безопасности / оборонный контур",
         keywords:
           "оборон|defen[cs]e|national security|спецслужб|фсб|fsb|безопасн\\w* служб|security service",
@@ -132,6 +140,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "criminal_legal",
+        accusing: true,
         label: "Криминальные / судебные материалы",
         keywords:
           "уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|sledstvie|rucriminal|компромат|суд(?!острое|ьб)|court",
@@ -142,6 +151,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "pep_rca_watchlist",
+        accusing: true,
         label: "PEP / RCA / watchlist-сигналы",
         keywords:
           "\\bpep\\b|\\brca\\b|watch.?list|санкц|sanction|world.?check|dow.?jones|lexis|rupep|комплаенс|compliance",
@@ -153,6 +163,9 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       {
         themeId: "political_exposure",
         label: "Политические связи / публичная экспозиция",
+        // Публичная должность и связи — то, что описывают, а не в чём обвиняют:
+        // нейтрально прочитанная публикация здесь законное доказательство темы.
+        accusing: false,
         keywords:
           "полит|politic|депутат|парти|выбор|electoral|минист|правительств|govern|парламент|parliament",
         flags: "iu",
@@ -162,6 +175,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "offshore_corporate",
+        accusing: true,
         label: "Офшоры / корпоративное владение",
         keywords:
           "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama|бенефициар|beneficia|владел|ownership|opencorporates",
@@ -172,6 +186,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "family_associates",
+        accusing: true,
         label: "Семья и деловые связи",
         keywords:
           "жена|супруг|spouse|дети|сын|дочь|партнер|associate|соучредител|co-?founder",
@@ -182,6 +197,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "financial_claims",
+        accusing: true,
         label: "Финансовые претензии / долговые споры",
         keywords:
           "банкрот|bankrupt|долг(?:а|ам|ами|ах|и|ов|у)?(?!\\p{L})|задолженност|debt|взыскан|неисполнен|lawsuit|претенз|арбитражн\\w* иск|неплатеж",
@@ -193,6 +209,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       {
         themeId: "business_profile",
         label: "Деловой профиль",
+        accusing: false,
         // Industry terms stay here as a soft universal bucket; override JSON can
         // move them into a dedicated industry_contour theme when needed.
         keywords:
@@ -268,6 +285,7 @@ export function compileFindingThemesConfig(
     ),
     baseRisk: t.baseRisk,
     recommendedAction: t.recommendedAction,
+    accusing: t.accusing,
   }));
 
   const defaults = getDefaultFindingThemesConfigJson();
@@ -397,6 +415,31 @@ export function resolveFindingThemesConfig(input?: {
 
 export function getFindingThemes(): ThemeDef[] {
   return resolveFindingThemesConfig().themes;
+}
+
+/**
+ * Обвиняет тема или описывает.
+ *
+ * Тему материалу назначает словарь ключевых слов по заголовку, и там, где тема
+ * обвиняет, прочитанная и признанная нейтральной страница доказательством быть
+ * не может: клиенту предъявили бы сюжет, которого на странице нет. У делового
+ * профиля и публичной экспозиции всё наоборот — нейтральная публикация и есть
+ * законное доказательство темы, а её изгнание печатало на странице делового
+ * профиля «отдельный заголовок с сутью риска в выдаче не выделен» при двух
+ * годных цитатах.
+ *
+ * Признак живёт в самом каталоге (`accusing`), а не списком идентификаторов
+ * рядом: каталог переопределяется файлом с диска, и список рядом с кодом такой
+ * файл молча обходил бы — «Деловой профиль» снова становился бы обвиняющим.
+ * Уровень риска на эту роль тоже не годится: он отвечает на другой вопрос
+ * («насколько это важно»), и у публичной экспозиции он средний при полностью
+ * описательном содержании.
+ *
+ * Темы нет вовсе (метка не нашлась в каталоге) — считаем обвиняющей: защита
+ * строже.
+ */
+export function isAccusingTheme(theme: ThemeDef | undefined): boolean {
+  return theme?.accusing ?? true;
 }
 
 export function getAdversePatterns(): RegExp {

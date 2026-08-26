@@ -1316,6 +1316,7 @@ describe("REMEDIATION §7.1 page row composition sidebar", () => {
       domains: ["rbc.ru", "example.com"],
       findings: [],
       supportDomains: new Map(),
+      supportRows: new Map(),
     });
     assert.match(String(blocks.whatWasFound), /Показано 3/);
     assert.match(String(blocks.whatWasFound), /о субъекте — 2/);

@@ -326,6 +326,14 @@ describe("словарь негатива в проекте один", () => {
     // площадки — в двух названных списках выше по файлу.
     expect(body.match(/\/[^/\s][^\n]*\/[a-z]*\.test\(/g)).toBeNull();
     const named = body.match(/[A-Z][A-Z0-9_]{3,}/g) ?? [];
-    expect([...new Set(named)].sort()).toEqual(["ADVERSE_DOMAIN_RE", "SOFT_PROFILE_DOMAIN_RE"]);
+    // Кроме двух списков площадок в теле стоят только значения решения
+    // аналитика — это данные признака, а не словарь: сравнение с ними никаких
+    // слов не читает.
+    expect([...new Set(named)].sort()).toEqual([
+      "ADVERSE",
+      "ADVERSE_DOMAIN_RE",
+      "NEUTRAL",
+      "SOFT_PROFILE_DOMAIN_RE",
+    ]);
   });
 });

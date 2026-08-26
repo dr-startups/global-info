@@ -155,18 +155,30 @@ export function observationVerdictsForVisuals(artifact: {
 }
 
 /**
+ * Явное решение человека по материалу — одно поле с двумя значениями.
+ *
+ * Два булевых флага допускали бы состояние «и нежелательный, и нейтральный»,
+ * которого не существует: источник (`markAdverse` / `markNeutral` в правках
+ * аналитика) снимает противоположный флаг. Признак задаётся данными, а не
+ * парой названий, которые могут разойтись.
+ */
+export type AnalystDecision = "ADVERSE" | "NEUTRAL";
+
+/**
  * Строка выдачи так, как её видит предикат негативности.
  *
- * Ровно четыре поля: заголовок и сниппет читает словарь, адрес и домен —
- * список площадок. Больше о строке предикату знать нечего, и это не бедность
- * типа, а условие: пока каждый потребитель приносил свой набор полей, ответов
- * на один вопрос стало пять.
+ * Пять полей: заголовок и сниппет читает словарь, адрес и домен — список
+ * площадок, `analystDecision` — решение человека. Больше о строке предикату
+ * знать нечего, и это не бедность типа, а условие: пока каждый потребитель
+ * приносил свой набор полей, ответов на один вопрос стало пять.
  */
 export type AdverseRowInput = {
   url?: string | null;
   domain?: string | null;
   title?: string | null;
   snippet?: string | null;
+  /** Правка аналитика по этому материалу; нет правки — нет поля. */
+  analystDecision?: AnalystDecision | null;
 };
 
 /**
@@ -174,6 +186,19 @@ export type AdverseRowInput = {
  *
  * Порядок решений:
  *
+ * 0. **решение аналитика.** Человек посмотрел материал и отвечает за отчёт
+ *    перед банком; вердикт — это модель, прочитавшая страницу. Правило
+ *    «совпадение не подтверждается автоматически» ставит человека выше машины
+ *    во всём продукте, и тот же порядок уже принят синтезатором находок,
+ *    разбором поверхностей и конвейером аналитики — четвёртый порядок был бы
+ *    вторым ответом на вопрос «кто главнее». Список негативных площадок он
+ *    перебивает по той же причине: снять метку с записи санкционного реестра
+ *    может только аналитик, и его «нет» обязано доезжать до листа.
+ *
+ *    Принадлежность («это однофамилец») решением о негативе **не
+ *    подменяется**: это ответ на другой вопрос, он едет своим путём
+ *    (`subject-resolution.json` → `subjectDecision`), у аналитика для него своя
+ *    правка, и на печати он всё равно сильнее;
  * 1. **прочитанная страница.** Материал о другом лице не подтверждает ничего о
  *    субъекте; нейтральная и благоприятная страница снимают словарную метку;
  *    нежелательная с дословной цитатой ставит её. Нежелательный вывод без
@@ -197,6 +222,8 @@ export type AdverseRowInput = {
  * признанной благоприятной странице с двумя цитатами.
  */
 export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVerdict): boolean {
+  if (row.analystDecision === "NEUTRAL") return false;
+  if (row.analystDecision === "ADVERSE") return true;
   if (verdict) {
     if (verdict.subjectMatch === "other") return false;
     if (verdict.tone === "neutral" || verdict.tone === "supportive") return false;
@@ -223,13 +250,21 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
  */
 export function classifyObservationHighlight(
   obs: PersistedSerpObservation,
-  verdict?: ObservationVerdict
+  verdict?: ObservationVerdict,
+  /**
+   * Решение аналитика по этому материалу.
+   *
+   * Отдельным аргументом, потому что наблюдение его не несёт: правки живут на
+   * элементе инвентаря, а рисованные активы строятся из него. Не передали —
+   * поведение прежнее.
+   */
+  analystDecision?: AnalystDecision | null
 ): {
   isHighlighted: boolean;
   riskTheme: string | null;
   themeTitle: string | null;
 } {
-  if (!resolveRowAdverse(obs, verdict)) {
+  if (!resolveRowAdverse({ ...obs, analystDecision }, verdict)) {
     return { isHighlighted: false, riskTheme: null, themeTitle: null };
   }
   if (verdict?.tone === "adverse" && verdict.quoted) {

@@ -27,6 +27,7 @@ import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-
 import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
 import { buildSyntheticSerpViewModelFromObservations } from "../serp-observation/synthetic-asset";
 import { serpMaterialKey } from "../serp-observation/material-key";
+import { isAnalystAdverse, isAnalystNeutral } from "./analyst-overrides-loader";
 import {
   filterObservationsForSyntheticSerp,
 } from "../serp-observation/filter-synthetic-serp-noise";
@@ -35,6 +36,7 @@ import {
 } from "../serp-observation/synthetic-asset";
 import {
   classifyObservationHighlight,
+  type AnalystDecision,
   type ObservationVerdictByRef,
 } from "../serp-observation/resolve-observation-highlights";
 import type { PersistedSerpObservation } from "../serp-observation/types";
@@ -180,6 +182,20 @@ function toSerpObservation(item: RawInventoryItem, rank: number): PersistedSerpO
   };
 }
 
+/**
+ * Решение аналитика по этому материалу — прямо с элемента инвентаря.
+ *
+ * Правки аналитика мутируют инвентарь на месте и до сборки рисованных активов,
+ * поэтому читать артефакт заново незачем: объект уже помечен. Рамку на снимке
+ * и на плитке ставит этот построитель, и без решения отчёт спорил бы сам с
+ * собой — таблица «Не проверено», а через пять страниц красная рамка.
+ */
+function analystDecisionOf(item: RawInventoryItem): AnalystDecision | undefined {
+  if (isAnalystNeutral(item)) return "NEUTRAL";
+  if (isAnalystAdverse(item)) return "ADVERSE";
+  return undefined;
+}
+
 function toVisibleItem(
   item: RawInventoryItem,
   verdictByRef?: ObservationVerdictByRef
@@ -191,7 +207,8 @@ function toVisibleItem(
       title: item.title ?? null,
       snippet: item.snippet ?? null,
     } as unknown as PersistedSerpObservation,
-    verdictByRef?.[refOf(item)]
+    verdictByRef?.[refOf(item)],
+    analystDecisionOf(item)
   );
   return {
     ref: refOf(item),
@@ -869,7 +886,8 @@ export async function buildCanonicalVisualAssets(input: {
           title: r.title ?? null,
           snippet: r.snippet ?? null,
         } as unknown as PersistedSerpObservation,
-        input.verdictByRef?.[refOf(r)]
+        input.verdictByRef?.[refOf(r)],
+        analystDecisionOf(r)
       );
       const url = urlOf(r);
       const previewBase64 = url ? previews.get(url) : undefined;

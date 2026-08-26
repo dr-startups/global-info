@@ -77,9 +77,13 @@ function serpPage(withFinding: boolean) {
 }
 
 describe("страница выдачи не называет домены абзацем", () => {
-  it("в ветке с находкой печатает тему и ступень, но не перечень", () => {
+  it("в ветке с находкой печатает тему, ступень и свои строки, но не перечень", () => {
     const page = serpPage(true);
-    expect(page.content.whatWasFound).toBe(`«${THEME}» — высокий уровень внимания.`);
+    // Опора темы — номера строк этого листа: домены с полосой адресов спорят,
+    // номер строки — нет.
+    expect(page.content.whatWasFound).toBe(
+      `«${THEME}» — высокий уровень внимания (строки 1–3).`
+    );
     expect(String(page.content.narrative ?? "")).not.toContain(
       "Материалы по теме на этой странице"
     );

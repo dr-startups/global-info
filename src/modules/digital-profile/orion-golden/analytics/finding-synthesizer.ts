@@ -203,6 +203,38 @@ export const CLIENT_THEME_WHY: Record<string, string> = {
 };
 
 /**
+ * Присказка темы по её идентификатору — с ответом для темы, которой в
+ * справочнике нет (файл переопределения вправе завести свою).
+ *
+ * Спрашивают её двое: глобальное утверждение и региональная пересборка блока
+ * темы. Пока второй отбирал присказку регулярным выражением по первому слову
+ * строки, две записи из восьми под перечень начал не подходили — «Для KYC…» и
+ * «Для международных проверок…», — и страница офшоров у банка оставалась без
+ * единственного предложения о том, зачем ей эта тема.
+ */
+export function clientThemeWhy(themeId: string | undefined): string {
+  return (
+    (themeId ? CLIENT_THEME_WHY[themeId] : undefined) ??
+    "Для банка, инвестора или контрагента это сигнал к углублённой проверке."
+  );
+}
+
+/**
+ * Строка счёта темы — одна формулировка на отчёт.
+ *
+ * Её печатают и глобальное утверждение (по всему корпусу темы), и региональная
+ * страница (по материалам своего региона). Единица счёта у них разная, а
+ * предложение обязано быть одним: соседние листы одного раздела, называющие
+ * одно и то же двумя разными фразами, читаются как разные сущности.
+ */
+export function themeScaleLine(count: number, adverseCount: number): string {
+  const total = pluralRu(count, "материал", "материала", "материалов");
+  return adverseCount > 0
+    ? `Всего по теме: ${count} ${total}, с негативным контекстом — ${adverseCount}.`
+    : `Всего по теме: ${count} ${total}.`;
+}
+
+/**
  * Пример-свидетельство для клиентского текста.
  *
  * `url` рядом с доменом — не дублирование: источник называется полным адресом
@@ -564,9 +596,7 @@ export function buildClientFacingClaim(input: {
   const baseFraming =
     CLIENT_THEME_FRAMING[input.theme.themeId] ??
     `Найдены публикации по теме «${input.theme.label}»`;
-  const why =
-    CLIENT_THEME_WHY[input.theme.themeId] ??
-    "Для банка, инвестора или контрагента это сигнал к углублённой проверке.";
+  const why = clientThemeWhy(input.theme.themeId);
 
   let examples: ClaimEvidenceExample[] = (input.examples ?? [])
     .map((e) => ({
@@ -615,10 +645,7 @@ export function buildClientFacingClaim(input: {
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
-  const scale =
-    input.adverseCount > 0
-      ? `Всего по теме: ${input.itemsCount} ${total}, с негативным контекстом — ${input.adverseCount}.`
-      : `Всего по теме: ${input.itemsCount} ${total}.`;
+  const scale = themeScaleLine(input.itemsCount, input.adverseCount);
 
   // Domain anchors stay on quote lines («…» — источник domain) — do NOT append
   // «(в т.ч. материалы на …)» to framing: long parentheticals get mid-clipped by
@@ -697,25 +724,6 @@ export function cleanExampleTitle(raw: string): string {
   const m = t.match(/^(.*[.!?…»])\s*[^.!?…»]*(?:\.\.\.|…)$/u);
   if (m && m[1].length >= 20 && endsWithSentence(m[1].trim())) t = m[1].trim();
   return t.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim();
-}
-
-/** Join whole titles while the segment fits the budget — never a mid-title cut. */
-export function joinTitlesWithinBudget(titles: string[], budget: number): string {
-  const kept: string[] = [];
-  let used = 0;
-  for (const t of titles) {
-    const extra = (kept.length > 0 ? 3 : 0) + t.length; // " · " separator
-    if (used + extra > budget) break;
-    kept.push(t);
-    used += extra;
-  }
-  if (kept.length === 0 && titles.length > 0) {
-    // Single overlong title: keep it whole up to the budget word boundary.
-    const slice = titles[0].slice(0, budget);
-    const cut = slice.lastIndexOf(" ");
-    return (cut > budget * 0.5 ? slice.slice(0, cut) : slice).trim();
-  }
-  return kept.join(" · ");
 }
 
 /**

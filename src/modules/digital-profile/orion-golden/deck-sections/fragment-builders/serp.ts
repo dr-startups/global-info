@@ -13,14 +13,14 @@ import {
   UNVERIFIED_LABEL,
 } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
-import { clientNamedSearchEngine } from "../scoped-input";
+import { clientNamedSearchEngine, evidenceMaterialKey } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
 import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
-import type { FragmentBuildOutput, FragmentExtras } from "./shared";
+import type { FragmentBuildOutput, FragmentExtras, PrintedPageRow } from "./shared";
 import {
   RISK_ORDER,
   adverseVisualSidebar,
@@ -31,6 +31,7 @@ import {
   chunk,
   claimText,
   clampClientText,
+  compactRanges,
   composePageRowComposition,
   coverageContent,
   distribute,
@@ -58,7 +59,6 @@ import {
   withContinuations,
 } from "./shared";
 import { continuationTitle } from "../continuation-slide";
-import { serpMaterialKey } from "../../../serp-observation/material-key";
 
 /** Сколько строк выдачи показывает таблица: глубина аудита, не больше. */
 export const SERP_TABLE_TOP_N = 20;
@@ -211,21 +211,7 @@ export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): st
   const present = new Set(printed);
   const missing: number[] = [];
   for (let rank = 1; rank <= topN; rank += 1) if (!present.has(rank)) missing.push(rank);
-  if (missing.length === 0) return "";
-  const parts: string[] = [];
-  let start = missing[0]!;
-  let prev = start;
-  for (const rank of missing.slice(1)) {
-    if (rank === prev + 1) {
-      prev = rank;
-      continue;
-    }
-    parts.push(start === prev ? String(start) : `${start}–${prev}`);
-    start = rank;
-    prev = rank;
-  }
-  parts.push(start === prev ? String(start) : `${start}–${prev}`);
-  return parts.join(", ");
+  return compactRanges(missing);
 }
 
 /**
@@ -358,7 +344,10 @@ export function mergeSerpRowsByMaterial(
   const order: string[] = [];
   const byKey = new Map<string, string[]>();
   for (const ref of refs) {
-    const key = serpMaterialKey(scoped.evidenceIndex[ref] ?? {});
+    // Ключ материала слоя деки, а не собственный вызов: строка, за которой нет
+    // ни адреса, ни домена, сводиться ни с кем не должна — иначе две таких
+    // строки склеиваются в одну и вторая теряет свою позицию и свой заголовок.
+    const key = evidenceMaterialKey(scoped.evidenceIndex[ref], ref);
     const list = byKey.get(key);
     if (list) {
       list.push(ref);
@@ -661,7 +650,13 @@ export function buildSerpFragment(
     rows: string[][];
     /** Адрес каждой строки этой страницы — полосой под ней. */
     addresses: string[];
-    refs: string[];
+    /**
+     * Напечатанные строки листа со своими номерами.
+     *
+     * Ссылки страницы берутся отсюда же: плоский список нужен виду страницы, а
+     * номер строки — теме, которая на этом листе называет свою опору.
+     */
+    printedRows: PrintedPageRow[];
     /** Первые предложения страницы: чья это выдача и чего в ней не хватает. */
     lead: string;
     /** Справка после вывода страницы; печатается не всегда. */
@@ -681,12 +676,13 @@ export function buildSerpFragment(
   for (const table of tables) {
     const label = serpEngineLabel(table.engine);
     const printed = table.displayed.map((x) => rowOf(x.group, x.rank));
-    const tableRefs = table.displayed.map((x) => x.group.refs);
     // Строки, адреса и ссылки режутся одним разрезом: соответствие «строка →
     // адрес» держится индексом, и разъехавшиеся куски остановили бы сборку.
     const rowChunks = cut(printed.map((p) => p.cells));
     const addressChunks = cut(printed.map((p) => p.address));
-    const refChunks = cut(tableRefs).map((c) => c.flat());
+    const printedRowChunks = cut(
+      table.displayed.map((x) => ({ rank: x.rank, refs: x.group.refs }))
+    );
     const printedRanks = table.positional ? table.displayed.map((x) => x.rank) : [];
     const missing = table.positional ? missingSerpRanks(printedRanks) : "";
     const prose = serpTablePageProse({
@@ -712,7 +708,7 @@ export function buildSerpFragment(
         }),
         rows: rowChunks[i] ?? [],
         addresses: addressChunks[i] ?? [],
-        refs: refChunks[i] ?? [],
+        printedRows: printedRowChunks[i] ?? [],
         lead: prose.head,
         ...(prose.tail ? { note: prose.tail } : {}),
         engine: table.engine,
@@ -759,9 +755,13 @@ export function buildSerpFragment(
   const slides: SlideContentContract[] = [];
   const baseSlideId = slot.slotId;
   for (let i = 0; i < pages.length; i += 1) {
-    const pageRefs = pages[i]!.refs;
+    const printedRows = pages[i]!.printedRows;
+    const pageRefs = printedRows.flatMap((r) => r.refs);
     const pageRows = pages[i]!.rows;
-    const view = buildPageEvidenceView(scoped, pageRefs);
+    // Единица этого листа — строка с номером, и тема на нём называет свою опору
+    // номерами строк: домены печатают полосы адресов, а перечень в абзаце с
+    // ними спорил.
+    const view = buildPageEvidenceView(scoped, pageRefs, printedRows);
     // Renderer `orion_golden_search_table` paints only `narrative` above the
     // table (not whatWasFound/bullets when rows exist) — put the §7.1 sidebar
     // conclusion there so the page composition is visible in PDF/PPTX.

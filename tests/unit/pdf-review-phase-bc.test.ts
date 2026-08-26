@@ -76,10 +76,14 @@ const UAE_SCOPED = {
 };
 
 describe("B.3 — regional source localization", () => {
-  it("sourceLine on a UAE page drops RU-region domains, keeps UAE and region-neutral ones", () => {
+  it("sourceLine on a UAE page keeps only its own region", () => {
+    // Свидетельство без региона отсюда убрано решением владельца: подвал
+    // источников и блок темы стоят на одном слайде, и блок темы такую запись
+    // не считает и не цитирует. Пока подвал её называл, лист отвечал на вопрос
+    // «относится ли материал к этому региону» дважды и по-разному.
     const line = sourceLine(UAE_SCOPED as never);
     expect(line).toContain("gulfnews.com");
-    expect(line).toContain("en.wikipedia.org");
+    expect(line).not.toContain("en.wikipedia.org");
     expect(line).not.toContain("dzen.ru");
     expect(line).not.toContain("secrets.tbank.ru");
   });

@@ -21,15 +21,20 @@ import type {
   SurfaceCollectionHint,
   ComplianceScreeningRecord,
 } from "./scoped-input";
-import { clientNamedSearchEngine, normalizeCoverageSurface } from "./scoped-input";
+import {
+  clientNamedSearchEngine,
+  evidenceMaterialKey,
+  normalizeCoverageSurface,
+} from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
+import type { AppliedOverrideRecord } from "../../services/analyst-overrides-loader";
+import type { AnalystDecision } from "../../serp-observation/resolve-observation-highlights";
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 import { wikipediaCheckInventoryId } from "../../services/evidence-supplement-adapter";
 import { WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT } from "../analytics/run-wikipedia-article-review";
 import { WikipediaArticleReviewSetSchema } from "../contracts/wikipedia-article-review";
-import { serpMaterialKey } from "../../serp-observation/material-key";
 
 export type CompositeObservationRow = {
   observationKey?: string;
@@ -172,6 +177,71 @@ export type LinkVerdictRow = {
 };
 
 /**
+ * Ссылки индекса, сгруппированные по материалу.
+ *
+ * Материал опознаётся адресом, а не одним заголовком, и правило это одно на
+ * весь слой деки (`evidenceMaterialKey`): и решение по прочитанной странице, и
+ * решение аналитика раскладываются по тем же материалам, по которым
+ * региональный блок темы считает «Всего по теме». Помощник общий, чтобы в одном
+ * файле не оказалось двух одинаковых циклов над ключом материала.
+ */
+function refsByMaterial(evidenceIndex: ScopedEvidenceIndex): Map<string, string[]> {
+  const byKey = new Map<string, string[]>();
+  for (const ref of Object.keys(evidenceIndex)) {
+    const key = evidenceMaterialKey(evidenceIndex[ref], ref);
+    const list = byKey.get(key);
+    if (list) list.push(ref);
+    else byKey.set(key, [ref]);
+  }
+  return byKey;
+}
+
+/**
+ * Разложить явные решения аналитика на индекс доказательств.
+ *
+ * Решение принадлежит материалу, а не наблюдению, — по той же причине, что и
+ * решение по прочитанной странице: ключ наблюдения включает запрос, одна
+ * страница по двум запросам лежит в индексе двумя ссылками, а потребители
+ * спрашивают `some(...)` по ссылкам материала. Без раскладки «нежелательный»
+ * сработал бы, а «нейтральный» — нет: одна непомеченная ссылка вернула бы
+ * `true`, и «или» перекрыло бы решение человека.
+ *
+ * Цена раскладки та же, что уже принята для вердикта: ключ — «домен и
+ * заголовок», и две разные страницы одного сайта с одинаковым заголовком делят
+ * решение. Третий ответ на «тот же ли это материал» заводить ради этого нельзя.
+ *
+ * `identity_other_subject` и `manual_review_wrong_subject` сюда **не**
+ * отображаются: это ответ о принадлежности, он едет своим путём
+ * (`subject-resolution.json` → `subjectDecision`), и дублировать его вторым
+ * полем значит заводить второй ответ. `approved_finding` — решение о находке,
+ * а не о строке.
+ */
+export function applyAnalystDecisionsToEvidence(
+  evidenceIndex: ScopedEvidenceIndex,
+  applied: AppliedOverrideRecord[]
+): void {
+  const decisionOf = (kind: string): AnalystDecision | undefined => {
+    if (kind === "classification_adverse") return "ADVERSE";
+    // «Снято при ручной проверке» — тот же `markNeutral` в источнике правок.
+    if (kind === "classification_neutral" || kind === "manual_review_excluded") return "NEUTRAL";
+    return undefined;
+  };
+  const byMaterial = refsByMaterial(evidenceIndex);
+  for (const record of applied) {
+    const decision = decisionOf(String(record?.kind ?? ""));
+    if (!decision) continue;
+    const inventoryId = String(record?.inventoryId ?? "").trim();
+    if (!inventoryId) continue;
+    const ref = `inventory:${inventoryId}`;
+    const entry = evidenceIndex[ref];
+    if (!entry) continue;
+    for (const sibling of byMaterial.get(evidenceMaterialKey(entry, ref)) ?? [ref]) {
+      evidenceIndex[sibling]!.analystDecision = decision;
+    }
+  }
+}
+
+/**
  * Разложить решения по прочитанным страницам на индекс доказательств.
  *
  * **Решение принадлежит материалу, а не наблюдению.** Ключ наблюдения включает
@@ -193,30 +263,7 @@ export function applyLinkVerdictsToEvidence(
   evidenceIndex: ScopedEvidenceIndex,
   verdicts: LinkVerdictRow[]
 ): void {
-  /*
-   * Материал опознаётся адресом, а не одним заголовком.
-   *
-   * В индексе доказательств живёт не только выдача: у записи комплаенс-базы
-   * нет ни адреса, ни домена, а заголовок — имя субъекта, одинаковое у всех
-   * баз. На корпусе `report-72` три записи (Dow Jones, LexisNexis,
-   * World-Check) сходятся в один ключ `|имя`, и одно решение по прочитанной
-   * странице сняло бы совпадение сразу у трёх — прямо против правила
-   * «совпадение по комплаенсу не подтверждается автоматически». Поэтому
-   * запись без адреса и без домена материалом ни с кем не делится: её ключ —
-   * собственная ссылка.
-   */
-  const materialOf = (ref: string): string => {
-    const entry = evidenceIndex[ref] ?? {};
-    if (!entry.url && !entry.domain) return ref;
-    return serpMaterialKey(entry, ref);
-  };
-  const refsByMaterial = new Map<string, string[]>();
-  for (const ref of Object.keys(evidenceIndex)) {
-    const key = materialOf(ref);
-    const list = refsByMaterial.get(key);
-    if (list) list.push(ref);
-    else refsByMaterial.set(key, [ref]);
-  }
+  const materialRefs = refsByMaterial(evidenceIndex);
   /*
    * Один материал — одно решение, и оно сильнейшее.
    *
@@ -236,13 +283,13 @@ export function applyLinkVerdictsToEvidence(
   for (const v of verdicts) {
     const ref = String(v.evidenceRef ?? "");
     if (!ref || !evidenceIndex[ref]) continue;
-    const key = materialOf(ref);
+    const key = evidenceMaterialKey(evidenceIndex[ref], ref);
     const prev = chosen.get(key);
     if (!prev || strength(v) > strength(prev)) chosen.set(key, v);
   }
   for (const [key, v] of chosen) {
     const ownUrl = normalizedAddress(evidenceIndex[String(v.evidenceRef)]?.url);
-    for (const ref of refsByMaterial.get(key) ?? []) {
+    for (const ref of materialRefs.get(key) ?? []) {
       /*
        * Оценка принадлежит материалу, дословная цитата — прочитанной странице.
        *
@@ -678,6 +725,19 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   }
 
   applyLinkVerdictsToEvidence(evidenceIndex, linkVerdicts?.verdicts ?? []);
+  /*
+   * Явные решения аналитика по материалам.
+   *
+   * Файл пишет конвейер аналитики, когда правки были; его может не быть вовсе
+   * — реплей старого прогона, эталон `report-72`. Отсутствие файла **не
+   * значит «все нейтральны»**: решений просто нет, и предикат работает как
+   * раньше.
+   */
+  const analystAppliedPath = join(analyticsDir, "analyst-overrides-applied.json");
+  if (existsSync(analystAppliedPath)) {
+    const artifact = readJson<{ applied?: AppliedOverrideRecord[] }>(analystAppliedPath);
+    applyAnalystDecisionsToEvidence(evidenceIndex, artifact?.applied ?? []);
+  }
 
   // Enrich compliance_hit entries with typed match metadata (provider /
   // category / score / review / поля карточки) so p33–p36 tables are

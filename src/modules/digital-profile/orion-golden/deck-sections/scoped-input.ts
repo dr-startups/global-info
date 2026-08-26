@@ -15,6 +15,8 @@ import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import type { WikipediaArticleReview } from "../contracts/wikipedia-article-review";
+import { serpMaterialKey } from "../../serp-observation/material-key";
+import type { AnalystDecision } from "../../serp-observation/resolve-observation-highlights";
 
 export type SubjectProfileInput = {
   displayName: string;
@@ -136,6 +138,17 @@ export type ScopedEvidenceIndex = Record<
      * ехал заголовок, срезанный до 300 знаков.
      */
     snippet?: string;
+    /**
+     * Явное решение аналитика по материалу — первый источник предиката
+     * негативности.
+     *
+     * Отдельным полем, а не записью в `adverse`: `adverse` значит «прочитанная
+     * страница признана нежелательной и подтверждена дословной цитатой» (из
+     * него `evidenceRowVerdict` выводит `quoted`), и записать туда решение
+     * человека значило бы утверждать, что страницу открыли и процитировали,
+     * когда её никто не открывал.
+     */
+    analystDecision?: AnalystDecision;
     /**
      * Кто добыл наблюдение. Подпись под ответом поискового ИИ выводится из
      * него: «получен официальным Yandex Search API» — утверждение о способе
@@ -413,6 +426,32 @@ export function normalizeEvidenceRef(ref: string): string {
     .replace(/^inventory:serp-obs-/u, "")
     .replace(/^inventory:ss-/u, "")
     .replace(/^[a-z]+_search_results-sf-/u, "");
+}
+
+/**
+ * Какой материал стоит за строкой индекса доказательств — один ответ на слой деки.
+ *
+ * Ключ наблюдения включает запрос, поэтому одна и та же страница, найденная
+ * двумя запросами, лежит в индексе двумя ссылками. Читателю она при этом одна:
+ * и решение по прочитанной странице, и счёт материалов темы считают её один раз.
+ *
+ * Запись без адреса и без домена материалом ни с кем не делится. В индексе
+ * живёт не только выдача: у записи комплаенс-базы нет ни адреса, ни домена, а
+ * заголовок — имя субъекта, одинаковое у всех баз. На корпусе `report-72` три
+ * записи (Dow Jones, LexisNexis, World-Check) сошлись бы в один ключ `|имя`.
+ *
+ * Спрашивают отсюда все, кому единицей служит материал: счёт темы на
+ * региональной странице, разнос решений по прочитанным страницам и сведение
+ * строк печатной таблицы выдачи (`mergeSerpRowsByMaterial`). У последней был
+ * свой вызов без запасного ключа — на строках выдачи неотличимый (у них всегда
+ * есть адрес) и всё же второй ответ.
+ */
+export function evidenceMaterialKey(
+  entry: ScopedEvidenceIndex[string] | undefined,
+  ref: string
+): string {
+  if (!entry?.url && !entry?.domain) return ref;
+  return serpMaterialKey(entry, ref);
 }
 
 export function regionMatches(scopeRegion: string, value: string | undefined): boolean {

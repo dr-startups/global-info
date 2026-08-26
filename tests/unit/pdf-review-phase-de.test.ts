@@ -2,16 +2,13 @@
  * PDF review 36 — phases D (text fits whole) and E (design) — offline acceptance.
  * - D.1/D.2: sidebarSafe keeps whole sentences, never «…относящийся к.»
  * - D.4: statusLine is human phrasing, no «уверенность 90%»
- * - D.5: example titles join on whole-title boundaries; SERP suffixes cleaned;
+ * - D.5: SERP suffixes cleaned in example titles;
  *        the §7.2 diff line lives only in the executive narrative (no bullet dupe)
  */
 
 import { describe, expect, it } from "vitest";
 import { sidebarSafe } from "../../src/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
-import {
-  cleanExampleTitle,
-  joinTitlesWithinBudget,
-} from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import { cleanExampleTitle } from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 import {
   applyExecutiveFreshnessChangeToPacks,
   statusLine,
@@ -70,14 +67,6 @@ describe("D.5 — example titles cut on whole-title boundaries", () => {
     expect(cleanExampleTitle("Обычный заголовок без мусора")).toBe(
       "Обычный заголовок без мусора"
     );
-  });
-
-  it("joinTitlesWithinBudget never cuts mid-title", () => {
-    const titles = ["Первый заголовок статьи", "Второй заголовок подлиннее", "Третий заголовок"];
-    const joined = joinTitlesWithinBudget(titles, 52);
-    expect(joined).toBe("Первый заголовок статьи · Второй заголовок подлиннее");
-    const tight = joinTitlesWithinBudget(titles, 30);
-    expect(tight).toBe("Первый заголовок статьи");
   });
 });
 

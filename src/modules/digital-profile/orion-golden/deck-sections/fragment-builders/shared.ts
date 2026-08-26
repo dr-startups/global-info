@@ -17,6 +17,7 @@ import {
 import { balanceTailPage } from "../semantic-summary-pagination";
 import { buildContinuationSlide } from "../continuation-slide";
 import {
+  evidenceMaterialKey,
   normalizeEvidenceRef,
   regionMatches,
   resolveEmptySurfaceCollection,
@@ -52,12 +53,13 @@ import { normalizeForCompare } from "../text-compare";
 import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
 import {
   cleanExampleTitle,
+  clientThemeWhy,
   isWeakExampleTitle,
   quoteForClaim,
-  joinTitlesWithinBudget,
+  themeScaleLine,
 } from "../../analytics/finding-synthesizer";
 import { pluralRu } from "../../../report/i18n/plural-ru";
-import { getFindingThemes } from "../../../config/finding-themes";
+import { getFindingThemes, isAccusingTheme } from "../../../config/finding-themes";
 import {
   freshnessFootnote,
   reportDiffClientLine,
@@ -715,9 +717,33 @@ export type PageEvidenceView = {
   findings: Finding[];
   /** findingId → domains of its on-page supporting evidence. */
   supportDomains: Map<string, string[]>;
+  /** findingId → номера напечатанных строк, которые его поддерживают. */
+  supportRows: Map<string, number[]>;
 };
 
-export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: string[]): PageEvidenceView {
+/**
+ * Напечатанная строка таблицы: её номер и ссылки материала, который она несёт.
+ *
+ * Номер — тот, что напечатан в первой колонке, а не порядок в массиве: на
+ * странице выдачи это позиция в выдаче, и читатель ищет на листе именно её.
+ */
+export type PrintedPageRow = { rank: number; refs: string[] };
+
+/**
+ * @param printedRows Строки, которые страница действительно напечатала.
+ *
+ * Передаёт их только тот, у кого единица листа — строка с номером (таблица
+ * выдачи). Тогда тема на такой странице называет свою опору номером, а тема,
+ * которую не поддерживает ни одна напечатанная строка, не называется вовсе:
+ * ярлык без опоры отправляет читателя искать на листе то, чего там нет. У
+ * плитки сетки, панели знаний и подсказок номера строки нет, и они этот
+ * аргумент не передают.
+ */
+export function buildPageEvidenceView(
+  scoped: ScopedFragmentInput,
+  pageRefs: string[],
+  printedRows?: PrintedPageRow[]
+): PageEvidenceView {
   const entries = pageRefs.map((ref) => ({ ref, e: scoped.evidenceIndex[ref] }));
   const domainByNormRef = new Map<string, string>();
   const urlToDomain = new Map<string, string>();
@@ -733,10 +759,23 @@ export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: str
       domainByNormRef.set(normalizeEvidenceRef(ref), "");
     }
   }
+  // Номер строки разыскивается теми же двумя ключами, что и поддержка находки:
+  // иначе страница признавала бы тему своей и не могла назвать строку.
+  const rowByNormRef = new Map<string, number>();
+  const rowByNormUrl = new Map<string, number>();
+  for (const row of printedRows ?? []) {
+    for (const ref of row.refs) {
+      rowByNormRef.set(normalizeEvidenceRef(ref), row.rank);
+      const u = normalizeEvidenceUrl(scoped.evidenceIndex[ref]?.url);
+      if (u && !rowByNormUrl.has(u)) rowByNormUrl.set(u, row.rank);
+    }
+  }
   const findings: Finding[] = [];
   const supportDomains = new Map<string, string[]>();
+  const supportRows = new Map<string, number[]>();
   for (const f of scoped.findings) {
     const support = new Set<string>();
+    const rows = new Set<number>();
     let hit = false;
     for (const r of f.evidenceRefs) {
       const norm = normalizeEvidenceRef(r);
@@ -747,24 +786,30 @@ export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: str
         // finding's own evidence entry names the same source then.
         const d = domainByNormRef.get(norm) || (e?.domain && e.domain !== "—" ? e.domain : "");
         if (d) support.add(d);
+        const rank = rowByNormRef.get(norm);
+        if (rank !== undefined) rows.add(rank);
         continue;
       }
       const u = normalizeEvidenceUrl(e?.url);
       if (u && urlToDomain.has(u)) {
         hit = true;
         support.add(urlToDomain.get(u)!);
+        const rank = rowByNormUrl.get(u);
+        if (rank !== undefined) rows.add(rank);
       }
     }
-    if (hit) {
-      findings.push(f);
-      supportDomains.set(f.findingId, [...support]);
-      // Support domains name the same on-page rows (resolved through the
-      // finding's evidence entry when the page ref itself is opaque).
-      for (const d of support) domains.add(d);
-    }
+    if (!hit) continue;
+    // Страница называет только то, что показала строкой.
+    if (printedRows && rows.size === 0) continue;
+    findings.push(f);
+    supportDomains.set(f.findingId, [...support]);
+    supportRows.set(f.findingId, [...rows].sort((a, b) => a - b));
+    // Support domains name the same on-page rows (resolved through the
+    // finding's evidence entry when the page ref itself is opaque).
+    for (const d of support) domains.add(d);
   }
   findings.sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0));
-  return { refs: pageRefs, domains: [...domains], findings, supportDomains };
+  return { refs: pageRefs, domains: [...domains], findings, supportDomains, supportRows };
 }
 
 /**
@@ -815,12 +860,73 @@ export type PageBlockOptions = {
   composition?: PageRowComposition;
 };
 
-/** Вывод по теме без указания источников: тема и ступень внимания. */
-function themeAttentionLine(f: Finding): string {
+/**
+ * Номера подряд — диапазоном, остальные через запятую: «1–3, 5, 11–20».
+ *
+ * Один ответ на «как этот лист называет набор своих номеров»: им подписаны и
+ * пропущенные позиции таблицы (`missingSerpRanks`), и опора темы в абзаце над
+ * ней. Разная запись на одной странице читалась бы как разные величины.
+ */
+export function compactRanges(numbers: number[]): string {
+  const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+  if (sorted.length === 0) return "";
+  const parts: string[] = [];
+  let start = sorted[0]!;
+  let prev = start;
+  const flush = (): void => {
+    parts.push(start === prev ? String(start) : `${start}–${prev}`);
+  };
+  for (const n of sorted.slice(1)) {
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    flush();
+    start = n;
+    prev = n;
+  }
+  flush();
+  return parts.join(", ");
+}
+
+/**
+ * Вывод по теме: тема, ступень внимания и опора — номера строк этой страницы.
+ *
+ * Тема без опоры — ярлык: на стр. 22 отчёта Кремлёва абзац объявлял «Офшоры /
+ * корпоративное владение», а которая из четырёх напечатанных строк её несёт, не
+ * говорил. Домены на эту роль не годятся (полосы адресов под строками печатают
+ * их целиком и все, а перечень режется тремя и спорит с собственным листом), а
+ * номер строки с полосой не спорит: он указывает на строку того же листа.
+ */
+function themeAttentionLine(f: Finding, rows: number[]): string {
   // Было: «тема»: уровень внимания — критический — материалы на этой странице:
   // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
   // а не как предложение. Теперь это два коротких предложения.
-  return `«${f.theme}» — ${riskAttentionPhrase(f.riskLevel)}.`;
+  const attention = `«${f.theme}» — ${riskAttentionPhrase(f.riskLevel)}`;
+  if (rows.length === 0) return `${attention}.`;
+  const word = rows.length === 1 ? "строка" : "строки";
+  /*
+   * Опора названа скобкой, а не отдельным предложением, и номера в ней
+   * свёрнуты в диапазоны.
+   *
+   * Абзац страницы выдачи стоит у кромки кегля: замер
+   * `renderer/smoke_search_table_layout.py` (Т11е2) показывает, что живой
+   * состав — лид с запросом, пропущенные позиции, набор из пяти запросов,
+   * «почему важно» и рекомендация — держит 11 pt едва-едва, и опора съедает
+   * весь остаток. Перечисление «строки 17, 18, 19 и 20» стоит вдвое дороже
+   * диапазона «строки 17–20» и роняло лист на девятку при соседних листах
+   * деки в 11 pt.
+   *
+   * Несмежные номера остаются перечнем через запятую: диапазон «13–19» назвал
+   * бы строки 14, 16 и 18, которые тему не несут, — то есть отправил бы
+   * читателя ровно к той строке, ради которой опора и заводилась. Правило
+   * одно на все случаи и то же самое, каким этот лист называет пропущенные
+   * позиции («Позиции 1–3, 5, 11–20»).
+   *
+   * Номера перечисляются все: на листе их не больше ёмкости таблицы, и «и ещё
+   * 2» вместо номеров вернуло бы ту же ненайденную опору.
+   */
+  return `${attention} (${word} ${compactRanges(rows)}).`;
 }
 
 /** Перечень доменов страницы, поддерживающих эту тему. */
@@ -841,7 +947,8 @@ export function pageScopedConclusion(
   opts: PageBlockOptions = {}
 ): string {
   const src = opts.namePageDomains === false ? "" : pageDomainsLine(f, view);
-  return clampClientText([themeAttentionLine(f), src].filter(Boolean).join(" "), 400);
+  const rows = view.supportRows.get(f.findingId) ?? [];
+  return clampClientText([themeAttentionLine(f, rows), src].filter(Boolean).join(" "), 400);
 }
 
 /**
@@ -901,6 +1008,7 @@ export function evidenceRowAdverse(
       domain: e.domain && e.domain !== "—" ? e.domain : undefined,
       title: e.title,
       snippet: e.snippet,
+      analystDecision: e.analystDecision,
     },
     verdict
   );
@@ -1433,6 +1541,78 @@ export function quoteGistLine(title: string, gist: string | undefined): string |
   return `О чём: ${clampClientText(text, 160)}`;
 }
 
+/** Строка счёта в утверждении находки — всегда на своей строке. */
+const THEME_SCALE_LINE_RE = /^[ \t]*(?:Всего по теме|В корпусе):[^\n]*$/mu;
+
+/**
+ * Собрано ли утверждение синтезатором находок.
+ *
+ * Его разметка — строка счёта: `buildClientFacingClaim` печатает её всегда, а
+ * вместе с ней всегда печатает и присказку темы. Легаси-утверждения (например,
+ * в фикстуре `report-72`) идут одной строкой старого формата «тема: 7
+ * свидетельств (5 негативных) в источниках …» — ни счёта, ни присказки, и
+ * дописывать им своё региональная пересборка не вправе.
+ *
+ * Без привязки к началу строки: утверждение бывает и одним абзацем.
+ */
+const SYNTHESIZED_CLAIM_RE = /(?:Всего по теме|В корпусе):/u;
+
+/**
+ * Счёт темы на региональной странице: материалы этого региона и негатив среди
+ * них.
+ *
+ * Считаются **материалы**, а не наблюдения: ключ наблюдения включает запрос, и
+ * одна страница, найденная двумя запросами, лежит в находке двумя ссылками, а
+ * читателю она одна. Негатив у материала один на все его наблюдения и берётся
+ * тем же единственным предикатом, которым дека красит строку выдачи и ставит
+ * рамку на снимке (`evidenceRowAdverse` → `resolveRowAdverse`), — второго
+ * ответа на «негативен ли материал» в отчёте нет.
+ *
+ * Свидетельство **без региона** не считается нигде: у записи комплаенс-базы
+ * региона нет вовсе, и, попадая в счёт каждого региона, она подавалась
+ * клиенту как найденная здесь, а сумма региональных чисел выходила больше
+ * глобального. Отнести её к одному из регионов страница не может — она видит
+ * только свою область; называет такую запись тот раздел, где она живёт.
+ *
+ * Пустая строка означает «счёта нет»: либо его не было и в глобальном
+ * утверждении (`localizedThemedClaim` переписывает найденное, а не добавляет
+ * своё), либо считать в этом регионе нечего.
+ */
+function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string {
+  if (!THEME_SCALE_LINE_RE.test(String(f.claim ?? ""))) return "";
+  const regions = scoped.scope?.regions ?? [];
+  const adverseByMaterial = new Map<string, boolean>();
+  for (const ref of f.evidenceRefs) {
+    const e = scoped.evidenceIndex[ref];
+    if (!e) continue;
+    if (!regions.some((r) => regionMatches(r, e.region))) continue;
+    const key = evidenceMaterialKey(e, ref);
+    adverseByMaterial.set(key, (adverseByMaterial.get(key) ?? false) || evidenceRowAdverse(e));
+  }
+  if (adverseByMaterial.size === 0) return "";
+  return themeScaleLine(
+    adverseByMaterial.size,
+    [...adverseByMaterial.values()].filter(Boolean).length
+  );
+}
+
+/**
+ * Копия находки с региональной строкой счёта вместо глобальной.
+ *
+ * Правится строка утверждения, а не собранный текст: `themedClaim` дальше сам
+ * разложит утверждение по строкам, а подстановка в уже разложенное зависела бы
+ * от того, как оно разложилось. Пустая строка счёта означает «считать в этом
+ * регионе нечего» — тогда числа не остаётся вовсе, а не остаётся глобальное.
+ */
+function withThemeScaleLine(f: Finding, scale: string): Finding {
+  const claim = String(f.claim ?? "");
+  if (!THEME_SCALE_LINE_RE.test(claim)) return f;
+  const next = scale
+    ? claim.replace(THEME_SCALE_LINE_RE, scale)
+    : claim.replace(THEME_SCALE_LINE_RE, "").replace(/\n{2,}/gu, "\n").trim();
+  return { ...f, claim: next };
+}
+
 /**
  * B.3 — regional pages must not quote foreign-region sources. Cross-regional
  * findings carry globally aggregated «Источники: …» / «Примеры заголовков: …»
@@ -1443,15 +1623,25 @@ export function quoteGistLine(title: string, gist: string | undefined): string |
 export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): string {
   const regions = scoped.scope.regions;
   if (!regions || regions.length === 0) return themedClaim(f);
+  const scale = regionalThemeScaleLine(f, scoped);
   const frs = f.regions ?? [];
   const exclusive =
     frs.length > 0 && frs.every((fr) => regions.some((r) => regionMatches(r, fr)));
-  if (exclusive) return themedClaim(f);
+  /*
+   * Находка целиком своя — цитаты пересобирать не из чего, а счёт всё равно
+   * пересчитывается.
+   *
+   * Глобальная строка приезжала сюда дословно, и на соседних листах одного
+   * раздела стояли «Всего по теме: 3 материала» и «Всего по теме: 4 материала,
+   * с негативным контекстом — 1»: разная формулировка и разная единица счёта
+   * (материал против наблюдения). Отсутствие хвоста при этом читается как
+   * «негативных нет», а значит, страница отвечала на один вопрос дважды.
+   */
+  if (exclusive) return themedClaim(withThemeScaleLine(f, scale));
 
   const themeDef = getFindingThemes().find(
     (t) => t.label === f.theme || f.theme.toLowerCase().includes(t.label.toLowerCase())
   );
-  const adverseTheme = isAdverse(f);
 
   const domains: string[] = [];
   const titleCandidates: Array<{
@@ -1466,7 +1656,10 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   for (const ref of f.evidenceRefs) {
     const e = scoped.evidenceIndex[ref];
     if (!e) continue;
-    if (e.region && !regions.some((r) => regionMatches(r, e.region))) continue;
+    // Регион страницы, а не «регион не чужой»: запись без региона (карточка
+    // комплаенс-базы, неотнесённый пример) не найдена в этом регионе и
+    // цитируется там, где живёт. Тот же порог стоит в счёте темы.
+    if (!regions.some((r) => regionMatches(r, e.region))) continue;
     if (e.domain && !seenDomains.has(e.domain) && !isMockClientDomain(e.domain)) {
       seenDomains.add(e.domain);
       domains.push(e.domain);
@@ -1477,11 +1670,22 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     // Тот же запрет стоит в синтезаторе находок; здесь региональная сборка
     // цитирует по своему списку и правило нужно повторить.
     if (NON_QUOTABLE_SURFACES.has(String(e.kind ?? "").toLowerCase())) continue;
-    // Тема повышенного внимания не цитирует материал, чью страницу прочитали и
-    // признали нейтральной. Тему назначает словарь ключевых слов по заголовку,
-    // и «суд» в заголовке телеинтервью тянет его в криминальный блок; решение
-    // же вынесено по тексту страницы и знает, что там на самом деле.
-    if (adverseTheme && (e.readVerdictTone === "neutral" || e.readVerdictTone === "supportive")) {
+    // Обвиняющая тема не цитирует материал, чью страницу прочитали и признали
+    // нейтральной. Тему назначает словарь ключевых слов по заголовку, и «суд» в
+    // заголовке телеинтервью тянет его в криминальный блок; решение же вынесено
+    // по тексту страницы и знает, что там на самом деле.
+    //
+    // Условие «только для тем не ниже среднего» здесь стояло и было ошибкой:
+    // «Финансовые претензии / долговые споры» — тема низкая, и на стр. 52
+    // отчёта Кремлёва она процитировала пост о партнёрстве со страницы,
+    // прочитанной и признанной нейтральной. Причина защиты от уровня риска не
+    // зависит ни в чём — а вот от того, обвиняет тема или описывает, зависит:
+    // деловому профилю и публичной экспозиции нейтральная публикация и есть
+    // законное доказательство.
+    if (
+      isAccusingTheme(themeDef) &&
+      (e.readVerdictTone === "neutral" || e.readVerdictTone === "supportive")
+    ) {
       continue;
     }
     /*
@@ -1535,7 +1739,6 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     });
   }
   titleCandidates.sort((a, b) => b.score - a.score);
-  const titles = titleCandidates.map((c) => c.title);
 
   // PDF-40 G.2b / PDF-44 H — rebuild from this region's evidence only; skip weak titles.
   const regionalQuotes = pickDistinctTitles(titleCandidates, 2).flatMap((c) => {
@@ -1554,11 +1757,29 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     (l) =>
       /^(Найдены|Есть публикации)/u.test(l) && !/«[^»]+»\s*—\s*источник/u.test(l)
   );
-  const scale = lines.find((l) => /^(Всего по теме|В корпусе):/u.test(l)) ?? "";
-  const why =
-    lines.find((l) =>
-      /^(Для банка|Банки |Это усиливает|Риск в том|Деловой фон)/u.test(l)
-    ) ?? "";
+  /*
+   * Присказка «почему это важно» — та, что закреплена за темой, а не та, что
+   * начинается с угаданного слова.
+   *
+   * Отбор регуляркой по началу строки терял её у двух тем из восьми: «Для KYC
+   * это типичный запрос…» (офшоры) и «Для международных проверок…» (линия
+   * безопасности) в перечень начал не попадали, и страница офшоров у банка
+   * оставалась без единственного предложения о том, зачем ей эта тема.
+   *
+   * Печатается только если она была и в глобальном утверждении: региональная
+   * пересборка переписывает найденное, а не добавляет своё. Но спрашивается это
+   * **у разметки сборщика, а не у текста присказки**: синтезатор дописывает
+   * присказку каждому утверждению, которое собирает сам, вместе со строкой
+   * счёта (`buildClientFacingClaim`), поэтому наличие счёта и есть наличие
+   * присказки. Сравнение с самим текстом ломалось дважды: утверждение бывает
+   * одним абзацем (тогда строки для сравнения нет), а справочник присказок
+   * правится между сборкой отчёта и пересборкой деки (тогда в утверждении
+   * лежит прежняя редакция) — и в обоих случаях присказка молча исчезала бы с
+   * региональной страницы, оставаясь на исполнительной.
+   */
+  const why = SYNTHESIZED_CLAIM_RE.test(String(f.claim ?? ""))
+    ? clientThemeWhy(themeDef?.themeId)
+    : "";
   let claim: string;
   if (regionalQuotes.length > 0) {
     // Never reuse a legacy one-line stats dump as framing — it still carries
@@ -1573,31 +1794,27 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     const whereLine = anchors.length > 0 ? `Где видно: ${anchors.join(", ")}.` : "";
     claim = [frame, ...regionalQuotes, scale, whereLine, why].filter(Boolean).join("\n");
   } else {
+    /*
+     * Пустой ветке нечего цитировать — значит, в ней нет и обещания цитаты.
+     *
+     * Собирается она из разобранных частей, а не подстановкой в глобальный
+     * текст. Подстановка правила только сегмент источников и оставляла на
+     * региональной странице всё остальное: рамку «Найдены публикации по теме:»,
+     * за которой ничего не следует, глобальные числа и — главное — сами цитаты
+     * чужого региона, ради изгнания которых пересборка и заведена. Пока
+     * нейтрально прочитанная страница цитировалась, ветка была редкой и это не
+     * стреляло.
+     */
     const safeDomains = clientSafeDomains(domains);
+    // Площадок в регионе нет — значит, и числа нет: «источники не выделены» и
+    // следом «всего по теме 2 материала» — два спорящих предложения, и второе
+    // отправляет читателя искать материалы, которых страница назвать не может.
     const sourceSegment = safeDomains.length
       ? `По теме в источниках ${enumerateRu(safeDomains)}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
       : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
-    claim = String(f.claim ?? "")
-      .replace(
-        /(?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?(?=\n|(?:\s*(?:Пример|Примеры))|$)/u,
-        sourceSegment
-      )
-      .replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
-    // Drop weak quote lines from the global claim when rebuilding regionally.
-    claim = claim
-      .split("\n")
-      .filter((ln) => {
-        const m = ln.match(/^«([^»]+)»/u);
-        if (!m) return true;
-        return !isWeakExampleTitle(m[1]!, { theme: themeDef });
-      })
+    claim = [sourceSegment, safeDomains.length ? scale : "", why]
+      .filter(Boolean)
       .join("\n");
-    if (/(?:Пример|Примеры(?:\s+заголовков)?):/u.test(claim)) {
-      const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 1), 90);
-      claim = titlesSegment
-        ? claim.replace(/(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, `Пример: ${titlesSegment}`)
-        : claim.replace(/\n?(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, "");
-    }
   }
   // Prefer multi-line structure even when the stored claim was one paragraph.
   claim = structureThemeClaimText(claim);
@@ -1614,12 +1831,21 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
   const domains = new Set<string>();
   const scopeRegions = scoped.scope?.regions;
   if (scopeRegions && scopeRegions.length > 0) {
-    // B.3 — cross-regional findings carry globally aggregated sourceDomains;
-    // a regional page must cite only evidence captured for ITS region.
-    // Region-neutral evidence (compliance, wikipedia checks) stays visible.
+    /*
+     * B.3 — кросс-региональная находка несёт домены всего корпуса; страница
+     * региона называет источниками только то, что найдено в её области.
+     *
+     * Условие строгое — «регион свой», а не «регион не чужой». Мягкое пускало
+     * сюда запись без региона (проверка Википедии, карточка базы с адресом), и
+     * лист отвечал на один вопрос дважды: подвал называл материал источником
+     * этого региона, а блок темы над ним — `localizedThemedClaim` на том же
+     * слайде — его же не считал и не цитировал. Область при этом шире одного
+     * кода: у ОАЭ это «UAE / INTERNATIONAL / GLOBAL», и материал такой области
+     * остаётся своим.
+     */
     for (const e of Object.values(scoped.evidenceIndex)) {
       if (!e.domain) continue;
-      if (e.region && !scopeRegions.some((r) => regionMatches(r, e.region))) continue;
+      if (!scopeRegions.some((r) => regionMatches(r, e.region))) continue;
       domains.add(e.domain);
     }
     // Findings whose regions all belong to this scope may add their own
@@ -2065,7 +2291,55 @@ export function subjectQueries(scoped: ScopedFragmentInput, limit = 5): string[]
     .map((q) => q.display);
 }
 
-/** Та же справка одной фразой. */
+/**
+ * Общая приставка набора запросов: сам запрос-основа и хвосты остальных.
+ *
+ * Живой набор — это имя субъекта и подсказки поисковика, к которым имя
+ * дописано **в начало**, поэтому «имя + слово» и есть типичный случай.
+ *
+ * Условия ровно два, и оба про прослеживаемость, а не про красоту:
+ *
+ *   - приставка ищется **по словам и только с начала строки**. Подстрочное
+ *     совпадение запрещено: у подсказки «биография глинка сергей михайлович»
+ *     имя стоит внутри, и «он же с добавлением «биография»» описало бы запрос,
+ *     которого никто не отправлял;
+ *   - основа обязана сама быть одним из запросов набора. Иначе фраза назвала бы
+ *     запросом строку, которой не было.
+ *
+ * Не выполнилось — ответа нет, и справка печатает прежний перечень целиком.
+ */
+function commonQueryPrefix(
+  queries: string[]
+): { base: string; tails: string[] } | undefined {
+  if (queries.length < 2) return undefined;
+  const wordsOf = (q: string): string[] => q.trim().split(/\s+/u).filter(Boolean);
+  for (const base of queries) {
+    const baseWords = wordsOf(base).map((w) => w.toLowerCase());
+    if (baseWords.length === 0) continue;
+    const tails: string[] = [];
+    for (const q of queries) {
+      if (q === base) continue;
+      const qWords = wordsOf(q);
+      const starts =
+        qWords.length > baseWords.length &&
+        baseWords.every((w, i) => qWords[i]!.toLowerCase() === w);
+      if (!starts) break;
+      tails.push(qWords.slice(baseWords.length).join(" "));
+    }
+    if (tails.length === queries.length - 1) return { base, tails };
+  }
+  return undefined;
+}
+
+/**
+ * Та же справка одной фразой.
+ *
+ * Общая часть называется один раз: имя субъекта входило сюда пять раз (плюс
+ * шестой в лиде страницы), и справка занимала 199 знаков абзаца, у которого
+ * запаса нет вовсе, — лист выдачи уходил на девятый кегль при соседних листах
+ * деки в одиннадцатом. Содержание при этом сохраняется целиком: число запросов
+ * настоящее, каждый хвост назван дословно.
+ */
 export function subjectQueriesLine(
   scoped: ScopedFragmentInput,
   limit = 5
@@ -2073,9 +2347,13 @@ export function subjectQueriesLine(
   const queries = subjectQueries(scoped, limit);
   if (queries.length === 0) return undefined;
   const word = pluralRu(queries.length, "запросу", "запросам", "запросам");
-  return `Выдача проверена по ${queries.length} ${word}: ${queries
-    .map((q) => `«${q}»`)
-    .join(", ")}.`;
+  const lead = `Выдача проверена по ${queries.length} ${word}: `;
+  const common = commonQueryPrefix(queries);
+  if (common) {
+    const tails = common.tails.map((t) => `«${t}»`).join(", ");
+    return `${lead}«${common.base}» и он же с добавлением ${tails}.`;
+  }
+  return `${lead}${queries.map((q) => `«${q}»`).join(", ")}.`;
 }
 
 /** Строка, законченная как предложение: без второй точки и без её отсутствия. */
@@ -2979,6 +3257,41 @@ export function highlightPhrase(input: {
   const readFailure = e?.readFailure ? String(e.readFailure) : undefined;
   const theme = readFailure ? "" : String(e?.verdictTheme ?? "").trim();
   const read = theme.length > 0;
+
+  /*
+   * Основание рамки называет тот, кто её поставил.
+   *
+   * Решение аналитика — сильнейший источник предиката, и объяснять поставленную
+   * им рамку заголовком выдачи нельзя: у строки «Anders Holmström, CEO of
+   * Nordkap Capital AB — fintech investor profile» негатива в заголовке нет
+   * вовсе, словарь по нему молчит, и проверяющий, пойдя по единственному
+   * предъявленному основанию, не найдёт там ничего. Вывод, который он сделает,
+   * хуже правды: будто отчёт выделяет строки наугад. На самом деле решение
+   * принял человек и отвечает за него.
+   *
+   * Тема материала остаётся, но **пояснением, а не заголовком**: «Деловой
+   * профиль» первым словом под красной рамкой спорит с самой рамкой.
+   *
+   * Ветка одна на прочитанную и непрочитанную страницу: и там и там рамку
+   * поставил человек. Нейтральная прочитанная страница, помеченная аналитиком,
+   * иначе объясняла бы рамку собственным сюжетом и цитатой — тем самым, что
+   * человек и переоценил.
+   *
+   * «Требует ручной проверки» такой строке не приписывается: аналитик её уже
+   * посмотрел, он и есть ручная проверка.
+   */
+  if (e?.analystDecision === "ADVERSE") {
+    const topic = String(
+      input.finding?.theme ?? (readFailure ? "" : e?.verdictTheme) ?? input.row.themeTitle ?? ""
+    ).trim();
+    const text = [
+      `Отмечено аналитиком${domain ? ` — ${domain}` : ""}`,
+      topic ? `; тема материала — «${topic}»` : "",
+      input.finding ? "; материал учтён в находках отчёта" : "",
+      ".",
+    ].join("");
+    return { sidebar: text, full: text, sidebarHasLink: false, sidebarComplete: true, read };
+  }
 
   if (!read) {
     const rubric = String(
