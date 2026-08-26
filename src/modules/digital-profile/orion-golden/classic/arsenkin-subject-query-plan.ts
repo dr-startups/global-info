@@ -4,6 +4,7 @@
  */
 
 import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
+import { parseSubjectName } from "../../risk-classifier/entity-disambiguation";
 
 export type ArsenkinSubjectQueryInput = {
   fullName: string | null | undefined;
@@ -40,30 +41,42 @@ function dedupePreserve(order: string[]): string[] {
 /**
  * A plan line is a query a human would actually type.
  *
- * Input order is the FIO one — "Surname First Patronymic" (see parseSubjectName).
+ * The parts come from parseSubjectName, never from string indexes: the input
+ * order is not known in advance, and "Умар Назарович Кремлев" is written
+ * given-first. While this function cut the string by index, the paid provider
+ * was sent "Назарович Умар" — the subject's name without his surname.
+ *
  * The list used to carry the fully reversed order as well, and that string was
- * sent to the paid provider: a live run bought 10 organic rows for "юрьевич
+ * sent to the paid provider too: a live run bought 10 organic rows for "юрьевич
  * олег тиньков" and printed that query to the client as the SERP caption.
- * Human orders are these three: full FIO, "First Patronymic Surname" and the
- * most common "First Surname".
+ * Human orders are these three: the full name as written, "First Patronymic
+ * Surname" and the most common "First Surname".
  */
 function permutationsOfName(fullName: string): string[] {
-  const parts = fullName.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return [fullName];
-  const firstLast = `${parts[1]} ${parts[0]}`;
-  if (parts.length === 2) return [fullName, firstLast];
+  const { surname, givenName, patronymic } = parseSubjectName(fullName);
+  if (!surname || !givenName) return [fullName];
+  const firstLast = `${givenName} ${surname}`;
+  if (!patronymic) {
+    /*
+     * Двухсловное имя человек набирает в обоих порядках, и оба встречались в
+     * живом корпусе — «oleg tinkov» и «tinkov oleg». Пока порядок определялся
+     * позицией, второй порядок получался сам собой; теперь его надо назвать.
+     */
+    return [fullName, firstLast, `${surname} ${givenName}`];
+  }
   /*
-   * Длинная форма переносит фамилию в конец, **не теряя остального**.
-   *
-   * Прежде она собиралась из ровно трёх частей (`parts[1] parts[2] parts[0]`),
-   * и у имени «Иванов Иван Иванович Оглы» второй строкой уходило «Иван
-   * Иванович Иванов» — имя другого человека: «Оглы» молча отбрасывалось. Вход
-   * редкий, но запрос платный (пункт BF).
+   * Длинная форма переносит фамилию в конец, **не теряя остального**: у имени
+   * «Иванов Иван Иванович Оглы» уходит «Иван Иванович Оглы Иванов», а не
+   * «Иван Иванович Иванов» — имя другого человека (пункт BF). Хвост берётся из
+   * самой строки: в разобранных полях лежит по одному токену.
    *
    * Короткая форма «Имя Фамилия» рядом остаётся: это законное сокращение, а
    * не огрызок — так человек и печатает.
    */
-  return [fullName, `${parts.slice(1).join(" ")} ${parts[0]}`, firstLast];
+  const rest = fullName.split(/\s+/).filter(Boolean);
+  const surnameAt = rest.indexOf(surname);
+  if (surnameAt >= 0) rest.splice(surnameAt, 1);
+  return [fullName, `${rest.join(" ")} ${surname}`, firstLast];
 }
 
 /**
@@ -72,16 +85,18 @@ function permutationsOfName(fullName: string): string[] {
  * Russian-speaking world, and the reversed order is not a spelling of a name
  * at all — "Filippovich Viktor Rashnikov" went to the UAE contour for money.
  *
- * Only ever called on the transliteration of our own Cyrillic FIO: that is the
- * single Latin string whose part order we know. Rearranging any other one
- * invents a query — "Mohammed bin Rashid Al Maktoum" would give "bin
- * Mohammed", and an analyst-supplied alias is already in the order a human
- * types.
+ * Only ever called on our own Cyrillic FIO: that is the single name whose part
+ * order we can resolve. Rearranging any other one invents a query — "Mohammed
+ * bin Rashid Al Maktoum" would give "bin Mohammed", and an analyst-supplied
+ * alias is already in the order a human types.
  */
-function transliteratedFioVariants(input: string): string[] {
-  const parts = input.split(/\s+/).filter(Boolean);
-  if (parts.length < 2) return [input];
-  return [input, `${parts[1]} ${parts[0]}`];
+function transliteratedFioVariants(ownFio: string, latin: string): string[] {
+  const { surname, givenName, patronymic } = parseSubjectName(ownFio);
+  if (!surname || !givenName) return [latin];
+  const first = transliterateRuToEn(givenName);
+  const last = transliterateRuToEn(surname);
+  // У двухсловного имени оба порядка человеческие — как и в кириллице.
+  return patronymic ? [latin, `${first} ${last}`] : [latin, `${first} ${last}`, `${last} ${first}`];
 }
 
 /**
@@ -174,7 +189,7 @@ export function buildArsenkinSubjectQueryPlan(
     latinAliases.length > 0
       ? [...latinAliases, ...(ownLatin ? [ownLatin] : [])]
       : latinFromOwnFio
-        ? transliteratedFioVariants(latinFromOwnFio)
+        ? transliteratedFioVariants(ownFio, latinFromOwnFio)
         : [ownLatin];
   const queriesUae = capKeeping(dedupePreserve(uaeBase), ownLatin, 4);
 

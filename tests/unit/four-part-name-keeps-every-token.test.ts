@@ -39,6 +39,21 @@ describe("перестановки имени", () => {
     expect(plan.queriesRu).toContain("Иван Иванович Оглы Иванов");
   });
 
+  it("имя, записанное именем вперёд, тоже не теряет и не задваивает токенов", () => {
+    // У «Иванова Ивана Ивановича Оглы» фамилия и так на нулевой позиции, поэтому
+    // подстановка «фамилия — первый токен» на нём незаметна. На живом имени
+    // субъекта она теряет «Умар» и задваивает «Кремлев» — платная строка ни о ком.
+    const full = "Умар Назарович Кремлев Оглы";
+    const plan = buildArsenkinSubjectQueryPlan({ fullName: full, aliases: [] });
+    const all = tokensOf(full);
+    const long = plan.queriesRu.filter((q) => q.split(/\s+/).length >= 3);
+    expect(long.length).toBeGreaterThan(0);
+    for (const q of long) {
+      expect(tokensOf(q)).toEqual(all);
+    }
+    expect(plan.queriesRu).toContain("Умар Кремлев");
+  });
+
   it("трёхсловное ФИО не меняется", () => {
     const plan = buildArsenkinSubjectQueryPlan({
       fullName: "Рашников Виктор Филиппович",

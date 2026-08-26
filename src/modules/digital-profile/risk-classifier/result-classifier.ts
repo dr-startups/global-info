@@ -168,6 +168,9 @@ const NEUTRAL_RATIONALE = "No adverse signals detected; treated as non-risk evid
 export function classifySearchResultRecord(input: ClassifyResultInput): ResultClassification {
   const title = (input.title ?? "").trim();
   const snippet = (input.snippet ?? "").trim();
+  // Identity resolution gets the text as it came: the namesake signal reads the
+  // case of the word after the surname, and pre-lowercased text strips it away.
+  const rawText = `${title} ${snippet}`.trim();
   const text = `${title} ${snippet}`.toLowerCase();
   const domain = hostnameOf(input.url, input.domain);
   const hasText = text.trim().length > 0;
@@ -175,7 +178,7 @@ export function classifySearchResultRecord(input: ClassifyResultInput): ResultCl
   const subject = input.subjectFullName?.trim()
     ? parseSubjectName(input.subjectFullName.trim())
     : null;
-  const identityConfidence = assessIdentityMatch(text, subject);
+  const identityConfidence = assessIdentityMatch(rawText, subject);
 
   // --- Corporate registry / business directory rows (before namesake guard) ---
   if (isRegistryDomain(domain) || hasOnlyWeakRegistrySignals(text)) {
@@ -194,7 +197,7 @@ export function classifySearchResultRecord(input: ClassifyResultInput): ResultCl
   }
 
   // --- Namesake / entity mismatch ---
-  if (subject && isLikelyNamesake(text, subject)) {
+  if (subject && isLikelyNamesake(rawText, subject)) {
     return neutralClass("NAMESAKE", "LOW", identityConfidence, "Different person with similar surname/name; not treated as the audit subject.");
   }
 

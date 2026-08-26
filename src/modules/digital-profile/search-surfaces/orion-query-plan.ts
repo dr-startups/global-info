@@ -172,6 +172,12 @@ export function transliterateRuToEn(text: string): string {
     .join(" ");
 }
 
+/** Написание части имени латиницей: кириллица транслитерируется, остальное как есть. */
+function latinOf(part: string): string {
+  const value = part.trim();
+  return hasCyrillic(value) ? transliterateRuToEn(value) : value;
+}
+
 function resolveRegions(subject: QuerySubject, override?: OrionRegionCode[]): OrionRegionCode[] {
   if (override?.length) return [...override];
   const raw = (subject.targetRegions ?? []).map((r) => r.toUpperCase());
@@ -190,7 +196,7 @@ function toSubjectProfile(subject: QuerySubject): OrionQuerySubjectProfile {
   const aliases = (subject.aliases ?? []).map((a) => a.trim()).filter(Boolean);
   const latinAliases = aliases.filter((a) => !hasCyrillic(a));
   const cyrAliases = aliases.filter((a) => hasCyrillic(a));
-  const latinFull = hasCyrillic(subject.fullName) ? transliterateRuToEn(subject.fullName) : subject.fullName;
+  const latinFull = latinOf(subject.fullName);
   const latinVariants = Array.from(new Set([latinFull, ...latinAliases].filter(Boolean)));
   const cyrillicVariants = Array.from(
     new Set([hasCyrillic(subject.fullName) ? subject.fullName.trim() : "", ...cyrAliases].filter(Boolean))
@@ -334,25 +340,21 @@ function ruBaseVariants(profile: OrionQuerySubjectProfile): string[] {
 /**
  * Латинские написания имени — страховка, когда подсказок поисковика нет.
  *
- * Порядок частей здесь тот же, что и в ФИО: «Фамилия Имя Отчество». Раньше
- * перестановки собирались так, будто части идут по-западному, и в зарубежный
- * контур уходили «Durov Valerevich» и «Valerevich Durov Pavel» — сочетания,
- * которых человек не набирает: отчество за пределами русскоязычной среды не
- * используют вовсе. Остаются два написания: полное и привычное западному
- * читателю «Имя Фамилия».
+ * Части берутся разобранными, а не по местам в строке. Пока строка резалась по
+ * индексам, в зарубежный контур уходило «Nazarovich Umar» — имя субъекта без
+ * фамилии, купленное живым прогоном. Раньше перестановки собирались ещё и так,
+ * будто части идут по-западному, и появлялись «Durov Valerevich» и «Valerevich
+ * Durov Pavel» — сочетания, которых человек не набирает: отчество за пределами
+ * русскоязычной среды не используют вовсе. Остаются два написания: полное и
+ * привычное западному читателю «Имя Фамилия».
  */
 function enBaseVariants(profile: OrionQuerySubjectProfile): string[] {
   const out = new Set<string>();
   for (const v of profile.latinVariants) out.add(v);
-  const p = (profile.latinVariants[0] ?? "").split(/\s+/).filter(Boolean);
-  if (p.length >= 3) {
-    out.add(`${p[0]} ${p[1]} ${p[2]}`);
-    out.add(`${p[1]} ${p[0]}`);
-  } else if (p.length === 2) {
-    out.add(`${p[0]} ${p[1]}`);
-    out.add(`${p[1]} ${p[0]}`);
-  }
-  return [...out].filter(Boolean);
+  const first = latinOf(profile.firstName);
+  const last = latinOf(profile.lastName);
+  if (first && last) out.add(`${first} ${last}`);
+  return [...out];
 }
 
 /**

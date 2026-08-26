@@ -19,6 +19,7 @@
  */
 
 import { hasCyrillic, transliterateRuToEn } from "./orion-query-plan";
+import { looksLikePatronymic } from "../risk-classifier/entity-disambiguation";
 
 export const SUBJECT_QUERY_SET_VERSION = "subject-query-set-v1" as const;
 
@@ -141,23 +142,32 @@ function hasAnyForm(haystack: string[], word: string | undefined): boolean {
  * Подсказка «прощание с петербургом михаил иванович глинка» — про однофамильца,
  * и запрос по ней измерял бы чужую выдачу. Признак чужого человека простой:
  * рядом с фамилией стоит имя или отчество, отличные от субъекта.
+ *
+ * Отчество узнаётся общим предикатом — тем же, которым разбирается ФИО.
+ * Пока список суффиксов здесь был свой и только кириллический, латинский
+ * контур не видел отчества вовсе: подсказка «umar nazarovich kim» — о другом
+ * человеке — ушла в платный сбор как запрос о субъекте.
  */
-const RU_PATRONYMIC = /^[\p{L}]+(ович|евич|ьевич|овна|евна|ична|инична)$/u;
-
 function looksLikeForeignPerson(
   tokens: string[],
   profile: SubjectQuerySetInput["profile"]
 ): boolean {
   const ownFirst = wordForms(profile.firstName ?? "");
   const ownPatronymic = wordForms(profile.patronymic ?? "");
+  const ownSurname = wordForms(profile.lastName ?? "");
+  // Собственные имя и фамилия субъекта чужим отчеством быть не могут, даже
+  // когда кончаются на «-ович»: иначе «roman abramovich sanctions» — подсказка
+  // о самом субъекте — объявляется строкой о другом лице.
+  const isOwnName = (t: string): boolean => ownSurname.includes(t) || ownFirst.includes(t);
   for (const t of tokens) {
-    if (RU_PATRONYMIC.test(t) && ownPatronymic.length > 0 && !ownPatronymic.includes(t)) {
+    if (isOwnName(t)) continue;
+    if (looksLikePatronymic(t) && ownPatronymic.length > 0 && !ownPatronymic.includes(t)) {
       return true;
     }
   }
   // Чужое имя рядом с фамилией: в подсказке есть отчество субъекта, но имя другое.
   if (ownPatronymic.length > 0 && tokens.some((t) => ownPatronymic.includes(t))) {
-    const namedTokens = tokens.filter((t) => RU_PATRONYMIC.test(t) === false);
+    const namedTokens = tokens.filter((t) => !looksLikePatronymic(t) || isOwnName(t));
     const hasOwnFirst = namedTokens.some((t) => ownFirst.includes(t));
     if (ownFirst.length > 0 && !hasOwnFirst) return true;
   }
@@ -238,7 +248,10 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
       continue;
     }
     const tokens = tokensOf(text);
-    const hasSurname = hasAnyForm(tokens, profile.lastName) || hasAnyForm(tokens, fullName.split(/\s+/)[0]);
+    // Фамилия — только разобранная фамилия. Пока рядом стояло «или первое слово
+    // имени», условие само повторяло позиционный разбор: у «Умар Назарович
+    // Кремлев» подсказка со словом «умар» считалась подсказкой с фамилией.
+    const hasSurname = hasAnyForm(tokens, profile.lastName);
     if (!hasSurname) {
       // Хвост подсказки без фамилии («бизнесмен биография») — это продолжение
       // имени, которое человек уже набрал; дописываем имя обратно.
