@@ -221,7 +221,9 @@ describe("B.2 + C.4 — compliance table", () => {
    */
   it("summary narrative counts database records, not the surface metric (B.2)", () => {
     const summary = out.slides[0]!;
-    expect(summary.content.narrative).toMatch(/Записей о субъекте в комплаенс-базах: 2/);
+    expect(summary.content.narrative).toMatch(
+      /Записей, отобранных по имени субъекта в комплаенс-базах: 2/
+    );
     expect(summary.content.narrative).not.toMatch(/По 3 записям совпадений не выявлено/);
     expect(summary.content.table?.rows.length).toBe(2);
   });

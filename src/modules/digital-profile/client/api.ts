@@ -352,6 +352,10 @@ export interface LexisNexisHybridImportResult {
 
 export type ComplianceRiskType =
   | "SANCTIONS"
+  // Приходит только от провайдера (тема `sanction.linked`): форма ручного
+  // импорта этот тип не предлагает, но сервер его отдаёт, и описание ответа
+  // обязано его знать.
+  | "SANCTION_LINKED"
   | "PEP"
   | "ADVERSE_MEDIA"
   | "WATCHLIST"

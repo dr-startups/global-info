@@ -3,8 +3,8 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v117",
-  "generatedAt": "2026-08-25T12:53:44.232Z",
+  "contentVersion": "deck-sections-v119",
+  "generatedAt": "2026-08-26T04:42:43.669Z",
   "pageCount": 56,
   "baseSlotCount": 36,
   "baseSlotCoverage": 36,
@@ -790,7 +790,7 @@
     "UAE_IDENTITY_WIKIPEDIA": "sha256:5627e39b24572bf63e9b1aba0e97b3ad724867273dd82f2c2aadad19b4238972",
     "UAE_KNOWLEDGE_AI": "sha256:2ddcd510311724c71c6733e0123fca901efb498cb80b59ba9f6014da195bff86",
     "UAE_RELATED": "sha256:a98d979fc46a067091b234efd21ae3689be0f7153e9d8158ec43a129a66935ab",
-    "COMPLIANCE_MAIN": "sha256:bc450bd964e20ec048eadc7b5a301ffb2ad316d20572bee740d77fe52cfd9ac5",
+    "COMPLIANCE_MAIN": "sha256:33fb326844fe58285e592ec34c4720ee8c9c218c5e74bf2bbcc4cc164095642c",
     "APPENDIX_MAIN": "sha256:d75b5a0f27b573729a6cf19c2a23d5532cb680ff5d38057d30bb675f6eb374d5"
   },
   "assembledDeckHash": "sha256:93e3c73199eb99431344fb7c7e09ba2c4c3690958ba0ae51ba08689a95b75fff"

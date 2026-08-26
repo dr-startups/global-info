@@ -62,7 +62,7 @@ from orion_golden_render.slides import (  # noqa: E402
 HDR_SERP = ["№", "Заголовок", "Тип источника", "Оценка"]
 HDR_THEMES = ["Тема", "Публикаций", "Из них нежелательных"]
 HDR_METRICS = ["Система", "Показатель", "Объём", "Комментарий"]
-HDR_COMPLIANCE = ["База данных", "Тип совпадения", "Оценка совпадения", "Статус проверки"]
+HDR_COMPLIANCE = ["База данных", "Тип совпадения", "Совпадение по имени", "Статус проверки"]
 HDR_FALLBACK = ["Поз.", "Домен", "Заголовок", "Риск"]
 HDR_PAIR = ["Параметр", "Значение"]
 
@@ -134,7 +134,22 @@ PAD = int(6 * EMU_PER_PT)
 # Самая длинная законная ячейка статуса: у прогона, чей статус проверки в
 # артефактах не зафиксирован, печатается именно она.
 STATUS_UNRECORDED = "Не подтверждено (статус в артефактах прогона не зафиксирован)"
-COMPLIANCE_ROW = ["OpenSanctions", "PEP (политически значимое лицо)", "71/100", STATUS_UNRECORDED]
+#: Имя записи в колонке совпадения — трёхчастное ФИО заглавными: так его
+#: печатает OpenSanctions.
+COMPLIANCE_NAME = "КИРИЛЛ СЕРГЕЕВИЧ КУЛЕБАКИН"
+
+#: Худшее **законное** значение той же колонки: клиентский фильтр имени
+#: (`isNarrativeOrPlaceholderMatchName`) отбрасывает как нарратив всё длиннее
+#: 90 знаков, а заглавная кириллица — самая широкая форма записи имени.
+#: Остальные колонки этой таблицы смок проверяет именно худшим законным
+#: значением, и у имени не должно быть исключения.
+COMPLIANCE_NAME_MAX = ("КУЛЕБАКИН КИРИЛЛ СЕРГЕЕВИЧ " * 4)[:90]
+COMPLIANCE_ROW = [
+    "OpenSanctions",
+    "PEP (политически значимое лицо)",
+    COMPLIANCE_NAME,
+    STATUS_UNRECORDED,
+]
 
 #: Цвета `_status_tone` по ступеням клиентской шкалы: danger / warn / neutral.
 RED_RISK = "B91C1C"
@@ -241,6 +256,44 @@ def search_table_page(
     stage = next((sh for sh in ctx.slide.shapes if (sh.name or "").startswith("orion_card_p")), None)
     if table is None or stage is None:
         raise RuntimeError("на странице выдачи нет таблицы или белой сцены")
+    return table, stage
+
+
+def compliance_summary_page(rows: list[list[str]]) -> tuple[Any, Any]:
+    """Страница сводки комплаенса целиком: таблица и белая сцена.
+
+    Бюджет листа меряется на настоящей странице, а не арифметикой по
+    константам: у сводной таблицы нет пагинации, и высота строки зависит от
+    того, во сколько строк ляжет имя записи.
+    """
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, 1, 1)
+    _render_slide(
+        ctx,
+        {
+            "slideKey": "p33_compliance_toc",
+            "template": "orion_golden_search_table",
+            "title": "Комплаенс — сводка баз данных",
+            "narrative": (
+                "Записей, отобранных по имени субъекта в комплаенс-базах: "
+                f"{len(rows)} (OpenSanctions). Совпадение по базе не подтверждается "
+                f"автоматически: подтверждено аналитиком — 0, требует ручной проверки — {len(rows)}."
+            ),
+            "table": {"headers": HDR_COMPLIANCE, "rows": rows},
+            "whatToCheck": (
+                "Верифицировать каждое потенциальное совпадение вручную: сопоставить "
+                "идентификаторы субъекта с записью базы."
+            ),
+            "sourceNote": "Источник: комплаенс-базы (существующий контур, без расширения источников).",
+        },
+        {},
+    )
+    table = next((sh for sh in ctx.slide.shapes if getattr(sh, "has_table", False)), None)
+    stage = next((sh for sh in ctx.slide.shapes if (sh.name or "").startswith("orion_card_p")), None)
+    if table is None or stage is None:
+        raise RuntimeError("на сводной странице комплаенса нет таблицы или белой сцены")
     return table, stage
 
 
@@ -472,7 +525,7 @@ def main() -> int:
         ("метрики региона", widths_of(HDR_METRICS, [["Яндекс", "Найдено страниц", "312", "—"]])),
         (
             "комплаенс",
-            widths_of(HDR_COMPLIANCE, [["OpenSanctions", "Имя", "0.71", "Требует проверки"]]),
+            widths_of(HDR_COMPLIANCE, [["OpenSanctions", "Имя", COMPLIANCE_NAME, "Требует проверки"]]),
         ),
         ("запасной разбор", w_fallback),
         ("две колонки", w_pair),
@@ -485,23 +538,25 @@ def main() -> int:
         )
 
     # --- Т8. Комплаенс-сводка: своя ветка долей -------------------------------
-    # Общая четырёхколоночная ветка отдавала «Оценке совпадения» 42 % под
-    # «78/100», а «Статусу проверки» — 18 % под строку из шести слов. Доли
-    # выверены настоящими метриками шрифта: самая длинная законная ячейка
-    # статуса — «Не подтверждено (статус в артефактах прогона не зафиксирован)».
+    # Общая четырёхколоночная ветка отдавала третьей колонке 42 %, а «Статусу
+    # проверки» — 18 % под строку из шести слов. Доли выверены настоящими
+    # метриками шрифта: самая длинная законная ячейка статуса — «Не
+    # подтверждено (статус в артефактах прогона не зафиксирован)», а в третьей
+    # колонке теперь стоит имя записи, а не «71/100», и ему нужна ширина под
+    # трёхчастное ФИО в одну строку.
     w_comp = widths_of(HDR_COMPLIANCE, [COMPLIANCE_ROW])
     s_comp = shares_of(w_comp)
-    expected_compliance = [0.16, 0.30, 0.18, 0.36]
+    expected_compliance = [0.14, 0.26, 0.26, 0.34]
     check(
-        "Т8а: доли комплаенс-сводки — своя ветка 0.16 / 0.30 / 0.18 / 0.36",
+        "Т8а: доли комплаенс-сводки — своя ветка 0.14 / 0.26 / 0.26 / 0.34",
         len(s_comp) == 4
         and all(abs(s_comp[i] - expected_compliance[i]) <= 0.005 for i in range(4)),
         f"{fmt(w_comp)}",
     )
     check(
-        "Т8б: «Статус проверки» шире «Оценки совпадения»",
+        "Т8б: «Статус проверки» шире колонки имени",
         w_comp[3] > w_comp[2],
-        f"статус {w_comp[3]}, оценка {w_comp[2]}",
+        f"статус {w_comp[3]}, имя {w_comp[2]}",
     )
     # Строка статуса рисуется бейджем: «● » впереди и кегль 9.5.
     status_lines = lines_needed(f"● {STATUS_UNRECORDED}", w_comp[3], 9.5)
@@ -514,7 +569,7 @@ def main() -> int:
         (
             ("База данных", "OpenSanctions", False),
             ("Тип совпадения", "Импортированный отчёт LexisNexis", False),
-            ("Оценка совпадения", HDR_COMPLIANCE[2], True),
+            ("Совпадение по имени", HDR_COMPLIANCE[2], True),
         )
     ):
         n = lines_needed(text, w_comp[i], 10.0, bold)
@@ -523,6 +578,52 @@ def main() -> int:
             n == 1,
             f"{n} строк(и) при ширине {w_comp[i]}",
         )
+
+    # Колонка имени затем и заведена, чтобы читатель увидел, на кого запись:
+    # перенос ФИО на вторую строку её не ломает, но одна строка — тот запас,
+    # ради которого доли и пересчитаны.
+    name_lines = lines_needed(COMPLIANCE_NAME, w_comp[2], 10.0)
+    check(
+        "Т8д: трёхчастное ФИО заглавными укладывается в одну строку",
+        name_lines == 1,
+        f"{name_lines} строк(и) при ширине {w_comp[2]}",
+    )
+    # Имя предельной длины **не режется**: обрезанное имя — это другое имя, то
+    # есть ложное утверждение о том, на кого запись. Оно занимает столько
+    # строк, сколько занимает, и цена этого — высота строки таблицы; предел
+    # ниже и проверяет, что цена посчитана, а не забыта.
+    check(
+        f"Т8д1: худшее законное имя — ровно 90 знаков ({len(COMPLIANCE_NAME_MAX)})",
+        len(COMPLIANCE_NAME_MAX) == 90,
+        COMPLIANCE_NAME_MAX,
+    )
+    max_name_lines = lines_needed(COMPLIANCE_NAME_MAX, w_comp[2], 10.0)
+    check(
+        "Т8д2: имя предельной длины занимает не больше четырёх строк",
+        max_name_lines <= 4,
+        f"{max_name_lines} строк(и) при ширине {w_comp[2]}",
+    )
+
+    # --- Т8е. Бюджет листа сводки ---------------------------------------------
+    # У сводной таблицы комплаенса нет пагинации: строк столько, сколько
+    # записей. Проверяется не арифметика, а настоящая страница — низ таблицы
+    # против низа белой сцены.
+    comp_row_max = ["OpenSanctions", "Связь с санкционным лицом", COMPLIANCE_NAME_MAX, STATUS_UNRECORDED]
+    table_max, stage_max = compliance_summary_page([comp_row_max] * 6)
+    bottom_max = int(table_max.top) + int(table_max.height)
+    stage_bottom = int(stage_max.top) + int(stage_max.height)
+    check(
+        "Т8е1: шесть записей с именами предельной длины умещаются на листе",
+        bottom_max <= stage_bottom,
+        f"низ таблицы {bottom_max}, низ сцены {stage_bottom}",
+    )
+    table_typ, stage_typ = compliance_summary_page([COMPLIANCE_ROW] * 10)
+    bottom_typ = int(table_typ.top) + int(table_typ.height)
+    check(
+        "Т8е2: десять записей с обычными именами умещаются на листе",
+        bottom_typ <= int(stage_typ.top) + int(stage_typ.height),
+        f"низ таблицы {bottom_typ}, низ сцены {int(stage_typ.top) + int(stage_typ.height)}",
+    )
 
     # --- Т9. Бейдж статуса ----------------------------------------------------
     # Незнакомое слово в `_status_tone` зелёное по умолчанию, и подтверждённый

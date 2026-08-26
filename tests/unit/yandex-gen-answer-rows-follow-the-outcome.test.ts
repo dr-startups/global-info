@@ -25,6 +25,8 @@ const SUBJECT = {
   aliases: [] as string[],
   targetRegions: ["RU"],
   location: null,
+  dateOfBirth: null,
+  nationality: null,
   lawfulBasis: null,
   consentStatus: null,
 };

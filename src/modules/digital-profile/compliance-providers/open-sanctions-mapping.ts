@@ -90,6 +90,7 @@ export function normalizeBirthDate(value: string | null | undefined): string {
  */
 const TOPIC_PREFIX_TO_RISK: Array<[string, ComplianceRiskType]> = [
   ["sanction", "SANCTIONS"],
+  ["sanction.linked", "SANCTION_LINKED"],
   ["role.pep", "PEP"],
   ["role.rca", "PEP"],
   ["role.oligarch", "POLITICAL_EXPOSURE"],
@@ -109,9 +110,16 @@ export function riskTypesFromTopics(topics: readonly string[]): ComplianceRiskTy
   for (const topic of topics) {
     const t = String(topic ?? "").trim().toLowerCase();
     if (!t) continue;
+    // Тема получает самый частный подходящий префикс, а не все подходящие
+    // сразу. Пока накапливались все, `sanction.linked` («связан с санкционным
+    // лицом») попадала ещё и в `SANCTIONS`, и клиент читал «Категория:
+    // Санкционные списки» о человеке, которого ни в одном перечне нет.
+    let best: [string, ComplianceRiskType] | undefined;
     for (const [prefix, risk] of TOPIC_PREFIX_TO_RISK) {
-      if (t === prefix || t.startsWith(`${prefix}.`)) found.add(risk);
+      if (t !== prefix && !t.startsWith(`${prefix}.`)) continue;
+      if (!best || prefix.length > best[0].length) best = [prefix, risk];
     }
+    if (best) found.add(best[1]);
   }
   // Сущность без распознанной темы всё равно найдена в базе комплаенса —
   // умолчать об этом нельзя, поэтому она попадает в «прочее», а не исчезает.
@@ -153,6 +161,7 @@ function firstNonEmpty(values: string[]): string {
  */
 const RISK_TYPE_LABEL_RU: Record<ComplianceRiskType, string> = {
   SANCTIONS: "санкционные списки",
+  SANCTION_LINKED: "связь с санкционным лицом",
   PEP: "публичные должностные лица (PEP)",
   ADVERSE_MEDIA: "негативные публикации",
   WATCHLIST: "списки наблюдения",
@@ -216,6 +225,35 @@ export interface OpenSanctionsMappingInput {
   minScore: number;
   /** Базовый адрес — из него собирается ссылка на карточку сущности. */
   webBaseUrl: string;
+  /**
+   * Свойства запроса, которые ушли в сеть, — те самые, из тела `/match`.
+   *
+   * Сохраняются рядом с ответом: 25.08 в отчёт приехала запись о постороннем
+   * человеке со счётом 1.0, и ответить на вопрос «что мы вообще спросили»
+   * было нечем — тела запроса нет ни в одном артефакте прогона. Опечатка в
+   * дате рождения уводит настоящее совпадение ниже порога так же тихо, и
+   * увидеть это можно только по посланным значениям.
+   */
+  sentQuery?: Record<string, string[]>;
+}
+
+/**
+ * Настройки сопоставления, если провайдер их сообщил.
+ *
+ * Порог мы не передаём, значит, применяется его собственный, а какой именно —
+ * видно только из ответа. Отсутствующие поля не подставляются нулями: «порог
+ * 0» и «порог неизвестен» — разные вещи.
+ */
+function matcherSettings(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") return {};
+  const root = payload as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const algorithm = String(root.algorithm ?? "").trim();
+  if (algorithm) out.algorithm = algorithm;
+  if (typeof root.threshold === "number" && Number.isFinite(root.threshold)) {
+    out.threshold = root.threshold;
+  }
+  return out;
 }
 
 /**
@@ -230,6 +268,7 @@ export function mapOpenSanctionsResponse(
   input: OpenSanctionsMappingInput
 ): ComplianceScreeningHit[] {
   const results = extractResults(input.payload);
+  const settings = matcherSettings(input.payload);
   const hits: ComplianceScreeningHit[] = [];
 
   for (const entity of results) {
@@ -265,6 +304,20 @@ export function mapOpenSanctionsResponse(
         schema: String(entity.schema ?? ""),
         firstSeen: String(entity.first_seen ?? ""),
         lastSeen: String(entity.last_seen ?? ""),
+        // Все формы имени записи, а не только `caption`.
+        //
+        // Печатаем мы `caption`, а сопоставить провайдер мог другое значение
+        // того же многозначного свойства — тогда на карточке стоит не то имя,
+        // по которому совпало. Пока формы не сохранены, спор «неверен запрос
+        // или неверна наша печать» решить нечем.
+        names: props(entity, "name"),
+        // Что провайдер сказал о самом совпадении. Поля, которых он не
+        // прислал, отсутствуют: `match: false` и «признака нет» — разные
+        // ответы, и второй нельзя записывать первым.
+        ...(typeof entity.match === "boolean" ? { match: entity.match } : {}),
+        ...(isEntityObject(entity.features) ? { features: entity.features } : {}),
+        ...settings,
+        ...(input.sentQuery ? { query: input.sentQuery } : {}),
       },
       reviewStatus: "PENDING",
     });

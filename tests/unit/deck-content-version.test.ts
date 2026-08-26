@@ -78,6 +78,14 @@ const BUILDERS_DIR = join(SECTIONS_DIR, "fragment-builders");
  */
 const EXTRA_SOURCES = [
   "section-builders.ts",
+  // Загрузчик входов решает, какие данные вообще доедут до построителя, —
+  // ровно то же основание, что у `section-builders.ts`, и на живом пути:
+  // его зовёт `canonical-report-prepare.ts`, а не только скрипт эталона.
+  // Правка, добавляющая или снимающая поле записи (так однажды не доехало
+  // `matchedName` записи комплаенса), меняет собранную деку, не двигая
+  // отпечаток, — то есть версия не поднимается и кэш паков отдаёт прежний
+  // документ.
+  "load-deck-inputs.ts",
   "canonical-slots.ts",
   "continuation-cleanup.ts",
   "continuation-slide.ts",

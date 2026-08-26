@@ -101,7 +101,7 @@ describe("сводная комплаенс-страница", () => {
       "h-2": HIT("LEXISNEXIS", "Глинка Сергей Михайлович"),
     });
     const narrative = summary.content.narrative ?? "";
-    expect(narrative).toMatch(/Записей о субъекте в комплаенс-базах: 2/u);
+    expect(narrative).toMatch(/Записей, отобранных по имени субъекта в комплаенс-базах: 2/u);
     expect(narrative).toMatch(/Dow Jones и LexisNexis/u);
     expect(narrative).not.toMatch(/Проверено записей комплаенс-контура/u);
     expect(narrative).not.toMatch(/По 8[0-9] записям/u);

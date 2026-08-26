@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:bc450bd964e20ec048eadc7b5a301ffb2ad316d20572bee740d77fe52cfd9ac5",
-  "contentVersion": "deck-sections-v117",
+  "contentHash": "sha256:33fb326844fe58285e592ec34c4720ee8c9c218c5e74bf2bbcc4cc164095642c",
+  "contentVersion": "deck-sections-v119",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:db-cmreb8ztt001zmm0fluvc61al",
@@ -96,7 +96,7 @@
     "inventory:rf-cmreano06009xo30fyhy23c7d"
   ],
   "fragmentKey": "COMPLIANCE_MAIN",
-  "generatedAt": "2026-08-25T11:49:56.123Z",
+  "generatedAt": "2026-08-26T03:41:57.927Z",
   "inputHash": "sha256:e2f20d12e6d246fb68bcf4e4f7928ac6b8c0da10d3992bf286ddeec55c2862ee:c8976e3f72184a2b",
   "inputs": {
     "evidenceRefs": [
@@ -308,13 +308,13 @@
     {
       "baseSlotId": "p33_compliance_toc",
       "content": {
-        "narrative": "Записей о субъекте в комплаенс-базах: 3 (Dow Jones, LexisNexis и World-Check). Совпадение по базе не подтверждается автоматически: подтверждено аналитиком — 0, требует ручной проверки — 0, статус не зафиксирован — 3.",
+        "narrative": "Записей, отобранных по имени субъекта в комплаенс-базах: 3 (Dow Jones, LexisNexis и World-Check). Совпадение по базе не подтверждается автоматически: подтверждено аналитиком — 0, требует ручной проверки — 0, статус не зафиксирован — 3.",
         "sourceNote": "Источник: комплаенс-базы (существующий контур, без расширения источников).",
         "table": {
           "headers": [
             "База данных",
             "Тип совпадения",
-            "Оценка совпадения",
+            "Совпадение по имени",
             "Статус проверки"
           ],
           "rows": [
@@ -463,7 +463,7 @@
           "rows": [
             [
               "Совпадение по имени",
-              "Глинка Сергей Михайлович"
+              "—"
             ],
             [
               "Категория",
@@ -517,7 +517,7 @@
           "rows": [
             [
               "Совпадение по имени",
-              "Глинка Сергей Михайлович"
+              "—"
             ],
             [
               "Категория",

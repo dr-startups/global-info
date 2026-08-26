@@ -49,6 +49,11 @@ export const COMPLIANCE_FINDING_OWNER = "compliance-layer-v1";
 
 const RISK_FINDING_TYPES: ReadonlySet<ComplianceRiskType> = new Set([
   "SANCTIONS",
+  // Связь с санкционным лицом — не листинг, но разбирает её тот же аналитик и
+  // тем же порядком: до появления отдельного типа такая запись приходила сюда
+  // как SANCTIONS и находку получала. Убрать её отсюда значило бы тихо
+  // перестать заводить задачу на сверку.
+  "SANCTION_LINKED",
   "PEP",
   "WATCHLIST",
   "LAW_ENFORCEMENT",
@@ -87,7 +92,10 @@ function dbProviderOf(name: ComplianceProviderName | ManualComplianceImportInput
 }
 
 function riskThemeOf(riskTypes: ComplianceRiskType[]): string {
-  if (riskTypes.includes("SANCTIONS")) return "sanctions";
+  // Тема — внутренняя группировка работы аналитика, а не клиентская метка:
+  // связь с санкционным лицом разбирается вместе с санкциями, но в отчёте
+  // называется своим именем (`COMPLIANCE_CATEGORY_LABELS`).
+  if (riskTypes.includes("SANCTIONS") || riskTypes.includes("SANCTION_LINKED")) return "sanctions";
   if (riskTypes.includes("PEP") || riskTypes.includes("POLITICAL_EXPOSURE")) return "pep_rca";
   if (riskTypes.includes("ADVERSE_MEDIA")) return "adverse_media";
   if (riskTypes.includes("LAW_ENFORCEMENT") || riskTypes.includes("LEGAL")) return "criminal";
@@ -96,7 +104,14 @@ function riskThemeOf(riskTypes: ComplianceRiskType[]): string {
 
 function severityOf(riskTypes: ComplianceRiskType[]): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
   if (riskTypes.includes("SANCTIONS")) return "HIGH";
-  if (riskTypes.includes("PEP") || riskTypes.includes("WATCHLIST")) return "MEDIUM";
+  // Связь ниже листинга: сам по себе субъект в перечнях не числится.
+  if (
+    riskTypes.includes("PEP") ||
+    riskTypes.includes("WATCHLIST") ||
+    riskTypes.includes("SANCTION_LINKED")
+  ) {
+    return "MEDIUM";
+  }
   return "LOW";
 }
 
@@ -141,7 +156,10 @@ export async function runComplianceScreening(
     caseId,
     subjectFullName: subject.fullName,
     aliases: subject.aliases,
-    dateOfBirth: null,
+    // Дата рождения и гражданство — признаки сверки, а не украшение запроса:
+    // здесь стоял литеральный `null`, и в базу уходило одно имя.
+    dateOfBirth: subject.dateOfBirth,
+    nationality: subject.nationality,
     country: subject.location,
   });
 
@@ -239,7 +257,9 @@ export async function importManualComplianceHit(
   const scoring = computeMatchScore({
     subjectFullName: subject.fullName,
     subjectAliases: subject.aliases,
-    subjectDob: null,
+    // Дата субъекта теперь загружается, и игнорировать её здесь значило бы
+    // повторить дефект проверки по санкционным базам на соседней шкале.
+    subjectDob: subject.dateOfBirth,
     subjectCountry: subject.location,
     matchedName: input.matchedName,
     matchedDob: input.datesOfBirth?.[0] ?? null,

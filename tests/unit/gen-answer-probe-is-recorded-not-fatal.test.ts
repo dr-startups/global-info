@@ -56,6 +56,8 @@ describe("падение провайдера сбор не роняет", () =>
         aliases: [],
         targetRegions: ["RU"],
         location: null,
+        dateOfBirth: null,
+        nationality: null,
         lawfulBasis: null,
         consentStatus: null,
       }),

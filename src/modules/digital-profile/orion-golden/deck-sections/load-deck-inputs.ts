@@ -608,6 +608,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
             provider?: string;
             matchType?: string;
             matchCategory?: string;
+            matchedName?: string;
             matchScore?: number;
             reviewStatus?: string;
             aliases?: string[];
@@ -630,6 +631,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           ...existing,
           kind: "compliance_hit",
           title: item.title ?? existing.title,
+          // Собственное имя записи — отдельно от заголовка инвентаря: в
+          // `title` подстановка имени субъекта уже случилась, и по нему
+          // «своё имя» от «имени субъекта» не отличить.
+          matchedName: meta.matchedName ?? existing.matchedName,
           providerLabel: meta.provider ?? existing.providerLabel,
           matchCategory: meta.matchCategory ?? meta.matchType ?? existing.matchCategory,
           matchScore: meta.matchScore ?? existing.matchScore,

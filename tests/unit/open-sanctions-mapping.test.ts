@@ -91,7 +91,10 @@ describe("темы провайдера превращаются в типы р�
   it("подтема попадает в раздел своей темы", () => {
     // Иерархия у провайдера растёт: `crime.fraud` не должен уходить в «прочее».
     expect(riskTypesFromTopics(["crime.fraud"])).toEqual(["LAW_ENFORCEMENT"]);
-    expect(riskTypesFromTopics(["sanction.linked"])).toEqual(["SANCTIONS"]);
+    expect(riskTypesFromTopics(["sanction.counter"])).toEqual(["SANCTIONS"]);
+    // Кроме подтем, у которых есть собственный тип: «связан с санкционным
+    // лицом» — не санкционные списки, и раздел темы здесь свой.
+    expect(riskTypesFromTopics(["sanction.linked"])).toEqual(["SANCTION_LINKED"]);
   });
 
   it("несколько тем дают несколько типов без повторов", () => {

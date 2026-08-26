@@ -63,6 +63,17 @@ export interface CaseSubjectInfo {
   targetRegions: string[];
   /** Stage N1 — optional location term (subject country) for query building. */
   location: string | null;
+  /**
+   * Date of birth as `YYYY-MM-DD`, and the subject's declared nationality.
+   *
+   * Both are entered by the operator and stored on the subject, and both are
+   * screening features: OpenSanctions penalises a record whose birth date
+   * disagrees with ours and leaves records without one alone. While the loader
+   * did not select them, the paid `/match` call carried a name and nothing
+   * else — and the 25.08 run brought back a record about a different person.
+   */
+  dateOfBirth: string | null;
+  nationality: string | null;
   /** Stage N1 — compliance gating for adverse (negative) queries. */
   lawfulBasis: string | null;
   consentStatus: string | null;
@@ -78,7 +89,13 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
       lawfulBasis: true,
       consentStatus: true,
       subjects: {
-        select: { fullName: true, aliases: true, country: true },
+        select: {
+          fullName: true,
+          aliases: true,
+          country: true,
+          dateOfBirth: true,
+          nationality: true,
+        },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -92,6 +109,9 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
     aliases: subject?.aliases ?? [],
     targetRegions: row.targetRegions,
     location: subject?.country ?? null,
+    // Time and zone only get in the way: the provider expects `YYYY-MM-DD`.
+    dateOfBirth: subject?.dateOfBirth ? subject.dateOfBirth.toISOString().slice(0, 10) : null,
+    nationality: subject?.nationality ?? null,
     lawfulBasis: row.lawfulBasis ?? null,
     consentStatus: row.consentStatus ?? null,
   };

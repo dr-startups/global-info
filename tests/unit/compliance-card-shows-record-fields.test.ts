@@ -69,7 +69,12 @@ describe("карточка записи комплаенс-базы", () => {
   it("запись только с именем и базой не рождает мусора в ячейках", () => {
     const dow = slideOf(
       buildWith({
-        "hit-1": { kind: "compliance_hit", providerLabel: "DOW_JONES", title: "Хольмстрём Йохан" },
+        "hit-1": {
+          kind: "compliance_hit",
+          providerLabel: "DOW_JONES",
+          title: "Хольмстрём Йохан",
+          matchedName: "Хольмстрём Йохан",
+        },
       }),
       "p34_dow_jones"
     );
@@ -103,12 +108,13 @@ describe("карточка записи комплаенс-базы", () => {
         matchScore: 64,
         reviewStatus: "PENDING",
         title: "Johan Holmstrom",
+        matchedName: "Johan Holmstrom",
       },
     });
     expect(slideOf(slides, "p33_compliance_toc").content.table?.rows[0]).toEqual([
       "LexisNexis",
       "Негативные публикации",
-      "64/100",
+      "Johan Holmstrom",
       "Требует ручной проверки",
     ]);
     const lexis = slideOf(slides, "p35_lexis_visual");
@@ -125,6 +131,7 @@ describe("карточка записи комплаенс-базы", () => {
         matchScore: 64,
         reviewStatus: "MATCH_CONFIRMED",
         title: "Johan Holmstrom",
+        matchedName: "Johan Holmstrom",
       },
     });
     const lexis = slideOf(slides, "p35_lexis_visual");
@@ -146,6 +153,7 @@ describe("карточка записи комплаенс-базы", () => {
           matchScore: 78,
           reviewStatus: "PENDING",
           title: "Хольмстрём Йохан",
+          matchedName: "Хольмстрём Йохан",
           confidence: "HIGH",
           aliases: ["Holmstrom, Johan", "J. Holmström", "Йохан Х.", "Johan H."],
           countries: ["Швеция", "Мальта"],
@@ -156,8 +164,11 @@ describe("карточка записи комплаенс-базы", () => {
       }),
       "p34_dow_jones"
     );
-    expect(paramRow(dow, "Оценка совпадения")).toBe("78/100");
-    expect(paramRow(dow, "Уверенность сопоставления")).toBe("высокая");
+    // Шкала и «уверенность» из клиентской карточки ушли: 78 у ручного импорта
+    // и 78 у провайдера означают разное, а рядом со статусом «требует ручной
+    // проверки» число читается как подтверждение.
+    expect(paramRow(dow, "Оценка совпадения")).toBeUndefined();
+    expect(paramRow(dow, "Уверенность сопоставления")).toBeUndefined();
     expect(paramRow(dow, "Также числится как")).toMatch(/Holmstrom, Johan/u);
     expect(paramRow(dow, "Также числится как")).toMatch(/и ещё 1/u);
     expect(paramRow(dow, "Страны в записи")).toBe("Швеция, Мальта");
@@ -181,6 +192,7 @@ describe("карточка записи комплаенс-базы", () => {
           providerLabel: "DOW_JONES",
           reviewStatus: "PENDING",
           title: "Хольмстрём Йохан",
+          matchedName: "Хольмстрём Йохан",
           aliases: ["Holmström, Johan", "Johan A. Holmstrom", "Й. Хольмстрём", "Johan H."],
         },
       }),
@@ -204,6 +216,7 @@ describe("карточка записи комплаенс-базы", () => {
       matchScore: 60 + i,
       reviewStatus: status,
       title: `Хольмстрём Йохан ${i}`,
+      matchedName: `Хольмстрём Йохан ${i}`,
     });
     const lexis = slideOf(
       buildWith({ "h-1": record(1, "MATCH_CONFIRMED"), "h-2": record(2, "PENDING") }),
@@ -223,6 +236,7 @@ describe("карточка записи комплаенс-базы", () => {
           providerLabel: "DOW_JONES",
           reviewStatus: "PENDING",
           title: "Хольмстрём Йохан",
+          matchedName: "Хольмстрём Йохан",
           summary: `${"Запись содержит сведения о должности и периоде полномочий. ".repeat(12)}`,
         },
       }),

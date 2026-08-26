@@ -58,6 +58,7 @@ const RICH_OPEN_SANCTIONS = {
   matchScore: 71,
   reviewStatus: "PENDING",
   title: "Глинка Сергей Михайлович",
+  matchedName: "Глинка Сергей Михайлович",
   aliases: ["Glinka Sergei", "Glinka Sergey"],
   countries: ["Россия"],
   summary: "Запись санкционного перечня: включён в перечень с указанием должности.",
@@ -89,6 +90,7 @@ describe("карточки баз без собственной страницы
         kind: "compliance_hit",
         providerLabel: "WORLD_CHECK",
         title: "Глинка Сергей Михайлович",
+        matchedName: "Глинка Сергей Михайлович",
       },
     });
     expect(slides.some((s) => s.continuationOf === "p33_compliance_toc")).toBe(false);
@@ -105,6 +107,7 @@ describe("карточки баз без собственной страницы
         matchScore: 78,
         reviewStatus: "PENDING",
         title: "Глинка Сергей Михайлович",
+        matchedName: "Глинка Сергей Михайлович",
         summary: "Запись политически значимого лица.",
       },
     });
@@ -119,6 +122,7 @@ describe("карточки баз без собственной страницы
       matchScore: 60 + i,
       reviewStatus: "PENDING",
       title: `Глинка Сергей ${i}`,
+      matchedName: `Глинка Сергей ${i}`,
     });
     const slides = buildWith({ "h-1": record(1), "h-2": record(2), "h-3": record(3) });
     const lexisPages = slides.filter(

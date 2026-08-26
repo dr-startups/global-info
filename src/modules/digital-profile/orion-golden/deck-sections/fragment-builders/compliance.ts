@@ -3,10 +3,14 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
+import type { ComplianceRiskType } from "../../../compliance-providers/types";
 import type { SectionType, SlideContentContract } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
-import { pickComplianceClientMatchTitle } from "../../../services/compliance-inventory-adapter";
+import {
+  isNarrativeOrPlaceholderMatchName,
+  pickComplianceClientMatchTitle,
+} from "../../../services/compliance-inventory-adapter";
 import { formatRuDate } from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 // Название базы для читателя живёт в домене провайдеров; здесь только
@@ -24,19 +28,57 @@ import {
 import { continuationTitle } from "../continuation-slide";
 
 
-const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
+/**
+ * Клиентские названия типов риска — исчерпывающей картой.
+ *
+ * `Record<ComplianceRiskType, string>` здесь не украшение: новый тип без метки
+ * не пройдёт компилятор, а без этого он доезжает до клиента как «Сигнал
+ * комплаенс-базы» (общая ветка `humanizeComplianceCategory` для
+ * SCREAMING_SNAKE) — то есть страница перестаёт называть категорию, ничего об
+ * этом не сообщая.
+ */
+const RISK_TYPE_CATEGORY_LABELS: Record<ComplianceRiskType, string> = {
   PEP: "PEP (политически значимое лицо)",
   POLITICAL_EXPOSURE: "Политическая аффилированность",
   ADVERSE_MEDIA: "Негативные публикации",
   SANCTIONS: "Санкционные списки",
+  SANCTION_LINKED: "Связь с санкционным лицом",
   WATCHLIST: "Сторожевые списки",
   LEGAL: "Правовые и регуляторные риски",
   LAW_ENFORCEMENT: "Правоохранительные сигналы",
+  INSOLVENCY: "Несостоятельность",
   OTHER: "Требует ручной классификации",
-  /** Internal persist tokens — never show raw to the client. */
+};
+
+/** Internal persist tokens — never show raw to the client. */
+const INTERNAL_CATEGORY_LABELS: Record<string, string> = {
   LEXISNEXIS_SIGNAL: "Сигнал LexisNexis",
   LEXISNEXIS_IMPORTED_REPORT: "Импортированный отчёт LexisNexis",
 };
+
+const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
+  ...RISK_TYPE_CATEGORY_LABELS,
+  ...INTERNAL_CATEGORY_LABELS,
+};
+
+/**
+ * Заголовки сводной таблицы комплаенса.
+ *
+ * **Первая колонка — признак ветки ширин в рендерере**
+ * (`renderer/orion_golden_render/visual.py`, `_add_search_table`): по словам
+ * «База данных» он узнаёт эту таблицу и отдаёт колонкам доли
+ * 0.14 / 0.26 / 0.26 / 0.34. Переименование колонки без правки рендерера не
+ * ломает ни типы, ни ворота, ни растровую проверку — таблица молча уходит в
+ * общую четырёхколоночную ветку, где статусу достаётся 18 % ширины и самая
+ * длинная законная ячейка просит три строки вместо двух. Связь закреплена
+ * тестом `renderer-finds-the-compliance-table-by-its-first-column`.
+ */
+export const COMPLIANCE_SUMMARY_HEADERS = [
+  "База данных",
+  "Тип совпадения",
+  "Совпадение по имени",
+  "Статус проверки",
+] as const;
 
 /**
  * Статус проверки словами. Автоматического подтверждения не бывает, поэтому
@@ -67,12 +109,6 @@ const STATUS_NOT_RECORDED = "Не подтверждено (статус в ар
 const CONFIRMED_STATUSES = new Set(["CONFIRMED", "MATCH_CONFIRMED"]);
 const PENDING_STATUSES = new Set(["PENDING", "NEEDS_REVIEW"]);
 
-const CONFIDENCE_LABELS: Record<string, string> = {
-  LOW: "низкая",
-  MEDIUM: "средняя",
-  HIGH: "высокая",
-};
-
 /** Причина, по которой проверка не состоялась, — словами, без внутренних кодов. */
 const SCREENING_FAILURE_REASONS: Record<string, string> = {
   PROVIDER_NOT_CONFIGURED: "доступ к базе не настроен",
@@ -100,15 +136,28 @@ function aliasList(aliases: string[]): string {
   return rest > 0 ? `${shown.join("; ")} и ещё ${rest}` : shown.join("; ");
 }
 
-function humanizeComplianceMatchName(
-  name: string | undefined,
-  subjectDisplayName?: string
-): string {
-  return pickComplianceClientMatchTitle({
-    matchedName: name,
-    subjectName: subjectDisplayName,
-    fallback: subjectDisplayName,
-  });
+/**
+ * Собственное имя записи — или `undefined`.
+ *
+ * Имя записи и имя субъекта — разные наблюдения. `pickComplianceClientMatchTitle`
+ * при пустом `matchedName` подставляет имя субъекта ещё на сборе, поэтому по
+ * заголовку инвентаря («title») отличить подстановку от настоящего имени
+ * нельзя: в эталоне 72 все три записи так и получили «Глинка Сергей
+ * Михайлович», не имея своего имени вовсе. Напечатать его в колонке
+ * «Совпадение по имени» значило бы утверждать, что запись найдена по имени
+ * субъекта, — утверждение без наблюдения, и ровно та находка, ради видимости
+ * которой колонка и заведена.
+ *
+ * Поэтому решение принимается по данным: у записи есть собственное
+ * `matchedName` или его нет. Строкой это не решается — у настоящего совпадения
+ * имя записи законно совпадает с именем субъекта.
+ */
+function recordOwnName(
+  e: ScopedFragmentInput["evidenceIndex"][string]
+): string | undefined {
+  const name = String(e.matchedName ?? "").trim();
+  if (!name || isNarrativeOrPlaceholderMatchName(name)) return undefined;
+  return name;
 }
 
 /** Категория словами; `undefined` — категории у записи нет (а не «нет в записи»). */
@@ -125,7 +174,14 @@ function humanizeComplianceCategory(category: string | undefined): string | unde
 
 type ComplianceHitEntry = [string, ScopedFragmentInput["evidenceIndex"][string]];
 
-/** Collapse duplicate Lexis/Dow rows (same provider+category+score+name). */
+/**
+ * Collapse duplicate Lexis/Dow rows (same provider+category+score+name).
+ *
+ * Ключ берёт заголовок инвентаря, а не собственное имя записи: здесь вопрос
+ * «это одна и та же строка?», а не «как называется запись». У записей без
+ * своего имени собственное имя пусто у всех сразу, и склейка по нему объединила
+ * бы разные записи одной базы в одну строку отчёта.
+ */
 export function dedupeComplianceHits(
   hits: ComplianceHitEntry[],
   subjectDisplayName?: string
@@ -138,7 +194,11 @@ export function dedupeComplianceHits(
       String(e.providerLabel ?? "").toUpperCase(),
       humanizeComplianceCategory(e.matchCategory) ?? "",
       e.matchScore ?? "",
-      humanizeComplianceMatchName(e.title, subjectDisplayName).toLowerCase(),
+      pickComplianceClientMatchTitle({
+        matchedName: e.title,
+        subjectName: subjectDisplayName,
+        fallback: subjectDisplayName,
+      }).toLowerCase(),
     ].join("|");
     if (seen.has(key)) continue;
     seen.add(key);
@@ -169,10 +229,9 @@ export function buildComplianceFragment(
     provider: complianceProviderLabel(e.providerLabel),
     providerKey: String(e.providerLabel ?? "").toUpperCase(),
     category: humanizeComplianceCategory(e.matchCategory),
-    score: e.matchScore != null ? `${e.matchScore}/100` : undefined,
     status:
       COMPLIANCE_STATUS_LABELS[String(e.reviewStatus ?? "").toUpperCase()] ?? STATUS_NOT_RECORDED,
-    name: humanizeComplianceMatchName(e.title, subjectName) || "Совпадение в базе",
+    name: recordOwnName(e),
   });
 
   const isConfirmed = ([, e]: ComplianceHitEntry): boolean =>
@@ -184,7 +243,7 @@ export function buildComplianceFragment(
     const l = hitLabel(h);
     // В сводной таблице колонки фиксированы, и «—» здесь читается как «поле
     // есть, значения нет» — структура колонок сообщает это сама.
-    return [l.provider, l.category ?? "—", l.score ?? "—", l.status];
+    return [l.provider, l.category ?? "—", l.name ?? "—", l.status];
   });
 
   /**
@@ -200,13 +259,12 @@ export function buildComplianceFragment(
     const [, e] = h;
     const l = hitLabel(h);
     const rows: string[][] = [
-      ["Совпадение по имени", l.name],
+      // Прочерк, а не имя субъекта: «поле есть, значения нет» — то же правило,
+      // что у колонок сводной таблицы, и единственное честное здесь.
+      ["Совпадение по имени", l.name ?? "—"],
       ["Категория", l.category ?? COMPLIANCE_CATEGORY_LABELS.OTHER!],
       ["Статус проверки", l.status],
     ];
-    if (l.score) rows.push(["Оценка совпадения", l.score]);
-    const confidence = CONFIDENCE_LABELS[String(e.confidence ?? "").toUpperCase()];
-    if (confidence) rows.push(["Уверенность сопоставления", confidence]);
     const aliases = (e.aliases ?? []).map((a) => String(a).trim()).filter(Boolean);
     if (aliases.length > 0) {
       rows.push(["Также числится как", clampClientText(aliasList(aliases), 200)]);
@@ -273,9 +331,8 @@ export function buildComplianceFragment(
     const potential = l.category
       ? `Потенциальное совпадение категории «${l.category}»`
       : "Потенциальное совпадение по субъекту";
-    const withScore = l.score ? `${potential} с оценкой ${l.score}` : potential;
     return clampClientText(
-      `${withScore}; совпадение не подтверждено и требует ручной проверки.`,
+      `${potential}; совпадение не подтверждено и требует ручной проверки.`,
       400
     );
   };
@@ -300,11 +357,15 @@ export function buildComplianceFragment(
     const groups: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }> = [];
     provHits.forEach((h, i) => {
       const rec = recordRows(h);
+      const l = hitLabel(h);
       groups.push({
         rowStart: rows.length,
         rowCount: rec.length,
         qTag: `Запись ${firstRecordIndex + i + 1} из ${totalRecords}`,
-        queryDisplay: hitLabel(h).name,
+        // Блок подписан именем записи, а без него — своей базой: подпись «—»
+        // ничего не сообщает, а имя субъекта здесь утверждало бы то же, что и
+        // в ячейке имени.
+        queryDisplay: l.name ?? l.provider,
       });
       rows.push(...rec);
     });
@@ -499,7 +560,7 @@ export function buildComplianceFragment(
     const bases = enumerateRu([...new Set(hits.map((h) => hitLabel(h).provider))], 4);
     const collapsed = collapsedCount > 0 ? `; повторные записи объединены: ${collapsedCount}` : "";
     return (
-      `Записей о субъекте в комплаенс-базах: ${hits.length} (${bases}). ` +
+      `Записей, отобранных по имени субъекта в комплаенс-базах: ${hits.length} (${bases}). ` +
       `Совпадение по базе не подтверждается автоматически: ${statusBreakdown(hits).phrase}${collapsed}.`
     );
   };
@@ -511,7 +572,7 @@ export function buildComplianceFragment(
     content: {
       narrative: summaryNarrative(),
       table: {
-        headers: ["База данных", "Тип совпадения", "Оценка совпадения", "Статус проверки"],
+        headers: [...COMPLIANCE_SUMMARY_HEADERS],
         rows: summaryRows,
       },
       whatToCheck:
