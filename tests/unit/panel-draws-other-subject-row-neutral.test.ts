@@ -11,8 +11,11 @@ import { describe, expect, it } from "vitest";
 import { buildCanonicalVisualAssets } from "@/modules/digital-profile/services/canonical-visual-assets";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
 
-const OWN_SANCTIONS = "viktor rashnikov ofac";
-const FOREIGN_SANCTIONS = "viktor feliksovich vekselberg ofac";
+// «eu sanctions», а не «ofac»: рамку на панели ставит тот же предикат, что и
+// оценку строки выдачи, а его словарь — `adversePatterns` из конфига, и слова
+// «ofac» в нём нет. Проверяется здесь принадлежность, а не словарь.
+const OWN_SANCTIONS = "viktor rashnikov eu sanctions";
+const FOREIGN_SANCTIONS = "viktor feliksovich vekselberg eu sanctions";
 
 function suggestion(id: string, title: string): RawInventoryItem {
   return {

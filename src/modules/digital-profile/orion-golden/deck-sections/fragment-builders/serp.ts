@@ -7,15 +7,17 @@ import type { FragmentKey, SectionType, SlideContentContract } from "../contract
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import {
   DECK_TEMPLATE_REGISTRY,
+  OTHER_SUBJECT_LABEL,
   RED_MARKER_LABEL,
   SIDEBAR_HIGHLIGHT_SLOTS,
+  UNVERIFIED_LABEL,
 } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { clientNamedSearchEngine } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
 import { clientSafeDomains } from "../../../services/composite-serp-merge";
-import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
+import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
@@ -34,8 +36,10 @@ import {
   distribute,
   domainOfUrl,
   emptyStatusForReason,
+  evidenceRowAdverse,
+  evidenceRowVerdict,
+  evidenceRowWasRead,
   fitClientSentences,
-  isAdverse,
   makeSlotSlide,
   packBulletPages,
   pageFindingBlocks,
@@ -93,14 +97,11 @@ function serpRowTitle(raw: string): string {
   return `${kept}…`;
 }
 
-/**
- * Оценка материала о другом лице.
- *
- * Однофамилец занимает своё место в выдаче, и вычёркивать его строку нельзя:
- * аудит обещает ТОП-20, а дыра в нумерации читается как потеря данных. Но и
- * «Нейтральный» ему не годится — это оценка материала о субъекте.
+/*
+ * Значения колонки «Оценка» живут в реестре шаблонов — рядом с легендой,
+ * которая их обещает. Реэкспорт оставлен ради тех, кто и так брал их отсюда.
  */
-export const OTHER_SUBJECT_LABEL = "О другом лице" as const;
+export { OTHER_SUBJECT_LABEL };
 
 /**
  * Номер колонки с оценкой — считается из заголовков, а не пишется числом.
@@ -405,8 +406,6 @@ export function buildSerpFragment(
       status: "READY",
     };
   }
-  const adverseRefSet = new Set<string>();
-  for (const f of scoped.findings.filter(isAdverse)) for (const r of f.evidenceRefs) adverseRefSet.add(r);
   // Шаг 13, D7 — одна и та же страница, найденная несколькими запросами,
   // печаталась как несколько разных «позиций» (ru.wikipedia.org на 1 и 19,
   // instagram.com на 2, 21 и 28), а у одного ролика соседние строки несли
@@ -573,36 +572,35 @@ export function buildSerpFragment(
     rank: number
   ): { cells: string[]; address: string } => {
     const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
-    // A row is marked when its evidence backs an adverse finding OR its own
-    // title carries an adverse pattern (sanctions/criminal/court wording) —
-    // clearly negative rows must never show a green "Нейтральный" badge.
     /*
-     * Красная метка ставится по самой странице, а не по её теме.
+     * Оценка — собственный сигнал материала, и считает его общий предикат.
      *
-     * Строка красилась, если ссылка входит в доказательства любой негативной
-     * находки, — независимо от того, что показала прочитанная страница. В
-     * отчёте 72 из двенадцати строк первой таблицы семь оказались
-     * «Нежелательными», и это биографии: «Дети Алишера Усманова: есть ли у него
-     * дети», «Биография Алишера Бурхановича Усманова». Две страницы модель
-     * прямо признала благоприятными — и они всё равно были красными.
+     * Раньше строка красилась ещё и по принадлежности к негативной находке —
+     * независимо от того, что показала прочитанная страница. В отчёте 72 семь
+     * строк первой таблицы из двенадцати оказались «Нежелательными», и это
+     * биографии; на прогоне Кремлёва так покраснел klerk.ru, чью страницу
+     * прочитали и признали благоприятной с двумя цитатами. Тема — это
+     * классификация находки, а не оценка материала.
      *
-     * Решение по прочитанной странице сильнее: она читалась целиком, а
-     * принадлежность к теме и слова в заголовке — лишь признаки.
+     * Решение у материала одно, поэтому и берётся оно один раз: наблюдения
+     * различаются запросом, а страницу читали не по запросу. Словарь при этом
+     * смотрит каждое наблюдение — сниппеты у них разные, и сигнал в любом из
+     * них принадлежит материалу.
      */
-    const adverse = group.refs.some((ref) => {
-      const ev = scoped.evidenceIndex[ref] ?? {};
-      // Решение по прочитанной странице действует в обе стороны: нейтральную и
-      // благоприятную оно снимает с красной метки, нежелательную — ставит.
-      // Вывод «нежелательно» без подтверждённой цитаты сюда не доходит: его
-      // понижает `requireQuotedAdverse` ещё в аудите решений.
-      if (ev.readVerdictTone === "neutral" || ev.readVerdictTone === "supportive") return false;
-      if (ev.readVerdictTone === "adverse") return true;
-      return (
-        ev.adverse === true ||
-        adverseRefSet.has(ref) ||
-        ADVERSE_PATTERNS.test(String(ev.title ?? ""))
-      );
-    });
+    const verdict = group.refs
+      .map((ref) => evidenceRowVerdict(scoped.evidenceIndex[ref]))
+      .find(Boolean);
+    const adverse = group.refs.some((ref) =>
+      evidenceRowAdverse(scoped.evidenceIndex[ref], verdict)
+    );
+    /*
+     * «Нейтральный» — это результат проверки, а не её отсутствие.
+     *
+     * Признак берётся из данных: есть тон прочитанной страницы — страницу
+     * открыли и оценили. Отказ чтения тона не оставляет, и такая строка
+     * называется «Не проверено» вместе с той, которую не запрашивали вовсе.
+     */
+    const verified = group.refs.some((ref) => evidenceRowWasRead(scoped.evidenceIndex[ref]));
     const likely = group.refs.some(
       (ref) => scoped.evidenceIndex[ref]?.subjectDecision === "LIKELY_SUBJECT"
     );
@@ -619,13 +617,20 @@ export function buildSerpFragment(
       group.refs.every((ref) => scoped.evidenceIndex[ref]?.subjectDecision === "OTHER_SUBJECT");
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
+    //
+    // Непрочтение стоит ниже «Вероятно»: неопределённость принадлежности —
+    // более сильная оговорка, чем неоткрытая страница. И ниже «Нежелательного»:
+    // непрочитанная строка с негативным сигналом остаётся негативной, глушить
+    // сигнал из-за того, что страницу не открыли, — потеря.
     const rating = other
       ? OTHER_SUBJECT_LABEL
       : adverse
         ? RED_MARKER_LABEL
         : likely
           ? "Вероятно"
-          : "Нейтральный";
+          : verified
+            ? "Нейтральный"
+            : UNVERIFIED_LABEL;
     // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
     // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
     // по другому запросу.
@@ -791,6 +796,7 @@ export function buildSerpFragment(
         displayedCount: pageRows.length,
         adverseDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === RED_MARKER_LABEL).length,
         likelyDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === "Вероятно").length,
+        unverifiedDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === UNVERIFIED_LABEL).length,
         otherSubjectDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === OTHER_SUBJECT_LABEL)
           .length,
         pageIndex: i + 1,

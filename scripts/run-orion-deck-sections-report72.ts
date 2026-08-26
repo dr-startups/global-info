@@ -36,6 +36,7 @@ import type {
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
+import { evidenceRowVerdict } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import { panelRowWithOwnership } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
 import {
@@ -119,12 +120,19 @@ function resolveVisibleItems(
   return evidenceRefs.map((ref) => {
     const e = evidenceIndex[ref];
     if (!e) return { ref };
-    const hl = classifyObservationHighlight({
-      url: e.url ?? null,
-      domain: e.domain ?? null,
-      title: e.title ?? null,
-      snippet: null,
-    } as unknown as PersistedSerpObservation);
+    // Реконструкция обязана быть не слабее продукта: словарь читает сниппет, а
+    // решение по прочитанной странице сильнее словаря. Пока сюда ехали
+    // `snippet: null` и ни одного вердикта, ворота были слепы к целому классу
+    // срабатываний — и зелены на данных, где продукт повёл бы себя иначе.
+    const hl = classifyObservationHighlight(
+      {
+        url: e.url ?? null,
+        domain: e.domain ?? null,
+        title: e.title ?? null,
+        snippet: e.snippet ?? null,
+      } as unknown as PersistedSerpObservation,
+      evidenceRowVerdict(e)
+    );
     const item: VisibleAssetItem = {
       ref,
       url: e.url,

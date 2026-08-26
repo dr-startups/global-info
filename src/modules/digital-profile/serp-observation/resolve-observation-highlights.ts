@@ -3,30 +3,36 @@
  * Reuses Stage S1 theme-grouper; no LLM, no CAPTCHA/proxy.
  */
 
+import { getAdversePatterns, getStrongAdversePatterns } from "../config/finding-themes";
 import { buildConsistentThemeGrouping } from "../serp-snapshot/snapshot-consistency";
 import type { LoadedResult, ResultView, SerpEngine, SerpLanguage, ThemeGrouping } from "../serp-snapshot/types";
 import type { PersistedSerpObservation } from "./types";
 
-/** Domains that should always get a red frame in ORION-style SERP snapshots. */
+/**
+ * Площадки, которым красная рамка полагается по самому факту публикации.
+ *
+ * `rucriminal` — без точки: агрегатор компромата чаще виден перепечаткой, чем
+ * своим доменом, и на прогоне Кремлёва строка
+ * `x.com/rucriminalinfo/status/…` осталась без рамки, а страница снимка
+ * понизила уровень внимания с высокого до среднего. Список читает **адрес
+ * целиком**, а не только хост, — этим он и отличается от словаря, который
+ * адреса не читает вовсе.
+ */
 const ADVERSE_DOMAIN_RE =
-  /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
+  /rucriminal|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
 
 /**
- * Soft bio / registry / encyclopedia domains — never red-frame on weak blob hits.
- * Forbes/Klerk bios were false-positive «Тема N» in PDF (41).
+ * Мягкие площадки: биографии, реестры, энциклопедии.
+ *
+ * Словарь по ним не работает — их тексты перечисляют факты чужими словами, и
+ * «скандалы» в оглавлении статьи не сигнал площадки, а её жанр. Биографии
+ * Forbes и Klerk так получали ложную «Тему N» (PDF 41), а `ru.ruwiki.ru`
+ * — «Нежелательный» по слову «скандалы» в заголовке рядом с `ru.wikipedia.org`,
+ * оценённой по прочитанной странице: две энциклопедии об одном человеке
+ * расходились в оценке из-за формы заголовка.
  */
 const SOFT_PROFILE_DOMAIN_RE =
-  /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|imslp\./i;
-
-/** Strong adverse signals — enough alone, including on soft profile domains. */
-const STRONG_ADVERSE_BLOB_RE =
-  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|lawsuit|\bpep\b|watchlist|\brca\b|компромат|rucriminal|cybercriminal|acompromat|rupep|opensanctions|defense\s+industry|оборонн(?:ая|ой)\s+промыш/i;
-
-/**
- * Weaker signals — only for non-soft domains (avoid «associate» / «политич» on bios).
- */
-const WEAK_ADVERSE_BLOB_RE =
-  /offshore|офшор|молдав|лнр|лднр|бенефициар|негатив|компромат/i;
+  /forbes\.|klerk\.|tadviser\.|wikipedia\.|ruwiki\.|wikiwand\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|imslp\./i;
 
 type ThemeRule = { key: string; title: string; match: RegExp };
 
@@ -149,16 +155,71 @@ export function observationVerdictsForVisuals(artifact: {
 }
 
 /**
+ * Строка выдачи так, как её видит предикат негативности.
+ *
+ * Ровно четыре поля: заголовок и сниппет читает словарь, адрес и домен —
+ * список площадок. Больше о строке предикату знать нечего, и это не бедность
+ * типа, а условие: пока каждый потребитель приносил свой набор полей, ответов
+ * на один вопрос стало пять.
+ */
+export type AdverseRowInput = {
+  url?: string | null;
+  domain?: string | null;
+  title?: string | null;
+  snippet?: string | null;
+};
+
+/**
  * Негативна ли строка — один ответ на весь отчёт.
  *
- * Решение по прочитанной странице сильнее заголовка выдачи: словарь ключевых
- * слов работает по двум строкам, которые показал поисковик, и на них
- * телеинтервью получало метку «уголовное дело», а страница санкционного списка
- * без этих слов — зелёную. То же правило уже применяет дека к своим оценкам;
- * пока снимок выдачи считал по-своему, один лист мог нести красную рамку,
- * которую текст рядом опровергал.
+ * Порядок решений:
  *
- * Словарь остаётся ответом там, где страницу не читали, — и только там.
+ * 1. **прочитанная страница.** Материал о другом лице не подтверждает ничего о
+ *    субъекте; нейтральная и благоприятная страница снимают словарную метку;
+ *    нежелательная с дословной цитатой ставит её. Нежелательный вывод без
+ *    цитаты решения не приносит — то же правило, по которому он понижается в
+ *    самом аудите решений, — и ответ отдаётся словарю;
+ * 2. **список негативных площадок.** Санкционный реестр и агрегатор компромата
+ *    негативны сами по себе: слов словаря в их заголовках может не быть вовсе;
+ * 3. **словарь `adversePatterns` из конфига** — по заголовку и сниппету; на
+ *    мягких площадках работает только его сильное подмножество
+ *    (`strongAdversePatterns`).
+ *
+ * **Словарь читает текст, а домен отвечает списком, и это разные вопросы.**
+ * Если пустить словарь по адресу, ложное срабатывание удваивается: на стр. 62
+ * отчёта Кремлёва «негативный заголовок» — это «Investigat» внутри названия
+ * площадки «The Investigator News», и домен `theinvestigatornews.com` дал бы
+ * то же совпадение второй раз.
+ *
+ * **Принадлежность к теме здесь не участвует.** Тема — это классификация
+ * находки, а не сигнал материала: `klerk.ru` входил в доказательства темы
+ * «Офшоры» среднего уровня и печатался «Нежелательным» при прочитанной и
+ * признанной благоприятной странице с двумя цитатами.
+ */
+export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVerdict): boolean {
+  if (verdict) {
+    if (verdict.subjectMatch === "other") return false;
+    if (verdict.tone === "neutral" || verdict.tone === "supportive") return false;
+    if (verdict.tone === "adverse" && verdict.quoted) return true;
+  }
+  const url = String(row.url ?? "");
+  const domain = String(row.domain ?? "") || domainOf(url);
+  if (ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domain)) return true;
+  const text = `${row.title ?? ""} ${row.snippet ?? ""}`;
+  // Мягкая площадка не слепа: сильные слова краснят строку и там. Пост в
+  // соцсети «Уголовное дело против …» — сигнал, а «биография, бизнес,
+  // скандалы» в оглавлении энциклопедии — жанр.
+  if (SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain)) {
+    return getStrongAdversePatterns().test(text);
+  }
+  return getAdversePatterns().test(text);
+}
+
+/**
+ * Негативна ли строка и о чём она — для тех, кому нужен ещё и ярлык темы.
+ *
+ * Негативность отдана `resolveRowAdverse`; здесь выбирается только имя сюжета:
+ * ярлык кластера прочитанной страницы, а без него — рубрика справочника.
  */
 export function classifyObservationHighlight(
   obs: PersistedSerpObservation,
@@ -168,43 +229,16 @@ export function classifyObservationHighlight(
   riskTheme: string | null;
   themeTitle: string | null;
 } {
+  if (!resolveRowAdverse(obs, verdict)) {
+    return { isHighlighted: false, riskTheme: null, themeTitle: null };
+  }
+  if (verdict?.tone === "adverse" && verdict.quoted) {
+    const label = verdict.themeLabel?.trim();
+    if (label) return { isHighlighted: true, riskTheme: label.toLowerCase(), themeTitle: label };
+  }
   const url = obs.url ?? "";
   const domain = obs.domain ?? domainOf(url);
-  const blob = `${obs.title ?? ""} ${obs.snippet ?? ""} ${url} ${domain}`;
-
-  if (verdict) {
-    // Материал о другом человеке не подтверждает ничего о субъекте. Строка при
-    // этом рисуется: снимок воспроизводит выдачу, и спрятать её значило бы
-    // нарисовать страницу, которой поисковик не показывал.
-    if (verdict.subjectMatch === "other") {
-      return { isHighlighted: false, riskTheme: null, themeTitle: null };
-    }
-    if (verdict.tone === "neutral" || verdict.tone === "supportive") {
-      return { isHighlighted: false, riskTheme: null, themeTitle: null };
-    }
-    if (verdict.tone === "adverse" && verdict.quoted) {
-      const label = verdict.themeLabel?.trim();
-      if (label) return { isHighlighted: true, riskTheme: label.toLowerCase(), themeTitle: label };
-      const theme = themeForBlob(blob);
-      return { isHighlighted: true, riskTheme: theme.key, themeTitle: theme.title };
-    }
-    // Нежелательный вывод без цитаты ничего не назначает: то же правило, по
-    // которому такой вывод понижается в самом решении.
-  }
-
-  const byDomain = ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domain);
-  const softProfile = SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain);
-  const strongBlob = STRONG_ADVERSE_BLOB_RE.test(blob);
-  const weakBlob = !softProfile && WEAK_ADVERSE_BLOB_RE.test(blob);
-
-  if (!byDomain && !strongBlob && !weakBlob) {
-    return { isHighlighted: false, riskTheme: null, themeTitle: null };
-  }
-  // Soft bios: only domain-list adverse or strong keywords (not weak blob).
-  if (softProfile && !byDomain && !strongBlob) {
-    return { isHighlighted: false, riskTheme: null, themeTitle: null };
-  }
-  const theme = themeForBlob(blob);
+  const theme = themeForBlob(`${obs.title ?? ""} ${obs.snippet ?? ""} ${url} ${domain}`);
   return { isHighlighted: true, riskTheme: theme.key, themeTitle: theme.title };
 }
 

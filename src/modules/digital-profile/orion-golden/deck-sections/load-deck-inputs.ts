@@ -29,6 +29,7 @@ import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 import { wikipediaCheckInventoryId } from "../../services/evidence-supplement-adapter";
 import { WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT } from "../analytics/run-wikipedia-article-review";
 import { WikipediaArticleReviewSetSchema } from "../contracts/wikipedia-article-review";
+import { serpMaterialKey } from "../../serp-observation/material-key";
 
 export type CompositeObservationRow = {
   observationKey?: string;
@@ -136,13 +137,7 @@ export function countIdentityByObservation(input: {
  * не попадают в региональную таблицу тем.
  */
 export function countLinkReadByRegion(
-  verdicts: Array<{
-    evidenceRef?: string;
-    region?: string;
-    subjectMatch?: string;
-    tone?: string;
-    readFailure?: string;
-  }>
+  verdicts: LinkVerdictRow[]
 ): Record<string, LinkReadRegionCounts> {
   const counts: Record<string, LinkReadRegionCounts> = {};
   const seen = new Set<string>();
@@ -161,6 +156,172 @@ export function countLinkReadByRegion(
     else if (v.subjectMatch === "subject" && v.tone === "adverse") row.adverseRead += 1;
   }
   return counts;
+}
+
+/** Решение по одной прочитанной ссылке — так, как его пишет агент чтения. */
+export type LinkVerdictRow = {
+  evidenceRef?: string;
+  region?: string;
+  subjectMatch?: string;
+  tone?: string;
+  theme?: string;
+  sourceType?: string;
+  quotes?: Array<{ text?: string }>;
+  /** Заполнено — страницу прочитать не удалось; решения по ней нет. */
+  readFailure?: string;
+};
+
+/**
+ * Разложить решения по прочитанным страницам на индекс доказательств.
+ *
+ * **Решение принадлежит материалу, а не наблюдению.** Ключ наблюдения включает
+ * запрос, поэтому одна страница, найденная двумя запросами, — две ссылки, и
+ * читают её один раз. На отчёте Кремлёва `opensanctions.org/entities/Q55102113`
+ * был прочитан и признан нежелательным с тремя цитатами, но решение легло на
+ * ссылку RU-запроса, а строка таблицы ОАЭ собрана из своих одиннадцати ссылок —
+ * и напечаталась «Нейтральной» при красной рамке на том же адресе двумя листами
+ * дальше. Поэтому решение раскладывается по всем ссылкам своего материала —
+ * тем же ключом, каким сводит строки таблица выдачи.
+ *
+ * Решение по прочитанной странице сильнее заголовка выдачи: оценка ставилась по
+ * словам «суд», «санкции», «арест», и телеинтервью 2015 года получало метку
+ * «Нежелательный», а страница санкционного списка без этих слов — «Нейтральный».
+ * Материал, признанный чужим («это однофамилец»), перестаёт быть подтверждением
+ * чего-либо о субъекте.
+ */
+export function applyLinkVerdictsToEvidence(
+  evidenceIndex: ScopedEvidenceIndex,
+  verdicts: LinkVerdictRow[]
+): void {
+  /*
+   * Материал опознаётся адресом, а не одним заголовком.
+   *
+   * В индексе доказательств живёт не только выдача: у записи комплаенс-базы
+   * нет ни адреса, ни домена, а заголовок — имя субъекта, одинаковое у всех
+   * баз. На корпусе `report-72` три записи (Dow Jones, LexisNexis,
+   * World-Check) сходятся в один ключ `|имя`, и одно решение по прочитанной
+   * странице сняло бы совпадение сразу у трёх — прямо против правила
+   * «совпадение по комплаенсу не подтверждается автоматически». Поэтому
+   * запись без адреса и без домена материалом ни с кем не делится: её ключ —
+   * собственная ссылка.
+   */
+  const materialOf = (ref: string): string => {
+    const entry = evidenceIndex[ref] ?? {};
+    if (!entry.url && !entry.domain) return ref;
+    return serpMaterialKey(entry, ref);
+  };
+  const refsByMaterial = new Map<string, string[]>();
+  for (const ref of Object.keys(evidenceIndex)) {
+    const key = materialOf(ref);
+    const list = refsByMaterial.get(key);
+    if (list) list.push(ref);
+    else refsByMaterial.set(key, [ref]);
+  }
+  /*
+   * Один материал — одно решение, и оно сильнейшее.
+   *
+   * Прочитанная страница сильнее отказа чтения: одну и ту же страницу могли
+   * запросить дважды, и площадка отдала её только со второго раза. Среди
+   * прочитанных сильнее нежелательный вывод с цитатой — то же правило, по
+   * которому таблица выдачи берёт у материала сильнейшую оценку его
+   * наблюдений. Иначе нейтральное решение, пришедшее в артефакте первым,
+   * молча стирало бы негатив вместе с цитатой.
+   */
+  const strength = (v: LinkVerdictRow): number => {
+    if (v.readFailure) return 0;
+    const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
+    return v.tone === "adverse" && quoted ? 2 : 1;
+  };
+  const chosen = new Map<string, LinkVerdictRow>();
+  for (const v of verdicts) {
+    const ref = String(v.evidenceRef ?? "");
+    if (!ref || !evidenceIndex[ref]) continue;
+    const key = materialOf(ref);
+    const prev = chosen.get(key);
+    if (!prev || strength(v) > strength(prev)) chosen.set(key, v);
+  }
+  for (const [key, v] of chosen) {
+    const ownUrl = normalizedAddress(evidenceIndex[String(v.evidenceRef)]?.url);
+    for (const ref of refsByMaterial.get(key) ?? []) {
+      /*
+       * Оценка принадлежит материалу, дословная цитата — прочитанной странице.
+       *
+       * Ключ материала адреса не читает, поэтому в одну группу законно
+       * попадают разные адреса (тот же материал с трекинг-параметром) — а
+       * могут попасть и две разные страницы с одинаковым заголовком. Оценку
+       * они делят, цитату нет: утверждение обязано прослеживаться до
+       * наблюдения со своим URL.
+       */
+      const sameAddress = normalizedAddress(evidenceIndex[ref]?.url) === ownUrl;
+      applyLinkVerdictToEntry(evidenceIndex[ref]!, v, sameAddress);
+    }
+  }
+}
+
+/** Адрес без трекинг-хвоста и якоря — для сравнения «та же это страница или нет». */
+function normalizedAddress(url: string | undefined): string {
+  return String(url ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[?#].*$/u, "")
+    .replace(/\/+$/u, "");
+}
+
+/** Одно решение — на одну запись индекса; цитата едет только на свой адрес. */
+function applyLinkVerdictToEntry(
+  entry: ScopedEvidenceIndex[string],
+  v: LinkVerdictRow,
+  carryQuote: boolean
+): void {
+  /*
+   * Непрочитанная страница решения не приносит.
+   *
+   * Страницу не открыли — модель честно отвечает «не знаем»: `unclear`,
+   * `neutral`, темой становится заголовок выдачи. Применённый наравне с
+   * настоящим, такой вердикт гасил словарную метку «Нежелательный» и писал
+   * `readVerdictTone`, по которому потребители отличают прочитанную страницу
+   * от непрочитанной. Про заблокированную страницу словарь — всё, что есть.
+   */
+  if (v.readFailure) {
+    // Причина непрочтения — тоже результат: страница отчёта объясняет ею
+    // рамку, поставленную по заголовку выдачи, вместо молчаливого «уровень».
+    entry.readFailure = String(v.readFailure);
+    return;
+  }
+  const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
+  if (v.tone === "adverse" && quoted) entry.adverse = true;
+  if (v.tone === "supportive" || v.tone === "neutral") entry.adverse = false;
+  if (v.subjectMatch === "other") {
+    entry.adverse = false;
+    entry.subjectDecision = "OTHER_SUBJECT";
+  }
+  // Принадлежность по прочтению запоминается как есть: фраза «Почему
+  // выделено» обязана оговорить вероятную принадлежность, а не выдать её за
+  // подтверждённую.
+  if (v.subjectMatch) entry.verdictSubjectMatch = String(v.subjectMatch);
+  // Тип источника определён по самой странице — он сильнее догадки по домену.
+  const sourceType = normalizeSourceType(v.sourceType);
+  if (sourceType) entry.sourceType = sourceType;
+  // Тон прочитанной страницы запоминается отдельно: по нему темы повышенного
+  // внимания отбирают, что можно цитировать. Словарь ключевых слов работает
+  // по заголовку и о содержимом страницы не знает.
+  if (v.tone === "adverse" || v.tone === "neutral" || v.tone === "supportive") {
+    entry.readVerdictTone = v.tone;
+  }
+  // «О чём публикация» одной русской фразой — из решения по прочитанной
+  // странице. Иноязычная цитата печатается дословно, а эта строка идёт рядом.
+  const theme = String(v.theme ?? "").trim();
+  if (theme) entry.verdictTheme = theme;
+  // Первая годная цитата со страницы: она и станет цитатой в отчёте вместо
+  // обрезанного заголовка выдачи.
+  if (!carryQuote) return;
+  for (const q of v.quotes ?? []) {
+    const quote = pageQuoteForClient(q?.text);
+    if (quote) {
+      entry.pageQuote = quote;
+      break;
+    }
+  }
 }
 
 export type UncategorizedMaterialsDeckInput = {
@@ -317,17 +478,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const linkVerdictsPath = join(analyticsDir, "link-verdicts.json");
   const linkVerdicts = existsSync(linkVerdictsPath)
     ? readJson<{
-        verdicts?: Array<{
-          evidenceRef?: string;
-          region?: string;
-          subjectMatch?: string;
-          tone?: string;
-          theme?: string;
-          sourceType?: string;
-          quotes?: Array<{ text?: string }>;
-          /** Заполнено — страницу прочитать не удалось; решения по ней нет. */
-          readFailure?: string;
-        }>;
+        verdicts?: LinkVerdictRow[];
         summary?: {
           unread?: number;
           themes?: Array<{ theme?: string; count?: number; adverseCount?: number }>;
@@ -526,70 +677,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     }
   }
 
-  /*
-   * Решение по прочитанной странице сильнее заголовка.
-   *
-   * Оценка в таблице выдачи ставилась по словам в заголовке: «суд», «санкции»,
-   * «арест». Так телеинтервью 2015 года получило метку «Нежелательный», а
-   * страница санкционного списка без этих слов — «Нейтральный». Решение
-   * вынесено по тексту страницы и с цитатой, поэтому оно и назначает оценку.
-   *
-   * Материал, признанный чужим («это однофамилец»), перестаёт быть
-   * подтверждением чего-либо о субъекте — независимо от того, что решил
-   * классификатор по заголовку.
-   */
-  for (const v of linkVerdicts?.verdicts ?? []) {
-    const ref = String(v.evidenceRef ?? "");
-    if (!ref || !evidenceIndex[ref]) continue;
-    /*
-     * Непрочитанная страница решения не приносит.
-     *
-     * Страницу не открыли — модель честно отвечает «не знаем»: `unclear`,
-     * `neutral`, темой становится заголовок выдачи. Применённый наравне с
-     * настоящим, такой вердикт гасил словарную метку «Нежелательный» и писал
-     * `readVerdictTone`, по которому потребители отличают прочитанную страницу
-     * от непрочитанной. Про заблокированную страницу словарь — всё, что есть.
-     */
-    if (v.readFailure) {
-      // Причина непрочтения — тоже результат: страница отчёта объясняет ею
-      // рамку, поставленную по заголовку выдачи, вместо молчаливого «уровень».
-      evidenceIndex[ref].readFailure = String(v.readFailure);
-      continue;
-    }
-    const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
-    if (v.tone === "adverse" && quoted) evidenceIndex[ref].adverse = true;
-    if (v.tone === "supportive" || v.tone === "neutral") evidenceIndex[ref].adverse = false;
-    if (v.subjectMatch === "other") {
-      evidenceIndex[ref].adverse = false;
-      evidenceIndex[ref].subjectDecision = "OTHER_SUBJECT";
-    }
-    // Принадлежность по прочтению запоминается как есть: фраза «Почему
-    // выделено» обязана оговорить вероятную принадлежность, а не выдать её за
-    // подтверждённую.
-    if (v.subjectMatch) evidenceIndex[ref].verdictSubjectMatch = String(v.subjectMatch);
-    // Тип источника определён по самой странице — он сильнее догадки по домену.
-    const sourceType = normalizeSourceType(v.sourceType);
-    if (sourceType) evidenceIndex[ref].sourceType = sourceType;
-    // Тон прочитанной страницы запоминается отдельно: по нему темы повышенного
-    // внимания отбирают, что можно цитировать. Словарь ключевых слов работает
-    // по заголовку и о содержимом страницы не знает.
-    if (v.tone === "adverse" || v.tone === "neutral" || v.tone === "supportive") {
-      evidenceIndex[ref].readVerdictTone = v.tone;
-    }
-    // «О чём публикация» одной русской фразой — из решения по прочитанной
-    // странице. Иноязычная цитата печатается дословно, а эта строка идёт рядом.
-    const theme = String(v.theme ?? "").trim();
-    if (theme) evidenceIndex[ref].verdictTheme = theme;
-    // Первая годная цитата со страницы: она и станет цитатой в отчёте вместо
-    // обрезанного заголовка выдачи.
-    for (const q of v.quotes ?? []) {
-      const quote = pageQuoteForClient(q?.text);
-      if (quote) {
-        evidenceIndex[ref].pageQuote = quote;
-        break;
-      }
-    }
-  }
+  applyLinkVerdictsToEvidence(evidenceIndex, linkVerdicts?.verdicts ?? []);
 
   // Enrich compliance_hit entries with typed match metadata (provider /
   // category / score / review / поля карточки) so p33–p36 tables are

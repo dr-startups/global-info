@@ -40,7 +40,6 @@ const ruRows: VisibleAssetItem[] = [
   "p17_ru_images_4",
 ].flatMap((slotId) => (fixture[slotId] ?? []).flatMap((a) => a.visibleItems ?? []));
 const adverseRow = ruRows.find((r) => r.domain === "kompromat1.online")!;
-const adverseRow2 = ruRows.find((r) => r.domain === "kartoteka.news")!;
 const longDomainRow = ruRows.find((r) => r.domain === "vitkvv2017.livejournal.com")!;
 /**
  * Строки, за которыми не стоит вывод фрагмента: страница с подтверждённой темой
@@ -110,22 +109,45 @@ function imagesPages(
 }
 
 /**
- * Строка изображения с заданным доменом — та же форма, что в индексе прогона.
+ * Строка изображения с заданным заголовком — та же форма, что в индексе прогона.
  *
- * Нужна затем, что у корпуса `report-72` домены короткие, и на нём свойство
- * «сигнал о негативе не теряется» держится совпадением длин. Длинный домен —
- * не выдумка: `vitkvv2017.livejournal.com` в корпусе есть, а домены под сорок
- * знаков встречаются на живых прогонах.
+ * Негатив у неё задаётся словами заголовка, а не флагом: оценку строки ставит
+ * единый предикат по заголовку, сниппету и списку площадок, и флаг `adverse`
+ * индекса — уже его результат, а не вход.
  */
-function evidenceRow(ref: string, domain: string, adverse: boolean): Record<string, unknown> {
+function evidenceRow(ref: string, domain: string, title: string): Record<string, unknown> {
   return {
-    kind: "image",
+    ref,
+    kind: "images",
+    region: "RU",
     url: `https://${domain}/gallery/photo`,
     domain,
-    title: `Фотография из галереи ${domain}`,
-    adverse,
+    title,
   };
 }
+
+/**
+ * Вторая негативная строка сетки — своя, а не из фикстуры эталона.
+ *
+ * В корпусе `report-72` негативная строка RU-сеток осталась одна
+ * (`kompromat1.online`): `kartoteka.news` держалась на слове «молдавский», а
+ * единый словарь негатива его не знает — и правильно, «молдавский миллионер»
+ * сигналом не является.
+ */
+const SECOND_ADVERSE_REF = "inventory:test-ru-image-adverse";
+const SECOND_ADVERSE_DOMAIN = "sledstvie-example.ru";
+const SECOND_ADVERSE = evidenceRow(
+  SECOND_ADVERSE_REF,
+  SECOND_ADVERSE_DOMAIN,
+  "Обыск в офисе компании: фотографии с места"
+);
+const adverseRow2: VisibleAssetItem = {
+  ref: SECOND_ADVERSE_REF,
+  url: `https://${SECOND_ADVERSE_DOMAIN}/gallery/photo`,
+  domain: SECOND_ADVERSE_DOMAIN,
+  title: "Обыск в офисе компании: фотографии с места",
+  adverse: true,
+};
 
 function sidebarText(slide: SlideContentContract | undefined): string {
   return [slide?.content.whatWasFound, slide?.content.statusNote].filter(Boolean).join(" ");
@@ -284,14 +306,15 @@ describe("страница без плиток, но с негативом", () 
      * отбрасывался — и самый заметный элемент страницы молчал там, где новость
      * тяжелее всего.
      */
-    const notShown = [
+    const notShown: NotShownRow[] = [
       missed(adverseRow, "http_403"),
       missed(adverseRow2, "http_500"),
       missed(plainRows[0]!, "network"),
     ];
-    const slide = imagesPages({
-      p14_ru_images_1: gridMeta("p14_ru_images_1", [], notShown),
-    }).get("p14_ru_images_1");
+    const slide = imagesPages(
+      { p14_ru_images_1: gridMeta("p14_ru_images_1", [], notShown) },
+      { [SECOND_ADVERSE_REF]: SECOND_ADVERSE }
+    ).get("p14_ru_images_1");
 
     expect(slide?.title).toMatch(/ведут на негативные источники/u);
     // Статус по-прежнему несёт число — заголовок его не подменяет.
@@ -317,9 +340,10 @@ describe("обрезка съедает перечисление источни�
       ...plainRows.slice(2, 9).map((r, i) => missed(r, reasons[i % reasons.length]!)),
     ];
     const text = sidebarText(
-      imagesPages({
-        p14_ru_images_1: gridMeta("p14_ru_images_1", plainRows.slice(0, 2), notShown),
-      }).get("p14_ru_images_1")
+      imagesPages(
+        { p14_ru_images_1: gridMeta("p14_ru_images_1", plainRows.slice(0, 2), notShown) },
+        { [SECOND_ADVERSE_REF]: SECOND_ADVERSE }
+      ).get("p14_ru_images_1")
     );
 
     expect(text.length).toBeLessThanOrEqual(400 + 200);
@@ -363,7 +387,8 @@ describe("обрезка съедает перечисление источни�
     const extraEvidence: Record<string, unknown> = {};
     adverseRefs.forEach((row, i) => {
       extraEvidence[row.ref] = {
-        ...(inputs.evidenceIndex as Record<string, Record<string, unknown>>)[row.ref],
+        ...((inputs.evidenceIndex as Record<string, Record<string, unknown>>)[row.ref] ??
+          SECOND_ADVERSE),
         domain: longDomains[i],
         url: `https://${longDomains[i]}/gallery/photo`,
       };

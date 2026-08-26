@@ -13,6 +13,7 @@
  */
 
 import type { ScopedEvidenceIndex } from "./scoped-input";
+import { evidenceRowWasRead } from "./fragment-builders/shared";
 
 /** Как ссылка представлена в отчёте. */
 export type LinkUsage =
@@ -116,8 +117,9 @@ export function buildLinkUsageTrace(input: {
 
   const rows: LinkUsageRow[] = [];
   for (const [ref, e] of Object.entries(input.evidenceIndex)) {
-    const judged = Boolean(e.readVerdictTone || e.verdictTheme || e.pageQuote);
-    if (!judged) continue;
+    // «Прочитана ли страница» — тот же предикат, что у оценки строки выдачи:
+    // тема и цитата без тона недостижимы, и третьего ответа тут быть не должно.
+    if (!evidenceRowWasRead(e)) continue;
 
     const pageQuote = e.pageQuote?.trim();
     const serpTitle = e.title?.trim();

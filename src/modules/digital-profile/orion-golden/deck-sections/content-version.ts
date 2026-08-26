@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v123" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v126" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` на момент последней сверки.
@@ -125,4 +125,4 @@ export const DECK_CONTENT_VERSION = "deck-sections-v123" as const;
  * комментария измениться не может, а подъём версии обесценил бы готовые пакеты
  * и заставил бы платить за стадии GPT заново.
  */
-export const DECK_BUILDER_FINGERPRINT = "c012d4d4d0f8248c" as const;
+export const DECK_BUILDER_FINGERPRINT = "c55ca66dafb8119d" as const;

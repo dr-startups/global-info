@@ -35,6 +35,9 @@ export const FindingThemesConfigJsonSchema = z.object({
   version: z.literal("finding-themes-v1"),
   themes: z.array(ThemeDefJsonSchema).min(1),
   adversePatterns: z.string().min(1),
+  /** Необязательно: старый файл переопределения читается как «нет подмножества». */
+  strongAdversePatterns: z.string().min(1).optional(),
+  strongAdverseFlags: z.string().optional(),
   adverseFlags: z.string().default("iu"),
   unverifiedDomains: z.string().min(1),
   unverifiedDomainsFlags: z.string().default("iu"),
@@ -61,6 +64,8 @@ export type CompiledFindingThemesConfig = {
   overridePath: string | null;
   themes: ThemeDef[];
   adversePatterns: RegExp;
+  /** Подмножество `adversePatterns`, работающее и на мягких площадках. */
+  strongAdversePatterns: RegExp;
   unverifiedDomains: RegExp;
   authoritativeDomains: RegExp;
   reputableDomains: RegExp;
@@ -199,8 +204,26 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
     ],
     adversePatterns:
-      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд(?!острое|ьб)|court|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb",
+      // `court(?!s)` — «courts» в английском чаще глагол «обхаживает», чем
+      // множественное число суда: «Anders Holmström courts Gulf family offices»
+      // печаталось клиенту как «Криминальные / судебные материалы». У словаря
+      // есть левая граница и нет правой, и для латинских слов это цена без
+      // выгоды: русские основы наращиваются («судебн», «прокурат»), английские
+      // — нет.
+      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд(?!острое|ьб)|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb",
     adverseFlags: "iu",
+    /*
+     * Слова, которые краснят строку даже на мягкой площадке.
+     *
+     * Мягкие площадки (биографии, реестры, энциклопедии, соцсети) словарём не
+     * судятся: «скандалы» в оглавлении статьи — жанр, а не сигнал. Но пост в X
+     * «Уголовное дело против …» рамку получить обязан, иначе площадка слепа
+     * целиком. Это **подмножество** `adversePatterns`, а не второй словарь:
+     * слово, краснящее мягкую площадку, обязано краснить и обычную.
+     */
+    strongAdversePatterns:
+      "санкц|sanction|уголов|criminal|арест|arrest|мошенн|fraud|коррупц|corrupt|компромат",
+    strongAdverseFlags: "iu",
     unverifiedDomains: "rucriminal|sledstvie|compromat|kompromat",
     unverifiedDomainsFlags: "iu",
     authoritativeDomains: "\\.gov|nalog\\.ru|kad\\.arbitr|wikipedia\\.org",
@@ -257,6 +280,13 @@ export function compileFindingThemesConfig(
       withWordStart(cfg.adversePatterns),
       withUnicode(cfg.adverseFlags),
       "adversePatterns"
+    ),
+    // Файл переопределения, написанный до появления подмножества, читается как
+    // «сильных слов нет своих» — берутся значения по умолчанию.
+    strongAdversePatterns: compileRegex(
+      withWordStart(cfg.strongAdversePatterns ?? defaults.strongAdversePatterns!),
+      withUnicode(cfg.strongAdverseFlags ?? cfg.adverseFlags),
+      "strongAdversePatterns"
     ),
     unverifiedDomains: compileRegex(
       cfg.unverifiedDomains,
@@ -371,4 +401,9 @@ export function getFindingThemes(): ThemeDef[] {
 
 export function getAdversePatterns(): RegExp {
   return resolveFindingThemesConfig().adversePatterns;
+}
+
+/** Слова негатива, работающие и на мягких площадках, — подмножество общего словаря. */
+export function getStrongAdversePatterns(): RegExp {
+  return resolveFindingThemesConfig().strongAdversePatterns;
 }

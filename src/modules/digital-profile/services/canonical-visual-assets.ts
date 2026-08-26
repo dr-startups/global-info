@@ -860,12 +860,17 @@ export async function buildCanonicalVisualAssets(input: {
     const drawnItems: Array<{ row: RawInventoryItem; item: ImageGridItem }> = [];
     const notShown: NotShownRow[] = [];
     for (const r of slice) {
-      const hl = classifyObservationHighlight({
-        url: r.sourceUrl ?? null,
-        domain: domainOf(r.sourceUrl) || null,
-        title: r.title ?? null,
-        snippet: r.snippet ?? null,
-      } as unknown as PersistedSerpObservation);
+      // Решение по прочитанной странице действует и на сетке: без него плитка
+      // краснела по словарю там, где страницу открыли и признали благоприятной.
+      const hl = classifyObservationHighlight(
+        {
+          url: r.sourceUrl ?? null,
+          domain: domainOf(r.sourceUrl) || null,
+          title: r.title ?? null,
+          snippet: r.snippet ?? null,
+        } as unknown as PersistedSerpObservation,
+        input.verdictByRef?.[refOf(r)]
+      );
       const url = urlOf(r);
       const previewBase64 = url ? previews.get(url) : undefined;
       if (!previewBase64) {

@@ -35,7 +35,10 @@ import {
 } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
-import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import {
+  resolveRowAdverse,
+  type ObservationVerdict,
+} from "../../../serp-observation/resolve-observation-highlights";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
 import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
@@ -801,6 +804,15 @@ const NON_QUOTABLE_SURFACES = new Set([
  */
 export type PageBlockOptions = {
   namePageDomains?: boolean;
+  /**
+   * Состав строк, уже посчитанный вызывающим.
+   *
+   * Нужен там, где страница называет своё число негатива дважды — в заголовке
+   * и в теле. Пересчитать его здесь по `view.refs` значило бы завести второй
+   * ответ на тот же вопрос: у страницы изображений в счёт входят ещё и строки,
+   * которые нашли, но не нарисовали, а `view` о них не знает.
+   */
+  composition?: PageRowComposition;
 };
 
 /** Вывод по теме без указания источников: тема и ступень внимания. */
@@ -832,6 +844,68 @@ export function pageScopedConclusion(
   return clampClientText([themeAttentionLine(f), src].filter(Boolean).join(" "), 400);
 }
 
+/**
+ * Решение по прочитанной странице так, как его видит единый предикат.
+ *
+ * Загрузчик входов раскладывает решение по всем ссылкам материала и записывает
+ * его тремя полями: тон, принадлежность и `adverse` — «нежелательный вывод,
+ * подтверждённый цитатой». Четвёртого поля «была ли цитата» нет намеренно:
+ * правило «без цитаты рамку не ставим» применено там же, где решение читается
+ * из артефакта, и второй его копии здесь быть не должно.
+ *
+ * Нет тона — страницу не читали, и решения по ней нет вовсе.
+ */
+export function evidenceRowVerdict(
+  e: ScopedEvidenceIndex[string] | undefined
+): ObservationVerdict | undefined {
+  if (!e?.readVerdictTone) return undefined;
+  return {
+    tone: e.readVerdictTone,
+    quoted: e.adverse === true,
+    subjectMatch: (e.verdictSubjectMatch ?? "unclear") as ObservationVerdict["subjectMatch"],
+  };
+}
+
+/**
+ * Читали ли страницу этой строки — один ответ на весь отчёт.
+ *
+ * Признак берётся из данных: тон прочитанной страницы есть только у той, что
+ * открыли и оценили. Отказ чтения тона не оставляет, и такая строка ничем не
+ * отличается от той, которую не запрашивали вовсе, — обе «не проверены».
+ *
+ * Тема и цитата отдельным признаком быть не могут: тон принимает ровно три
+ * значения (`LinkToneSchema`), и загрузчик пишет их одной веткой — запись с
+ * темой, но без тона, недостижима.
+ */
+export function evidenceRowWasRead(e: ScopedEvidenceIndex[string] | undefined): boolean {
+  return Boolean(e?.readVerdictTone);
+}
+
+/**
+ * Негативна ли строка индекса доказательств — тем же предикатом, что и рамка.
+ *
+ * Прочерк вместо домена — печатная форма пустоты, а не имя площадки: с ним
+ * список негативных площадок сравнивать нечего, и адрес отвечает за домен сам.
+ *
+ * Решение можно передать снаружи: таблица выдачи печатает материал, а не
+ * наблюдение, и берёт у него одно решение на все свои ссылки.
+ */
+export function evidenceRowAdverse(
+  e: ScopedEvidenceIndex[string] | undefined,
+  verdict: ObservationVerdict | undefined = evidenceRowVerdict(e)
+): boolean {
+  if (!e) return false;
+  return resolveRowAdverse(
+    {
+      url: e.url,
+      domain: e.domain && e.domain !== "—" ? e.domain : undefined,
+      title: e.title,
+      snippet: e.snippet,
+    },
+    verdict
+  );
+}
+
 /** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
 export type PageRowComposition = {
   shown: number;
@@ -842,37 +916,42 @@ export type PageRowComposition = {
 };
 
 /**
- * Count identity / adverse / domains from the page's own evidence refs.
- * Used when page-supported findings are empty but the table/list is not.
+ * Что за строки на этой странице: принадлежность, негатив, домены.
+ *
+ * Негатив считается **единым предикатом** (`resolveRowAdverse`) и по тем же
+ * строкам, что и `shown`: числа одной фразы обязаны сходиться между собой, а
+ * «негативных заголовков — 3» над «Показано 1 результат» — это лист, который
+ * показывают банку. Строки, найденные, но не нарисованные, считает и называет
+ * та страница, у которой они есть, — своей фразой и своим числом.
  */
 export function composePageRowComposition(
   scoped: ScopedFragmentInput,
   pageRefs: string[]
 ): PageRowComposition {
-  const adverseRefSet = new Set<string>();
-  for (const f of scoped.findings.filter(isAdverse)) {
-    for (const r of f.evidenceRefs) adverseRefSet.add(r);
-  }
   let subjectMatch = 0;
   let likelySubject = 0;
-  let adverseHeadlines = 0;
   const domainCounts = new Map<string, number>();
   for (const ref of pageRefs) {
     const e = scoped.evidenceIndex[ref] ?? {};
     if (e.subjectDecision === "SUBJECT_MATCH") subjectMatch += 1;
     else if (e.subjectDecision === "LIKELY_SUBJECT") likelySubject += 1;
-    const adverse =
-      e.adverse === true ||
-      adverseRefSet.has(ref) ||
-      ADVERSE_PATTERNS.test(String(e.title ?? ""));
-    // Негативный заголовок о другом лице фон вокруг субъекта не формирует.
-    if (countsTowardSubjectNegative({ adverse, decision: e.subjectDecision })) {
-      adverseHeadlines += 1;
-    }
     const domain =
       e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
     if (domain && domain !== "—") {
       domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+  }
+  let adverseHeadlines = 0;
+  for (const ref of pageRefs) {
+    const e = scoped.evidenceIndex[ref] ?? {};
+    // Негативный заголовок о другом лице фон вокруг субъекта не формирует.
+    if (
+      countsTowardSubjectNegative({
+        adverse: evidenceRowAdverse(e),
+        decision: e.subjectDecision,
+      })
+    ) {
+      adverseHeadlines += 1;
     }
   }
   const topDomains = [...domainCounts.entries()]
@@ -984,7 +1063,11 @@ export function pageFindingBlocks(
     };
   }
   if (view.refs.length > 0) {
-    return pageRowCompositionBlocks(composePageRowComposition(scoped, view.refs), view, opts);
+    return pageRowCompositionBlocks(
+      opts.composition ?? composePageRowComposition(scoped, view.refs),
+      view,
+      opts
+    );
   }
   return {
     whatWasFound:

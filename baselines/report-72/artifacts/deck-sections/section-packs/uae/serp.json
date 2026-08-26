@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:9b7be70ee5d80c621037a9fcdb5d29b54532c0cc56958de57703e221bb338c84",
-  "contentVersion": "deck-sections-v123",
+  "contentHash": "sha256:37a837b1e3f9d395115adeab7941a74a246bdf1ae737e1c362edc9fac6992991",
+  "contentVersion": "deck-sections-v126",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -91,7 +91,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SERP",
-  "generatedAt": "2026-08-26T09:06:39.102Z",
+  "generatedAt": "2026-08-26T13:08:46.129Z",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
   "inputs": {
     "evidenceRefs": [
@@ -262,13 +262,13 @@
               "1",
               "Biography of Glinka Sergei - A Transportation Pioneer Few ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "2",
               "Глинка Сергей Михайлович",
               "Энциклопедия / справочник",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "3",
@@ -280,7 +280,7 @@
               "4",
               "Бизнесмен Сергей Глинка - биография, личная жизнь и ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ]
           ]
         },
@@ -314,7 +314,8 @@
         "pageIndex": 1,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 16
+        "uniqueMaterials": 16,
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "UAE_PROFILE",
@@ -347,25 +348,25 @@
               "5",
               "Glinka Sergei Mikhailovich - TAdviser",
               "Энциклопедия / справочник",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "6",
               "Глинка Сергей: в каких юридических лицах значится, ИП",
               "База данных / реестр",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "7",
               "Биография бизнесмена Сергея Глинки: фото, история ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "8",
               "сергей михайлович глинка",
               "Соцсеть",
-              "Нейтральный"
+              "Не проверено"
             ]
           ]
         },
@@ -398,7 +399,8 @@
         "pageIndex": 2,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 16
+        "uniqueMaterials": 16,
+        "unverifiedDisplayed": 4
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "UAE_PROFILE",
@@ -431,25 +433,25 @@
               "9",
               "Интервью с бизнесменом Сергеем Глинкой: биография ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "10",
               "Глинка Сергей Михайлович - Битва за Украину",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "11",
               "Сергей Глинка",
               "Новостное СМИ",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "12",
               "Глинка Сергей Михайлович: биография, карьерный путь ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ]
           ]
         },
@@ -480,7 +482,8 @@
         "pageIndex": 3,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 16
+        "uniqueMaterials": 16,
+        "unverifiedDisplayed": 4
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "UAE_PROFILE",
@@ -519,19 +522,19 @@
               "14",
               "Глинка, Сергей Николаевич",
               "Энциклопедия / справочник",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "15",
               "Бизнесмен Сергей Глинка: биография, личная жизнь ...",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ],
             [
               "16",
               "ГЛИНКА Сергей Михайлович - Биография",
               "—",
-              "Нейтральный"
+              "Не проверено"
             ]
           ]
         },
@@ -563,7 +566,8 @@
         "pageIndex": 4,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 16
+        "uniqueMaterials": 16,
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "UAE_PROFILE",

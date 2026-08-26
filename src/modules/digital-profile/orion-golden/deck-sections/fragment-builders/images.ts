@@ -13,6 +13,8 @@ import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import {
   adverseVisualSidebar,
   buildPageEvidenceView,
+  composePageRowComposition,
+  type PageRowComposition,
   claimText,
   clampClientText,
   distribute,
@@ -115,6 +117,9 @@ function notShownOnThisPage(
         url: e.url,
         domain: e.domain,
         title: e.title,
+        // Признак — тот же, что у нарисованных строк: его проставил построитель
+        // ассета единым предикатом. Пересчитывать его здесь значило бы завести
+        // на странице второе правило и разойтись с её же рамками.
         adverse: row.adverse,
       };
       return [{ row, item }];
@@ -232,7 +237,7 @@ export function buildImagesFragment(
             .flatMap((a) => (a.visibleItems ?? []).map((v) => v.ref))
             .filter((r) => Boolean(scoped.evidenceIndex[r]));
     const view = buildPageEvidenceView(scoped, pageRefs);
-    const pageBlocks = pageFindingBlocks(scoped, view);
+    const notShownOnPage = notShownOnThisPage(slot.slotId, extras, scoped);
     const pageDomainSet = new Set(
       view.domains.map((d) => d.toLowerCase()).filter((d) => d && d !== "—")
     );
@@ -246,19 +251,36 @@ export function buildImagesFragment(
       return domains.some((d) => pageDomainSet.has(d));
     });
     /*
-     * Что нарисовано на этой странице и что найдено, но не нарисовано.
+     * Негатив страницы — одна единица счёта и одна арифметика.
      *
-     * Числа считаются по плиткам: `visibleItems` продукта — уже ровно
-     * нарисованное, а потолок ёмкости оставлен ради замороженной фикстуры
-     * эталона (см. `GRID_TILE_CAPACITY`). Негатив без превью при этом не
-     * исчезает: он не выделен рамкой, но остаётся негативом субъекта, и
-     * заголовок со статусом обязаны его считать — иначе страница напишет
-     * «негативных источников нет» над строкой о компромате.
+     * Единица — **нарисованная рамка**: её ставит построитель ассета тем же
+     * единым предикатом, а дека рамки объясняет и не пересчитывает (§8, «Одна
+     * строка — один материал»). Пока заголовок считал по одному правилу, тело
+     * по другому, а строки без превью по третьему, лист нёс «негативных
+     * источников нет» над красной рамкой, которую сам же объяснял, и
+     * «негативных заголовков — 3» над «Показано 1 результат».
+     *
+     * Теперь:  заголовок = выделено красным + найдено без превью,
+     * и каждое слагаемое печатается своей фразой рядом со своим набором строк.
+     * Потолок ёмкости оставлен ради замороженной фикстуры эталона
+     * (см. `GRID_TILE_CAPACITY`): «выделено красным» не бывает больше
+     * «показано».
      */
     const shownOnGrid = Math.min(sidebar.visibleRows.length, GRID_TILE_CAPACITY);
     const adverseOnGrid = Math.min(sidebar.adverseRows.length, shownOnGrid);
-    const notShownOnPage = notShownOnThisPage(slot.slotId, extras, scoped);
     const adverseTotal = adverseOnGrid + notShownOnPage.adverse.length;
+    /*
+     * Тело страницы называет то же число, что заголовок, а не считает своё.
+     *
+     * Запасная ветка описания состава считает негатив своим предикатом по
+     * ссылкам страницы — на сетке это второй ответ на вопрос, у которого уже
+     * есть первый: рамка. Поэтому число ей передаётся готовым.
+     */
+    const composition: PageRowComposition = {
+      ...composePageRowComposition(scoped, pageRefs),
+      adverseHeadlines: adverseOnGrid,
+    };
+    const pageBlocks = pageFindingBlocks(scoped, view, { composition });
     /*
      * Не показанное называется первым.
      *

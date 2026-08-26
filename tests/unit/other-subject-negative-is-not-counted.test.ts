@@ -227,12 +227,17 @@ describe("общий предикат счёта", () => {
   });
 
   it("собранный набор не считает чужую негативную строку", () => {
+    // Формулировка взята с «sanctions», а не с «ofac»: единый словарь негатива
+    // (`adversePatterns` из конфига) слова «ofac» не знает, и строка была бы
+    // ненегативной по причине, к принадлежности отношения не имеющей.
     const scoped = scopedSurface("suggestions", [
-      { text: "viktor rashnikov ofac", decision: "SUBJECT_MATCH", adverse: true },
-      { text: "viktor feliksovich vekselberg ofac", decision: "OTHER_SUBJECT", adverse: true },
+      { text: "viktor rashnikov eu sanctions", decision: "SUBJECT_MATCH", adverse: true },
+      {
+        text: "viktor feliksovich vekselberg eu sanctions",
+        decision: "OTHER_SUBJECT",
+        adverse: true,
+      },
     ]);
-    (scoped.evidenceIndex["inventory:s0"] as { adverse?: boolean }).adverse = true;
-    (scoped.evidenceIndex["inventory:s1"] as { adverse?: boolean }).adverse = true;
     const composition = composePageRowComposition(scoped, ["inventory:s0", "inventory:s1"]);
     expect(composition.shown).toBe(2);
     expect(composition.adverseHeadlines).toBe(1);
