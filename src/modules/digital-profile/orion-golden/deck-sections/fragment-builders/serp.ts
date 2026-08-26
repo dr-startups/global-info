@@ -257,6 +257,66 @@ export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): st
 }
 
 /**
+ * Заголовок страницы выдачи: чей это поисковик и какую глубину он показывает.
+ *
+ * Глубина называется **одним** утверждением. «Россия — Google, ТОП-20: позиции 1–8»
+ * спорило само с собой: ТОП-20 обещал двадцать строк, а таблица показывала
+ * восемь, и недостающие читались как пустые места выдачи, то есть как факт о
+ * субъекте. Знаменатель при этом нужен: «позиции 1–8» без него неотличимы от
+ * полной выдачи из восьми строк. Почему остального нет, объясняет строка под
+ * таблицей (`serpTablePageProse`), а не заголовок.
+ *
+ * Печатается вычисленный диапазон, а не количество строк: на наборе
+ * {4, 6, 7, 8, 9, 10} «собрано 6» и «позиции 4–10» — разные факты.
+ *
+ * Формулировка живёт здесь и больше нигде, и эталоны её не исполняют: у
+ * золотого кейса таблицы полные, у `report-72` — непозиционные. Сторожей два, и
+ * они разные: `serp-table-title-names-the-range-once.test.ts` держит саму
+ * функцию, а `serp-table-caption-tells-collected-range.test.ts` — проводку
+ * «построитель → функция» через `buildSerpFragment`. У веток без метки движка
+ * второго нет: до них не доходит его фикстура — она зашивает Google и Яндекс, —
+ * и правку в них покраснит только первый файл. Сама ветка при этом живая:
+ * `clientNamedSearchEngine` отдаёт `null` любому движку, кроме этих двух, и
+ * прогон, например, на Bing печатает клиенту «Россия — выдача, позиции 1–8 из
+ * ТОП-20».
+ */
+export function serpTablePageTitle(input: {
+  /** Название региона с заглавной: заголовок начинается им же. */
+  region: string;
+  /** Поисковик, если его можно назвать клиенту. */
+  engineLabel: string | null;
+  /** Номера строк — позиции выдачи, а не порядок сбора. */
+  positional: boolean;
+  /** Напечатанные позиции всей таблицы, а не одного её листа. */
+  printedRanks: readonly number[];
+  /** Ответ `missingSerpRanks`: пустая строка — таблица полная. */
+  missing: string;
+  /** Номер листа цепочки вида « (1/2)» или пустая строка. */
+  suffix: string;
+}): string {
+  const { region, engineLabel, positional, printedRanks, missing, suffix } = input;
+  /*
+   * «Движок назван?» — один вопрос, и ответ на него ниже один.
+   *
+   * Пока подстановка слова «выдача» читала метку на nullish, а хвост
+   * непозиционной таблицы — на истинность, пустая строка расходилась между
+   * ними и печаталась «Россия — , позиции 1–8 из ТОП-20». Пустая метка — это
+   * «движок не назван», ровно как `null`.
+   *
+   * На месте неназванного движка стоит слово «выдача», и второй раз оно не
+   * печатается: «Россия — выдача: собранная выдача» — повтор, а не уточнение.
+   */
+  const engine = engineLabel || null;
+  const unrankedTail = engine ? ": собранная выдача" : "";
+  const depth = !positional
+    ? unrankedTail
+    : missing
+      ? `, позиции ${Math.min(...printedRanks)}–${Math.max(...printedRanks)} из ТОП-${SERP_TABLE_TOP_N}`
+      : `, ТОП-${SERP_TABLE_TOP_N}`;
+  return `${region} — ${engine ?? "выдача"}${depth}${suffix}`;
+}
+
+/**
  * Проза страницы выдачи, разложенная по важности печати.
  *
  * Порядок здесь — не оформление, а выбор того, что читатель увидит первым.
@@ -665,27 +725,19 @@ export function buildSerpFragment(
       // Заголовок начинается с региона, и он же начинает предложение: «ОАЭ»
       // приходит меткой раздела, а «международный» — строчным.
       const region = regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
-      /*
-       * Неполная таблица называет фактический диапазон.
-       *
-       * Позиции, не записанные при сборе, вернуть нечем: дыры 1, 2, 3, 5 в
-       * таблице «Россия — Google» прогона 76 — это строки, которых нет в
-       * данных. Под заголовком «ТОП-20» они читаются как пустые места выдачи,
-       * то есть как факт о субъекте, — поэтому заголовок говорит, что собрано,
-       * а строка под таблицей объясняет, почему остального нет.
-       */
-      const range =
-        table.positional && missing
-          ? `: позиции ${Math.min(...printedRanks)}–${Math.max(...printedRanks)}`
-          : "";
-      const depth = table.positional ? `, ТОП-${SERP_TABLE_TOP_N}${range}` : ": собранная выдача";
-      const head = label ? `${region} — ${label}${depth}` : `${region} — выдача${table.positional ? `, ТОП-${SERP_TABLE_TOP_N}${range}` : ""}`;
       pages.push({
-        title: `${head}${suffix}`,
+        title: serpTablePageTitle({
+          region,
+          engineLabel: label,
+          positional: table.positional,
+          printedRanks,
+          missing,
+          suffix,
+        }),
         rows: rowChunks[i] ?? [],
         addresses: addressChunks[i] ?? [],
         refs: refChunks[i] ?? [],
-          lead: prose.head,
+        lead: prose.head,
         ...(prose.tail ? { note: prose.tail } : {}),
         engine: table.engine,
         query: table.query,
