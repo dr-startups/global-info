@@ -77,6 +77,13 @@ export interface CaseSubjectInfo {
   /** Stage N1 — compliance gating for adverse (negative) queries. */
   lawfulBasis: string | null;
   consentStatus: string | null;
+  /**
+   * Кейс заведён смоком, а не оператором. Читается здесь, потому что ворота
+   * выбора персоны спрашивают о кейсе и о субъекте одновременно, а второй
+   * загрузчик кейса ради одного булева был бы вторым ответом на вопрос «кто
+   * субъект этого кейса».
+   */
+  isFixture: boolean;
 }
 
 /** Loads the case's first subject + scope. Throws NotFound if the case is gone. */
@@ -88,6 +95,7 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
       targetRegions: true,
       lawfulBasis: true,
       consentStatus: true,
+      isFixture: true,
       subjects: {
         select: {
           fullName: true,
@@ -114,6 +122,7 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
     nationality: subject?.nationality ?? null,
     lawfulBasis: row.lawfulBasis ?? null,
     consentStatus: row.consentStatus ?? null,
+    isFixture: row.isFixture,
   };
 }
 

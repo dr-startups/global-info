@@ -29,6 +29,7 @@ const SUBJECT = {
   nationality: null,
   lawfulBasis: null,
   consentStatus: null,
+  isFixture: false,
 };
 
 const ANSWER_TEXT =

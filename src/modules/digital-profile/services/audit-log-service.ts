@@ -63,6 +63,9 @@ export type AuditAction =
   | "COMPLIANCE_HIT_REVIEWED"
   | "COMPLIANCE_HIT_FALSE_POSITIVE"
   | "COMPLIANCE_RISK_FINDING_CREATED"
+  // Шаг 0032 — выбор персоны субъекта до первой траты
+  | "PERSONA_PANEL_BUILT"
+  | "PERSONA_DECIDED"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"

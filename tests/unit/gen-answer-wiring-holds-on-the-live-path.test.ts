@@ -115,7 +115,17 @@ async function tickBaseCollection(deps: Record<string, unknown>) {
   const started = await startUnifiedOrionCollection({
     caseId: CASE_ID,
     requestedBy: "test",
-    deps: deps as never,
+    // Ворота выбора персоны получают состояние явно: у сценария нет ни строки
+    // `Case`, ни базы, и спрашивать её здесь нечего. Предмет проверки — гард
+    // единственного платного вызова, а не ворота.
+    deps: {
+      ...deps,
+      loadPersonaGateInput: async () => ({
+        isFixture: false,
+        subjectInputHash: "gen-answer-wiring-subject",
+        decidedHashes: ["gen-answer-wiring-subject"],
+      }),
+    } as never,
   });
   expect(started.stage).toBe("BASE_COLLECTION");
   const job = await runUnifiedCollectionTick(CASE_ID, deps as never);

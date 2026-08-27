@@ -84,6 +84,13 @@ import { collectYandexGenAnswer } from "./yandex-gen-answer-collection";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "./unified-collection-recovery";
 import { ConflictError } from "../http/errors";
+import {
+  PERSONA_GATE_BLOCK_MESSAGE,
+  loadPersonaGateInput,
+  personaGateState,
+  type PersonaGateBlockReason,
+  type PersonaGateInput,
+} from "./subject-persona-check";
 import type { ArsenkinEnrichmentState, ArsenkinAgentProgress } from "./arsenkin-enrichment-state";
 import {
   legacyEnrichmentResultToTick,
@@ -256,6 +263,12 @@ export async function persistUnifiedTickFailure(
 
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
+  /**
+   * Состояние ворот выбора персоны. Подмена — не обход: у офлайн-смока и юнита
+   * старта нет ни строки `Case`, ни базы, и спрашивать её там нечего. Снаружи
+   * подставить состояние нельзя — маршрут старта `deps` не передаёт.
+   */
+  loadPersonaGateInput?: (caseId: string) => Promise<PersonaGateInput>;
   runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
   /** Offline: ProviderTasks for durable enrichment poll/ingest. */
   listEnrichmentProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
@@ -545,6 +558,34 @@ async function failRetryable(
   );
 }
 
+/**
+ * Отказ загрузчика ворота **закрывает**, а не открывает.
+ *
+ * «Не смогли прочитать — запустим» выглядит доброжелательно и стоит денег:
+ * прогону база всё равно нужна, а тихий пропуск проверки в этом проекте уже
+ * оплачивался живыми вызовами провайдеров.
+ */
+async function assertPersonaDecided(
+  caseId: string,
+  deps: UnifiedOrchestratorDeps | undefined
+): Promise<void> {
+  const blocked = (reason: PersonaGateBlockReason): ConflictError =>
+    new ConflictError(PERSONA_GATE_BLOCK_MESSAGE[reason], { reason });
+
+  let gate;
+  try {
+    gate = personaGateState(await (deps?.loadPersonaGateInput ?? loadPersonaGateInput)(caseId));
+  } catch (err) {
+    // Причина обязана остаться: одинаковый 409 без единой строки в логе делает
+    // первый же сбой ворот неотлаживаемым, а останавливает он все прогоны
+    // системы разом — недоступность базы, удалённое дело и опечатка в коде
+    // выглядели бы одинаково.
+    console.error("[unified] не удалось прочитать состояние ворот выбора персоны", err);
+    throw blocked("PERSONA_GATE_UNAVAILABLE");
+  }
+  if (gate.mode === "PENDING" || gate.mode === "STALE") throw blocked(gate.reason);
+}
+
 export async function startUnifiedOrionCollection(input: {
   caseId: string;
   requestedBy?: string;
@@ -597,6 +638,16 @@ export async function startUnifiedOrionCollection(input: {
       );
     }
   }
+
+  /*
+   * Ворота выбора персоны — последнее действие постановки задачи.
+   *
+   * Стоят ровно здесь: все ветки продолжения уже вернулись выше, значит ниже
+   * рождается **новый платный прогон**, и до него оператор обязан ответить,
+   * про кого мы собираем. Начатую работу это не трогает — правило «человек не
+   * дожимает прогон руками» говорит о прогоне, который уже существует.
+   */
+  await assertPersonaDecided(input.caseId, input.deps);
 
   const { job, created } = await findOrCreateUnifiedCollectionJob({
     caseId: input.caseId,

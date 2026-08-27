@@ -1464,6 +1464,123 @@ export function recoverUnifiedOrionCollection(
 }
 
 // ---------------------------------------------------------------------------
+// Выбор персоны субъекта до первой траты (шаг 0032)
+//
+// Панель отвечает «про кого мы собираем», а `SubjectIdentityProfile` ниже —
+// «этот собранный материал про нашего человека?». Связи между ними нет
+// намеренно: у вопроса «кто тёзка» иначе стало бы два владельца.
+// ---------------------------------------------------------------------------
+
+export type PersonaSourceStateDTO = {
+  source: "wikipedia" | "knowledge_graph" | "opensanctions";
+  status: "SUCCESS" | "NOT_CONFIGURED" | "FAILED" | "TIMEOUT" | "OFFLINE";
+  /** Причина машинным кодом: слова к ней подбирает словарь кабинета. */
+  code:
+    | "NETWORK_CALLS_DISABLED"
+    | "PERSONA_PANEL_BUDGET_EXCEEDED"
+    | "PROVIDER_NOT_CONFIGURED"
+    | "PROVIDER_REQUEST_FAILED"
+    | null;
+  /** Техническая подробность провайдера («HTTP 429»). */
+  detail: string | null;
+  /** Сколько ждали источник; заполнено только у истёкшего бюджета. */
+  waitedMs: number | null;
+};
+
+export type PersonaCardDTO =
+  | {
+      source: "wikipedia";
+      cardId: string;
+      title: string;
+      lead: string | null;
+      leadRequested: boolean;
+      snippet: string;
+      articles: Array<{
+        language: string;
+        title: string;
+        url: string;
+        lead: string | null;
+        snippet: string;
+      }>;
+    }
+  | {
+      source: "knowledge_graph";
+      cardId: string;
+      title: string;
+      description: string;
+      imageUrl: string | null;
+      url: string | null;
+      query: string;
+      region: string;
+    }
+  | {
+      source: "opensanctions";
+      cardId: string;
+      profileId: string | null;
+      profileUrl: string | null;
+      matchedName: string;
+      datesOfBirth: string[];
+      topicLabels: string[];
+      matchScore: number;
+      birthDateMatches: boolean;
+    };
+
+export type PersonaPanelDTO = {
+  subjectFullName: string;
+  subjectDateOfBirth: string | null;
+  cards: PersonaCardDTO[];
+  serpRows: Array<{ title: string; url: string | null; domain: string | null }>;
+  sources: PersonaSourceStateDTO[];
+  fetchStatus: "SUCCESS" | "FAILED";
+  errorCode: string | null;
+};
+
+export type PersonaCheckStateDTO = {
+  gate: {
+    mode: "FIXTURE_BYPASS" | "CONFIRMED" | "STALE" | "PENDING";
+    reason: string;
+  };
+  check: {
+    checkId: string;
+    panel: PersonaPanelDTO;
+    decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA" | null;
+    decidedBy: string | null;
+    decidedAt: string | null;
+    searchedAt: string;
+    matchesCurrentSubject: boolean;
+  } | null;
+};
+
+export function getPersonaCheck(caseId: string): Promise<PersonaCheckStateDTO> {
+  return request(`/cases/${caseId}/persona-check`);
+}
+
+export function buildPersonaCheck(
+  caseId: string
+): Promise<{ checkId: string; panel: PersonaPanelDTO }> {
+  return request(`/cases/${caseId}/persona-check`, { method: "POST" });
+}
+
+export function decidePersonaCheck(
+  caseId: string,
+  input: {
+    checkId: string;
+    decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
+    selectedCardId?: string | null;
+  }
+): Promise<{
+  checkId: string;
+  decision: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}> {
+  return request(`/cases/${caseId}/persona-check/decision`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Subject identity profile (classification context) — case-owned artifact
 // ---------------------------------------------------------------------------
 

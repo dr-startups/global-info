@@ -249,6 +249,7 @@ model Case {
   providerTasks      ProviderTask[]
   unifiedCollectionJobs UnifiedCollectionJobRecord[]
   workflowSteps      WorkflowStep[]
+  personaChecks      SubjectPersonaCheck[]
 
   @@index([status])
   @@index([deletedAt])
@@ -682,6 +683,44 @@ model UnifiedCollectionJobRecord {
   @@index([status, stage])
   @@index([leaseUntil])
   @@map("dp_unified_collection_jobs")
+}
+
+/// Одна сборка панели различимых персон плюс, возможно, решение по ней.
+///
+/// Ворота выбора персоны стоят **до** рождения прогона, поэтому это состояние
+/// кейса, а не шаг конвейера: пока решения нет, тратить нечего, ждать нечему и
+/// деплой ничего не прерывает. Предикат ворот выводится из содержимого
+/// (`subjectInputHash` + непустой `decision`), а не из слова статуса; решение
+/// неизменяемо — новое решение возможно только новой сборкой панели.
+///
+/// `subjectId` не заводится намеренно: единственный загрузчик субъекта берёт
+/// первого субъекта кейса и идентификатора не отдаёт, а второй загрузчик ради
+/// колонки был бы вторым ответом на вопрос «кто субъект кейса».
+model SubjectPersonaCheck {
+  id               String   @id @default(cuid())
+  caseId           String
+  /// SHA-256 нормализованных ФИО + алиасов + даты рождения на момент сборки
+  subjectInputHash String
+  /// Что именно спрашивали: формы имени, языки, регионы
+  requestJson      Json?
+  /// Снимок панели: карточки по источникам и статус каждого источника
+  personasJson     Json
+  /// SUCCESS (хотя бы один источник ответил) | FAILED (ни один)
+  fetchStatus      String
+  errorCode        String?
+  searchedBy       String?
+  searchedAt       DateTime @default(now())
+  /// PERSONA_SELECTED | APPROVED_WITHOUT_PERSONA; null — решения ещё нет
+  decision         String?
+  /// Снимок выбранной карточки с якорями для последующего сбора
+  selectedPersonaJson Json?
+  decidedBy        String?
+  decidedAt        DateTime?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, searchedAt])
+  @@map("dp_subject_persona_checks")
 }
 
 /// Единица долговечной работы (шаг 12). Строка этой таблицы — и запись о

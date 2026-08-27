@@ -430,6 +430,54 @@ export const en: Dictionary = {
     notes: "Notes",
     fullNameRequired: "Full name is required.",
   },
+  persona: {
+    title: "Choose the subject persona",
+    hint:
+      "Collection starts once you say who it is about. The panel queries the sources already " +
+      "connected and shows people with that name; pick the right one, or confirm there is no " +
+      "distinguishable persona.",
+    subjectDob: "Date of birth entered: {value}",
+    subjectDobUnknown: "No date of birth entered",
+    build: "Show people with this name",
+    building: "Querying the sources…",
+    rebuild: "Refresh the panel",
+    notBuiltYet: "The panel has not been built yet.",
+    emptyPanel: "No distinguishable persona found. Below is what each source answered.",
+    sourceStatus: "What the sources answered",
+    sourceWikipedia: "Wikipedia",
+    sourceKnowledgeGraph: "Google knowledge panel",
+    sourceOpenSanctions: "Sanctions and PEP lists",
+    statusSuccess: "answered",
+    statusNotConfigured: "not configured",
+    statusFailed: "failed",
+    statusTimeout: "did not answer in time",
+    statusOffline: "not queried",
+    reasonOffline: "the network is disabled by the offline contour",
+    reasonTimeout: "waited {seconds} s",
+    reasonNotConfigured: "the source access key is not set",
+    reasonFailed: "the source answered: {detail}",
+    reasonUnknown: "the source gave no reason",
+    serpTitle: "Search results nearby (for context)",
+    tailNoLead: "The article's first line was not requested — the search snippet is below.",
+    tailLeadMissing: "The article's first line did not arrive — the search snippet is below.",
+    loadFailed:
+      "The panel state could not be read. Refresh the page: the panel may already be built and decided.",
+    dobMatches: "date of birth matches the one entered",
+    matchScore: "{value}% match",
+    choose: "This is the one",
+    approveWithoutPersona: "No distinguishable persona — continue",
+    deciding: "Recording the decision…",
+    decidedSelected: "The persona is chosen — collection can start.",
+    decidedWithout: "Recorded “no distinguishable persona” — collection can start.",
+    staleDecision:
+      "Subject data changed after the decision. Rebuild the panel and decide again.",
+    blockedNotConfirmed:
+      "Collection is unavailable: the subject persona is not chosen. Open “Choose the subject persona” and decide who this is about.",
+    blockedStale:
+      "Collection is unavailable: subject data changed after the persona decision. Rebuild the panel and decide again.",
+    blockedUnavailable:
+      "Collection is unavailable: the persona decision state could not be read. Try again later — a paid run does not start on an unknown state.",
+  },
   subjectProfile: {
     title: "Subject profile (classification context)",
     contextWordsCount: "context words",

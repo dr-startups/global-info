@@ -48,6 +48,30 @@ export interface WikipediaLookupResult {
   error?: ProviderError;
 }
 
+/** Кандидат для панели различимых персон: карточка = статья, а не наша склейка. */
+export interface WikipediaNamesakeCandidate {
+  title: string;
+  pageId: number | null;
+  snippet: string;
+  url: string;
+  /**
+   * Первая строка вводной секции статьи. `null` — либо лид не запрашивали
+   * (хвост поиска), либо вводной секции у статьи не оказалось; различает эти
+   * два случая `leadRequested`, и панель называет их разными словами.
+   */
+  lead: string | null;
+  /** Лид у этого кандидата спрашивали: «не спрашивали» и «пусто» — разное. */
+  leadRequested: boolean;
+  /** Заголовок той же сущности в парном разделе — по межъязыковой ссылке. */
+  langlinkTitle: string | null;
+}
+
+export interface WikipediaNamesakeResult {
+  language: string;
+  query: string;
+  candidates: WikipediaNamesakeCandidate[];
+}
+
 const REQUEST_TIMEOUT_MS = 8000;
 
 function normalizeName(value: string): string {
@@ -124,7 +148,7 @@ export function pickWikipediaCandidate<T extends { title: string }>(
  * заводится. Повторы схлопываются: в живой проверке один и тот же терм пришёл
  * дважды (имя субъекта заодно числилось псевдонимом).
  */
-function subjectTerms(subjectFullName: string, aliases: string[]): string[] {
+export function subjectTerms(subjectFullName: string, aliases: string[]): string[] {
   const given = [subjectFullName, ...aliases].map((t) => String(t ?? "").trim()).filter(Boolean);
   const latin = given.filter(hasCyrillic).map((t) => transliterateRuToEn(t).trim());
   return [...new Set([...given, ...latin])].filter(Boolean);
@@ -204,7 +228,7 @@ async function fetchJson(url: string): Promise<unknown> {
           "Api-User-Agent": providerConfig.wikipedia.userAgent,
         },
       });
-      if (res.ok) return await res.json();
+      if (res.ok) return assertNoApiError(await res.json());
       const worthRetry = res.status === 429 || res.status === 503 || res.status === 502;
       if (!worthRetry || attempt >= MAX_RETRIES) {
         throw new Error(`HTTP ${res.status}`);
@@ -217,6 +241,20 @@ async function fetchJson(url: string): Promise<unknown> {
       clearTimeout(timer);
     }
   }
+}
+
+/**
+ * Отказ MediaWiki приходит кодом 200 и телом `{"error":{"code":"maxlag"|…}}`.
+ *
+ * Смотреть только на `res.ok` значит принять отказ за «никого не нашли»:
+ * `query.search` в таком теле нет вовсе, кандидатов ноль, и панель напишет
+ * «Википедия: ответил» ровно там, где источник отказал. Причина называется
+ * кодом самого сервиса: угадывать её мы не берёмся.
+ */
+function assertNoApiError(body: unknown): unknown {
+  const error = (body as { error?: { code?: string } } | null)?.error;
+  if (error) throw new Error(`MediaWiki error: ${String(error.code ?? "unknown")}`);
+  return body;
 }
 
 interface SearchApiResponse {
@@ -247,6 +285,51 @@ function apiUrl(language: string, params: Record<string, string>): string {
   return `https://${language}.wikipedia.org/w/api.php?${query.toString()}`;
 }
 
+/**
+ * Первая строка статьи — та, где у персон стоит полная дата рождения.
+ *
+ * Берётся из `articleText`, а не из REST-сводки: сводка срезает скобки первого
+ * предложения, и вместе с ними исчезает единственная примета, по которой
+ * оператор отличает тёзку (наблюдение по статье Мордашова).
+ */
+function leadLine(articleText: string | null): string | null {
+  if (!articleText) return null;
+  const line = articleText
+    .split("\n")
+    .map((s) => s.trim())
+    .find((s) => s.length > 0);
+  return line ?? null;
+}
+
+/**
+ * HTML-сущности сниппета — в буквы.
+ *
+ * `list=search` отдаёт размеченный фрагмент: «уч&#1105;ный», «&quot;». Снятия
+ * тегов мало: раньше сниппет никому не показывался, а теперь это единственные
+ * слова хвостовой карточки панели, и машинная запись в них читается как порча
+ * данных. `&amp;` разбирается последним — иначе «&amp;quot;» превратилось бы в
+ * кавычку, которой в исходном тексте не было.
+ */
+function decodeEntities(value: string): string {
+  // Бессмысленный номер остаётся как есть: выбросить кусок текста хуже, чем
+  // показать его машинную запись.
+  const codePoint = (match: string, raw: string, base: number): string => {
+    const point = parseInt(raw, base);
+    return Number.isInteger(point) && point > 0 && point <= 0x10ffff
+      ? String.fromCodePoint(point)
+      : match;
+  };
+  return value
+    .replace(/&#(\d+);/gu, (m, dec: string) => codePoint(m, dec, 10))
+    .replace(/&#x([0-9a-f]+);/giu, (m, hex: string) => codePoint(m, hex, 16))
+    .replace(/&quot;/gu, '"')
+    .replace(/&apos;/gu, "'")
+    .replace(/&nbsp;/gu, " ")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&amp;/gu, "&");
+}
+
 function notabilityScore(extract: string | null, candidateCount: number): number {
   if (!extract) return candidateCount > 0 ? 20 : 0;
   const lengthScore = Math.min(80, Math.round(extract.length / 20));
@@ -266,18 +349,28 @@ export class WikipediaProvider {
   }
 
   /**
-   * Полный текст статьи одним вызовом.
+   * Текст статьи одним вызовом: вводная секция либо статья целиком.
+   *
+   * Разбору статьи нужны разделы, а панели — только первая строка. Полный
+   * текст крупной персоналии весит сотни килобайт, и панель тянет шесть таких
+   * подряд под общим бюджетом в двадцать секунд: цена запроса — причина, по
+   * которой источник не успевал ответить, а не симптом.
    *
    * Отказ здесь проверку не роняет: статья без текста — валидное состояние, и
    * «нашли статью, но не смогли прочитать» честнее, чем «статьи нет».
    */
-  private async articleText(language: string, title: string): Promise<string | null> {
+  private async articleText(
+    language: string,
+    title: string,
+    scope: "intro" | "full"
+  ): Promise<string | null> {
     try {
       const raw = (await fetchJson(
         apiUrl(language, {
           action: "query",
           prop: "extracts",
           explaintext: "1",
+          ...(scope === "intro" ? { exintro: "1" } : {}),
           redirects: "1",
           titles: title,
         })
@@ -315,21 +408,76 @@ export class WikipediaProvider {
     }
   }
 
+  /** Поиск кандидатов раздела — в одной форме на весь модуль. */
+  private async searchCandidates(
+    language: string,
+    query: string
+  ): Promise<WikipediaCandidate[]> {
+    const searchUrl =
+      `https://${language}.wikipedia.org/w/api.php?action=query&list=search` +
+      `&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json`;
+    const searchRaw = (await fetchJson(searchUrl)) as SearchApiResponse;
+    return (searchRaw.query?.search ?? []).map((s) => ({
+      title: s.title ?? "",
+      pageId: s.pageid ?? null,
+      snippet: decodeEntities((s.snippet ?? "").replace(/<[^>]*>/g, "")),
+    }));
+  }
+
+  /**
+   * Кто ещё носит это имя — вход панели выбора персоны.
+   *
+   * `pickWikipediaCandidate` здесь намеренно не применяется: он отвечает на
+   * обратный вопрос («какая из статей — наш субъект») и возвращает одну.
+   * Отбор на этом пути был бы вторым ответом на вопрос принадлежности,
+   * вынесенным из-под глаз оператора, — а спрашивают панель ровно потому, что
+   * машине этот вопрос не доверяют. Порядок кандидатов — тот, что дал поиск.
+   */
+  async listNamesakeCandidates(params: {
+    language: string;
+    terms: string[];
+    /** Скольким первым кандидатам тянуть лид; остальные показываются сниппетом. */
+    leadCount?: number;
+    /** Раздел, в котором спрашивается межъязыковая ссылка (для склейки карточек). */
+    langlinkTo?: string | null;
+  }): Promise<WikipediaNamesakeResult> {
+    const { language, terms } = params;
+    const leadCount = Math.max(0, params.leadCount ?? 3);
+    const query = queryForLanguage(language, terms);
+    const found = await this.searchCandidates(language, query);
+
+    const candidates: WikipediaNamesakeCandidate[] = [];
+    for (const [i, candidate] of found.entries()) {
+      const leadRequested = i < leadCount;
+      const lead = leadRequested
+        ? leadLine(await this.articleText(language, candidate.title, "intro"))
+        : null;
+      const langlinkTitle =
+        leadRequested && params.langlinkTo
+          ? await this.langlinkTitle(
+              { language, title: candidate.title },
+              params.langlinkTo
+            )
+          : null;
+      candidates.push({
+        title: candidate.title,
+        pageId: candidate.pageId,
+        snippet: candidate.snippet,
+        url: articleUrl(language, candidate.title),
+        lead,
+        leadRequested,
+        langlinkTitle,
+      });
+    }
+    return { language, query, candidates };
+  }
+
   private async lookupLanguage(
     language: string,
     terms: string[]
   ): Promise<WikipediaLanguageResult> {
     const query = queryForLanguage(language, terms);
-    const searchUrl =
-      `https://${language}.wikipedia.org/w/api.php?action=query&list=search` +
-      `&srsearch=${encodeURIComponent(query)}&srlimit=5&format=json`;
-
-    const searchRaw = (await fetchJson(searchUrl)) as SearchApiResponse;
-    const candidates: WikipediaCandidate[] = (searchRaw.query?.search ?? []).map((s) => ({
-      title: s.title ?? "",
-      pageId: s.pageid ?? null,
-      snippet: (s.snippet ?? "").replace(/<[^>]*>/g, ""),
-    }));
+    const candidates = await this.searchCandidates(language, query);
 
     const matched = pickWikipediaCandidate(candidates, terms);
 
@@ -349,7 +497,7 @@ export class WikipediaProvider {
         url = articleUrl(language, matched.title);
       }
     }
-    const articleText = matched ? await this.articleText(language, matched.title) : null;
+    const articleText = matched ? await this.articleText(language, matched.title, "full") : null;
 
     return {
       language,
@@ -403,7 +551,7 @@ export class WikipediaProvider {
     );
     if (!title) return missing;
     const langlinkOf = { language: source.language, title: sourceTitle };
-    const articleText = await this.articleText(missing.language, title);
+    const articleText = await this.articleText(missing.language, title, "full");
     const raw = (missing.rawSnapshot ?? {}) as Record<string, unknown>;
     return {
       ...missing,

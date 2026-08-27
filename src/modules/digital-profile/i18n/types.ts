@@ -485,6 +485,49 @@ export interface Dictionary {
     goldenStatus: string;
     goldenQueueReady: string;
   };
+  /** Панель выбора персоны субъекта: работает до первой траты (шаг 0032). */
+  persona: {
+    title: string;
+    hint: string;
+    subjectDob: string;
+    subjectDobUnknown: string;
+    build: string;
+    building: string;
+    rebuild: string;
+    notBuiltYet: string;
+    emptyPanel: string;
+    sourceStatus: string;
+    sourceWikipedia: string;
+    sourceKnowledgeGraph: string;
+    sourceOpenSanctions: string;
+    statusSuccess: string;
+    statusNotConfigured: string;
+    statusFailed: string;
+    statusTimeout: string;
+    statusOffline: string;
+    /** Причина отказа источника — по коду из снимка, а не готовой фразой. */
+    reasonOffline: string;
+    reasonTimeout: string;
+    reasonNotConfigured: string;
+    reasonFailed: string;
+    reasonUnknown: string;
+    serpTitle: string;
+    tailNoLead: string;
+    tailLeadMissing: string;
+    loadFailed: string;
+    dobMatches: string;
+    matchScore: string;
+    choose: string;
+    approveWithoutPersona: string;
+    deciding: string;
+    decidedSelected: string;
+    decidedWithout: string;
+    staleDecision: string;
+    /** Причина отказа старта — тот же текст, что показывает кнопка сбора. */
+    blockedNotConfirmed: string;
+    blockedStale: string;
+    blockedUnavailable: string;
+  };
   /** Панель профиля субъекта (шаг 11.4). */
   subjectProfile: {
     title: string;

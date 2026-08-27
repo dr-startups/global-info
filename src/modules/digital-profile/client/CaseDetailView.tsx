@@ -39,6 +39,8 @@ import {
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { SubjectPersonaPanel } from "./SubjectPersonaPanel";
+import { PERSONA_PANEL_ANCHOR, personaBlockKey } from "./persona-panel-text";
 import { SubjectProfilePanel } from "./SubjectProfilePanel";
 import { ReportQualityPanel } from "./ReportQualityPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
@@ -166,6 +168,29 @@ export function CaseDetailView({
     }
   }, [caseId]);
 
+  /**
+   * Отказ ворот выбора персоны — человеческим текстом и переходом к панели.
+   *
+   * Состояние ворот интерфейс не вычисляет и до старта не спрашивает:
+   * единственный ответ на этот вопрос даёт сервер, а предпроверка здесь была
+   * бы вторым ответом — она разошлась бы с первым при первом же рефакторинге.
+   * Кнопка жмётся, сервер отвечает 409, и машинная причина переводится в слова.
+   *
+   * Прокрутка, а не ссылка: панель уже на этой странице, но страница дела
+   * длинная, и «откройте блок ниже» заставляет оператора искать его глазами.
+   */
+  const personaBlockText = useCallback(
+    (err: unknown): string | null => {
+      const key = personaBlockKey(err);
+      if (!key) return null;
+      document
+        .getElementById(PERSONA_PANEL_ANCHOR)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return t(key);
+    },
+    [t]
+  );
+
   const announceTerminalRun = useCallback(
     (job: UnifiedCollectionJobStatus) => {
       if (job.stage === "REPORT_READY") {
@@ -266,7 +291,7 @@ export function CaseDetailView({
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
+      setBanner({ kind: "error", text: personaBlockText(err) ?? tError(code, msg) });
     } finally {
       setAuditing(false);
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
@@ -276,6 +301,7 @@ export function CaseDetailView({
     auditing,
     recovering,
     caseId,
+    personaBlockText,
     tError,
     unifiedJob,
   ]);
@@ -291,13 +317,13 @@ export function CaseDetailView({
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
+      setBanner({ kind: "error", text: personaBlockText(err) ?? tError(code, msg) });
     } finally {
       setAuditing(false);
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
       if (job) setUnifiedJob(job);
     }
-  }, [auditing, recovering, caseId, tError]);
+  }, [auditing, recovering, caseId, personaBlockText, tError]);
 
   const handleRecoverUnifiedCollection = useCallback(async () => {
     if (auditing || recovering) return;
@@ -697,6 +723,14 @@ export function CaseDetailView({
             <ErrorBox>{banner.text}</ErrorBox>
           )}
         </div>
+      ) : null}
+
+      {/* Панель выбора персоны стоит выше редактора тёзок намеренно: она
+          работает до первой траты, а профиль размечает уже собранное. */}
+      {can("agents.run") ? (
+        <Card>
+          <SubjectPersonaPanel caseId={state.caseDetail.id} />
+        </Card>
       ) : null}
 
       {can("case.view") ? (

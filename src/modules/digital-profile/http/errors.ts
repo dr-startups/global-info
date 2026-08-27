@@ -71,8 +71,16 @@ export class NotFoundError extends AppError {
 }
 
 export class ConflictError extends AppError {
-  constructor(message = "Resource conflict") {
-    super("CONFLICT", 409, message);
+  /**
+   * `details` — машинная причина отказа для клиента.
+   *
+   * Своего кода отказа в ответе быть не может: `ErrorCode` закрыт восемью
+   * значениями, и расширять его ради одного случая значит менять контракт всех
+   * маршрутов. Причина уезжает в `details.reason`, а человеческий текст живёт
+   * в словарях i18n.
+   */
+  constructor(message = "Resource conflict", details?: unknown) {
+    super("CONFLICT", 409, message, details);
   }
 }
 

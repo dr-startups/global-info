@@ -159,7 +159,7 @@ function firstNonEmpty(values: string[]): string {
  * попадать не должен. Перевод кода в тип риска уже описан таблицей
  * `TOPIC_PREFIX_TO_RISK`; здесь тип получает имя, которое читает человек.
  */
-const RISK_TYPE_LABEL_RU: Record<ComplianceRiskType, string> = {
+export const RISK_TYPE_LABEL_RU: Record<ComplianceRiskType, string> = {
   SANCTIONS: "санкционные списки",
   SANCTION_LINKED: "связь с санкционным лицом",
   PEP: "публичные должностные лица (PEP)",

@@ -60,6 +60,7 @@ describe("падение провайдера сбор не роняет", () =>
         nationality: null,
         lawfulBasis: null,
         consentStatus: null,
+        isFixture: false,
       }),
       fetchAnswer: async () => {
         throw new Error("соединение оборвано");
