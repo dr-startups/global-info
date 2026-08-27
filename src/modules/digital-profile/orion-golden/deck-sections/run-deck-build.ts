@@ -566,9 +566,25 @@ export function toRendererPayload(input: {
     const hasVisual = boundAssets.length > 0;
     const narrative = composeSlideNarrative(s.subtitle, s.narrative);
     const bullets = buildRendererBullets(s);
-    // Default renderer layouts stack narrative and bullet boxes in the same
-    // region; when both exist, fold narrative into the list to avoid overlap.
-    const mergedBullets = narrative && bullets ? [narrative, ...bullets] : bullets;
+    // «Уезжает ли абзац в список» — один вопрос, и ответ на него один: тем же
+    // признаком ниже решается, остаётся ли у слайда собственное поле
+    // `narrative` (речь про общую ветку нагрузки — карточные шаблоны и
+    // разделитель региона возвращаются раньше и склейкой не пользуются).
+    //
+    // Пока склейка спрашивала только «есть ли абзац и есть ли буллеты», а поле
+    // рядом — ещё и «нет ли таблицы», страница с таблицей везла один и тот же
+    // текст дважды. На странице с непустой таблицей это оставалось невидимым —
+    // список туда не доходит; на странице с **пустой** таблицей (сводная
+    // комплаенса при нуле совпадений) абзац печатался дважды: телом сверху и
+    // строкой таблицы снизу, обрезанной посреди предложения.
+    //
+    // Обратное направление — почему у макета без таблицы абзац по-прежнему
+    // едет списком: единственный шаблон, читающий только `bullets`, — это
+    // `orion_golden_toc`, для него склейка единственный носитель абзаца.
+    // Прозаические макеты печатают тело и список друг за другом, так что там
+    // склейка решает вид страницы, а не сохранность текста.
+    const narrativeMovesIntoBullets = !!narrative && !!bullets && !s.table;
+    const mergedBullets = narrativeMovesIntoBullets ? [narrative, ...bullets] : bullets;
 
     // Structured fields for renderer layouts that consume dashboards, not
     // plain bullet lists (existing renderer contracts, unchanged).
@@ -697,7 +713,7 @@ export function toRendererPayload(input: {
           ? isMetricsDashboard
             ? narrative
             : undefined
-          : narrative && bullets && !s.table
+          : narrativeMovesIntoBullets
             ? undefined
             : narrative,
       // Visual layouts render the structured sidebar panel; the KPI dashboard
