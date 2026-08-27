@@ -127,10 +127,13 @@ export async function evaluateLegacyRecoveryEligibility(input: {
     const offersRenderResume =
       job.lastErrorCode === "RENDER_FAILED" ||
       // Ворота телеметрии рендерера: документ испорчен, собранное цело.
-      // Повторять нужно ровно рендер, поэтому оба кода идут тем же путём, что и
-      // `RENDER_FAILED`: подготовка возобновляется с чекпоинта RENDER, а не с нуля.
+      // Повторять нужно ровно рендер, поэтому все три кода идут тем же путём,
+      // что и `RENDER_FAILED`: подготовка возобновляется с чекпоинта RENDER, а
+      // не с нуля. Обрезанная строка комплаенса — тот же случай: после правки
+      // ёмкости страницы тот же самый рендер пройдёт.
       job.lastErrorCode === "CONTENT_DROPPED_BY_RENDERER" ||
-      job.lastErrorCode === "RENDER_TELEMETRY_MISSING";
+      job.lastErrorCode === "RENDER_TELEMETRY_MISSING" ||
+      job.lastErrorCode === "COMPLIANCE_CARD_CLIPPED";
     const isRenderFailure =
       job.resumeCheckpoint === "RENDER" ||
       offersRenderResume ||

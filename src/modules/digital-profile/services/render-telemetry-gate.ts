@@ -24,6 +24,19 @@
  *     правилу выше. На остальных текстовых путях `clipped` к тому же остаётся
  *     предсказанием консервативной меры (запас ×1,18 в `measure_text_height`),
  *     и блокировка по нему останавливала бы здоровые прогоны;
+ *   · **исключение — страница комплаенс-раздела** (`COMPLIANCE_CARD_CLIPPED`):
+ *     там обрезается не хвост предложения, а строка записи — карточки на
+ *     странице базы или сводной таблицы, — а запись комплаенса печатный
+ *     носитель правила «совпадение не подтверждается автоматически и уходит
+ *     аналитику целиком». На стр. 69 живого отчёта так пропала строка «Также
+ *     числится как», и прогон доехал до готового документа. Страница узнаётся
+ *     по разделу слайда (его называет вызывающий, `compliancePages`), а не по
+ *     номеру: номера двигает любая пересборка. Раздел неизвестен — правило
+ *     прежнее, потому что сказать «это строка записи» на таком входе не может
+ *     никто. Блокировать можно только то, у чего есть ёмкость: **обе** страницы
+ *     раздела разбиваются на листы по своему потолку
+ *     (`fragment-builders/compliance.ts`), иначе отказ был бы отказом без
+ *     выхода — рендер детерминирован, и повтор дал бы тот же клип;
  *   · нет файла, файл не читается или список записей пуст — тоже блокер:
  *     на таком входе сказать «потерь нет» не может никто, а обязательные
  *     текстовые секции деки всегда дают записи (на эталоне их 41).
@@ -34,13 +47,24 @@ import {
   classifyLayoutTelemetryRows,
   readLayoutTelemetryRows,
 } from "../orion-golden/classic/generate-first36-geometry-artifacts";
+import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { CanonicalPrepareBlockerCode } from "./canonical-report-prepare";
 import { LAYOUT_TELEMETRY_FILE } from "./render-deck-artifacts";
 
 export type RenderTelemetryBlocker = Extract<
   CanonicalPrepareBlockerCode,
-  "CONTENT_DROPPED_BY_RENDERER" | "RENDER_TELEMETRY_MISSING"
+  "CONTENT_DROPPED_BY_RENDERER" | "RENDER_TELEMETRY_MISSING" | "COMPLIANCE_CARD_CLIPPED"
 >;
+
+/** Что судья знает о деке помимо телеметрии: пока — только её разделы. */
+export type RenderTelemetryContext = {
+  /**
+   * Страницы комплаенс-раздела — по манифесту деки, а не по номеру из бандла.
+   *
+   * Пусто или не передано: раздел неизвестен, и клип судится общим правилом.
+   */
+  compliancePages?: Iterable<number>;
+};
 
 /** Стабильные токены `warnings` — для `job.warnings`: без времени и без дублей. */
 export type RenderTelemetryVerdict =
@@ -53,8 +77,47 @@ export type RenderTelemetryVerdict =
  */
 const CLIP_CODES = new Set(["text-clipping", "TABLE_ROW_PARTIALLY_VISIBLE", "TABLE_STATUS_CLIPPED"]);
 
+/**
+ * Клипы таблицы: не влезла строка записи или её статус.
+ *
+ * Обрезана в обоих случаях ячейка записи, и разница только в том, какое поле не
+ * влезло, — поэтому судятся они одинаково. `TABLE_STATUS_CLIPPED` сегодня живым
+ * рендерером не производится вовсе: имена фигур телеметрии — закрытый набор
+ * (`orion_text_body_pNN`, `orion_search_table_pNN`, `orion_risk_matrix_pNN`,
+ * `orion_bullets_*_pNN`, `orion_footnote_dropped_pNN`), слова «status» в нём
+ * нет, а классификатор ставит этот код именно по имени фигуры. Код оставлен,
+ * потому что правило судит **словарь классификатора**, а не сегодняшние имена
+ * фигур: исключить один из двух клипов таблицы значило бы объявить между ними
+ * разницу по существу, которой нет.
+ */
+const TABLE_CLIP_CODES = new Set(["TABLE_ROW_PARTIALLY_VISIBLE", "TABLE_STATUS_CLIPPED"]);
+
+/**
+ * Страницы комплаенс-раздела — по манифесту деки.
+ *
+ * Раздел спрашивается у манифеста, а не выводится из номера страницы или имени
+ * фигуры: номера двигает любая пересборка, а имя фигуры телеметрии называет
+ * шаблон (`orion_search_table_pNN`), общий у страницы выдачи и у карточки
+ * записи. Манифеста нет — списка нет, и клип судится общим правилом.
+ *
+ * Тип здесь настоящий (`ReportDeckManifest`), а не структурный слепок с
+ * необязательными полями: такому слепку удовлетворяет любой объект, и
+ * переименование `sectionType` или `pageNumber` в схеме прошло бы мимо
+ * компилятора — функция молча вернула бы пустой список, а блокер перестал бы
+ * существовать.
+ */
+export function compliancePagesOf(manifest: ReportDeckManifest | null): number[] {
+  return (manifest?.slides ?? [])
+    .filter((s) => String(s.sectionType).toUpperCase() === "COMPLIANCE")
+    .map((s) => Number(s.pageNumber))
+    .filter((p) => Number.isFinite(p) && p > 0);
+}
+
 /** Судить телеметрию рендера, лежащую в каталоге его артефактов. */
-export function judgeRenderTelemetry(renderDir: string): RenderTelemetryVerdict {
+export function judgeRenderTelemetry(
+  renderDir: string,
+  context: RenderTelemetryContext = {}
+): RenderTelemetryVerdict {
   const path = join(renderDir, LAYOUT_TELEMETRY_FILE);
   const read = readLayoutTelemetryRows(path);
   if (!read.ok || read.rows.length === 0) {
@@ -75,6 +138,24 @@ export function judgeRenderTelemetry(renderDir: string): RenderTelemetryVerdict 
     return {
       blocker: "CONTENT_DROPPED_BY_RENDERER",
       detail: `рендерер выбросил содержимое на страницах ${pages.join(", ")} (${path})`,
+      warnings: [],
+    };
+  }
+
+  // Обрезанная строка записи комплаенса — единственный клип, который
+  // останавливает выдачу. Прозаический клип (`text-clipping`) остаётся
+  // предупреждением и тут: это вводный абзац страницы, а не строка записи.
+  const compliancePages = new Set(context.compliancePages ?? []);
+  const complianceClips = issues.filter(
+    (i) => compliancePages.has(Number(i.page)) && TABLE_CLIP_CODES.has(String(i.code))
+  );
+  if (complianceClips.length > 0) {
+    const pages = [...new Set(complianceClips.map((i) => i.page))].sort((a, b) => a - b);
+    return {
+      blocker: "COMPLIANCE_CARD_CLIPPED",
+      detail:
+        `строка записи комплаенса обрезана на страницах ${pages.join(", ")} (${path}) — ` +
+        "совпадение по базе уходит аналитику целиком, обрезанная запись клиенту не выдаётся",
       warnings: [],
     };
   }

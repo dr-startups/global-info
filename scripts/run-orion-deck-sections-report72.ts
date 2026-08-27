@@ -773,7 +773,7 @@ export function complianceRowsNameTheirBases(
   rendererSlides: ReadonlyArray<{
     baseSlotId?: string;
     isContinuation?: boolean;
-    table?: { rows: string[][] };
+    table?: { headers?: string[]; rows: string[][] };
   }>,
   analyticsDir: string
 ): boolean {
@@ -789,10 +789,16 @@ export function complianceRowsNameTheirBases(
       .filter((o) => o.surface === "compliance_hit")
       .map((o) => `${String(o.engine ?? "").toUpperCase()}|${String(o.title ?? "").toLowerCase()}`)
   );
-  const summary = rendererSlides.find(
-    (s) => s.baseSlotId === "p33_compliance_toc" && !s.isContinuation
-  );
-  const rows = summary?.table?.rows ?? [];
+  // Строки сводки собираются со всех её листов: сводная таблица разбивается по
+  // своему потолку, и первый лист несёт не все записи. Продолжения того же
+  // слота, на которых стоят карточки записей, узнаются по колонкам — у них
+  // «Параметр | Значение».
+  const rows = rendererSlides
+    .filter(
+      (s) =>
+        s.baseSlotId === "p33_compliance_toc" && s.table?.headers?.[0] === "База данных"
+    )
+    .flatMap((s) => s.table?.rows ?? []);
   if (expected.size === 0) return false;
   if (rows.length !== expected.size) return false;
   // «База данных» — подпись колонки; в ячейке она означает, что базу не назвали.

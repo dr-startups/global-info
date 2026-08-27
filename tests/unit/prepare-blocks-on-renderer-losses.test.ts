@@ -21,6 +21,7 @@ import {
   runCanonicalReportPrepare,
 } from "@/modules/digital-profile/services/canonical-report-prepare";
 import type { DeckRenderAdapter } from "@/modules/digital-profile/services/render-deck-artifacts";
+import { compliancePagesOf } from "@/modules/digital-profile/services/render-telemetry-gate";
 import {
   CLEAN_TELEMETRY_ENTRY as CLEAN_ENTRY,
   renderAdapterWithTelemetry as realShapedAdapter,
@@ -98,6 +99,48 @@ describe("подготовка отчёта и потери рендерера",
     const res = await runCanonicalReportPrepare(await tinyPrepareInput(root, { render: adapter }));
     expect(res.ok).toBe(true);
     expect(res.qualityWarnings ?? []).toContain("renderer-clip:page=12:text-clipping");
+  });
+
+  it("клип таблицы на странице комплаенса останавливает подготовку", async () => {
+    // Проверяется **проводка**: судья узнаёт комплаенсные страницы только от
+    // подготовки, и без этой передачи блокер не срабатывает в продакшне ни
+    // разу. Номер страницы поэтому берётся из манифеста собранной деки, а не
+    // пишется числом: тест не должен знать вёрстку деки лучше, чем её знает
+    // сама подготовка.
+    const root = tempRoot("prepare-compliance-clip-");
+    let clippedPage = 0;
+    const render: DeckRenderAdapter = async (input) => {
+      clippedPage = compliancePagesOf(input.deckManifest)[0] ?? 0;
+      expect(clippedPage, "в собранной деке нет страниц комплаенса").toBeGreaterThan(0);
+      const inner = realShapedAdapter([
+        CLEAN_ENTRY,
+        {
+          page: clippedPage,
+          name: `orion_search_table_p${clippedPage}`,
+          role: "text",
+          requiredHeight: 4_627_880,
+          availableHeight: 4_602_385,
+          measuredLines: 21,
+          clipped: true,
+          measurementUncertain: false,
+        },
+      ]);
+      return await inner.adapter(input);
+    };
+
+    const err = await runCanonicalReportPrepare(
+      await tinyPrepareInput(root, { render })
+    ).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(CanonicalPrepareBlockedError);
+    expect((err as CanonicalPrepareBlockedError).code).toBe("COMPLIANCE_CARD_CLIPPED");
+    expect((err as Error).message).toContain(String(clippedPage));
+    const cp = checkpoint(root);
+    expect(cp.status).toBe("FAILED");
+    expect(cp.errorCode).toBe("COMPLIANCE_CARD_CLIPPED");
   });
 
   it("настоящий рендер без телеметрии — отказ, а не пропуск", async () => {

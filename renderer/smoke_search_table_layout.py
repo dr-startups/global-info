@@ -195,6 +195,25 @@ SERP_PT = 9.0
 SERP_LINE_H = int(SERP_PT * EMU_PER_PT * 1.2)
 PAD = int(6 * EMU_PER_PT)
 
+def client_name_limit() -> int:
+    """Предел длины имени записи — из фильтра инвентаря, а не вторым числом здесь.
+
+    `isNarrativeOrPlaceholderMatchName` объявляет нарративом всё, что длиннее
+    этого числа, поэтому в ячейку «Совпадение по имени» доезжают только имена не
+    длиннее. Читается сам исходник: вопрос «какое имя бывает самым длинным»
+    обязан иметь один ответ в любой момент, а на этом ответе стоят оба потолка
+    страниц комплаенса.
+    """
+    adapter = (
+        Path(__file__).resolve().parent.parent
+        / "src/modules/digital-profile/services/compliance-inventory-adapter.ts"
+    ).read_text(encoding="utf-8")
+    found = re.search(r"if \(n\.length > (\d+)\) return true;", adapter)
+    if not found:
+        raise RuntimeError("в фильтре имён инвентаря не найден предел длины")
+    return int(found.group(1))
+
+
 # Самая длинная законная ячейка статуса: у прогона, чей статус проверки в
 # артефактах не зафиксирован, печатается именно она.
 STATUS_UNRECORDED = "Не подтверждено (статус в артефактах прогона не зафиксирован)"
@@ -202,18 +221,110 @@ STATUS_UNRECORDED = "Не подтверждено (статус в артефа
 #: печатает OpenSanctions.
 COMPLIANCE_NAME = "КИРИЛЛ СЕРГЕЕВИЧ КУЛЕБАКИН"
 
-#: Худшее **законное** значение той же колонки: клиентский фильтр имени
-#: (`isNarrativeOrPlaceholderMatchName`) отбрасывает как нарратив всё длиннее
-#: 90 знаков, а заглавная кириллица — самая широкая форма записи имени.
+#: Худшее **законное** значение той же колонки: заглавная кириллица — самая
+#: широкая форма записи имени, а длина берётся из клиентского фильтра имён.
 #: Остальные колонки этой таблицы смок проверяет именно худшим законным
 #: значением, и у имени не должно быть исключения.
-COMPLIANCE_NAME_MAX = ("КУЛЕБАКИН КИРИЛЛ СЕРГЕЕВИЧ " * 4)[:90]
+#:
+#: Число читается из `isNarrativeOrPlaceholderMatchName`, а не хранится копией:
+#: **на нём посчитаны оба потолка страниц комплаенса**. Со своей копией смок
+#: оставался зелёным при поднятом пороге фильтра — а замер говорит, что уже при
+#: 120 знаках пять строк сводки пробивают сцену, то есть ослабление фильтра
+#: молча возвращало бы отказ без выхода, ради устранения которого делался шаг.
+CLIENT_NAME_LIMIT = client_name_limit()
+_NAME_UNIT = "КУЛЕБАКИН КИРИЛЛ СЕРГЕЕВИЧ "
+COMPLIANCE_NAME_MAX = (_NAME_UNIT * (CLIENT_NAME_LIMIT // len(_NAME_UNIT) + 1))[:CLIENT_NAME_LIMIT]
 COMPLIANCE_ROW = [
     "OpenSanctions",
     "PEP (политически значимое лицо)",
     COMPLIANCE_NAME,
     STATUS_UNRECORDED,
 ]
+
+#: Карточка записи предельного размера: восемь строк, каждая на своём клампе
+#: построителя (алиасы и страны — 200 знаков, сводка — 300).
+COMPLIANCE_CARD_MAX = [
+    ["Совпадение по имени", COMPLIANCE_NAME_MAX],
+    ["Категория", "Связь с санкционным лицом"],
+    ["Статус проверки", STATUS_UNRECORDED],
+    ["Также числится как", ("Кулебакин К. С.; Kulebakin Kirill; Кулебакін Кирило Сергійович; " * 4)[:200]],
+    ["Страны в записи", ("Российская Федерация, Швейцария, Кипр, Соединённое Королевство, " * 4)[:200]],
+    ["Даты рождения в записи", "1965-04-12, 1965-04-13, 12.04.1965"],
+    ["Сводка записи", ("Запись базы связывает субъекта с санкционным лицом через владение компанией; " * 5)[:300]],
+    ["Карточка записи", "https://www.opensanctions.org/entities/ru-inn-504309044808/?utm_source=orion"],
+]
+
+#: Карточка из одних обязательных строк — самая дешёвая законная запись.
+COMPLIANCE_CARD_MIN = COMPLIANCE_CARD_MAX[:3]
+
+#: Карточка на четыре строки: обязательные плюс самая длинная ячейка (сводка).
+#: Ею набирается самый плотный законный лист — четыре слота на запись дешевле
+#: девяти, а строки при этом остаются предельными.
+COMPLIANCE_CARD_MID = COMPLIANCE_CARD_MAX[:3] + [COMPLIANCE_CARD_MAX[6]]
+
+#: Справка раздела: печатается на последней странице базы, своей полосой.
+#: У LexisNexis она **на строку шире**, чем у Dow Jones, — третья строка
+#: «Визуальный экспорт». Резерв слотов считается по своей базе, а худший
+#: законный лист меряется по самой широкой справке.
+COMPLIANCE_CARD_INFO_MAX = [
+    [
+        "Почему важно",
+        "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
+    ],
+    [
+        "Что сделать",
+        "Запросить полную карточку записи LexisNexis, включая связанных лиц (RCA), и проверить первоисточники публикаций.",
+    ],
+    [
+        "Визуальный экспорт",
+        "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
+    ],
+]
+
+#: Вводный абзац страницы карточек — тот, который получает рендерер.
+#:
+#: Абзац склеивает `composeFindingProse` (`deck-sections/run-deck-build.ts`):
+#: вводная фраза страницы, «что обнаружено», а на **не последнем** листе ещё и
+#: «почему важно» с «что сделать» — там справки в таблице нет, и дедупликация по
+#: предложениям их не снимает. Разница существенная: 351 знак против 560, то
+#: есть верх таблицы 1 903 445 против 2 270 000. Мерить ёмкость на короткой
+#: фикстуре значило бы мерить не ту страницу, которую бюджет защищает.
+COMPLIANCE_CARD_NARRATIVE_LAST = (
+    "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; "
+    "содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из "
+    "отчёта v72 объединена с этой: отдельного содержимого у неё нет.\n"
+    "Потенциальное совпадение категории «Связь с санкционным лицом»; совпадение не подтверждено "
+    "и требует ручной проверки."
+)
+COMPLIANCE_CARD_NARRATIVE_CONT = (
+    COMPLIANCE_CARD_NARRATIVE_LAST
+    + " Негативные публикации в базе увеличивают репутационный риск и требуют проверки "
+    "первоисточников.\nЗапросить полную карточку записи LexisNexis, включая связанных лиц (RCA), "
+    "и проверить первоисточники публикаций."
+)
+
+#: Подпись источника страниц комплаенса — та же строка, что и у построителя.
+COMPLIANCE_SOURCE_NOTE = "Источник: комплаенс-базы (существующий контур, без расширения источников)."
+
+#: Худшая законная строка сводной таблицы: предельное имя и самый длинный статус.
+COMPLIANCE_SUMMARY_ROW_MAX = [
+    "OpenSanctions",
+    "Связь с санкционным лицом",
+    COMPLIANCE_NAME_MAX,
+    STATUS_UNRECORDED,
+]
+
+#: Худший законный вводный абзац сводной страницы: четыре базы в перечислении,
+#: все три статуса и оговорка про объединённые дубли — плюс рекомендация, которую
+#: `composeFindingProse` вклеивает в тот же абзац.
+COMPLIANCE_SUMMARY_NARRATIVE_MAX = (
+    "Записей, отобранных по имени субъекта в комплаенс-базах: {n} "
+    "(Dow Jones, LexisNexis, OpenSanctions и World-Check). "
+    "Совпадение по базе не подтверждается автоматически: подтверждено аналитиком — 10, "
+    "требует ручной проверки — 25, статус не зафиксирован — 5; повторные записи объединены: 12.\n"
+    "Верифицировать каждое потенциальное совпадение вручную: сопоставить идентификаторы "
+    "субъекта с записью базы."
+)
 
 #: Цвета `_status_tone` по ступеням клиентской шкалы: danger / warn / neutral.
 RED_RISK = "B91C1C"
@@ -286,24 +397,40 @@ def serp_capacity() -> int:
     return int(found.group(1))
 
 
-def render_search_table_page(rows: list[list[str]], addresses: list[str], intro: str) -> Any:
-    """Отрисовать страницу шаблона `orion_golden_search_table` и отдать её ctx."""
+def render_page(payload: dict[str, Any]) -> Any:
+    """Отрисовать одну страницу рендерером и отдать её ctx."""
     prs = Presentation()
     prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
     ctx = _Ctx(prs, 1, 1)
-    _render_slide(
-        ctx,
+    _render_slide(ctx, payload, {})
+    return ctx
+
+
+def page_shapes(ctx: Any, where: str) -> tuple[Any, Any]:
+    """Таблица и белая сцена нарисованной страницы.
+
+    Бюджет листа — низ сцены, а не низ слайда, и меряется он на настоящей
+    странице, а не арифметикой по константам.
+    """
+    table = next((sh for sh in ctx.slide.shapes if getattr(sh, "has_table", False)), None)
+    stage = next((sh for sh in ctx.slide.shapes if (sh.name or "").startswith("orion_card_p")), None)
+    if table is None or stage is None:
+        raise RuntimeError(f"{where}: нет таблицы или белой сцены")
+    return table, stage
+
+
+def render_search_table_page(rows: list[list[str]], addresses: list[str], intro: str) -> Any:
+    """Отрисовать страницу шаблона `orion_golden_search_table` и отдать её ctx."""
+    return render_page(
         {
             "slideKey": "p09_ru_serp_table",
             "template": "orion_golden_search_table",
             "title": "Россия — Яндекс: собранная выдача (1/4)",
             "narrative": intro,
             "table": {"headers": HDR_SERP, "rows": rows, "rowAddresses": addresses},
-        },
-        {},
+        }
     )
-    return ctx
 
 
 def search_table_page(
@@ -315,50 +442,114 @@ def search_table_page(
     а не низ слайда, и проверяется он на настоящей странице, а не арифметикой
     по константам.
     """
-    ctx = render_search_table_page(rows, addresses, intro)
-    table = next((sh for sh in ctx.slide.shapes if getattr(sh, "has_table", False)), None)
-    stage = next((sh for sh in ctx.slide.shapes if (sh.name or "").startswith("orion_card_p")), None)
-    if table is None or stage is None:
-        raise RuntimeError("на странице выдачи нет таблицы или белой сцены")
-    return table, stage
+    return page_shapes(render_search_table_page(rows, addresses, intro), "страница выдачи")
 
 
 def compliance_summary_page(rows: list[list[str]]) -> tuple[Any, Any]:
     """Страница сводки комплаенса целиком: таблица и белая сцена.
 
     Бюджет листа меряется на настоящей странице, а не арифметикой по
-    константам: у сводной таблицы нет пагинации, и высота строки зависит от
-    того, во сколько строк ляжет имя записи.
+    константам: высота строки зависит от того, во сколько строк ляжет имя
+    записи, а высота вводного абзаца — от того, сколько баз и статусов он
+    называет. Абзац здесь худший законный: на нём страница и переполняется.
     """
-    prs = Presentation()
-    prs.slide_width = Emu(SLIDE_W)
-    prs.slide_height = Emu(SLIDE_H)
-    ctx = _Ctx(prs, 1, 1)
-    _render_slide(
-        ctx,
+    ctx = render_page(
         {
             "slideKey": "p33_compliance_toc",
             "template": "orion_golden_search_table",
             "title": "Комплаенс — сводка баз данных",
-            "narrative": (
-                "Записей, отобранных по имени субъекта в комплаенс-базах: "
-                f"{len(rows)} (OpenSanctions). Совпадение по базе не подтверждается "
-                f"автоматически: подтверждено аналитиком — 0, требует ручной проверки — {len(rows)}."
-            ),
+            "narrative": COMPLIANCE_SUMMARY_NARRATIVE_MAX.format(n=len(rows)),
             "table": {"headers": HDR_COMPLIANCE, "rows": rows},
-            "whatToCheck": (
-                "Верифицировать каждое потенциальное совпадение вручную: сопоставить "
-                "идентификаторы субъекта с записью базы."
-            ),
-            "sourceNote": "Источник: комплаенс-базы (существующий контур, без расширения источников).",
-        },
-        {},
+            "sourceNote": COMPLIANCE_SOURCE_NOTE,
+        }
     )
-    table = next((sh for sh in ctx.slide.shapes if getattr(sh, "has_table", False)), None)
-    stage = next((sh for sh in ctx.slide.shapes if (sh.name or "").startswith("orion_card_p")), None)
-    if table is None or stage is None:
-        raise RuntimeError("на сводной странице комплаенса нет таблицы или белой сцены")
-    return table, stage
+    return page_shapes(ctx, "сводная страница комплаенса")
+
+
+def compliance_card_page(
+    records: list[list[list[str]]],
+    info: list[list[str]] | None,
+    narrative: str,
+) -> tuple[Any, Any]:
+    """Страница карточек комплаенса целиком: таблица и белая сцена.
+
+    `records` — строки карточек по записям; каждая запись получает свою
+    полосу-заголовок, справка (`info`) — свою. Бюджет листа меряется на
+    настоящей странице: мера таблиц у рендерера отсутствует, и ёмкость
+    построителя держится этим замером.
+    """
+    rows: list[list[str]] = []
+    groups: list[dict[str, Any]] = []
+    for i, rec in enumerate(records):
+        groups.append(
+            {
+                "rowStart": len(rows),
+                "rowCount": len(rec),
+                "qTag": f"Запись {i + 1} из {len(records)}",
+                "queryDisplay": COMPLIANCE_NAME_MAX[:60],
+            }
+        )
+        rows.extend(rec)
+    if info:
+        groups.append(
+            {
+                "rowStart": len(rows),
+                "rowCount": len(info),
+                "qTag": "Справка",
+                "queryDisplay": "значение раздела и рекомендации",
+            }
+        )
+        rows.extend(info)
+    ctx = render_page(
+        {
+            "slideKey": "p35_lexis_visual",
+            "template": "orion_golden_search_table",
+            "title": "Комплаенс — LexisNexis: карточки записей",
+            "narrative": narrative,
+            "table": {"headers": ["Параметр", "Значение"], "rows": rows, "groups": groups},
+            "sourceNote": COMPLIANCE_SOURCE_NOTE,
+        }
+    )
+    return page_shapes(ctx, "страница карточек комплаенса")
+
+
+def compliance_budget(name: str) -> int:
+    """Потолок страницы комплаенса — из построителя, а не вторым числом здесь.
+
+    Построитель объявлен в TypeScript, поэтому читается сам файл: вопрос
+    «сколько строк на листе» обязан иметь один ответ в любой момент. Оба листа
+    комплаенса объявляют свой потолок там: `CARD_PAGE_SLOTS` — карточки,
+    `SUMMARY_PAGE_ROWS` — сводка.
+    """
+    builder = (
+        Path(__file__).resolve().parent.parent
+        / "src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/compliance.ts"
+    ).read_text(encoding="utf-8")
+    found = re.search(rf"const {name} = (\d+);", builder)
+    if not found:
+        raise RuntimeError(f"в построителе комплаенса нет {name}")
+    return int(found.group(1))
+
+
+def compliance_card_fill(
+    record_budget: int, shapes: list[list[list[str]]]
+) -> list[list[list[str]]]:
+    """Самый плотный законный набор карточек на бюджет из данных форм.
+
+    Формы перебираются от дорогой к дешёвой, как набирает построитель: запись
+    едет на лист целиком или не едет вовсе, поэтому остаток меньше самой дешёвой
+    карточки просто пропадает. Набор строится **из** бюджета, а не задаётся
+    числом: фикстура с фиксированным числом слотов не растёт вместе с потолком и
+    его подъёма не замечает.
+    """
+    recs: list[list[list[str]]] = []
+    used = 0
+    for shape in shapes:
+        cost = len(shape) + 1
+        while used + cost <= record_budget:
+            recs.append(shape)
+            used += cost
+    return recs
 
 
 def intro_box(ctx: Any) -> Any:
@@ -656,37 +847,106 @@ def main() -> int:
     # есть ложное утверждение о том, на кого запись. Оно занимает столько
     # строк, сколько занимает, и цена этого — высота строки таблицы; предел
     # ниже и проверяет, что цена посчитана, а не забыта.
-    check(
-        f"Т8д1: худшее законное имя — ровно 90 знаков ({len(COMPLIANCE_NAME_MAX)})",
-        len(COMPLIANCE_NAME_MAX) == 90,
-        COMPLIANCE_NAME_MAX,
-    )
+    #
+    # Прежний Т8д1 («имя ровно 90 знаков») снят: имя строится из предела фильтра,
+    # и проверка стала бы утверждением о собственной фикстуре. Ослабление фильтра
+    # ловится по существу — здесь и в Т8е/Т8ж, где то же имя стоит в измеряемой
+    # строке.
     max_name_lines = lines_needed(COMPLIANCE_NAME_MAX, w_comp[2], 10.0)
     check(
-        "Т8д2: имя предельной длины занимает не больше четырёх строк",
+        f"Т8д2: имя предельной длины ({CLIENT_NAME_LIMIT} знаков — предел фильтра "
+        f"инвентаря) занимает не больше четырёх строк",
         max_name_lines <= 4,
         f"{max_name_lines} строк(и) при ширине {w_comp[2]}",
     )
 
     # --- Т8е. Бюджет листа сводки ---------------------------------------------
-    # У сводной таблицы комплаенса нет пагинации: строк столько, сколько
-    # записей. Проверяется не арифметика, а настоящая страница — низ таблицы
-    # против низа белой сцены.
-    comp_row_max = ["OpenSanctions", "Связь с санкционным лицом", COMPLIANCE_NAME_MAX, STATUS_UNRECORDED]
-    table_max, stage_max = compliance_summary_page([comp_row_max] * 6)
+    #
+    # У сводной таблицы комплаенса свой потолок строк (`SUMMARY_PAGE_ROWS` в
+    # построителе): клип на странице комплаенса останавливает выдачу целиком,
+    # поэтому страница без потолка — это отказ, из которого оплаченный прогон не
+    # выходит ни пересборкой, ни повтором рендера. Лист строится **из** числа
+    # построителя и меряется настоящей страницей: низ таблицы против низа белой
+    # сцены, худшая законная строка и худший законный вводный абзац.
+    summary_rows = compliance_budget("SUMMARY_PAGE_ROWS")
+    table_max, stage_max = compliance_summary_page([COMPLIANCE_SUMMARY_ROW_MAX] * summary_rows)
     bottom_max = int(table_max.top) + int(table_max.height)
     stage_bottom = int(stage_max.top) + int(stage_max.height)
+    margin_summary = stage_bottom - bottom_max
     check(
-        "Т8е1: шесть записей с именами предельной длины умещаются на листе",
-        bottom_max <= stage_bottom,
-        f"низ таблицы {bottom_max}, низ сцены {stage_bottom}",
+        f"Т8е1: худший законный лист сводки ({summary_rows} строк) влезает в сцену с запасом",
+        bottom_max <= stage_bottom and margin_summary >= 400_000,
+        f"низ таблицы {bottom_max}, низ сцены {stage_bottom}, запас {margin_summary} EMU",
     )
-    table_typ, stage_typ = compliance_summary_page([COMPLIANCE_ROW] * 10)
-    bottom_typ = int(table_typ.top) + int(table_typ.height)
+    # Число стоит там, где надо: строкой больше — и лист пробивает сцену.
+    # Без этой половины проверка ловила бы только заведомо огромный потолок.
+    over_table, over_stage = compliance_summary_page(
+        [COMPLIANCE_SUMMARY_ROW_MAX] * (summary_rows + 1)
+    )
+    over_bottom = int(over_table.top) + int(over_table.height)
+    over_stage_bottom = int(over_stage.top) + int(over_stage.height)
     check(
-        "Т8е2: десять записей с обычными именами умещаются на листе",
-        bottom_typ <= int(stage_typ.top) + int(stage_typ.height),
-        f"низ таблицы {bottom_typ}, низ сцены {int(stage_typ.top) + int(stage_typ.height)}",
+        f"Т8е2: {summary_rows + 1}-я строка сводки на лист уже не помещается",
+        over_bottom > over_stage_bottom,
+        f"низ таблицы {over_bottom}, низ сцены {over_stage_bottom}",
+    )
+
+    # --- Т8ж. Бюджет листа карточек комплаенса --------------------------------
+    #
+    # Ёмкость страницы карточек считается в **слотах** (строка таблицы или
+    # полоса-заголовок), и число живёт в построителе. Здесь оно сверяется с
+    # геометрией настоящей страницы: обрезанная строка карточки останавливает
+    # выдачу целиком, поэтому промах числа стоит не косметики, а отказа прогона.
+    #
+    # Лист набирается **из** числа построителя тремя законными способами: слот
+    # не различает высоту строки, и самый плотный лист — не всегда самый
+    # высокий. Резерв под справку берётся по самой широкой из них (LexisNexis,
+    # три строки плюс полоса), потому что худший лист бывает именно там.
+    slots = compliance_budget("CARD_PAGE_SLOTS")
+    card_budget = slots - (len(COMPLIANCE_CARD_INFO_MAX) + 1)
+    for label, shapes in (
+        ("предельные, затем короткие", [COMPLIANCE_CARD_MAX, COMPLIANCE_CARD_MID, COMPLIANCE_CARD_MIN]),
+        ("четырёхстрочные", [COMPLIANCE_CARD_MID]),
+        ("минимальные", [COMPLIANCE_CARD_MIN]),
+    ):
+        recs = compliance_card_fill(card_budget, shapes)
+        # Последний лист базы: справка внизу таблицы, из абзаца она вычищена.
+        last_table, last_stage = compliance_card_page(
+            recs, COMPLIANCE_CARD_INFO_MAX, COMPLIANCE_CARD_NARRATIVE_LAST
+        )
+        last_bottom = int(last_table.top) + int(last_table.height)
+        last_stage_bottom = int(last_stage.top) + int(last_stage.height)
+        last_slots = sum(len(r) + 1 for r in recs) + len(COMPLIANCE_CARD_INFO_MAX) + 1
+        last_margin = last_stage_bottom - last_bottom
+        check(
+            f"Т8ж1 [{label}]: последний лист базы ({last_slots} слотов) влезает в сцену с запасом",
+            last_bottom <= last_stage_bottom and last_margin >= 400_000,
+            f"низ таблицы {last_bottom}, низ сцены {last_stage_bottom}, "
+            f"запас {last_margin} EMU при бюджете {slots} слотов",
+        )
+        # Лист-продолжение: справки в таблице нет, поэтому «Почему важно» и
+        # «Что сделать» остаются во вводном абзаце и он вырастает вдвое.
+        cont_table, cont_stage = compliance_card_page(
+            recs, None, COMPLIANCE_CARD_NARRATIVE_CONT
+        )
+        cont_bottom = int(cont_table.top) + int(cont_table.height)
+        cont_stage_bottom = int(cont_stage.top) + int(cont_stage.height)
+        cont_margin = cont_stage_bottom - cont_bottom
+        check(
+            f"Т8ж2 [{label}]: лист-продолжение с длинным абзацем влезает в сцену с запасом",
+            cont_bottom <= cont_stage_bottom and cont_margin >= 400_000,
+            f"низ таблицы {cont_bottom}, низ сцены {cont_stage_bottom}, "
+            f"запас {cont_margin} EMU при бюджете {slots} слотов",
+        )
+    two_table, two_stage = compliance_card_page(
+        [COMPLIANCE_CARD_MAX, COMPLIANCE_CARD_MAX], None, COMPLIANCE_CARD_NARRATIVE_CONT
+    )
+    check(
+        "Т8ж3: две записи предельного размера на одном листе не помещаются",
+        int(two_table.top) + int(two_table.height)
+        > int(two_stage.top) + int(two_stage.height),
+        f"низ таблицы {int(two_table.top) + int(two_table.height)}, "
+        f"низ сцены {int(two_stage.top) + int(two_stage.height)}",
     )
 
     # --- Т9. Бейдж статуса ----------------------------------------------------

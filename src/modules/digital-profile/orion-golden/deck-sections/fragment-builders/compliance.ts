@@ -25,7 +25,8 @@ import {
   enumerateRu,
   makeSlotSlide,
 } from "./shared";
-import { continuationTitle } from "../continuation-slide";
+import { buildContinuationSlide, continuationTitle } from "../continuation-slide";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 
 
 /**
@@ -118,11 +119,85 @@ const SCREENING_FAILURE_REASONS: Record<string, string> = {
   DISABLED: "проверка по базе отключена в настройках",
 };
 
+/** Подпись источника — одна на все страницы раздела. */
+const COMPLIANCE_SOURCE_NOTE =
+  "Источник: комплаенс-базы (существующий контур, без расширения источников).";
+
 /** Базы с собственной страницей отчёта; остальные печатаются продолжением сводки. */
 const PROVIDERS_WITH_OWN_PAGE = new Set(["DOW_JONES", "LEXISNEXIS"]);
 
-/** Сколько записей одной базы помещается на страницу карточек. */
-const RECORDS_PER_PAGE = 2;
+/**
+ * Ёмкость страницы карточек — в **строках таблицы**, а не в записях.
+ *
+ * Карточка записи занимает от трёх строк (имя, категория, статус) до восьми
+ * (плюс алиасы, страны, даты рождения, сводка и адрес карточки), и «две записи
+ * на лист» ставили на страницу то шесть строк, то восемнадцать. На стр. 69
+ * живого отчёта вышло 18 строк карточек + 2 полосы-заголовка + шапка, и
+ * рендерер обрезал последнюю строку: `requiredHeight 4 627 880` против
+ * `availableHeight 4 602 385`, подпись «Также числится как» напечаталась как
+ * «Также числится».
+ *
+ * Единица бюджета — **слот**: строка таблицы или полоса-заголовок. Число
+ * выведено из замера настоящей страницы (`renderer/smoke_search_table_layout.py`,
+ * Т8ж; тем же приёмом, что ёмкость таблицы выдачи в реестре шаблонов), и
+ * страниц у базы две разных:
+ *
+ *   низ белой сцены                  6 110 200  (фигура orion_card_pNN)
+ *   верх таблицы, последний лист     1 903 445  (вводный абзац 351 знак:
+ *                                                «почему важно» и «что сделать»
+ *                                                стоят в справке, и из абзаца
+ *                                                их вычищает дедупликация)
+ *   верх таблицы, продолжение        2 270 000  (справки в таблице нет, те же
+ *                                                две фразы остаются в абзаце —
+ *                                                560 знаков)
+ *
+ * Потолок обязан быть не меньше, чем **худшая карточка вместе с самой широкой
+ * справкой**: девять слотов (восемь строк и полоса) плюс четыре (три строки
+ * справки LexisNexis и полоса) — иначе запись, не влезшая в бюджет, уезжает на
+ * свой лист «любой ценой», справка ложится сверху, и лист выходит за
+ * объявленный потолок. У Dow Jones справка на строку короче, поэтому «три
+ * слота под справку» верно только для неё.
+ *
+ * Отсюда тринадцать. Замер худшего законного листа: предельная карточка плюс
+ * справка LexisNexis — низ таблицы 5 586 445 при низе сцены 6 110 200, запас
+ * 523 755 EMU. Справка резервируется на **каждой** странице базы: какая из них
+ * последняя, набор узнаёт только в конце, а лишний резерв стоит пустоты, тогда
+ * как его отсутствие стоит обрезанной карточки.
+ *
+ * Ошибаться здесь безопаснее в сторону лишней страницы: обрезанная строка
+ * теперь останавливает выдачу целиком (`services/render-telemetry-gate.ts`).
+ * Поднять число нельзя молча — смок строит из него самый плотный законный лист
+ * и меряет его на настоящей странице: на четырнадцати слотах запас падает до
+ * 295 155 и проверка краснеет.
+ */
+export const CARD_PAGE_SLOTS = 13;
+
+/**
+ * Ёмкость сводной страницы — в **строках** её таблицы.
+ *
+ * Полос-заголовков у сводки нет, поэтому слот здесь — строка записи. Потолок ей
+ * нужен по той же причине, по какой он нужен карточкам, и даже сильнее: до
+ * этого шага строк печаталось столько, сколько записей, а один импортированный
+ * PDF LexisNexis кладёт в дело до сорока записей (`uniqueCandidates.slice(0, 40)`
+ * в `compliance-providers/lexisnexis-hybrid-import.ts`), и все сорок доезжают до
+ * деки со статусом `NEEDS_REVIEW`. Сорок строк не влезают ни при каких именах, а
+ * клип на странице комплаенса останавливает выдачу — оплаченный прогон вставал
+ * бы в отказ, из которого не выходит ни пересборкой, ни повтором рендера.
+ *
+ * Число своё, а не `CARD_PAGE_SLOTS`, потому что строка другая: имя записи
+ * законно занимает до 90 знаков и ложится в четыре строки, статус «не
+ * зафиксирован» — в две, а вводный абзац сводки называет базы и все три статуса.
+ * Замер (`renderer/smoke_search_table_layout.py`, Т8е) на худшей законной
+ * странице:
+ *
+ *   пять строк   — низ таблицы 5 555 660, низ сцены 6 110 200, запас 554 540
+ *   шесть строк  — сцена пробита
+ *
+ * То есть двенадцать строк сводки не влезли бы и при обычных именах
+ * (переполнение с одиннадцатой), и «тот же потолок, что у карточек» оставил бы
+ * ровно тот отказ, ради которого потолок и заводится.
+ */
+export const SUMMARY_PAGE_ROWS = 5;
 
 /**
  * Список алиасов записи: разделитель — точка с запятой.
@@ -239,12 +314,12 @@ export function buildComplianceFragment(
   const isPendingReview = ([, e]: ComplianceHitEntry): boolean =>
     PENDING_STATUSES.has(String(e.reviewStatus ?? "").toUpperCase());
 
-  const summaryRows = hits.map((h) => {
+  const summaryRowOf = (h: ComplianceHitEntry): string[] => {
     const l = hitLabel(h);
     // В сводной таблице колонки фиксированы, и «—» здесь читается как «поле
     // есть, значения нет» — структура колонок сообщает это сама.
     return [l.provider, l.category ?? "—", l.name ?? "—", l.status];
-  });
+  };
 
   /**
    * Карточка одной записи: только те строки, под которые есть данные.
@@ -288,6 +363,40 @@ export function buildComplianceFragment(
     const url = String(e.url ?? "").trim();
     if (url) rows.push(["Карточка записи", url]);
     return rows;
+  };
+
+  /**
+   * Разложить записи по листам по бюджету слотов.
+   *
+   * Цена записи — её строки плюс полоса-заголовок; цена справки — её строки
+   * плюс своя полоса. Запись не режется между листами: карточка — печатный
+   * носитель правила «совпадение уходит аналитику целиком», и половина
+   * карточки не отвечает ни на один вопрос. Поэтому запись, которая в остаток
+   * не влезла, уезжает на следующий лист целиком, а лист, на котором нет ещё
+   * ни одной записи, берёт её при любой цене: пустой страницы быть не должно.
+   *
+   * Последнее правило сегодня не срабатывает ни разу — потолок выбран так, что
+   * худшая карточка влезает в бюджет любой базы (см. `CARD_PAGE_SLOTS`), — но
+   * названо, потому что оно и есть выбор между обрезанной карточкой и лишней
+   * страницей, если состав карточки когда-нибудь вырастет.
+   */
+  const packRecordPages = (
+    records: ComplianceHitEntry[],
+    infoRowCount: number
+  ): Array<{ hits: ComplianceHitEntry[]; firstRecordIndex: number }> => {
+    const budget = CARD_PAGE_SLOTS - (infoRowCount > 0 ? infoRowCount + 1 : 0);
+    const pages: Array<{ hits: ComplianceHitEntry[]; firstRecordIndex: number }> = [];
+    let used = 0;
+    records.forEach((h, index) => {
+      const cost = recordRows(h).length + 1;
+      if (pages.length === 0 || used + cost > budget) {
+        pages.push({ hits: [], firstRecordIndex: index });
+        used = 0;
+      }
+      pages[pages.length - 1]!.hits.push(h);
+      used += cost;
+    });
+    return pages;
   };
 
   /** Есть ли у записи хоть одно поле сверх трёх обязательных. */
@@ -500,9 +609,9 @@ export function buildComplianceFragment(
       ];
     }
     // Записей больше, чем помещается на лист, — они уходят на продолжения, а не
-    // теряются: карточка каждой записи занимает до десяти строк таблицы.
-    const pages = chunk(input.hits, RECORDS_PER_PAGE);
-    return pages.map((pageHits, pageIndex) => {
+    // теряются и не режутся: карточка приезжает к аналитику целиком.
+    const pages = packRecordPages(input.hits, input.infoRows.length);
+    return pages.map(({ hits: pageHits, firstRecordIndex }, pageIndex) => {
       const isCont = pageIndex > 0;
       const base = makeSlotSlide({
         slot: input.slot,
@@ -515,7 +624,7 @@ export function buildComplianceFragment(
             // Справка печатается один раз — на последней странице базы.
             pageIndex === pages.length - 1 ? input.infoRows : [],
             input.hits.length,
-            pageIndex * RECORDS_PER_PAGE
+            firstRecordIndex
           ),
           whatWasFound: whatWasFoundFor(pageHits),
           whyItMatters: input.whyWithRecords,
@@ -565,19 +674,29 @@ export function buildComplianceFragment(
     );
   };
 
+  /**
+   * Сводная таблица разбивается на листы так же, как карточки.
+   *
+   * Полос-заголовков у неё нет, поэтому разбивка простая — по числу строк. При
+   * пустом наборе лист всё равно один: он печатает, что записей нет, и это
+   * ответ проверки, а не отсутствие страницы.
+   */
+  const summaryTablePages = hits.length > 0 ? chunk(hits, SUMMARY_PAGE_ROWS) : [[]];
+  const summaryTable = (pageHits: ComplianceHitEntry[]) => ({
+    headers: [...COMPLIANCE_SUMMARY_HEADERS],
+    rows: pageHits.map(summaryRowOf),
+  });
+
   const summarySlide = makeSlotSlide({
     slot: summarySlot,
     sectionId,
     templateId: "serp-table",
     content: {
       narrative: summaryNarrative(),
-      table: {
-        headers: [...COMPLIANCE_SUMMARY_HEADERS],
-        rows: summaryRows,
-      },
+      table: summaryTable(summaryTablePages[0]!),
       whatToCheck:
         "Верифицировать каждое потенциальное совпадение вручную: сопоставить идентификаторы субъекта с записью базы.",
-      sourceNote: "Источник: комплаенс-базы (существующий контур, без расширения источников).",
+      sourceNote: COMPLIANCE_SOURCE_NOTE,
     },
     evidenceRefs: [...refs, ...hits.map(([r]) => r)],
     findingIds: scoped.findings.map((f) => f.findingId),
@@ -595,34 +714,69 @@ export function buildComplianceFragment(
   const otherBaseHits = hits.filter(
     (h) => !PROVIDERS_WITH_OWN_PAGE.has(hitLabel(h).providerKey) && hasSubstantiveFields(h)
   );
-  const otherBasePages = chunk(otherBaseHits, RECORDS_PER_PAGE);
-  const summaryContinuations = otherBasePages.map((pageHits, pageIndex) => ({
-    ...makeSlotSlide({
-      slot: summarySlot!,
-      sectionId,
-      templateId: "serp-table",
-      content: {
-        narrative:
-          "Записи баз, у которых нет отдельной страницы отчёта: поля приведены так же, как на " +
-          "страницах Dow Jones и LexisNexis.",
-        table: providerParamTable(
-          pageHits,
-          [],
-          otherBaseHits.length,
-          pageIndex * RECORDS_PER_PAGE
-        ),
-        sourceNote: "Источник: комплаенс-базы (существующий контур, без расширения источников).",
-      },
+  // Тот же бюджет строк, что и у страниц баз: здесь печатаются такие же
+  // карточки, и «две записи на лист» переполняло бы лист ровно так же.
+  // Справки на этих листах нет, поэтому её слоты бюджет не резервирует.
+  const otherBasePages = packRecordPages(otherBaseHits, 0);
+
+  /**
+   * Продолжения сводной страницы — одна цепочка на один слот.
+   *
+   * Сначала хвост сводной таблицы, потом карточки баз без своей страницы.
+   * Нумерация общая не для красоты: индексы продолжений одного слота обязаны
+   * идти подряд от единицы (`section-validation`), а подпись — называть длину
+   * всей цепочки, а не одной её половины.
+   */
+  const summarySlotPages = summaryTablePages.length + otherBasePages.length;
+  const summaryContinuations: SlideContentContract[] = [];
+  const pushSummaryContinuation = (
+    pageHits: ComplianceHitEntry[],
+    content: SlideContentContract["content"]
+  ): void => {
+    summaryContinuations.push({
+      ...buildContinuationSlide({
+        base: summarySlide,
+        index: summaryContinuations.length + 2,
+        totalPages: summarySlotPages,
+        content,
+      }),
       evidenceRefs: pageHits.map(([r]) => r),
       findingIds: [],
       metrics: { hits: pageHits.length },
-    }),
-    slideId: `${summarySlot!.slotId}__cont${pageIndex + 1}`,
-    isContinuation: true,
-    continuationOf: summarySlot!.slotId,
-    continuationIndex: pageIndex + 1,
-    title: continuationTitle(summarySlot!.title, pageIndex + 2, otherBasePages.length + 1),
-  }));
+    });
+  };
+
+  summaryTablePages.slice(1).forEach((pageHits, pageIndex) => {
+    const from = (pageIndex + 1) * SUMMARY_PAGE_ROWS + 1;
+    // Что на листе — говорят сами записи: и слово, и номера выводятся из их
+    // числа. На последнем листе запись бывает одна (шесть записей, одиннадцать,
+    // шестнадцать…), и «записи 6–6 из 6» — диапазон, у которого один конец, во
+    // множественном числе про одну строку. Клиент банка читает это буквально.
+    const span =
+      pageHits.length === 1 ? `${from}` : `${from}–${from + pageHits.length - 1}`;
+    pushSummaryContinuation(pageHits, {
+      // Лист называет свои записи, а не повторяет счёт всей сводки: «записей 40»
+      // на третьем листе не отвечает, что именно на нём стоит. Рекомендацию с
+      // продолжений снимает общий конструктор — поэтому отсылка обязана назвать
+      // и её: иначе лист выглядит как строки без вывода.
+      narrative:
+        `Продолжение сводки комплаенс-баз: ${pluralRu(pageHits.length, "запись", "записи", "записи")} ` +
+        `${span} из ${hits.length}. Состав баз, разбивка по статусам и рекомендация по проверке ` +
+        "названы на первой странице сводки.",
+      table: summaryTable(pageHits),
+      sourceNote: COMPLIANCE_SOURCE_NOTE,
+    });
+  });
+
+  otherBasePages.forEach(({ hits: pageHits, firstRecordIndex }) => {
+    pushSummaryContinuation(pageHits, {
+      narrative:
+        "Записи баз, у которых нет отдельной страницы отчёта: поля приведены так же, как на " +
+        "страницах Dow Jones и LexisNexis.",
+      table: providerParamTable(pageHits, [], otherBaseHits.length, firstRecordIndex),
+      sourceNote: COMPLIANCE_SOURCE_NOTE,
+    });
+  });
 
   const slides: SlideContentContract[] = [
     summarySlide,

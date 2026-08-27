@@ -117,8 +117,12 @@ describe("имя в строке комплаенса", () => {
       "h-1": record({}),
       "h-2": record({ matchedName: "КИРИЛЛ СЕРГЕЕВИЧ КУЛЕБАКИН", matchCategory: "SANCTIONS" }),
     });
-    const card = slides.find((s) => s.continuationOf === "p33_compliance_toc")!;
-    const groups = card.content.table?.groups ?? [];
+    // Карточки шестистрочных записей в один лист не влезают и печатаются на
+    // соседних (бюджет строк страницы карточек), поэтому подписи собираются
+    // со всех листов раздела — вопрос теста в них, а не в разбивке.
+    const groups = slides
+      .filter((s) => s.continuationOf === "p33_compliance_toc")
+      .flatMap((s) => s.content.table?.groups ?? []);
     expect(groups.map((g) => g.queryDisplay)).toEqual([
       "OpenSanctions",
       "КИРИЛЛ СЕРГЕЕВИЧ КУЛЕБАКИН",

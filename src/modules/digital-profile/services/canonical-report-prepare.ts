@@ -52,7 +52,7 @@ import {
   type DeckRenderAdapter,
 } from "./render-deck-artifacts";
 import type { BulletMeasureAdapter } from "../orion-golden/deck-sections/measured-bullet-fit";
-import { judgeRenderTelemetry } from "./render-telemetry-gate";
+import { compliancePagesOf, judgeRenderTelemetry } from "./render-telemetry-gate";
 import {
   ASSEMBLED_DECK_ARTIFACT,
   staleMarkerFileName,
@@ -113,6 +113,8 @@ export type CanonicalPrepareBlockerCode =
   | "CONTENT_DROPPED_BY_RENDERER"
   /** Настоящий рендер прошёл, а телеметрии нет: потери непроверяемы. */
   | "RENDER_TELEMETRY_MISSING"
+  /** Карточка записи комплаенса обрезана: совпадение уходит аналитику целиком. */
+  | "COMPLIANCE_CARD_CLIPPED"
   | "GPT_COPY_RESUME_INPUTS_MISSING"
   | "GPT_COPY_CALLER_UNAVAILABLE"
   /** Базы нет — отчёт без неё отрицал бы выполненный скрининг (см. `prepare-prisma-bundle`). */
@@ -1478,7 +1480,9 @@ export async function runCanonicalReportPrepare(
       // проскальзывал бы мимо них вечно.
       const reuseVerdict =
         cp.status === "SUCCEEDED" && assemblyHash && cp.assemblyHash === assemblyHash
-          ? judgeRenderTelemetry(renderDir)
+          ? judgeRenderTelemetry(renderDir, {
+              compliancePages: compliancePagesOf(deckManifest),
+            })
           : null;
       if (reuseVerdict && !reuseVerdict.blocker) {
         checkpoint({
@@ -1589,7 +1593,9 @@ export async function runCanonicalReportPrepare(
 
     // Ворота потерь. Порогов здесь нет: их знает общий классификатор строк
     // телеметрии, и правило блокировки описано в `render-telemetry-gate.ts`.
-    const verdict = judgeRenderTelemetry(renderDir);
+    const verdict = judgeRenderTelemetry(renderDir, {
+      compliancePages: compliancePagesOf(deckManifest),
+    });
     if (verdict.blocker) {
       checkpoint({
         version: "render-checkpoint-v1",
