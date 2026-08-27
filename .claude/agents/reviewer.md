@@ -220,10 +220,20 @@ After the engineer closes your findings you are invoked again, on the same task.
 - **You do not edit the tree.** No fixes, however small and however obvious — the engineer fixes what
   you find, and then you re-check it. Whoever writes a fix does not get to review it.
 - **You may run anything that verifies.** Types, tests, smokes, the build, the deck gates, the raster
-  check, `git stash` for the mutation check. That is the point of this role: a claim you did not
-  execute is a claim, not a finding. What you must not do is leave the tree different from how you
-  found it — `git status` at the end of your run should match `git status` at the start, and if it
-  does not, say so loudly rather than quietly fixing it.
+  check. That is the point of this role: a claim you did not execute is a claim, not a finding. What
+  you must not do is leave the tree different from how you found it — `git status` at the end of your
+  run should match `git status` at the start, and if it does not, say so loudly rather than quietly
+  fixing it.
+- **Мутацию откатывать только из своей копии, а не средствами git.** Перед серией мутаций скопируй
+  файлы в каталог шага (`tar czf`) и после каждой мутации восстанавливай из этой копии; в конце
+  сверь все файлы побайтно. Работа, которую ты ревьюишь, лежит незакоммиченной, и **git о ней не
+  знает**: `git checkout -- <файл>` восстанавливает из индекса, то есть из последнего коммита, и
+  стирает чужие правки в этом файле ровно так же, как это делает `git checkout -- .` со всем
+  деревом. Поэтому `checkout`, `restore`, `stash`, `clean` и `reset` здесь запрещены **в любой
+  форме, включая пофайловую**. 27.08.2026 обе ошибки случились за один вечер: `git checkout -- .`
+  уничтожил шестнадцать файлов круга правок (восстановить удалось только воспроизведением команд из
+  транскрипта разработчика), а пофайловый `checkout` следующего круга стёр семнадцатый — его спасла
+  та самая копия.
 - **Never run anything that spends money or destroys data.** No live collection, no paid provider
   call, no `prisma migrate reset`, no `DROP SCHEMA`. If a check genuinely requires one of those, say
   it could not be verified and why.
