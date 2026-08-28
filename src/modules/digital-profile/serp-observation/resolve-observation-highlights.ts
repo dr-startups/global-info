@@ -4,6 +4,7 @@
  */
 
 import { getAdversePatterns, getStrongAdversePatterns } from "../config/finding-themes";
+import { dictionaryHitIsNegated } from "../config/negated-dictionary-hit";
 import { buildConsistentThemeGrouping } from "../serp-snapshot/snapshot-consistency";
 import type { LoadedResult, ResultView, SerpEngine, SerpLanguage, ThemeGrouping } from "../serp-snapshot/types";
 import type { PersistedSerpObservation } from "./types";
@@ -226,7 +227,10 @@ export type AdverseRowInput = {
  *    негативны сами по себе: слов словаря в их заголовках может не быть вовсе;
  * 3. **словарь `adversePatterns` из конфига** — по заголовку и сниппету; на
  *    мягких площадках работает только его сильное подмножество
- *    (`strongAdversePatterns`).
+ *    (`strongAdversePatterns`). Совпадение, рядом с которым стоит отрицание или
+ *    опровержение («уголовное дело прекращено», «санкции сняты»), снимается —
+ *    тем же предикатом, каким его снимает тема материала
+ *    (`config/negated-dictionary-hit.ts`).
  *
  * **Словарь читает текст, а домен отвечает списком, и это разные вопросы.**
  * Платят за смешение разделом сайта в адресе: у словаря есть левая граница, и
@@ -254,10 +258,11 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
   // Мягкая площадка не слепа: сильные слова краснят строку и там. Пост в
   // соцсети «Уголовное дело против …» — сигнал, а «биография, бизнес,
   // скандалы» в оглавлении энциклопедии — жанр.
-  if (SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain)) {
-    return getStrongAdversePatterns().test(text);
-  }
-  return getAdversePatterns().test(text);
+  const dictionary =
+    SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain)
+      ? getStrongAdversePatterns()
+      : getAdversePatterns();
+  return dictionary.test(text) && !dictionaryHitIsNegated(text, dictionary);
 }
 
 /**

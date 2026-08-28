@@ -40,7 +40,7 @@ import {
   looksLikeSearchQuery,
   looksLikeSurfaceBlockHeading,
 } from "./client-quote-hygiene";
-import { themeHitIsNegated } from "./negated-theme-hit";
+import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import { sourceAttribution } from "../client/client-address";
 import { readableSnippet, resolveItemAdverse } from "./item-adverse";
 import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
@@ -711,10 +711,10 @@ export function cleanExampleTitle(raw: string): string {
 function themesFor(item: RawInventoryItem): ThemeDef[] {
   const text = itemText(item);
   return getFindingThemes().filter(
-    // Материал, утверждающий отсутствие («не было выставленных претензий»),
-    // темой риска не является: иначе отчёт говорит противоположное источнику
-    // (шаг 15, J1).
-    (theme) => theme.keywords.test(text) && !themeHitIsNegated(text, theme.keywords)
+    // Материал, утверждающий отсутствие («не было выставленных претензий»,
+    // «обвинения не подтвердились»), темой риска не является: иначе отчёт
+    // говорит противоположное источнику.
+    (theme) => theme.keywords.test(text) && !dictionaryHitIsNegated(text, theme.keywords)
   );
 }
 
