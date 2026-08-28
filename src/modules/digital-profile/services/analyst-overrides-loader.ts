@@ -462,7 +462,7 @@ const THEME_BY_RISK: Record<string, string> = {
   adverse_media: "criminal_legal",
   reputation: "criminal_legal",
   business_conflict: "family_associates",
-  offshore: "offshore_corporate",
+  offshore: "offshore_structures",
   other: "criminal_legal",
 };
 

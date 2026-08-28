@@ -34,14 +34,16 @@ function compiled(json = getDefaultFindingThemesConfigJson()): ThemeDef[] {
 }
 
 describe("описательность темы приходит из каталога", () => {
-  it("умолчание каталога: описательных тем две, остальные обвиняют", () => {
+  it("умолчание каталога: описательных тем три, остальные обвиняют", () => {
     const themes = getFindingThemes();
     expect(isAccusingTheme(themeOf(themes, "business_profile"))).toBe(false);
     expect(isAccusingTheme(themeOf(themes, "political_exposure"))).toBe(false);
+    // Покупка компании — то, что описывают, а не то, в чём обвиняют.
+    expect(isAccusingTheme(themeOf(themes, "corporate_ownership"))).toBe(false);
     for (const id of [
       "criminal_legal",
       "pep_rca_watchlist",
-      "offshore_corporate",
+      "offshore_structures",
       "family_associates",
       "financial_claims",
       "security_scrutiny",
@@ -59,7 +61,7 @@ describe("описательность темы приходит из катал
       ),
     });
     expect(isAccusingTheme(themeOf(themes, "criminal_legal"))).toBe(false);
-    expect(isAccusingTheme(themeOf(themes, "offshore_corporate"))).toBe(true);
+    expect(isAccusingTheme(themeOf(themes, "offshore_structures"))).toBe(true);
   });
 
   it("тема, про которую каталог молчит, считается обвиняющей", () => {

@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 64,
-  "totalChars": 54376,
+  "totalChars": 54372,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -164,9 +164,9 @@
       "template": "orion_golden_risk_matrix_grid",
       "keyFindings": [
         {
-          "headline": "Офшоры / корпоративное владение",
+          "headline": "Офшорные структуры",
           "status": "Средний",
-          "detail": "Всего по теме: 4 материала, с негативным контекстом — 2. Что делать: Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
+          "detail": "Всего по теме: 4 материала, с негативным контекстом — 2. Что делать: Подготовить документальное подтверждение структуры владения и источников средств по офшорным юрисдикциям — именно его запрашивают при KYC; неточные публикации оспаривать у площадок."
         },
         {
           "headline": "Деловой профиль",
@@ -183,10 +183,10 @@
         ],
         "rows": [
           [
-            "Офшоры / корпоративное владение",
+            "Офшорные структуры",
             "Средний",
             "P2",
-            "finding-offshore_corporate-subject_match-4cc9cf0d"
+            "finding-offshore_structures-subject_match-4cc9cf0d"
           ],
           [
             "Деловой профиль",
@@ -230,7 +230,7 @@
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
         "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1) Где видно: stockholm-kuriren.se, bizdaily-nordic.se. Всего по теме: 14 материалов, с негативным контекстом — 10.",
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) Где видно: nordmarket-watch.se, reestr-novosti.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала, с негативным контекстом — 2."
+        "«Офшорные структуры» Найдены публикации об офшорных структурах и юрисдикциях с особым режимом: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) Где видно: nordmarket-watch.se, reestr-novosti.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала, с негативным контекстом — 2."
       ]
     },
     {
@@ -245,7 +245,7 @@
       "slideKey": "p07_ru_summary",
       "text": {
         "title": "Россия: в выдаче есть материалы повышенного внимания",
-        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 232. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшоры / корпоративное владение. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 232. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшорные структуры. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались."
       },
       "baseSlotId": "p07_ru_summary",
@@ -273,7 +273,7 @@
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) Где видно: nordmarket-watch.se, reestr-novosti.ru. Всего по теме: 4 материала, с негативным контекстом — 2.",
+        "«Офшорные структуры» Найдены публикации об офшорных структурах и юрисдикциях с особым режимом: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) Где видно: nordmarket-watch.se, reestr-novosti.ru. Всего по теме: 4 материала, с негативным контекстом — 2.",
         "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1."
       ]
     },
@@ -512,7 +512,7 @@
       "slideKey": "p09_ru_serp_table__cont3",
       "text": {
         "title": "Россия — Яндекс, ТОП-20 (4/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Офшоры / корпоративное владение» — средний уровень внимания (строка 15). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Офшорные структуры» — средний уровень внимания (строка 15). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Подготовить документальное подтверждение структуры владения и источников средств по офшорным юрисдикциям — именно его запрашивают при KYC; неточные публикации оспаривать у площадок."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -872,7 +872,7 @@
       "template": "orion_golden_prose",
       "bullets": [
         "PEP / RCA / watchlist-сигналы — stockholm-kuriren.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1).",
-        "Офшоры / корпоративное владение — nordmarket-watch.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
+        "Офшорные структуры — nordmarket-watch.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
       ]
     },
     {

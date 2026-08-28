@@ -30,6 +30,7 @@ import type { SubjectResolutionItem } from "../contracts/subject-resolution";
 import {
   getAdversePatterns,
   getFindingThemes,
+  isAccusingTheme,
   resolveFindingThemesConfig,
   type ThemeDef,
 } from "../../config/finding-themes";
@@ -42,7 +43,7 @@ import {
 } from "./client-quote-hygiene";
 import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import { sourceAttribution } from "../client/client-address";
-import { readableSnippet, resolveItemAdverse } from "./item-adverse";
+import { readableSnippet, resolveItemAdverse, resolveItemReadFavourably } from "./item-adverse";
 import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
 import { pluralRu } from "../../report/i18n/plural-ru";
 
@@ -107,10 +108,30 @@ function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
+/**
+ * Материал глазами словаря темы: заголовок и сниппет, как у предиката строки.
+ *
+ * Служебный `classification` сюда не входит по той же причине, по какой он не
+ * входит в ответ «негативен ли материал»: у строк выдачи он записан самим
+ * предикатом негатива, а у остальных — четвёртым словарём. Адреса нет вовсе:
+ * у словаря есть левая граница и нет правой, поэтому раздел сайта в пути
+ * (`…/court/…`, `…/investigations/…`) читался как текст публикации и давал
+ * нейтральному заголовку криминальную тему.
+ */
+function themeMatchText(item: RawInventoryItem): string {
+  return [item.title, readableSnippet(item)].filter(Boolean).join(" ");
+}
+
+/**
+ * Материал глазами словарей качества утверждения.
+ *
+ * Адрес здесь остаётся намеренно, и это не то же, что тема материала: у
+ * `positivePatterns` доменное слово стоит прямо в списке (`forbes`), и читать
+ * им адрес — способ, которым они работают. У темы иначе: её площадки вынесены
+ * в собственный список (`ThemeDef.domains`), и словарь темы адреса не видит.
+ */
 function itemText(item: RawInventoryItem): string {
-  return [item.title, readableSnippet(item), item.classification, item.sourceUrl]
-    .filter(Boolean)
-    .join(" ");
+  return [themeMatchText(item), item.classification, item.sourceUrl].filter(Boolean).join(" ");
 }
 
 /**
@@ -124,8 +145,10 @@ const CLIENT_THEME_FRAMING: Record<string, string> = {
     "Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA)",
   political_exposure:
     "Найдены материалы о политической и публичной экспозиции субъекта",
-  offshore_corporate:
-    "Найдены публикации об офшорных и корпоративных структурах владения",
+  offshore_structures:
+    "Найдены публикации об офшорных структурах и юрисдикциях с особым режимом",
+  corporate_ownership:
+    "Найдены материалы о владении компаниями и структуре собственности",
   family_associates:
     "Найдены материалы о семейных и деловых связях субъекта",
   financial_claims:
@@ -150,8 +173,10 @@ export const CLIENT_THEME_WHY: Record<string, string> = {
     "Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
   political_exposure:
     "Это усиливает вопросы к связям, влиянию и приемлемости контрагента для сделки.",
-  offshore_corporate:
+  offshore_structures:
     "Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.",
+  corporate_ownership:
+    "Само по себе владение компаниями претензией не является, но состав долей и историю сделок обычно просят подтвердить документами.",
   family_associates:
     "Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
   financial_claims:
@@ -211,17 +236,20 @@ const DANGLING_TAIL_RE =
   /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|due|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при|после|перед)\s*$/iu;
 const SERP_TRUNCATED_RE = /(?:\.\.\.|…)\s*$/u;
 const BIO_SEO_RE = /биограф(?:ия|ии)?|личная жизнь|фото|новости|карьера|wiki(?:pedia)?/iu;
-const ADVERSE_THEME_IDS = new Set([
-  "criminal_legal",
-  "pep_rca_watchlist",
-  "political_exposure",
-  "offshore_corporate",
-  "family_associates",
-  "financial_claims",
-  "security_scrutiny",
-]);
 const STRONG_DOMAIN_RE =
   /reuters\.|nytimes\.|justice\.gov|treasury\.gov|ofac\.|europa\.eu|bbc\.|theguardian\.|kommersant\.|rbc\.ru|vedomosti\.|cnbc\.|ft\.com|wsj\.|bloomberg\./iu;
+
+/**
+ * Несёт ли тема риск — то есть может ли SEO-биография быть её доказательством.
+ *
+ * Список идентификаторов рядом с кодом отвечал на этот вопрос вторым голосом и
+ * перечислял ровно все темы, кроме делового профиля, — то есть все, у которых
+ * уровень не нулевой. Список при этом не видел тем из файла переопределения, а
+ * каталог видит: признак живёт там же, где сама тема.
+ */
+function themeCarriesRisk(theme: ThemeDef): boolean {
+  return theme.baseRisk !== "none";
+}
 
 /** True for titles that are only a person name (no risk essence). */
 function looksLikeBarePersonName(title: string): boolean {
@@ -393,19 +421,14 @@ export function isWeakExampleTitle(
   }
 
   // SEO biography blurbs as the only “evidence” for an adverse theme.
-  if (
-    opts?.theme &&
-    ADVERSE_THEME_IDS.has(opts.theme.themeId) &&
-    BIO_SEO_RE.test(t) &&
-    !themeHit
-  ) {
+  if (opts?.theme && themeCarriesRisk(opts.theme) && BIO_SEO_RE.test(t) && !themeHit) {
     return true;
   }
 
   // Энциклопедический зачин («<Имя> — российский предприниматель…») отвечает
   // на вопрос «кто это», а не «что произошло», и доказательством темы риска
   // быть не может (шаг 15, E6).
-  if (opts?.theme && ADVERSE_THEME_IDS.has(opts.theme.themeId) && !themeHit) {
+  if (opts?.theme && themeCarriesRisk(opts.theme) && !themeHit) {
     if (looksLikeEncyclopedicLead(t)) return true;
   }
 
@@ -707,15 +730,33 @@ export function cleanExampleTitle(raw: string): string {
 /**
  * One evidence item may support multiple genuinely different claims: it is
  * matched against EVERY theme, not consumed by the first/highest-priority one.
+ *
+ * Тему называют два разных ответа: слова темы читают текст материала, площадки
+ * темы отвечают по адресу отдельным списком. Смешивать их в одну строку сверки
+ * нельзя — раздел сайта в пути тогда становится темой публикации.
  */
-function themesFor(item: RawInventoryItem): ThemeDef[] {
-  const text = itemText(item);
-  return getFindingThemes().filter(
+function themesFor(
+  item: RawInventoryItem,
+  /** Страницу прочитали и признали благоприятной (и человек с этим не спорил). */
+  favourablyRead: boolean
+): ThemeDef[] {
+  const text = themeMatchText(item);
+  const url = String(item.sourceUrl ?? "");
+  return getFindingThemes().filter((theme) => {
+    // Обвиняющая тема не берёт благоприятно прочитанную страницу — ни в состав,
+    // ни в счёт, ни в уровень. Тему назначает словарь по заголовку, а решение
+    // вынесено по тексту страницы и знает, что там на самом деле; у ярлыка
+    // «Офшорные структуры» цена ошибки прямая — субъекту предлагают убирать
+    // материал, который о нём ничего такого не говорит. Описательной темы это
+    // не касается: для неё нейтральная публикация и есть доказательство.
+    if (favourablyRead && isAccusingTheme(theme)) return false;
+    if (theme.domains?.test(url)) return true;
     // Материал, утверждающий отсутствие («не было выставленных претензий»,
     // «обвинения не подтвердились»), темой риска не является: иначе отчёт
-    // говорит противоположное источнику.
-    (theme) => theme.keywords.test(text) && !dictionaryHitIsNegated(text, theme.keywords)
-  );
+    // говорит противоположное источнику. Совпадение по площадке так не
+    // снимается — отрицание относится к словам, а не к тому, что это за сайт.
+    return theme.keywords.test(text) && !dictionaryHitIsNegated(text, theme.keywords);
+  });
 }
 
 /** Same evidence + same normalized claim must collapse into one contribution. */
@@ -836,7 +877,7 @@ export function synthesizeFindings(input: {
     // SUBJECT_MATCH/LIKELY without keyword hits → uncategorized (§3.2), not a
     // finding (never enters the risk matrix). AMBIGUOUS without hits still gets
     // a review theme so they reach «Требует подтверждения» / appendix (§2.1).
-    let themes = themesFor(item);
+    let themes = themesFor(item, resolveItemReadFavourably(item, input.verdictByRef));
     if (themes.length === 0) {
       if (decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") {
         if (!seenUncategorizedRefs.has(ref)) {

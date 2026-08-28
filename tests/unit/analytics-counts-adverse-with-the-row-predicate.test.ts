@@ -97,19 +97,21 @@ function adverseSubjectCount(
 
 describe("негатив в аналитике считается предикатом строки", () => {
   it("благоприятно прочитанная страница снимает словарную метку в находках", () => {
+    // Тема описательная намеренно: из обвиняющей благоприятно прочитанный
+    // материал выходит целиком, и «уровень снизился» проверять там не на чем.
     const material = item({
-      title: "Суд рассмотрел иск Умара Кремлева к изданию",
+      title: "Инвестор Умар Кремлев: суд рассмотрел иск к изданию",
       sourceUrl: "https://www.rbc.ru/society/kremlev-sud",
     });
     const supportive: ObservationVerdictByRef = {
       [refOf(material)]: { tone: "supportive", quoted: true, subjectMatch: "subject" },
     };
 
-    const before = findingFor("criminal_legal", [material]);
-    expect(before?.riskLevel).toBe("critical");
+    const before = findingFor("business_profile", [material]);
+    expect(before?.riskLevel).toBe("low");
 
-    const after = findingFor("criminal_legal", [material], supportive);
-    expect(after?.riskLevel).toBe("medium");
+    const after = findingFor("business_profile", [material], supportive);
+    expect(after?.riskLevel).toBe("none");
     expect(after?.claim).not.toContain("с негативным контекстом");
   });
 
@@ -182,8 +184,8 @@ describe("негатив в аналитике считается предика
 
   it("решение аналитика сильнее всего и доезжает до уровня темы", () => {
     const ownership = item({
-      title: 'Умар Кремлев стал владельцем "Рольфа"',
-      sourceUrl: "https://www.example-news.ru/kremlev-rolf",
+      title: "Кремлев — бенефициар офшорного фонда",
+      sourceUrl: "https://www.example-news.ru/kremlev-fund",
     });
     const adverseByAnalyst = { ...ownership, rawMetadata: { ...ownership.rawMetadata, analystAdverse: true } };
     const neutralByAnalyst = {
@@ -199,28 +201,29 @@ describe("негатив в аналитике считается предика
       [refOf(ownership)]: { tone: "adverse", quoted: true, subjectMatch: "subject" },
     };
 
-    expect(findingFor("offshore_corporate", [adverseByAnalyst], supportive)?.riskLevel).toBe("medium");
-    expect(findingFor("offshore_corporate", [neutralByAnalyst], adverseRead)?.riskLevel).toBe("low");
+    expect(findingFor("offshore_structures", [adverseByAnalyst], supportive)?.riskLevel).toBe("medium");
+    expect(findingFor("offshore_structures", [neutralByAnalyst], adverseRead)?.riskLevel).toBe("low");
   });
 
   it("тема, все материалы которой прочитаны и благоприятны, не повышает уровень", () => {
-    const owner = item({
-      title: 'Умар Кремлев стал владельцем "Рольфа"',
-      sourceUrl: "https://www.example-news.ru/kremlev-rolf",
+    // И снова описательная тема: обвиняющая такие материалы просто не берёт.
+    const investor = item({
+      title: "Инвестор Умар Кремлев: суд рассмотрел иск к изданию",
+      sourceUrl: "https://www.rbc.ru/society/kremlev-sud",
       classification: "ADVERSE_MEDIA",
     });
-    const beneficiary = item({
-      title: "Кремлев — бенефициар фонда: расследование издания",
-      sourceUrl: "https://www.example-news.ru/kremlev-fund",
+    const businessman = item({
+      title: "Предприниматель Умар Кремлев и арест счетов партнёра",
+      sourceUrl: "https://www.rbc.ru/business/kremlev-partner",
     });
     const supportive: ObservationVerdictByRef = {
-      [refOf(owner)]: { tone: "supportive", quoted: true, subjectMatch: "subject" },
-      [refOf(beneficiary)]: { tone: "supportive", quoted: true, subjectMatch: "subject" },
+      [refOf(investor)]: { tone: "supportive", quoted: true, subjectMatch: "subject" },
+      [refOf(businessman)]: { tone: "supportive", quoted: true, subjectMatch: "subject" },
     };
 
-    expect(findingFor("offshore_corporate", [owner, beneficiary])?.riskLevel).toBe("medium");
-    const after = findingFor("offshore_corporate", [owner, beneficiary], supportive);
-    expect(after?.riskLevel).toBe("low");
+    expect(findingFor("business_profile", [investor, businessman])?.riskLevel).toBe("low");
+    const after = findingFor("business_profile", [investor, businessman], supportive);
+    expect(after?.riskLevel).toBe("none");
     expect(after?.claim).not.toContain("с негативным контекстом");
   });
 });

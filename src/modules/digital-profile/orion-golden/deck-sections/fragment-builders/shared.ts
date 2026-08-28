@@ -38,6 +38,7 @@ import {
 import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import {
+  pageReadAsFavourable,
   resolveRowAdverse,
   type ObservationVerdict,
 } from "../../../serp-observation/resolve-observation-highlights";
@@ -60,7 +61,11 @@ import {
   themeScaleLine,
 } from "../../analytics/finding-synthesizer";
 import { pluralRu } from "../../../report/i18n/plural-ru";
-import { getFindingThemes, isAccusingTheme } from "../../../config/finding-themes";
+import {
+  getFindingThemes,
+  isAccusingTheme,
+  type ThemeDef,
+} from "../../../config/finding-themes";
 import {
   freshnessFootnote,
   reportDiffClientLine,
@@ -1736,6 +1741,33 @@ function withThemeScaleLine(f: Finding, scale: string): Finding {
 }
 
 /**
+ * Тема находки — по её идентификатору, а не по разбору ярлыка.
+ *
+ * Разбор шёл подстрокой, и держалось это только на том, что ярлыки непохожи:
+ * «Офшоры / корпоративное владение» **содержит** «Корпоративное владение», и
+ * находка прежнего прогона разбиралась как описательная тема — с чужой
+ * присказкой и, что хуже, со снятой защитой «обвиняющая тема не цитирует
+ * благоприятно прочитанную страницу». Ярлык переименовывают (в том числе файлом
+ * переопределения каталога), идентификатор — нет.
+ *
+ * Точное совпадение ярлыка остаётся вторым ответом и нужно тем находкам, у
+ * которых идентификатор темы не несёт: их собирает слияние подтверждённых
+ * правок аналитика (`finding-approved-…`), а ярлык там взят из каталога.
+ *
+ * Тема, которую не назвал ни один из двух способов, считается **обвиняющей**:
+ * `isAccusingTheme(undefined)` строг намеренно.
+ */
+function themeDefOfFinding(f: Finding): ThemeDef | undefined {
+  const themes = getFindingThemes();
+  const byId = themes
+    .filter((t) => f.findingId.startsWith(`finding-${t.themeId}-`))
+    // Идентификатор темы может оказаться началом другого («foo» и «foo-bar»):
+    // побеждает самое длинное совпадение, иначе ответ зависел бы от порядка.
+    .sort((a, b) => b.themeId.length - a.themeId.length)[0];
+  return byId ?? themes.find((t) => t.label === f.theme);
+}
+
+/**
  * B.3 — regional pages must not quote foreign-region sources. Cross-regional
  * findings carry globally aggregated «Источники: …» / «Примеры заголовков: …»
  * segments inside the claim; rebuild both from evidence captured for the
@@ -1761,9 +1793,7 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
    */
   if (exclusive) return themedClaim(withThemeScaleLine(f, scale));
 
-  const themeDef = getFindingThemes().find(
-    (t) => t.label === f.theme || f.theme.toLowerCase().includes(t.label.toLowerCase())
-  );
+  const themeDef = themeDefOfFinding(f);
 
   const domains: string[] = [];
   const titleCandidates: Array<{
@@ -1804,9 +1834,13 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     // зависит ни в чём — а вот от того, обвиняет тема или описывает, зависит:
     // деловому профилю и публичной экспозиции нейтральная публикация и есть
     // законное доказательство.
+    //
+    // Предикат общий с аналитикой: там этот же ответ решает, берёт ли тема
+    // материал в состав, счёт и уровень. Раз он один, то и правка аналитика,
+    // стоящая выше вердикта модели, действует на обеих поверхностях.
     if (
       isAccusingTheme(themeDef) &&
-      (e.readVerdictTone === "neutral" || e.readVerdictTone === "supportive")
+      pageReadAsFavourable({ tone: e.readVerdictTone, analystDecision: e.analystDecision })
     ) {
       continue;
     }

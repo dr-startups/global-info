@@ -49,13 +49,13 @@ export const BENCHMARK_THEMES: BenchmarkThemeDef[] = [
     benchmarkId: "bm-offshore",
     label: "Офшоры",
     keywords: /офшор|offshore|кипр|cyprus|\bbvi\b|панам|panama/iu,
-    findingThemeIds: ["offshore_corporate"],
+    findingThemeIds: ["offshore_structures"],
   },
   {
     benchmarkId: "bm-corporate-ownership",
     label: "Корпоративное владение",
     keywords: /владел|ownership|бенефициар|beneficia|учредител|акционер|shareholder/iu,
-    findingThemeIds: ["offshore_corporate", "business_profile"],
+    findingThemeIds: ["corporate_ownership", "business_profile"],
   },
   {
     benchmarkId: "bm-pep-rca",

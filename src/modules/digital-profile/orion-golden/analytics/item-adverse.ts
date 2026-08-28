@@ -18,6 +18,7 @@
 
 import type { RawInventoryItem } from "../types";
 import {
+  pageReadAsFavourable,
   resolveRowAdverse,
   verdictStrength,
   type AdverseRowInput,
@@ -152,4 +153,22 @@ export function resolveItemAdverse(
   verdictByRef?: ObservationVerdictByRef
 ): boolean {
   return resolveRowAdverse(adverseRowOf(item), verdictByRef?.[evidenceRefOf(item)]);
+}
+
+/**
+ * Прочитали ли страницу материала и признали ли её благоприятной.
+ *
+ * Тот же перевод инвентарной записи, что и у `resolveItemAdverse`, — ответ
+ * общий с декой и живёт в `pageReadAsFavourable`. Дека спрашивает его о
+ * нарисованной строке, аналитика о материале корпуса, а решение одно: может ли
+ * обвиняющая тема на этот материал опираться.
+ */
+export function resolveItemReadFavourably(
+  item: RawInventoryItem,
+  verdictByRef?: ObservationVerdictByRef
+): boolean {
+  return pageReadAsFavourable({
+    tone: verdictByRef?.[evidenceRefOf(item)]?.tone,
+    analystDecision: analystDecisionOf(item),
+  });
 }

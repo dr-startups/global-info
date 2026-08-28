@@ -31,7 +31,9 @@ const FINDING = {
 } as unknown as Finding;
 
 function scoped(
-  tones: Record<string, "adverse" | "neutral" | "supportive" | undefined>
+  tones: Record<string, "adverse" | "neutral" | "supportive" | undefined>,
+  /** Правка аналитика по нейтрально прочитанному материалу — если она есть. */
+  analystDecision?: "ADVERSE" | "NEUTRAL"
 ): ScopedFragmentInput {
   return {
     findings: [FINDING],
@@ -42,6 +44,7 @@ function scoped(
         domain: "tv.example",
         region: "RU",
         readVerdictTone: tones["inventory:read-neutral"],
+        analystDecision,
       },
       "inventory:read-adverse": {
         title: "Суд по иску о взыскании 72 млн рублей с предпринимателя",
@@ -81,6 +84,25 @@ describe("вердикт прочитанной страницы сильнее 
     expect(claim).toContain("дал интервью о новом альбоме");
   });
 
+  it("правка аналитика сильнее вердикта: цитата возвращается", () => {
+    /*
+     * Человек посмотрел материал и пометил его нежелательным — значит, на
+     * странице что-то есть, и обвиняющая тема цитату не теряет. Порядок сил
+     * тот же, что у оценки строки, и предикат тот же
+     * (`pageReadAsFavourable`): иначе строка выдачи печаталась бы
+     * «Нежелательной» по правке аналитика, а тема того же материала на
+     * соседнем листе не цитировала бы его вовсе.
+     */
+    const claim = localizedThemedClaim(
+      FINDING,
+      scoped(
+        { "inventory:read-neutral": "neutral", "inventory:read-adverse": "adverse" },
+        "ADVERSE"
+      )
+    );
+    expect(claim).toContain("дал интервью о новом альбоме");
+  });
+
   it("обвиняющая тема низкого уровня внимания ограничена вердиктом так же", () => {
     /*
      * Было наоборот: правило применялось только к темам не ниже среднего, и
@@ -93,6 +115,7 @@ describe("вердикт прочитанной страницы сильнее 
      */
     const lowRisk = {
       ...FINDING,
+      findingId: "finding-financial_claims-subject_match-test",
       theme: "Финансовые претензии / долговые споры",
       riskLevel: "low",
     } as Finding;
@@ -113,16 +136,23 @@ describe("описательная тема нейтральную страни�
    * доказательство темы, а её изгнание печатало на странице делового профиля
    * «сути риска в выдаче не выделено» при двух годных цитатах.
    */
-  it.each([["Деловой профиль"], ["Политические связи / публичная экспозиция"]])(
-    "«%s» оставляет цитату прочитанной страницы",
-    (theme) => {
-      const descriptive = { ...FINDING, theme, riskLevel: "low" } as Finding;
-      const claim = localizedThemedClaim(
-        descriptive,
-        scoped({ "inventory:read-neutral": "neutral", "inventory:read-adverse": "neutral" })
-      );
-      expect(claim).toContain("дал интервью о новом альбоме");
-      expect(claim).not.toContain("отдельный заголовок с сутью риска в выдаче не выделен");
-    }
-  );
+  it.each([
+    ["Деловой профиль", "business_profile"],
+    ["Политические связи / публичная экспозиция", "political_exposure"],
+  ])("«%s» оставляет цитату прочитанной страницы", (theme, themeId) => {
+    // Идентификатор находки несёт тему, и подменять один ярлык уже нельзя:
+    // тему находки дека узнаёт по идентификатору.
+    const descriptive = {
+      ...FINDING,
+      findingId: `finding-${themeId}-subject_match-test`,
+      theme,
+      riskLevel: "low",
+    } as Finding;
+    const claim = localizedThemedClaim(
+      descriptive,
+      scoped({ "inventory:read-neutral": "neutral", "inventory:read-adverse": "neutral" })
+    );
+    expect(claim).toContain("дал интервью о новом альбоме");
+    expect(claim).not.toContain("отдельный заголовок с сутью риска в выдаче не выделен");
+  });
 });

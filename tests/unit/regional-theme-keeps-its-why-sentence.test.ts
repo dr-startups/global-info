@@ -51,7 +51,7 @@ function crossRegionalFinding(theme: string, why: string): Finding {
 
 describe("региональный блок темы называет, почему тема важна", () => {
   it.each([
-    ["Офшоры / корпоративное владение", OFFSHORE_WHY],
+    ["Офшорные структуры", OFFSHORE_WHY],
     ["Внимание по линии безопасности / оборонный контур", SECURITY_WHY],
   ])("«%s» — присказка остаётся в пустой ветке", (theme, why) => {
     const claim = localizedThemedClaim(
@@ -77,7 +77,7 @@ describe("региональный блок темы называет, поче�
   });
 
   it.each([
-    ["Офшоры / корпоративное владение", OFFSHORE_WHY],
+    ["Офшорные структуры", OFFSHORE_WHY],
     ["Внимание по линии безопасности / оборонный контур", SECURITY_WHY],
   ])("«%s» — присказка остаётся и под региональной цитатой", (theme, why) => {
     const claim = localizedThemedClaim(
@@ -101,7 +101,7 @@ describe("региональный блок темы называет, поче�
 
   it("присказка не берётся у соседней темы", () => {
     const claim = localizedThemedClaim(
-      crossRegionalFinding("Офшоры / корпоративное владение", OFFSHORE_WHY),
+      crossRegionalFinding("Офшорные структуры", OFFSHORE_WHY),
       uaeScoped({
         "ev-ru": {
           title: "Офшорная структура владения раскрыта в реестре",
@@ -143,7 +143,7 @@ describe("присказка находится и в утверждении, с
 
   function claimOnUaePage(claim: string): string {
     const finding = {
-      ...crossRegionalFinding("Офшоры / корпоративное владение", OFFSHORE_WHY),
+      ...crossRegionalFinding("Офшорные структуры", OFFSHORE_WHY),
       claim,
     } as unknown as Finding;
     return localizedThemedClaim(finding, SCOPED);
@@ -174,7 +174,7 @@ describe("присказка находится и в утверждении, с
     // строки счёта, ни присказки. Дописывать им своё региональная пересборка
     // не вправе: она переписывает найденное.
     const claim = claimOnUaePage(
-      "Офшоры / корпоративное владение: 4 свидетельства (1 негативное) в источниках " +
+      "Офшорные структуры: 4 свидетельства (1 негативное) в источниках " +
         "kulak.team, gulfnews.com. Примеры: Офшорная структура владения раскрыта в реестре · " +
         "Dubai registry links the subject to an offshore holding chain"
     );

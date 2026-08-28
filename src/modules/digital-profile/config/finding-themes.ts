@@ -15,6 +15,18 @@ export type ThemeDef = {
   themeId: string;
   label: string;
   keywords: RegExp;
+  /**
+   * Площадки темы — отдельный ответ, как `ADVERSE_DOMAIN_RE` у предиката строки.
+   *
+   * Список читает адрес целиком, словарь темы адреса не читает вовсе. Пока
+   * доменные слова (`opencorporates`, `rupep`, `sledstvie`) стояли в общем
+   * словаре, а сверка шла по склейке с `sourceUrl`, раздел сайта в пути читался
+   * как текст публикации: у словаря есть левая граница, и `…/court/…`
+   * совпадало с `court` при нейтральном заголовке.
+   *
+   * Темы без своих площадок это поле не заводят.
+   */
+  domains: RegExp | null;
   baseRisk: RiskLevel;
   recommendedAction: string;
   /** Тема обвиняет (по умолчанию) или описывает — см. `isAccusingTheme`. */
@@ -28,6 +40,8 @@ const ThemeDefJsonSchema = z.object({
   label: z.string().min(1),
   /** RegExp source (without slashes). */
   keywords: z.string().min(1),
+  /** Необязательно: площадки темы, если они у неё есть. */
+  domains: z.string().min(1).optional(),
   flags: z.string().default("iu"),
   baseRisk: RiskLevelSchema,
   recommendedAction: z.string().min(1),
@@ -222,7 +236,8 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         accusing: true,
         label: "Криминальные / судебные материалы",
         keywords:
-          "уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|sledstvie|rucriminal|компромат|суд(?!острое|ьб)|court",
+          "уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|компромат|суд(?!острое|ьб)|court",
+        domains: "sledstvie|rucriminal",
         flags: "iu",
         baseRisk: "high",
         recommendedAction:
@@ -232,8 +247,8 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         themeId: "pep_rca_watchlist",
         accusing: true,
         label: "PEP / RCA / watchlist-сигналы",
-        keywords:
-          "\\bpep\\b|\\brca\\b|watch.?list|санкц|sanction|world.?check|dow.?jones|lexis|rupep|комплаенс|compliance",
+        keywords: "\\bpep\\b|\\brca\\b|watch.?list|санкц|sanction|комплаенс|compliance",
+        domains: "world.?check|dow.?jones|lexis|rupep",
         flags: "iu",
         baseRisk: "medium",
         recommendedAction:
@@ -253,15 +268,47 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
           "Зафиксировать фактическую хронологию публичных должностей и связей, подготовить согласованную позицию для СМИ и комплаенс-запросов банков и партнёров.",
       },
       {
-        themeId: "offshore_corporate",
+        themeId: "offshore_structures",
         accusing: true,
-        label: "Офшоры / корпоративное владение",
-        keywords:
-          "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama|бенефициар|beneficia|владел|ownership|opencorporates",
+        label: "Офшорные структуры",
+        keywords: "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama|бенефициар|beneficia",
+        domains: "opencorporates",
         flags: "iu",
         baseRisk: "medium",
         recommendedAction:
-          "Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов.",
+          "Подготовить документальное подтверждение структуры владения и источников средств по офшорным юрисдикциям — именно его запрашивают при KYC; неточные публикации оспаривать у площадок.",
+      },
+      {
+        themeId: "corporate_ownership",
+        // Покупка компании — то, что описывают, а не то, в чём обвиняют.
+        // Слово «владел» стояло в одной теме с офшором, и «стал владельцем
+        // "Рольфа"» выходило к читателю обвинением среднего уровня под ярлыком,
+        // обещающим офшор, — при том что ни один источник об офшоре не говорил.
+        accusing: false,
+        label: "Корпоративное владение",
+        // «Бенефициарный владелец» и `beneficial ownership` — устойчивый термин
+        // предметной области, и в нём сходятся слова двух тем: раскрытие
+        // бенефициара это офшорный сюжет, а не покупка компании. Без оговорки
+        // один материал получал два ярлыка сразу — две карточки матрицы с одним
+        // составом доказательств и одну цитату дважды, что читается как два
+        // разных сюжета. Оговорка ставится там, где термин состоит из слов двух
+        // тем, и от языка заголовка не зависит: русский корпус основной.
+        //
+        // Хвост в четыре буквы покрывает и склонение прилагательного
+        // («бенефициарный … бенефициарными»), и парное написание через дефис
+        // («бенефициара-владельца»). Просмотр вперёд закрывает **обратный**
+        // порядок того же парного написания («владелец-бенефициар»): оговорка
+        // симметрична, иначе дефис учтён в одну сторону из двух. Просмотр вперёд
+        // требует дефиса намеренно — через пробел парного слова не бывает, а вот
+        // перечисление есть, и соседство слов оговорка не снимает: «Бенефициар
+        // раскрыт, а владелец актива назван отдельно» — два сюжета и две темы.
+        keywords:
+          "(?<!бенефициар\\p{L}{0,4}[\\s-])владел(?!\\p{L}{0,5}-бенефициар)|" +
+          "(?<!beneficial[\\s-])ownership",
+        flags: "iu",
+        baseRisk: "low",
+        recommendedAction:
+          "Сверить состав долей и историю сделок с корпоративными реестрами и держать подтверждающие документы наготове: их запрашивают в обычной проверке, а не как претензию.",
       },
       {
         themeId: "family_associates",
@@ -292,7 +339,10 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         // Industry terms stay here as a soft universal bucket; override JSON can
         // move them into a dedicated industry_contour theme when needed.
         keywords:
-          "бизнесмен|businessman|предпринимател|инвестор|investor|биограф|biography|forbes|логистик|logistics|транспорт|transport|девелоп",
+          "бизнесмен|businessman|предпринимател|инвестор|investor|биограф|biography|логистик|logistics|транспорт|transport|девелоп",
+        // Forbes — имя площадки, а не слово текста: деловым профиль делает то,
+        // что публикация вышла там, и отвечать за это должен список площадок.
+        domains: "forbes",
         flags: "iu",
         baseRisk: "none",
         recommendedAction:
@@ -439,6 +489,11 @@ export function compileFindingThemesConfig(
       t.flags.includes("u") ? t.flags : `${t.flags}u`,
       `themes[${t.themeId}].keywords`
     ),
+    // Флаги темы как написаны: границы слова у списка площадок нет, а режим
+    // Unicode нужен только просмотру назад, которого здесь нет.
+    domains: t.domains
+      ? compileRegex(t.domains, t.flags, `themes[${t.themeId}].domains`)
+      : null,
     baseRisk: t.baseRisk,
     recommendedAction: t.recommendedAction,
     accusing: t.accusing,
