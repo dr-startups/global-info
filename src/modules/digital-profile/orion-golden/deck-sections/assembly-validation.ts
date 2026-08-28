@@ -8,7 +8,7 @@ import { REQUIRED_SECTIONS } from "./contracts";
 import type { RendererSlide } from "./deck-assembler";
 import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
-import type { VisualAssetsBySlot } from "./canonical-slots";
+import { CANONICAL_SLOT_IDS, type VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
@@ -452,10 +452,17 @@ export function validateAssembly(input: {
   }
   checks.noEmptyStatusLabels = labelsOk;
 
-  // Canonical coverage: all 36 First36 base slots must be present.
-  checks.canonicalBaseSlotCoverage = deckManifest.baseSlotCoverage === 36;
+  /*
+   * Каноническое покрытие: присутствовать обязаны все базовые слоты.
+   *
+   * Сколько их — знает сам перечень, а не литерал рядом. Литералов было шесть,
+   * и добавление слота означало бы шесть согласованных правок: пропусти одну —
+   * и приёмка либо молчит о недостающем листе, либо краснеет на полной деке.
+   */
+  const requiredSlots = CANONICAL_SLOT_IDS.length;
+  checks.canonicalBaseSlotCoverage = deckManifest.baseSlotCoverage === requiredSlots;
   if (!checks.canonicalBaseSlotCoverage) {
-    issues.push(`baseSlotCoverage=${deckManifest.baseSlotCoverage}, expected 36`);
+    issues.push(`baseSlotCoverage=${deckManifest.baseSlotCoverage}, expected ${requiredSlots}`);
   }
 
   // A slide with a bound visual asset must never render as an

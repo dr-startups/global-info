@@ -209,7 +209,7 @@ function composeFragment(
   const region = key.startsWith("RU_") ? "Россия" : key.startsWith("UAE_") ? "ОАЭ / международный" : "";
   switch (key) {
     case "FRONT_MATTER_MAIN":
-      return buildFrontMatterFragment(section, scoped);
+      return buildFrontMatterFragment(section, scoped, extras);
     case "EXECUTIVE_SUMMARY":
       return buildExecutiveSummaryFragment(section, scoped, extras);
     case "RISK_MATRIX":
@@ -274,7 +274,12 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
           }
         : key === "RU_SUMMARY" || key === "UAE_SUMMARY"
           ? extras.uncategorizedMaterials ?? null
-          : null;
+          : // Решение о персоне печатает один лист — его пакет от него и
+            // зависит. Отдать его всем ключам значило бы обесценить каждый
+            // готовый пакет прогона, где решение просто появилось.
+            key === "FRONT_MATTER_MAIN"
+            ? extras.personaDecision ?? null
+            : null;
   // Visual asset bindings are fragment inputs: adding/removing an asset for a
   // slot the fragment owns must regenerate it (layout templates are NOT here —
   // template-only changes never invalidate packs).

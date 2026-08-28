@@ -87,6 +87,7 @@ describe("client-text-contract §6.1", () => {
       slideKey: "s1",
       sectionKey: "EXECUTIVE",
       template: "orion_golden_text",
+      templateId: "continuation",
       title: "Тест",
       pageNumber: 1,
       totalPageCount: 1,

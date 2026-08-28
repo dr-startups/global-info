@@ -8,6 +8,7 @@
 
 process.env.NETWORK_CALLS = "0";
 
+import { CANONICAL_SLOT_IDS } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { execFileSync } from "node:child_process";
@@ -298,11 +299,11 @@ describe("deck assembler", () => {
   const dir = mkdtempSync(join(tmpdir(), "orion-deck-asm-"));
   const build = buildOnce(dir);
 
-  it("assembles all required sections with canonical baseSlotCoverage=36", () => {
+  it("assembles all required sections with full canonical base-slot coverage", () => {
     assert.equal(build.manifest.buildBlocked, false);
     assert.equal(build.assembly.errors.length, 0);
-    assert.ok(build.assembly.deckManifest.pageCount >= 36);
-    assert.equal(build.assembly.deckManifest.baseSlotCoverage, 36);
+    assert.ok(build.assembly.deckManifest.pageCount >= CANONICAL_SLOT_IDS.length);
+    assert.equal(build.assembly.deckManifest.baseSlotCoverage, CANONICAL_SLOT_IDS.length);
     assert.equal(build.assemblyValidation?.checks.canonicalBaseSlotCoverage, true);
   });
 
@@ -329,7 +330,7 @@ describe("deck assembler", () => {
     );
     assert.ok(omitted, "EMPTY_VALID optional fragment must be omitted");
     assert.ok(!result.assembly.deckManifest.slides.some((s) => s.sectionType === "APPENDIX"));
-    assert.equal(result.assembly.deckManifest.baseSlotCoverage, 36);
+    assert.equal(result.assembly.deckManifest.baseSlotCoverage, CANONICAL_SLOT_IDS.length);
   });
 
   it("continuation inserted directly after base slide", () => {
@@ -441,7 +442,7 @@ describe("canonical coverage and visual assets", () => {
     readFileSync(join(process.cwd(), "baselines", "report-72", "baseline.json"), "utf8")
   ) as { pageInventory: { value: V72PageInventoryItem[] } };
 
-  it("coverage reconciliation maps all 36 base slots and all 43 v72 pages", () => {
+  it("coverage reconciliation maps every base slot and all 43 v72 pages", () => {
     const rec = buildCoverageReconciliation({
       deckManifest: build.assembly.deckManifest,
       packs: build.packs,
@@ -449,8 +450,8 @@ describe("canonical coverage and visual assets", () => {
       v72PageInventory: baseline.pageInventory.value,
     });
     assert.equal(rec.failed, false);
-    assert.equal(rec.baseSlotCoverage, 36);
-    assert.equal(rec.slots.length, 36);
+    assert.equal(rec.baseSlotCoverage, CANONICAL_SLOT_IDS.length);
+    assert.equal(rec.slots.length, CANONICAL_SLOT_IDS.length);
     assert.equal(rec.v72Pages.length, 43);
     assert.deepEqual(rec.missingBaseSlots, []);
     assert.deepEqual(rec.missingPromotedFindings, []);

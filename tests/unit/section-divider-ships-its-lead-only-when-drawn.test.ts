@@ -24,6 +24,10 @@ function divider(layoutVariant?: string): RendererSlide {
   return {
     slideKey: "p06_ru_toc",
     sectionKey: "RU_PROFILE",
+    // Поле стало обязательным вместе с листом «Кого проверяли»: бюджет абзаца
+    // объявлен у реестрового шаблона, а одну раскладку делят шаблоны с разной
+    // ёмкостью. Необязательное поле молча отключало бы сторож на слайде без него.
+    templateId: "region-divider",
     template: "orion_golden_region_divider",
     layoutVariant,
     title: "Россия: Цифровой профиль",

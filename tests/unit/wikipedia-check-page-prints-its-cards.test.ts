@@ -34,6 +34,7 @@ function wikipediaCheckSlide(): RendererSlide {
     slideKey: "p13_ru_wikipedia",
     sectionKey: "RU_PROFILE",
     template: "orion_golden_wikipedia_check",
+    templateId: "wikipedia-check",
     title: "Россия — Википедия",
     pageNumber: 25,
     totalPageCount: 48,

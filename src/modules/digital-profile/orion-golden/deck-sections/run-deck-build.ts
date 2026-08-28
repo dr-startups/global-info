@@ -33,9 +33,12 @@ import { toneForRiskLabel } from "../client/risk-scale";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { normalizeForCompare } from "./text-compare";
 import {
+  DECK_TEMPLATE_REGISTRY,
   SIDEBAR_HIGHLIGHT_BUDGET,
   SIDEBAR_HIGHLIGHT_SLOTS,
   rendererTemplateHasBulletList,
+  SILENTLY_CLIPPED_NARRATIVE_TEMPLATES,
+  type DeckTemplateId,
 } from "./template-registry";
 import {
   measureVerdictHasLoss,
@@ -515,6 +518,141 @@ const CARD_STRUCTURED_TEMPLATES = new Set([
   "orion_golden_wikipedia_check",
 ]);
 
+/**
+ * Абзацы, которые не влезут в свой лист.
+ *
+ * Ёмкость листа объявлена у реестрового шаблона, и это **единственный** ответ
+ * на вопрос «сколько абзаца помещается»: раньше их было два, применялся общий
+ * бюджет клиентского поля (1100 знаков на все шаблоны), и абзац в 952 знака
+ * стоял на листе ёмкостью около 998, не вызвав ни одного возражения.
+ *
+ * Проверять после отрисовки нечем: карточку абзаца рисует `content_card`, а он
+ * обрезает текст **до** отрисовки, телеметрии о себе не пишет вовсе и
+ * `droppedLines` не выставляет. Ни геометрия, ни блокирующее правило приёмки
+ * такой потери не видят — единственный момент, когда её ещё можно заметить,
+ * вот этот: абзац собран целиком и ещё не отдан рендереру.
+ */
+/**
+ * Абзац не влезает в свой лист — отказ именованный, а не безымянный.
+ *
+ * Классификатор восстановления узнаёт отказ по коду или по знакомой фразе, и
+ * безымянная ошибка не подходила ни под один его пункт: на последнем шаге
+ * оплаченного прогона она выглядела бы аварией, хотя дефект детерминированный
+ * и данные сбора целы. Это то же самое, чем кончается несошедшийся цикл меры
+ * (`BulletFitNotConvergedError`), и лечится тем же — пересборкой после правки.
+ */
+export class NarrativeOverBudgetError extends Error {
+  /** Какие листы и насколько переросли бюджет — чтобы не искать по журналу. */
+  readonly slides: ReadonlyArray<{
+    slideKey: string;
+    templateId: string;
+    length: number;
+    budget: number;
+  }>;
+
+  constructor(slides: ReadonlyArray<{ slideKey: string; templateId: string; length: number; budget: number }>) {
+    super(
+      `narrative over template budget: ${slides
+        .map((o) => `${o.slideKey} [${o.templateId}] ${o.length}>${o.budget}`)
+        .join("; ")}`
+    );
+    this.name = "NarrativeOverBudgetError";
+    this.slides = slides;
+  }
+}
+
+/**
+ * Резак абзацев выбросил часть текста.
+ *
+ * `reflowNarrativeParagraphs` делит абзац по предложениям с пределом
+ * `max(180, длина/3)` и **молча** отбрасывает всё сверх трёх абзацев, а
+ * предложение длиннее предела обрезает по границе слова. Ни записи, ни
+ * события, ни `droppedLines` при этом не появляется: потерю не видят ни
+ * геометрия, ни телеметрия, ни ворота приёмки.
+ *
+ * Замерять после резака бесполезно — там уже короткий текст. Поэтому сверка
+ * идёт по обе стороны вызова: что подали и что он вернул.
+ */
+export class NarrativeReflowLossError extends Error {
+  readonly slides: ReadonlyArray<{ slideKey: string; before: number; after: number }>;
+
+  constructor(slides: ReadonlyArray<{ slideKey: string; before: number; after: number }>) {
+    super(
+      `narrative reflow dropped text: ${slides
+        .map((o) => `${o.slideKey} ${o.before}->${o.after}`)
+        .join("; ")}`
+    );
+    this.name = "NarrativeReflowLossError";
+    this.slides = slides;
+  }
+}
+
+/**
+ * Где потеря резака **пре-существующая** и этой работой не чинится.
+ *
+ * Замерено 28.08 на золотом кейсе: абзац `p03_executive` уходит резаку на 892
+ * знака, возвращается 770 — молча теряется 122. Дефект старше этой работы и не
+ * её предмет: абзац резюме пишет модель, разбивку делает семантическая
+ * пагинация, и правка там меняет клиентский текст исполнительной сводки
+ * целиком. На эталоне 72 та же страница потерь не даёт: её абзац приходит
+ * резаку уже со строками (текст находки склеивается через `\n`), и резак
+ * возвращает его как есть.
+ *
+ * Исключение названо здесь, а не спрятано молчанием: сторож обязан оставаться
+ * честным про то, чего он **не** держит. Убрать его — значит починить абзац
+ * резюме, а не расширить список.
+ */
+export const REFLOW_LOSS_PREEXISTING_TEMPLATES: ReadonlySet<string> = new Set(["executive-summary"]);
+
+/** Сравнение без пробелов: резак меняет разделители, но не должен терять знаки. */
+function compactForLoss(value: string): string {
+  return value.replace(/\s+/gu, "");
+}
+
+/**
+ * Что резак выбросил — по обе стороны вызова, для каждого слайда.
+ *
+ * Проверка общая, а не для одного листа: механизм пре-существующий, и следующий
+ * абзац, доросший до предела, потеряется так же тихо.
+ */
+export function narrativeReflowLoss(
+  slides: ReadonlyArray<{ slideKey?: string; templateId?: string; before?: string; after?: string }>
+): Array<{ slideKey: string; before: number; after: number }> {
+  const lost: Array<{ slideKey: string; before: number; after: number }> = [];
+  for (const slide of slides) {
+    if (REFLOW_LOSS_PREEXISTING_TEMPLATES.has(String(slide.templateId ?? ""))) continue;
+    const before = compactForLoss(String(slide.before ?? ""));
+    const after = compactForLoss(String(slide.after ?? ""));
+    if (before && after.length < before.length) {
+      lost.push({ slideKey: String(slide.slideKey ?? "?"), before: before.length, after: after.length });
+    }
+  }
+  return lost;
+}
+
+export function narrativeOverBudget(
+  slides: ReadonlyArray<{ slideKey?: string; templateId?: string; narrative?: string }>
+): Array<{ slideKey: string; templateId: string; length: number; budget: number }> {
+  const over: Array<{ slideKey: string; templateId: string; length: number; budget: number }> = [];
+  for (const slide of slides) {
+    const narrative = String(slide.narrative ?? "");
+    if (!narrative) continue;
+    const templateId = String(slide.templateId ?? "");
+    if (!SILENTLY_CLIPPED_NARRATIVE_TEMPLATES.has(templateId as DeckTemplateId)) continue;
+    const budget = DECK_TEMPLATE_REGISTRY[templateId as DeckTemplateId]?.layout.narrativeCharBudget;
+    if (typeof budget !== "number") continue;
+    if (narrative.length > budget) {
+      over.push({
+        slideKey: String(slide.slideKey ?? "?"),
+        templateId,
+        length: narrative.length,
+        budget,
+      });
+    }
+  }
+  return over;
+}
+
 /** Convert the assembled model to the existing renderer's payload shape. */
 export function toRendererPayload(input: {
   deckManifest: ReportDeckManifest;
@@ -539,6 +677,10 @@ export function toRendererPayload(input: {
     "orion_golden_image_grid",
   ]);
   const usedAssetRefs = new Set<string>();
+  // Шаблон реестра на провод не едет, а бюджет абзаца объявлен у него: карта
+  // нужна затем, что одну раскладку рендерера делят шаблоны с разной ёмкостью.
+  const templateIdOf = new Map(input.rendererSlides.map((s) => [s.slideKey, s.templateId]));
+  const reflowPairs: Array<{ slideKey: string; templateId: string; before: string; after?: string }> = [];
   const finalSlides = input.rendererSlides.map((raw) => {
     // Вводный абзац и текст находки склеиваются до переноса строк: перенос
     // должен видеть весь абзац целиком, иначе он ломает его по границе кусков.
@@ -555,11 +697,21 @@ export function toRendererPayload(input: {
     ]
       .filter((part): part is string => Boolean(part && part.trim()))
       .join("\n");
+    // Что подали резаку и что он вернул — обе стороны нужны сверке ниже:
+    // после него потерянного текста уже нет, и мерить нечего.
+    const beforeReflow = composedNarrative ? stripFindingMarkers(composedNarrative) : undefined;
+    const afterReflow = beforeReflow ? reflowNarrativeParagraphs(beforeReflow) : raw.narrative;
+    if (beforeReflow) {
+      reflowPairs.push({
+        slideKey: raw.slideKey,
+        templateId: raw.templateId,
+        before: beforeReflow,
+        after: afterReflow,
+      });
+    }
     const s: RendererSlide = {
       ...raw,
-      narrative: composedNarrative
-        ? reflowNarrativeParagraphs(stripFindingMarkers(composedNarrative))
-        : raw.narrative,
+      narrative: afterReflow,
       bullets: raw.bullets?.map((b) => reflowThemeBullet(stripFindingMarkers(b))),
     };
     const boundAssets = s.visualAssetRefs.filter((r) => assetByRef.has(r));
@@ -759,6 +911,31 @@ export function toRendererPayload(input: {
       }
     }
   }
+  /*
+   * Абзац, который рендерер молча обрежет, наружу не уходит.
+   *
+   * Отказ здесь громкий и возобновляемый, а пропажа половины абзаца — нет:
+   * документ уедет клиенту без вывода страницы, и об этом никто не узнает.
+   * Дойти сюда правка построителя не должна — её ловят сверка пакета и
+   * офлайн-проверка, — но последний рубеж стоит там, где абзац уже собран
+   * целиком: склейка подписи и текста находки добавляет к нему сотни знаков
+   * уже после построителя.
+   */
+  const overBudget = narrativeOverBudget(
+    finalSlides.map((s) => ({
+      slideKey: s.slideKey,
+      templateId: templateIdOf.get(s.slideKey),
+      narrative: typeof s.narrative === "string" ? s.narrative : undefined,
+    }))
+  );
+  if (overBudget.length > 0) throw new NarrativeOverBudgetError(overBudget);
+  /*
+   * Резак стоит **до** проверки бюджета, поэтому она видит уже укороченный
+   * текст и потерю поймать не может по построению. Сверка по обе стороны
+   * вызова — единственное место, где пропажу ещё видно.
+   */
+  const reflowLoss = narrativeReflowLoss(reflowPairs);
+  if (reflowLoss.length > 0) throw new NarrativeReflowLossError(reflowLoss);
   return {
     reportSpec: {
       version: "deck-sections-report-spec-v1",

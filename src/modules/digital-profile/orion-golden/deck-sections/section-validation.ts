@@ -10,6 +10,11 @@ import {
   pickWikipediaCheckEntry,
 } from "./fragment-builders/shared";
 import { clientAddress } from "../client/client-address";
+import {
+  DECK_TEMPLATE_REGISTRY,
+  SILENTLY_CLIPPED_NARRATIVE_TEMPLATES,
+  type DeckTemplateId,
+} from "./template-registry";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {
@@ -147,6 +152,27 @@ export function undeclaredClientTextDomains(
 
 const TEXT_BUDGETS = getClientTextFieldBudgets();
 
+/**
+ * Сколько абзаца влезает на лист — вопрос шаблона, а не поля.
+ *
+ * Там, где абзац рисует молча обрезающая карточка, ответ один и он реестровый:
+ * ёмкость померена по листу. Здесь применялся общий бюджет клиентского поля
+ * (1100 знаков на все шаблоны, шире любого листа), и абзац страницы Википедии
+ * в золотом эталоне — 952 знака при объявленных 900 — проходил без возражений,
+ * а рендерер потом отрезал хвост, не сказав об этом никому.
+ *
+ * У остальных шаблонов реестровое число — сид раскладки, а не замер, и потерю
+ * там рендерер объявляет сам (`dropped_bullets` → `CONTENT_DROPPED_BY_RENDERER`).
+ * Требовать от них того же значило бы завалить приёмку на здоровой деке
+ * числом, которое никто не мерил.
+ */
+export function narrativeBudgetOf(templateId: string): number {
+  const template = DECK_TEMPLATE_REGISTRY[templateId as DeckTemplateId];
+  return template && SILENTLY_CLIPPED_NARRATIVE_TEMPLATES.has(templateId as DeckTemplateId)
+    ? template.layout.narrativeCharBudget
+    : TEXT_BUDGETS.narrative;
+}
+
 export function validateSectionPack(input: {
   pack: SectionPackV2;
   expectedCaseId: string;
@@ -221,7 +247,13 @@ export function validateSectionPack(input: {
   // (covered by findingIds check + bullets carry [findingId] markers).
   for (const slide of pack.slides) {
     checkText(issues, slide.slideId, "title", slide.title, TEXT_BUDGETS.title);
-    checkText(issues, slide.slideId, "narrative", slide.content.narrative, TEXT_BUDGETS.narrative);
+    checkText(
+      issues,
+      slide.slideId,
+      "narrative",
+      slide.content.narrative,
+      narrativeBudgetOf(slide.templateId)
+    );
     checkText(issues, slide.slideId, "whatWasFound", slide.content.whatWasFound, TEXT_BUDGETS.whatWasFound);
     checkText(issues, slide.slideId, "whyItMatters", slide.content.whyItMatters, TEXT_BUDGETS.whyItMatters);
     checkText(issues, slide.slideId, "whatToCheck", slide.content.whatToCheck, TEXT_BUDGETS.whatToCheck);

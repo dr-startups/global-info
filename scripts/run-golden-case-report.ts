@@ -262,6 +262,29 @@ function assertEvidenceSupplementSlides(artifactsDir: string): void {
   );
 }
 
+/**
+ * Артефакт решения о персоне пишется всегда — даже когда решения нет.
+ *
+ * «Блока нет» обязано значить ровно «решения нет», а не «артефакт потерялся»:
+ * иначе отсутствие ответа на вопрос «кого проверяли» неотличимо от пропажи. У
+ * золотого кейса панель персоны не собиралась, и артефакт обязан сказать это
+ * словами — не пропуском. База отсюда не читается: сборка идёт офлайн.
+ */
+function assertPersonaDecisionArtifact(artifactsDir: string): void {
+  const path = join(artifactsDir, "analytics", "persona-decision.json");
+  assert.ok(existsSync(path), "persona-decision.json missing");
+  const artifact = JSON.parse(readFileSync(path, "utf8")) as {
+    record: unknown;
+    note?: string;
+  };
+  assert.equal(artifact.record, null, "golden case has no persona decision");
+  assert.match(
+    String(artifact.note ?? ""),
+    /Решения по персоне у кейса нет/u,
+    `persona-decision.json must say in words that no decision exists: ${artifact.note}`
+  );
+}
+
 function assertComplianceSlides(artifactsDir: string): void {
   const assembledPath = join(artifactsDir, "deck", "assembled-deck.json");
   assert.ok(existsSync(assembledPath), "assembled-deck.json missing");
@@ -428,6 +451,7 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   const res = await runCanonicalReportPrepare(input);
   assertComplianceSlides(artifactsDir);
   assertEvidenceSupplementSlides(artifactsDir);
+  assertPersonaDecisionArtifact(artifactsDir);
   const overridesPath = join(artifactsDir, "analytics", "analyst-overrides-applied.json");
   assert.ok(existsSync(overridesPath), "analyst-overrides-applied.json missing");
   const overridesApplied = JSON.parse(readFileSync(overridesPath, "utf8")) as {

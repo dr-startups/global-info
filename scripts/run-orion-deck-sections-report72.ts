@@ -257,6 +257,7 @@ async function main(): Promise<void> {
           (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
         surfaceCollectionHints: inputs.surfaceCollectionHints,
         complianceScreenings: inputs.complianceScreenings,
+        personaDecision: inputs.personaDecision ?? undefined,
         uncategorizedMaterials:
           (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
         visualAssets,
@@ -278,7 +279,7 @@ async function main(): Promise<void> {
     measure: measureWithLocalPython,
   });
 
-  // Coverage reconciliation: 36 canonical slots + 43 v72 baseline pages.
+  // Coverage reconciliation: canonical slots + 43 v72 baseline pages.
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as {
     pageInventory: { value: V72PageInventoryItem[] };
   };
@@ -292,7 +293,7 @@ async function main(): Promise<void> {
   writeFileSync(reconciliationPath, JSON.stringify(reconciliation, null, 2), "utf8");
   console.log("=== COVERAGE RECONCILIATION ===");
   console.log(
-    `baseSlotCoverage=${reconciliation.baseSlotCoverage}/36 pages=${reconciliation.physicalPageCount} continuations=${reconciliation.continuationCount} failed=${reconciliation.failed}`
+    `baseSlotCoverage=${reconciliation.baseSlotCoverage}/${reconciliation.requiredBaseSlotCount} pages=${reconciliation.physicalPageCount} continuations=${reconciliation.continuationCount} failed=${reconciliation.failed}`
   );
   console.log(JSON.stringify(reconciliation.checks));
   if (reconciliation.failed) {
@@ -689,7 +690,8 @@ async function main(): Promise<void> {
         manifestNotBlocked: !result.manifest.buildBlocked,
         assemblyValidation: result.assemblyValidation?.passed ?? false,
         coverageReconciliation: !reconciliation.failed,
-        baseSlotCoverage36: reconciliation.baseSlotCoverage === 36,
+        baseSlotCoverageComplete:
+          reconciliation.baseSlotCoverage === reconciliation.requiredBaseSlotCount,
         geometryClean:
           geometry.overlaps.length === 0 &&
           geometry.overflow.length === 0 &&

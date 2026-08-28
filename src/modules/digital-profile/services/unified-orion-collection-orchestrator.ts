@@ -86,7 +86,9 @@ import { evaluateUnifiedCollectionRecoveryEligibility } from "./unified-collecti
 import { ConflictError } from "../http/errors";
 import {
   PERSONA_GATE_BLOCK_MESSAGE,
+  loadLatestPersonaCheck,
   loadPersonaGateInput,
+  personaDecisionForReport,
   personaGateState,
   type PersonaGateBlockReason,
   type PersonaGateInput,
@@ -1666,12 +1668,20 @@ async function stepPrepare(
       // Список делегатов собирает один модуль: перечисление руками уже делало
       // источник мёртвым на живом прогоне, оставаясь зелёным в тестах.
       const preparePrisma = await resolvePreparePrismaBundle(deps.prisma);
+      /*
+       * Кого проверяли — читается здесь, потому что подготовка отчёта базы не
+       * знает вовсе. Ворота уже пропустили этот прогон, то есть решение по
+       * нынешним данным субъекта существует; отсутствие строки решением не
+       * является и печатается как «решения нет».
+       */
+      const personaDecision = personaDecisionForReport(await loadLatestPersonaCheck(caseId));
       const res = await runCanonicalReportPrepare({
         caseId,
         unifiedJobId: job.unifiedJobId,
         artifactsDir: unifiedArtifactsDir(caseId, job.unifiedJobId),
         binding: b,
         merge: m,
+        personaDecision,
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromGptCopy

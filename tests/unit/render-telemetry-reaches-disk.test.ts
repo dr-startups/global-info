@@ -51,6 +51,7 @@ function minimalInput(outputRoot: string) {
     slideKey: "s1",
     sectionKey: "EXECUTIVE",
     template: "orion_golden_text",
+    templateId: "continuation",
     title: "Тест",
     pageNumber: 1,
     totalPageCount: 1,

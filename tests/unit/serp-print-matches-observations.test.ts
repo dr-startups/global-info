@@ -34,6 +34,7 @@ function serpSlide(input: {
     slideKey: input.slideKey ?? "p09_uae_serp",
     sectionKey: "UAE_PROFILE",
     template: "orion_golden_search_table",
+    templateId: "serp-table",
     title: "ОАЭ — Google, ТОП-20",
     pageNumber: 9,
     totalPageCount: 9,

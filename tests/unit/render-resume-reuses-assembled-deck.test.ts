@@ -17,6 +17,7 @@
  * приезжает в предупреждения прогона.
  */
 
+import { CANONICAL_SLOT_IDS } from "@/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import { describe, expect, it } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -170,7 +171,7 @@ describe("возобновление с рендера на целых арте�
     /*
      * Сценарий, который проезжал молча: файл деки урезан (прогон умер между
      * записью манифеста и записью деки, файл побит), а манифест по-прежнему
-     * обещает 36 слотов. Реюз принимал такую пару и рапортовал полное покрытие
+     * обещает полный перечень слотов. Реюз принимал такую пару и рапортовал покрытие
      * — отчёт из одной страницы уезжал как полный.
      */
     const root = mkdtempSync(join(tmpdir(), "render-resume-truncated-"));
@@ -189,7 +190,7 @@ describe("возобновление с рендера на целых арте�
     expect(res.qualityWarnings ?? []).toContain(
       "render-resume-reassembly:deck-manifest-mismatch"
     );
-    expect(res.baseSlotCoverage).toBe(36);
+    expect(res.baseSlotCoverage).toBe(CANONICAL_SLOT_IDS.length);
     expect(res.pageCount).toBeGreaterThan(1);
   });
 

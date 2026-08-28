@@ -29,6 +29,7 @@ function rendererSlide(s: PanelSlide, i: number, total: number): RendererSlide {
     slideKey: s.slotId,
     sectionKey: "RU_PROFILE",
     template: "orion_golden_surface_panel",
+    templateId: "related-queries",
     title: `Страница ${i + 1}`,
     pageNumber: i + 1,
     totalPageCount: total,

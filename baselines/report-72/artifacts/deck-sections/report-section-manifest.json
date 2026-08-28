@@ -3,7 +3,7 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-08-28T05:40:01.811Z",
+  "generatedAt": "2026-08-28T06:21:17.501Z",
   "sectionOrder": [
     "FRONT_MATTER",
     "EXECUTIVE",
@@ -20,8 +20,8 @@
       "artifactPath": "section-packs/front-matter.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:6a899597f872a6fec69af40dfe9ed9f3f45b50ca83f1b147c8af07ed5509e64b",
-      "slideCount": 2,
+      "contentHash": "sha256:90a55ef4953756ec50e58c54ff2a4710b0a081fd7ca8bcaa2c792ace953967b4",
+      "slideCount": 3,
       "validationPassed": true
     },
     {

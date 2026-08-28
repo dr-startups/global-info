@@ -7,7 +7,7 @@
     "manifestNotBlocked": true,
     "assemblyValidation": true,
     "coverageReconciliation": true,
-    "baseSlotCoverage36": true,
+    "baseSlotCoverageComplete": true,
     "geometryClean": true,
     "manualVisual": true,
     "emptySidebarCountZero": true,

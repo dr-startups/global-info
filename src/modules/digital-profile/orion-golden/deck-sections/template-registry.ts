@@ -25,6 +25,7 @@ export type DeckTemplateId =
   | "ai-overview"
   | "related-queries"
   | "coverage-empty-state"
+  | "persona-check"
   | "section-divider"
   | "continuation";
 
@@ -202,6 +203,28 @@ export const SIDEBAR_HIGHLIGHT_SLOTS = 2;
 // run-deck-build). Ссылка на источник — не утверждение о субъекте, поэтому
 // остаётся отдельным блоком.
 const FINDING_BLOCKS = ["Источник"];
+
+/**
+ * Шаблоны, у которых абзац рисует `content_card`, — и потому обрезается молча.
+ *
+ * `_render_status_cards` рендерера (её зовут ровно две раскладки:
+ * `orion_golden_no_data_compact` и `orion_golden_wikipedia_check`) отдаёт
+ * абзац в `content_card`, а тот подгоняет текст под высоту **до** отрисовки,
+ * телеметрии о себе не пишет вовсе и `droppedLines` не выставляет. Значит,
+ * потерю не видит ни геометрия, ни блокирующее правило приёмки, и удержать её
+ * можно только до рендера — сравнив длину абзаца с мерянной ёмкостью листа.
+ *
+ * Остальные раскладки о потере сообщают сами: приборная страница резюме
+ * пишет `dropped_bullets` (`executive.py:125-132`), список — через
+ * `ctx.bullets`. Там ёмкость сторожит `CONTENT_DROPPED_BY_RENDERER`, и второй
+ * сторож с числом «на глаз» только мешал бы: объявленные бюджеты этих
+ * шаблонов — сид раскладки, а не замер, и абзац резюме их законно перерастает.
+ */
+export const SILENTLY_CLIPPED_NARRATIVE_TEMPLATES: ReadonlySet<DeckTemplateId> = new Set([
+  "wikipedia-check",
+  "coverage-empty-state",
+  "persona-check",
+]);
 
 export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
   cover: {
@@ -429,7 +452,18 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     maxBulletsPerContinuation: 10,
     maxTableRowsPerSlide: 0,
     layout: layout("single-column", {
-      narrativeCharBudget: 900,
+      /*
+       * Ёмкость листа померена, а не назначена.
+       *
+       * Телеметрия разметки эталона, запись `orion_text_body_p31`: 196 знаков
+       * в двух строках при `availableHeight` 1 649 546 и `requiredHeight`
+       * 323 697 — 98 знаков на строку, 10,19 строки на лист, то есть ≈998
+       * знаков. Объявленные прежде 900 были меньше замера, и абзац золотого
+       * эталона в 952 знака их уже превышал: сверка брала бюджет клиентского
+       * поля (1100) и молчала, а `content_card` рендерера выбрасывает
+       * невлезшее **до** отрисовки, не записывая `droppedLines`.
+       */
+      narrativeCharBudget: 998,
       itemCharBudget: 400,
       // Замер: на базовом листе помещается один блок в 250–330 знаков.
       maxBulletCharsPerSlide: 340,
@@ -465,6 +499,38 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     maxBulletsPerSlide: 4,
     maxTableRowsPerSlide: 0,
     layout: layout("single-column", { narrativeCharBudget: 360, pagination: "none" }),
+  },
+  /*
+   * Лист «Кого проверяли» — собственная страница ответа на вопрос «чей это
+   * профиль».
+   *
+   * Раскладка переиспользуется целиком (`orion_golden_no_data_compact`):
+   * карточка статуса, карточка «что это означает», карточка рекомендации и
+   * сноска метода. Рендерер не трогается — это условие работы, а не удобство:
+   * новая ручка означала бы окно деплоя.
+   *
+   * Ёмкость абзаца померена по телеметрии эталона (`orion_text_body_p49`,
+   * та же раскладка): 104 знака в одной строке, 10,7 строки на лист → ≈1113.
+   * Худший законный вход блока — 445 знаков, то есть запас двукратный, а не
+   * двадцать семь знаков, как на прежнем месте внутри страницы Википедии.
+   */
+  "persona-check": {
+    templateId: "persona-check",
+    rendererTemplate: "orion_golden_no_data_compact",
+    staticBlocks: ["Кого проверяли", "Что это означает", "Что проверить"],
+    /*
+     * Сноска печатается на всех состояниях листа, поэтому говорит только о
+     * методе. Обещание «карточку можно открыть по указанному адресу» стояло
+     * здесь и было ложью на трёх состояниях из четырёх: без решения и при
+     * «различимой персоны нет» ни карточки, ни адреса не существует, а лист
+     * прямо над сноской говорит об этом. Утверждение, у которого нет
+     * наблюдения, переехало в `sourceNote` слайда — туда, где оно верно.
+     */
+    methodologyNote:
+      "Персону субъекта выбирает оператор до начала сбора по карточкам внешних источников; на этом листе напечатано принятое решение либо его отсутствие.",
+    maxBulletsPerSlide: 4,
+    maxTableRowsPerSlide: 0,
+    layout: layout("single-column", { narrativeCharBudget: 1113, pagination: "none" }),
   },
   "section-divider": {
     templateId: "section-divider",

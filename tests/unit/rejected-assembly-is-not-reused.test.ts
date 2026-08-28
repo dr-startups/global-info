@@ -23,6 +23,7 @@
  * построитель, забракован результат так же, как его бракует живой прогон.
  */
 
+import { CANONICAL_SLOT_IDS } from "@/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -143,7 +144,7 @@ describe("забракованная воротами сборка", () => {
     const manifest = JSON.parse(
       readFileSync(deckFile(root, "report-deck-manifest.json"), "utf8")
     ) as { baseSlotCoverage: number };
-    expect(manifest.baseSlotCoverage).toBe(36);
+    expect(manifest.baseSlotCoverage).toBe(CANONICAL_SLOT_IDS.length);
     // Штампа приёмки на ней нет: ворота её не приняли.
     expect(existsSync(deckFile(root, "assembly-accepted.json"))).toBe(false);
 

@@ -86,6 +86,15 @@ export type RendererSlide = {
   sectionKey: string;
   template: string;
   /**
+   * Шаблон реестра, из которого выведена раскладка.
+   *
+   * На проводе его нет — рендерер знает только `template`. Здесь он нужен
+   * затем, что ёмкость абзаца объявлена у реестрового шаблона, а одну и ту же
+   * раскладку рендерера делят несколько шаблонов с разными бюджетами: по
+   * `template` верный бюджет не восстановить.
+   */
+  templateId: string;
+  /**
    * Level 2.5 — named pre-built layout variant picked by the composer stage.
    * Absent → the renderer's default layout; always a registered variant.
    */
@@ -423,6 +432,7 @@ export function assembleDeck(input: {
       slideKey: slide.slideId,
       sectionKey: slide.sectionId,
       template: tpl?.rendererTemplate ?? "orion_golden_surface_panel",
+      templateId: slide.templateId,
       ...(layoutVariant ? { layoutVariant } : {}),
       title: slide.title,
       subtitle: slide.subtitle,

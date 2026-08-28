@@ -25,6 +25,7 @@ import {
   type EmptySurfaceCollectionStatus,
   type LinkReadRegionCounts,
   type MetricSnapshot,
+  type PersonaDecisionRecord,
   type ScopedEvidenceIndex,
   type ScopedFragmentInput,
   type SurfaceCollectionHint,
@@ -149,6 +150,14 @@ export type FragmentExtras = {
    * сделало бы клиентский текст зависимым от машины сборки.
    */
   complianceScreenings?: ComplianceScreeningRecord[];
+  /**
+   * Решение оператора о том, о ком собираем, — снимок, снятый до первой траты.
+   *
+   * Отсутствие поля значит «решения у кейса нет», и лист «Кого проверяли»
+   * говорит именно это: пропустить лист было бы вторым смыслом — «решения не
+   * было» и «страница потерялась» стали бы неразличимы.
+   */
+  personaDecision?: PersonaDecisionRecord;
   /** Typed visual assets bound per canonical slot. */
   visualAssets?: VisualAssetsBySlot;
   /** Holistic GPT case analysis (client-safe, optional). */

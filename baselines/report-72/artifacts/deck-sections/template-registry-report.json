@@ -304,7 +304,7 @@
         "blockGapPt": 10
       },
       "budgets": {
-        "narrativeChars": 900,
+        "narrativeChars": 998,
         "itemChars": 400,
         "maxBulletsPerSlide": 4,
         "maxTableRowsPerSlide": 0
@@ -392,6 +392,32 @@
         "Что это означает"
       ],
       "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+      "legend": null
+    },
+    {
+      "templateId": "persona-check",
+      "rendererTemplate": "orion_golden_no_data_compact",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 1113,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "none",
+      "staticBlocks": [
+        "Кого проверяли",
+        "Что это означает",
+        "Что проверить"
+      ],
+      "methodologyNote": "Персону субъекта выбирает оператор до начала сбора по карточкам внешних источников; на этом листе напечатано принятое решение либо его отсутствие.",
       "legend": null
     },
     {

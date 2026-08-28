@@ -26,7 +26,15 @@ import {
   type GptDeckLayer,
 } from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
-import { BulletFitNotConvergedError } from "../orion-golden/deck-sections/run-deck-build";
+import {
+  PERSONA_DECISION_ARTIFACT,
+  type PersonaDecisionRecord,
+} from "../orion-golden/deck-sections/scoped-input";
+import {
+  BulletFitNotConvergedError,
+  NarrativeOverBudgetError,
+  NarrativeReflowLossError,
+} from "../orion-golden/deck-sections/run-deck-build";
 import {
   GptCaseAnalysisSchema,
   GPT_CASE_ANALYSIS_VERSION,
@@ -158,13 +166,34 @@ function measureOrFailAttempt(measure: BulletMeasureAdapter): BulletMeasureAdapt
  * остановленный прогон честнее урезанного отчёта, и рекавери предложит по нему
  * пересборку. Остальные ошибки сборки проходят как есть — они о другом.
  */
+/**
+ * Перевод отказа сборки в код, который понимает восстановление, — в одном месте.
+ *
+ * Выходов из сборки два (мерный путь и путь рендера), и вкладыш в каждом
+ * `catch` снимался незамеченным: обе строки можно было удалить, оставив
+ * `npm run ci` зелёным. Теперь перевод один, и его спрашивают оба выхода.
+ *
+ * Текст, не влезающий в лист, и текст, выброшенный резаком абзацев, — дефекты
+ * **сборки**, а не аварии: данные сбора целы, платить заново не за что, лечится
+ * пересборкой после правки. Отсюда общий код с остальными отказами качества
+ * сборки: второго слова про одно и то же у восстановления быть не должно.
+ */
+export function prepareBlockedErrorFor(err: unknown): CanonicalPrepareBlockedError | null {
+  if (err instanceof BulletFitNotConvergedError) {
+    return new CanonicalPrepareBlockedError("CONTENT_DROPPED_BY_RENDERER", err.message);
+  }
+  if (err instanceof NarrativeOverBudgetError || err instanceof NarrativeReflowLossError) {
+    return new CanonicalPrepareBlockedError("ASSEMBLY_QA_FAILED", err.message);
+  }
+  return null;
+}
+
 async function buildDeckUnderMeasure<T>(build: () => Promise<T>): Promise<T> {
   try {
     return await build();
   } catch (err) {
-    if (err instanceof BulletFitNotConvergedError) {
-      throw new CanonicalPrepareBlockedError("CONTENT_DROPPED_BY_RENDERER", err.message);
-    }
+    const blocked = prepareBlockedErrorFor(err);
+    if (blocked) throw blocked;
     throw err;
   }
 }
@@ -228,6 +257,14 @@ export type CanonicalPrepareInput = {
   analystOverrides?: AnalystOverridesBundle | null;
   /** Offline/fixture WikipediaCheck + SERP screenshots (§1.4). */
   evidenceSupplement?: EvidenceSupplementBundle | null;
+  /**
+   * Решение оператора о персоне субъекта — снимком, снятым до первой траты.
+   *
+   * Базу подготовка не читает: решение приносит оркестратор, а здесь оно
+   * становится артефактом прогона. Отсутствие поля значит «решения у кейса
+   * нет», и артефакт скажет это словами.
+   */
+  personaDecision?: PersonaDecisionRecord | null;
 };
 
 export type CanonicalPrepareResult = {
@@ -862,6 +899,32 @@ function writeRenderCheckpoint(
  * and exactly one render are performed for a successful full prepare. Render-only
  * resume reuses a valid assembled payload (assemblyCount=0) and performs one render.
  */
+/**
+ * Артефакт решения о персоне пишется **всегда**, в том числе когда решения нет.
+ *
+ * Иначе «решения в артефакте нет» получает два смысла — решения не было и
+ * артефакт потерялся, — а различить их будет нечем. Поэтому отсутствие решения
+ * записывается словами, а не пропуском файла; лист «Кого проверяли» при этом
+ * печатается в любом случае и говорит, что решения не было.
+ */
+function writePersonaDecisionArtifact(
+  analyticsDir: string,
+  caseId: string,
+  record: PersonaDecisionRecord | null
+): void {
+  const note = record
+    ? record.decision === "PERSONA_SELECTED"
+      ? "Оператор выбрал персону до начала сбора."
+      : "Оператор разрешил сбор без выбора персоны: различимой персоны нет."
+    : "Решения по персоне у кейса нет: панель выбора персоны не собиралась либо решение по ней " +
+      "не принято. Лист «Кого проверяли» печатается всё равно и говорит об этом словами.";
+  writeFileSync(
+    join(analyticsDir, PERSONA_DECISION_ARTIFACT),
+    `${JSON.stringify({ version: "persona-decision-v1", caseId, note, record }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
 export async function runCanonicalReportPrepare(
   input: CanonicalPrepareInput
 ): Promise<CanonicalPrepareResult> {
@@ -907,6 +970,7 @@ export async function runCanonicalReportPrepare(
   const renderDir = join(input.artifactsDir, "render");
   mkdirSync(analyticsDir, { recursive: true });
   mkdirSync(renderDir, { recursive: true });
+  writePersonaDecisionArtifact(analyticsDir, input.caseId, input.personaDecision ?? null);
 
   const resumeFrom = input.resumeFrom ?? "full";
   /*
@@ -1103,6 +1167,7 @@ export async function runCanonicalReportPrepare(
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
           complianceScreenings: deckInputs.complianceScreenings,
+          personaDecision: deckInputs.personaDecision ?? undefined,
           ...deckFreshnessExtras,
         },
       },
@@ -1431,6 +1496,7 @@ export async function runCanonicalReportPrepare(
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
           complianceScreenings: deckInputs.complianceScreenings,
+          personaDecision: deckInputs.personaDecision ?? undefined,
           ...deckFreshnessExtras,
         },
       },
@@ -1552,6 +1618,26 @@ export async function runCanonicalReportPrepare(
       outputRoot: renderDir,
     });
   } catch (err) {
+    /*
+     * Прогон без меры собирает нагрузку впервые здесь, и отказ сборки пришёл бы
+     * сюда: назвать его сбоем рендерера значило бы предложить повтор там, где
+     * повтор не лечит. Чекпойнт стадии закрывается и на этом выходе — иначе он
+     * единственный, который оставляет стадию открытой.
+     */
+    const blocked = prepareBlockedErrorFor(err);
+    if (blocked) {
+      checkpoint({
+        version: "render-checkpoint-v1",
+        stage: "RENDER",
+        status: "FAILED",
+        assemblyHash,
+        caseId: input.caseId,
+        unifiedJobId: input.unifiedJobId,
+        errorCode: blocked.code,
+        updatedAt: new Date().toISOString(),
+      });
+      throw blocked;
+    }
     const safe = sanitizeRendererClientError(
       err instanceof Error ? err.message : String(err)
     );

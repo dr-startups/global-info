@@ -20,11 +20,13 @@ import type {
   MetricSnapshot,
   SurfaceCollectionHint,
   ComplianceScreeningRecord,
+  PersonaDecisionRecord,
 } from "./scoped-input";
 import {
   clientNamedSearchEngine,
   evidenceMaterialKey,
   normalizeCoverageSurface,
+  PERSONA_DECISION_ARTIFACT,
 } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
 import type { AppliedOverrideRecord } from "../../services/analyst-overrides-loader";
@@ -408,6 +410,8 @@ export type CanonicalDeckInputs = {
   surfaceCollectionHints: SurfaceCollectionHint[];
   /** Последний ран скрининга по каждой базе; пусто — проверок в прогоне не было. */
   complianceScreenings: ComplianceScreeningRecord[];
+  /** Решение оператора о персоне субъекта; null — решения у кейса нет. */
+  personaDecision: PersonaDecisionRecord | null;
   /**
    * Строки наблюдений как есть, до сборки индекса доказательств.
    *
@@ -1012,6 +1016,30 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     }
   }
 
+  /*
+   * Решение о персоне субъекта — снимком прогона, а не запросом в базу.
+   *
+   * Отсутствие файла ошибкой не является: артефакт появился позже самой колоды,
+   * и старые прогоны его не знают. Пустое поле `record` значит ровно «решения у
+   * кейса нет», и лист «Кого проверяли» печатает именно это.
+   */
+  let personaDecision: PersonaDecisionRecord | null = null;
+  const personaPath = join(analyticsDir, PERSONA_DECISION_ARTIFACT);
+  if (existsSync(personaPath)) {
+    try {
+      const artifact = readJson<{ record?: PersonaDecisionRecord | null }>(personaPath);
+      const record = artifact.record ?? null;
+      // Признак — данные: решением считается только записанное слово решения.
+      personaDecision =
+        record?.decision === "PERSONA_SELECTED" || record?.decision === "APPROVED_WITHOUT_PERSONA"
+          ? record
+          : null;
+    } catch {
+      // Нечитаемый артефакт — не повод потерять остальной вход деки.
+      personaDecision = null;
+    }
+  }
+
   const metricSnapshot: MetricSnapshot = {
     metricSnapshotId: `${binding.datasetId}-metrics`,
     datasetId: binding.datasetId,
@@ -1072,6 +1100,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     uncategorizedMaterials,
     surfaceCollectionHints,
     complianceScreenings,
+    personaDecision,
     serpObservations: observations.observations,
   };
 }

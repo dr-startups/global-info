@@ -1,12 +1,12 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:6a899597f872a6fec69af40dfe9ed9f3f45b50ca83f1b147c8af07ed5509e64b",
-  "contentVersion": "deck-sections-v138",
+  "contentHash": "sha256:90a55ef4953756ec50e58c54ff2a4710b0a081fd7ca8bcaa2c792ace953967b4",
+  "contentVersion": "deck-sections-v139",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [],
   "fragmentKey": "FRONT_MATTER_MAIN",
-  "generatedAt": "2026-08-28T05:39:57.273Z",
-  "inputHash": "sha256:4796189f4ffb98b638f788642600b2a19f44ed541ed378ffc4f897fe12ae074b:feb89090d26f2158",
+  "generatedAt": "2026-08-28T06:16:20.129Z",
+  "inputHash": "sha256:4796189f4ffb98b638f788642600b2a19f44ed541ed378ffc4f897fe12ae074b:f5e443960ab906e1",
   "inputs": {
     "evidenceRefs": [],
     "findingIds": [],
@@ -66,6 +66,31 @@
       "slideId": "p02_toc",
       "templateId": "toc",
       "title": "Содержание отчёта",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p03_persona",
+      "content": {
+        "bullets": [
+          "Принадлежность материалов внешним источником не подтверждалась, поэтому среди них может оказаться материал об однофамильце.",
+          "Принадлежность отдельного материала проверяемому лицу отмечена на страницах отчёта ярлыком «О другом лице»: этот лист отвечает на вопрос обо всём отчёте сразу."
+        ],
+        "narrative": "Решения по персоне у этого кейса нет: панель выбора персоны не собиралась либо решение по ней не принималось.\nСбор шёл по данным субъекта, которые ввёл оператор.",
+        "whatToCheck": "Сверить материалы, принадлежность которых проверяемому лицу вызывает сомнение, по источнику каждого — там, где отчёт приводит его адрес: внешним источником принадлежность не подтверждена ни у одного из них."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {
+        "personaDecisionRecorded": 0
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p03_persona",
+      "templateId": "persona-check",
+      "title": "Кого проверяли",
       "visualAssetRefs": []
     }
   ],

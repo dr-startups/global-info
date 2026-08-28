@@ -39,6 +39,7 @@ import type {
   ComplianceScreeningResult,
 } from "../compliance-providers/types";
 import { prisma } from "@/server/prisma/client";
+import type { PersonaDecisionRecord } from "../orion-golden/deck-sections/scoped-input";
 
 // ---------------------------------------------------------------------------
 // Настройки среза — константы модуля, а не переменные окружения и не настройки:
@@ -749,6 +750,54 @@ export async function loadLatestPersonaCheck(
     where: { caseId },
     orderBy: { searchedAt: "desc" },
   });
+}
+
+/** Заголовок карточки так, как его видел оператор. */
+function cardTitle(card: PersonaCard): string {
+  return card.source === "opensanctions" ? card.matchedName : card.title;
+}
+
+/** Адрес карточки; null — источник адреса не дал. */
+function cardUrl(card: PersonaCard): string | null {
+  if (card.source === "wikipedia") return card.articles[0]?.url ?? null;
+  if (card.source === "opensanctions") return card.profileUrl;
+  return card.url;
+}
+
+/**
+ * Снимок решения для отчёта — единственное место, где строка панели
+ * превращается в то, что увидит читатель.
+ *
+ * `null` значит ровно «решения по кейсу нет»: собранная, но нерешённая панель
+ * решением не является — ворота её и не считают.
+ *
+ * В снимок едет только проверяемое: источник, заголовок, адрес и **структурная**
+ * дата рождения записи. Лид статьи не разбирается на дату и не пересказывается,
+ * оценка совпадения не переносится вовсе — процент рядом с именем читается как
+ * подтверждение личности, которым он не является.
+ */
+export function personaDecisionForReport(
+  row: PersonaCheckRow | null
+): PersonaDecisionRecord | null {
+  if (!row?.decision) return null;
+  const decision = row.decision as PersonaDecision;
+  const snapshot = row.personasJson as PersonaPanelSnapshot | null;
+  const selectedCard = (row.selectedPersonaJson as PersonaSelectionSnapshot | null)?.card ?? null;
+  return {
+    decision,
+    selected: selectedCard
+      ? {
+          source: selectedCard.source,
+          title: cardTitle(selectedCard),
+          url: cardUrl(selectedCard),
+          datesOfBirth:
+            selectedCard.source === "opensanctions" ? selectedCard.datesOfBirth : [],
+        }
+      : null,
+    sources: (snapshot?.sources ?? []).map((s) => ({ source: s.source, status: s.status })),
+    cardCount: cardsOf(row.personasJson).length,
+    decidedAt: row.decidedAt ? new Date(row.decidedAt).toISOString() : null,
+  };
 }
 
 /**
