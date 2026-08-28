@@ -5,7 +5,13 @@ import { join } from "node:path";
 import {
   DECK_BUILDER_FINGERPRINT,
   DECK_CONTENT_VERSION,
+  FINGERPRINT_TAKEN_AT_VERSION,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/content-version";
+import {
+  describeFingerprintProblem,
+  nextContentVersion,
+  recordedFingerprintSalt,
+} from "../../src/modules/digital-profile/orion-golden/deck-sections/content-version-guard";
 
 /**
  * Шаг 15, E13.
@@ -19,6 +25,23 @@ import {
  * Этот тест делает забывчивость невозможной: он сверяет отпечаток исходников
  * построителей с записанным. Разошлись — значит, построители изменились и
  * версию надо поднять.
+ *
+ * Шаг 0037/1, круг 2: у сторожа нашлись пути обхода, и каждый кончался зелёным
+ * при неподвижном номере. Закрыты они механизмом, а не формулировкой: отпечаток
+ * ветки исключения солится **причиной** (добытое значение не годится ни без
+ * исключения, ни с другой причиной), номер сверяется с полом — номером, при
+ * котором собраны пакеты эталона в дереве (понижение номера больше не выдаёт
+ * отпечаток для действующего), а устаревшему исключению сторож значения не
+ * называет вовсе.
+ *
+ * Шаг 0037/1: сверки отпечатка для этого было мало. Она ловила саму правку, но
+ * не забытый подъём — обновив один отпечаток, разработчик получал зелёный
+ * сторож при неподвижном номере (замерено мутацией на `e7071aa`: комментарий в
+ * `fragment-builders/appendix.ts` + новый отпечаток = 14 зелёных тестов). Теперь
+ * отпечаток снимается **при названном номере версии** и номер входит в хэш:
+ * значение, годное при поднятом номере, при действующем не подходит, а значение
+ * при действующем номере подсказка называет только после того, как исключение
+ * объявлено в файле — с причиной и в диффе.
  */
 
 const SECTIONS_DIR = join(
@@ -150,13 +173,24 @@ function fingerprintSources(): Array<{ name: string; path: string }> {
 }
 
 /**
- * Отпечаток исходников построителей: имя файла + содержимое, в порядке имён.
+ * Отпечаток исходников построителей: соль + имя файла и содержимое, в порядке
+ * имён.
+ *
+ * Соль в хэше не для красоты: она превращает «отпечаток» в запись «такие
+ * исходники при таком номере» (а в ветке исключения — «при такой причине»). Без
+ * неё значение, посчитанное по новым исходникам, годилось бы при любом номере —
+ * и забытый подъём проходил бы зелёным (замерено мутацией на `e7071aa`).
+ * Из чего складывается соль, решает правило: тест только хеширует.
  *
  * Чтение отдаётся параметром, чтобы проверка «правка такого-то файла двигает
  * отпечаток» была настоящей: подменённое содержимое обязано менять результат.
  */
-function fingerprintBuilders(read: (path: string) => Buffer | string = readFileSync): string {
+function fingerprintBuilders(
+  salt: string,
+  read: (path: string) => Buffer | string = readFileSync
+): string {
   const h = createHash("sha256");
+  h.update(salt);
   for (const { name, path } of fingerprintSources()) {
     h.update(name);
     h.update(read(path));
@@ -164,32 +198,345 @@ function fingerprintBuilders(read: (path: string) => Buffer | string = readFileS
   return h.digest("hex").slice(0, 16);
 }
 
-/** Что делать при расхождении: правило и его исключение. */
-function mismatchHint(actual: string): string {
-  return [
-    "Построители секций изменились, а версия содержимого — нет.",
-    "Кэш секций держится на этой строке: без подъёма правка не дойдёт",
-    "ни до новой деки, ни до кнопки «Пересобрать отчёт».",
-    "",
-    `Сделайте два шага в content-version.ts:`,
-    `  DECK_CONTENT_VERSION   = "${bumped(DECK_CONTENT_VERSION)}"`,
-    `  DECK_BUILDER_FINGERPRINT = "${actual}"`,
-    "",
-    "Исключение — один шаг. Отпечаток снят с файлов целиком, а в них живёт не",
-    "только содержимое страниц (скажем, цикл «сборка → мера → перекладка» в",
-    "run-deck-build.ts). Если ваша правка заведомо не может изменить ни одну",
-    "собранную деку — затронутая ветка исполняется только там, где деки нет, —",
-    "обновите один отпечаток, а версию оставьте: подъём инвалидировал бы все",
-    "готовые пакеты и заставил бы «Пересобрать отчёт» строить заново то же",
-    "самое. Исключение объявляется в ревью; условие — в комментарии к",
-    "DECK_BUILDER_FINGERPRINT.",
-  ].join("\n");
+/**
+ * Номер, при котором собраны пакеты эталона в дереве, — пол для сторожа.
+ *
+ * Это единственный доступный офлайн ответ на «какой номер уже закоммичен»:
+ * истории у теста нет, а `contentVersion` пакета говорит, при каком ключе кэша
+ * собран эталон. Берётся максимум: подделать пол — значит переписать пакеты, а
+ * это двадцать два файла в диффе.
+ */
+function baselineContentVersion(
+  root = join(process.cwd(), "baselines/report-72/artifacts/deck-sections/section-packs")
+): string {
+  const versions: string[] = [];
+  const walk = (at: string) => {
+    for (const entry of readdirSync(at, { withFileTypes: true })) {
+      const path = join(at, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".json")) {
+        versions.push(String(JSON.parse(readFileSync(path, "utf8")).contentVersion));
+      }
+    }
+  };
+  try {
+    walk(root);
+  } catch {
+    // В файле, где каждый отказ объясняет, что делать, трасса `scandir` не
+    // объясняет ничего: читатель решит, что сломан сторож, а не что он сам
+    // снёс кэш пакетов перед прогоном.
+    throw new Error(
+      `Пакетов эталона нет (${root}): пол сторожа читается из них. ` +
+        "Соберите ворота — npx tsx scripts/run-orion-deck-sections-report72.ts."
+    );
+  }
+  const ordinal = (v: string) => Number(/(\d+)$/u.exec(v)?.[1] ?? 0);
+  return versions.sort((a, b) => ordinal(a) - ordinal(b)).at(-1) ?? "";
 }
+
+/**
+ * Отпечаток, названный подсказкой, — или `null`, если она его не назвала.
+ *
+ * Сценарии обхода тем и живут, что разработчик копирует значение из отказа;
+ * поэтому проверки берут его оттуда же, а не считают сами.
+ */
+function printedFingerprint(problem: string | null): string | null {
+  return /DECK_BUILDER_FINGERPRINT\s+=\s+"([^"]+)"/u.exec(problem ?? "")?.[1] ?? null;
+}
+
+/**
+ * Назвал ли отказ хоть какой-нибудь отпечаток — в любом виде и в любой строке.
+ *
+ * Проверять только готовую к вставке строку мало: значение, названное посреди
+ * фразы, копируется так же. Отпечатки сценариев узнаются по соли, которая
+ * всегда содержит номер версии.
+ */
+function namesAnyFingerprint(problem: string | null): boolean {
+  return /@deck-sections-|\b[0-9a-f]{16}\b/u.test(problem ?? "");
+}
+
+/** Отпечаток «прежних» исходников — для сценариев на подменённом хэшере. */
+const before = (version: string) => `before@${version}`;
+/** Отпечаток исходников после правки построителя. */
+const after = (version: string) => `after@${version}`;
+/** Отпечаток исходников после ещё одной, следующей правки. */
+const later = (version: string) => `later@${version}`;
+
+/**
+ * Номера сценариев: «нынешний» и следующий за ним. Совпадать с настоящим
+ * `DECK_CONTENT_VERSION` они не обязаны — сценарий проверяет правило, а не
+ * сегодняшнее число.
+ */
+const SCENARIO_VERSION = "deck-sections-v144";
+const SCENARIO_NEXT = "deck-sections-v145";
+/** Пол сценариев: пакеты эталона собраны при «нынешнем» номере. */
+const SCENARIO_BASELINE = SCENARIO_VERSION;
+/** Причина, с которой в сценариях объявляется исключение. */
+const SCENARIO_REASON = "правлен только комментарий: ни одна собранная дека измениться не может";
+
+/**
+ * Синтетические номера для сравнений «два вычисления между собой». Настоящий
+ * номер тут брать нельзя: отказ напечатал бы отпечаток нынешних исходников при
+ * действующем номере, а это готовая подсказка мимо сторожа.
+ */
+const PROBE_A = "deck-sections-v0";
+const PROBE_B = "deck-sections-v1";
 
 describe("версия содержимого деки не отстаёт от построителей", () => {
   it("отпечаток совпадает с записанным", () => {
-    const actual = fingerprintBuilders();
-    expect(actual, mismatchHint(actual)).toBe(DECK_BUILDER_FINGERPRINT);
+    // Сравнение сведено к логическому не для красоты: `toBe` печатает в отказе
+    // само посчитанное значение, а это отпечаток нынешних исходников **при
+    // действующем номере** — ровно та строка, вставка которой делает сторож
+    // зелёным без подъёма версии. Подсказка называет отпечаток только для
+    // поднятого номера, и обходить её через вывод ассерта незачем.
+    //
+    // Проверка поглощена соседней («записанная пара согласована») и упасть
+    // одна не может — она подстраховка: снимут соседнюю как дубль, и сторож
+    // вернётся к прежней силе, когда сверялся один отпечаток.
+    const matches = fingerprintBuilders(recordedFingerprintSalt()) === DECK_BUILDER_FINGERPRINT;
+    const hint = describeFingerprintProblem((salt) => fingerprintBuilders(salt), baselineContentVersion()) ?? "";
+    expect(matches, hint).toBe(true);
+  });
+
+  it("записанная пара «отпечаток ↔ номер версии» согласована", () => {
+    // Главная проверка сторожа: она смотрит на все четыре записанные величины
+    // сразу — отпечаток, номер, версию снятия и объявленное исключение.
+    const problem = describeFingerprintProblem((salt) => fingerprintBuilders(salt), baselineContentVersion());
+    expect(problem, problem ?? "").toBeNull();
+  });
+
+  it("отпечаток снят при названном номере: другой номер — другой отпечаток", () => {
+    // Это и есть механизм, а не украшение: пока номер не входит в хэш,
+    // значение по новым исходникам годится при неподвижной версии и забытый
+    // подъём проходит зелёным.
+    expect(fingerprintBuilders(PROBE_A)).not.toBe(fingerprintBuilders(PROBE_B));
+  });
+
+  it("отпечаток обновлён, а номер версии — нет: сторож красный и называет обе константы", () => {
+    // Сценарий забывчивости в его настоящем виде: подсказка дала запись для
+    // поднятого номера, разработчик вставил её, но `DECK_CONTENT_VERSION`
+    // оставил прежним.
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_NEXT,
+      fingerprint: after(SCENARIO_NEXT),
+      exception: null,
+    });
+    expect(problem).not.toBeNull();
+    expect(problem).toContain("DECK_CONTENT_VERSION");
+    expect(problem).toContain("FINGERPRINT_TAKEN_AT_VERSION");
+    expect(problem).toContain(SCENARIO_NEXT);
+  });
+
+  it("вставлен один отпечаток без версии снятия: сторож красный", () => {
+    // Вторая половина той же забывчивости: из подсказки взята одна строка.
+    // Запись перестаёт быть самосогласованной — отпечаток снят не при том
+    // номере, который в ней записан.
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: after(SCENARIO_NEXT),
+      exception: null,
+    });
+    expect(problem).not.toBeNull();
+    expect(problem).toContain("DECK_BUILDER_FINGERPRINT");
+  });
+
+  it("подсказка не называет отпечаток для действующего номера", () => {
+    // Ровно этим забывчивость и закрыта: значение, которое сделало бы сторож
+    // зелёным без подъёма, в подсказке не печатается. Получить его можно
+    // только объявив исключение — то есть написав причину в файл.
+    const problem =
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: null,
+      }) ?? "";
+    expect(problem).toContain(after(SCENARIO_NEXT));
+    expect(problem).not.toContain(after(SCENARIO_VERSION));
+  });
+
+  it("обновлены и отпечаток, и номер версии: сторож молчит", () => {
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_NEXT,
+      takenAtVersion: SCENARIO_NEXT,
+      fingerprint: after(SCENARIO_NEXT),
+      exception: null,
+    });
+    expect(problem).toBeNull();
+  });
+
+  it("объявленное исключение с причиной оставляет номер на месте", () => {
+    // Узкая ветка, оплаченная деньгами: подъём номера обесценивает готовые
+    // пакеты и заставляет платить за стадии GPT заново, в том числе идущему
+    // прогону. Правка, которая заведомо не может изменить ни одну собранную
+    // деку, номер не двигает — но теперь говорит об этом в файле.
+    const value = printedFingerprint(
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: { fingerprint: "", reason: SCENARIO_REASON },
+      })
+    );
+    expect(value).not.toBeNull();
+
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: value ?? "",
+      exception: { fingerprint: value ?? "", reason: SCENARIO_REASON },
+    });
+    expect(problem).toBeNull();
+  });
+
+  it("значение, добытое исключением, без исключения не годится", () => {
+    // Путь обхода, найденный ревью: объявить исключение с любой причиной,
+    // забрать названный отпечаток, вписать его и **удалить исключение** — в
+    // диффе остаётся одна строка отпечатка, то есть ровно дефект. Причина
+    // входит в соль отпечатка, поэтому добытое значение вне своей ветки
+    // недействительно.
+    const value = printedFingerprint(
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: { fingerprint: "", reason: SCENARIO_REASON },
+      })
+    );
+    expect(value).not.toBeNull();
+
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: value ?? "",
+      exception: null,
+    });
+    expect(problem).not.toBeNull();
+    expect(problem).toContain(SCENARIO_NEXT);
+  });
+
+  it("значение, добытое исключением, не годится с другой причиной", () => {
+    // Иначе причина была бы украшением: её можно было бы переписать, оставив
+    // добытый отпечаток, и в диффе причина отвечала бы не за ту правку.
+    const value = printedFingerprint(
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: { fingerprint: "", reason: SCENARIO_REASON },
+      })
+    );
+    expect(value).not.toBeNull();
+
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: value ?? "",
+      exception: { fingerprint: value ?? "", reason: "другая причина" },
+    });
+    expect(problem).not.toBeNull();
+  });
+
+  it("исключение без причины не считается объявленным и значения не получает", () => {
+    // Иначе исключение выродится в самый дешёвый путь к зелёному: голый флаг
+    // неотличим от забывчивости, а причина попадает в дифф и читается в ревью.
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: before(SCENARIO_VERSION),
+      exception: { fingerprint: "", reason: "   " },
+    });
+    expect(problem).toContain("FINGERPRINT_VERSION_EXCEPTION");
+    expect(namesAnyFingerprint(problem)).toBe(false);
+  });
+
+  it("исключение прошлой правки следующую не прикрывает и значения ей не даёт", () => {
+    // Самый вероятный путь, потому что без умысла: исключение осталось от
+    // прошлого шага, следующий разработчик правит построитель, сторож краснеет
+    // и **сам называет значение** — вставил в оба поля, чужую причину не
+    // тронул, зелено. Поэтому устаревшему исключению отпечаток не называется:
+    // сначала снимите его или объявите заново, стерев поле.
+    const value = printedFingerprint(
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: { fingerprint: "", reason: SCENARIO_REASON },
+      })
+    );
+
+    // Прошёл шаг, правится следующий построитель — хэшер отвечает по-новому.
+    const problem = describeFingerprintProblem(later, SCENARIO_BASELINE, {
+      version: SCENARIO_VERSION,
+      takenAtVersion: SCENARIO_VERSION,
+      fingerprint: value ?? "",
+      exception: { fingerprint: value ?? "", reason: SCENARIO_REASON },
+    });
+    expect(problem).toContain("FINGERPRINT_VERSION_EXCEPTION");
+    expect(namesAnyFingerprint(problem)).toBe(false);
+    expect(problem).toMatch(/снимите|объявите заново/iu);
+  });
+
+  it("номер ниже пакетов эталона: сторож красный и отпечатка не называет", () => {
+    // Второй путь обхода: понизить обе строки номера, забрать напечатанный
+    // отпечаток для «следующего» — которым окажется действующий, — и вернуть
+    // строки на место. Пол читается из пакетов эталона, поэтому понижение не
+    // выдаёт ничего: ниже пола сторож молчит о значениях.
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: "deck-sections-v143",
+      takenAtVersion: "deck-sections-v143",
+      fingerprint: after("deck-sections-v143"),
+      exception: null,
+    });
+    expect(problem).not.toBeNull();
+    expect(namesAnyFingerprint(problem)).toBe(false);
+    expect(problem).toContain(SCENARIO_BASELINE);
+  });
+
+  it("подъём считается от пакетов эталона, а не от записанного номера", () => {
+    // Второй подъём внутри шага не нужен: номер уже отличается от того, при
+    // котором собраны закоммиченные пакеты, — кэш и так промахнётся. Иначе
+    // номер рос бы храповиком, v145 → v146 → v147, за одну работу.
+    const problem = describeFingerprintProblem(after, SCENARIO_BASELINE, {
+      version: SCENARIO_NEXT,
+      takenAtVersion: SCENARIO_NEXT,
+      fingerprint: before(SCENARIO_NEXT),
+      exception: null,
+    });
+    expect(problem).toContain(`DECK_CONTENT_VERSION         = "${SCENARIO_NEXT}"`);
+    expect(problem).not.toContain("deck-sections-v146");
+  });
+
+  it("номер, поднятый своей причиной, требует перезаписать отпечаток при нём — и только его", () => {
+    // Версия могла подняться не из-за построителей (скажем, из-за промпта).
+    // Исходники при этом не двигались, поэтому подсказка обязана звать к
+    // текущему номеру, а не к следующему: второй подъём был бы лишней оплатой
+    // стадий GPT.
+    const problem =
+      describeFingerprintProblem(before, SCENARIO_BASELINE, {
+        version: SCENARIO_NEXT,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: null,
+      }) ?? "";
+    expect(problem).toContain(SCENARIO_NEXT);
+    expect(problem).not.toContain("deck-sections-v146");
+  });
+
+  it("пакеты уже собраны при действующем номере — номер обязан подняться", () => {
+    // Обратная сторона предыдущей проверки и суть пола: подъём считается от
+    // номера **собранных пакетов**, а не от записанного. Пакеты при v145 есть —
+    // значит правка построителя обязана уехать на v146, иначе приёмка соберёт
+    // старое из кэша.
+    const problem = describeFingerprintProblem(after, SCENARIO_NEXT, {
+      version: SCENARIO_NEXT,
+      takenAtVersion: SCENARIO_NEXT,
+      fingerprint: before(SCENARIO_NEXT),
+      exception: null,
+    });
+    expect(problem).toContain(`DECK_CONTENT_VERSION         = "deck-sections-v146"`);
   });
 
   it("подсказка о расхождении называет и правило, и исключение", () => {
@@ -202,12 +549,19 @@ describe("версия содержимого деки не отстаёт от 
      * версию зря, либо читал стоящую на месте версию при подвинутом отпечатке
      * как баг.
      */
-    const hint = mismatchHint("0123456789abcdef");
-    expect(hint).toContain(`DECK_CONTENT_VERSION   = "${bumped(DECK_CONTENT_VERSION)}"`);
-    expect(hint).toContain('DECK_BUILDER_FINGERPRINT = "0123456789abcdef"');
+    const hint =
+      describeFingerprintProblem(after, SCENARIO_BASELINE, {
+        version: SCENARIO_VERSION,
+        takenAtVersion: SCENARIO_VERSION,
+        fingerprint: before(SCENARIO_VERSION),
+        exception: null,
+      }) ?? "";
+    expect(hint).toContain(`DECK_CONTENT_VERSION         = "${SCENARIO_NEXT}"`);
+    expect(hint).toContain(`FINGERPRINT_TAKEN_AT_VERSION = "${SCENARIO_NEXT}"`);
+    expect(hint).toContain(`DECK_BUILDER_FINGERPRINT     = "${after(SCENARIO_NEXT)}"`);
     expect(hint).toMatch(/Исключение/u);
     expect(hint).toMatch(/не может изменить ни одну\s+собранную деку/u);
-    expect(hint).toMatch(/версию оставьте/u);
+    expect(hint).toContain("FINGERPRINT_VERSION_EXCEPTION");
   });
 
   it("правка реестра шаблонов двигает отпечаток", () => {
@@ -216,10 +570,10 @@ describe("версия содержимого деки не отстаёт от 
     // раскладку карточек и `contentHash` секции, а отпечаток остался прежним —
     // паки со старой раскладкой приехали бы из кэша под новый рендерер.
     const registry = join(SECTIONS_DIR, "template-registry.ts");
-    const patched = fingerprintBuilders((path) =>
+    const patched = fingerprintBuilders(PROBE_A, (path) =>
       path === registry ? `${readFileSync(path, "utf8")}\n// правка` : readFileSync(path)
     );
-    expect(patched).not.toBe(fingerprintBuilders());
+    expect(patched).not.toBe(fingerprintBuilders(PROBE_A));
   });
 
   it.each([
@@ -236,23 +590,66 @@ describe("версия содержимого деки не отстаёт от 
     // Все они решают, каким словом и каким тоном напечатано содержимое
     // страницы. Файл вне отпечатка — правка приезжает из кэша прежней.
     const target = join(SECTIONS_DIR, file);
-    const patched = fingerprintBuilders((path) =>
+    const patched = fingerprintBuilders(PROBE_A, (path) =>
       path === target ? `${readFileSync(path, "utf8")}\n// правка` : readFileSync(path)
     );
-    expect(patched).not.toBe(fingerprintBuilders());
+    expect(patched).not.toBe(fingerprintBuilders(PROBE_A));
   });
 
   it("версия названа так, как её ждёт кэш", () => {
     expect(DECK_CONTENT_VERSION).toMatch(/^deck-sections-v\d+$/u);
+    expect(FINGERPRINT_TAKEN_AT_VERSION).toMatch(/^deck-sections-v\d+$/u);
+  });
+
+  it("пакеты эталона собраны при действующем номере", () => {
+    /*
+     * Не «пол не обгоняет номер», а **равен** ему, и это главная проверка
+     * порядка работы.
+     *
+     * Пока сторож соглашался на «номер выше пола», состояние «поднял номер,
+     * ворота не гонял» было зелёным во всём офлайн-контуре — то есть
+     * коммитилось и уезжало в деплой. А дальше правка построителя получала от
+     * сторожа совет «номер оставьте, обновите отпечаток»: пакеты при этом
+     * номере уже собраны на живом томе, и правка приезжала из кэша прежней —
+     * ровно тот отказ, ради которого сторож и написан.
+     *
+     * Цена равенства: между «поднял номер» и «перегнал ворота» `npm test`
+     * красный. Это и есть требуемый порядок, а не помеха.
+     */
+    const baseline = baselineContentVersion();
+    expect(baseline).toMatch(/^deck-sections-v\d+$/u);
+    expect(
+      baseline,
+      [
+        `Пакеты эталона собраны при "${baseline}", а DECK_CONTENT_VERSION = "${DECK_CONTENT_VERSION}".`,
+        "Подняли номер — перегоните ворота, чтобы пакеты пересобрались под него:",
+        "  npx tsx scripts/run-orion-deck-sections-report72.ts",
+        "Иначе состояние «номер выше пакетов» уедет в коммит, а следующей правке",
+        "сторож разрешит оставить номер на месте — при уже собранных на нём деках.",
+      ].join("\n")
+    ).toBe(DECK_CONTENT_VERSION);
+  });
+
+  it("пол объясняет, что делать, когда пакетов эталона нет", () => {
+    // Снесённый перед прогоном кэш пакетов — обычное дело в работе над декой.
+    // Отказ обязан говорить фразой: трасса `scandir` читается как поломка
+    // сторожа.
+    expect(() => baselineContentVersion(join(process.cwd(), "нет-такого-каталога"))).toThrow(
+      /Пакетов эталона нет.*Соберите ворота/su
+    );
+  });
+
+  it("проверка «отпечаток не назван» узнаёт и настоящий отпечаток", () => {
+    // Помощник стоит на подменённом хэшере, поэтому синтетических значений ему
+    // хватало. Но имя обещает большее, и первая же проверка против настоящего
+    // хэшера прошла бы молча и зря.
+    expect(namesAnyFingerprint('DECK_BUILDER_FINGERPRINT = "after@deck-sections-v144"')).toBe(true);
+    expect(namesAnyFingerprint('DECK_BUILDER_FINGERPRINT = "88d1526a6db30a98"')).toBe(true);
+    expect(namesAnyFingerprint("Поднимите номер — отпечатка сторож не называет.")).toBe(false);
   });
 
   it("подсказка о следующей версии считается верно", () => {
-    expect(bumped("deck-sections-v39")).toBe("deck-sections-v40");
-    expect(bumped("deck-sections-v9")).toBe("deck-sections-v10");
+    expect(nextContentVersion("deck-sections-v39")).toBe("deck-sections-v40");
+    expect(nextContentVersion("deck-sections-v9")).toBe("deck-sections-v10");
   });
 });
-
-/** Следующий номер версии — чтобы подсказка была готовой к вставке. */
-function bumped(version: string): string {
-  return version.replace(/(\d+)$/u, (n) => String(Number(n) + 1));
-}
