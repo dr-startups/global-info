@@ -79,8 +79,16 @@ function slidesRepeatingTheirParagraph(
 
 describe("абзац страницы печатается один раз", () => {
   it("страница с таблицей печатает абзац сама — вторым экземпляром в список он не уезжает", () => {
+    // Шаблон со списком и таблицей сразу: у страницы выдачи списка нет вовсе
+    // (`maxBulletsPerSlide: 0`), и повторить на ней абзац нечем — свойство
+    // проверяется там, где список законно есть.
     const [out] = payloadSlides([
-      slide({ narrative: NARRATIVE, bullets: [OWN_BULLET], table: TABLE }),
+      slide({
+        template: "orion_golden_surface_panel",
+        narrative: NARRATIVE,
+        bullets: [OWN_BULLET],
+        table: TABLE,
+      }),
     ]);
     expect(out!.narrative).toBe(NARRATIVE);
     expect(out!.bullets).toEqual([OWN_BULLET]);
@@ -108,7 +116,19 @@ describe("абзац страницы печатается один раз", () 
     // нормализует свой выход редактор деки (`bullets.length > 0 ? … :
     // undefined`), и только по `undefined` отличается «правки нет» от правки.
     // Рендерер оба входа читает одинаково (`slide.get("bullets") or []`).
-    const [out] = payloadSlides([slide({ narrative: NARRATIVE, bullets: [], table: TABLE })]);
+    //
+    // Шаблон — со списком: у страницы выдачи поле не заполняется первой же
+    // строкой сборки (`maxBulletsPerSlide: 0`), и на ней это свойство
+    // проверяется вхолостую — пустой список до правила «пустой ≠ отсутствие»
+    // не доходит.
+    const [out] = payloadSlides([
+      slide({
+        template: "orion_golden_surface_panel",
+        narrative: NARRATIVE,
+        bullets: [],
+        table: TABLE,
+      }),
+    ]);
     expect("bullets" in out!).toBe(false);
     expect(out!.narrative).toBe(NARRATIVE);
   });

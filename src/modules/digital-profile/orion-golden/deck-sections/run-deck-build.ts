@@ -35,6 +35,7 @@ import { normalizeForCompare } from "./text-compare";
 import {
   SIDEBAR_HIGHLIGHT_BUDGET,
   SIDEBAR_HIGHLIGHT_SLOTS,
+  rendererTemplateHasBulletList,
 } from "./template-registry";
 import {
   measureVerdictHasLoss,
@@ -682,7 +683,14 @@ export function toRendererPayload(input: {
         isContinuation: s.isContinuation,
         continuationOf: s.continuationOf,
         continuationIndex: s.continuationIndex,
-        narrative,
+        /*
+         * Вводный абзац рисует только вариант `hero` — у разделителя по
+         * умолчанию на листе стоит один титул. Найдено воротами следа: на
+         * страницах 10 и 37 эталона фраза «Раздел показывает, что увидит
+         * банк…» не встречается нигде в 56 страницах, а телеметрия о ней
+         * молчит — ветка отрисовки не исполнялась, и записывать было нечему.
+         */
+        narrative: s.layoutVariant === "hero" ? narrative : undefined,
         evidenceRefs: s.evidenceRefs,
         assetRefs: boundAssets,
       };
@@ -1045,6 +1053,18 @@ export function composeFindingProse(s: {
 }
 
 function buildRendererBullets(s: RendererSlide): string[] | undefined {
+  /*
+   * У шаблона без списка поле не заполняется вовсе.
+   *
+   * Ёмкость списка отвечает на этот вопрос одна, но применял её только
+   * пагинатор построителя — к `s.bullets`. Ссылка на источник добавляется
+   * позже, здесь, и в досягаемость ёмкости не попадала: страница выдачи с
+   * непустой таблицей везла один буллет («Источники — …») на всех 18 листах
+   * эталона и не печатала его ни на одном — при непустой таблице ветка
+   * `elif bullets` рендерера не исполняется. Адреса материалов стоят полосой
+   * под каждой строкой, так что клиент от этого ничего не терял.
+   */
+  if (!rendererTemplateHasBulletList(s.template)) return undefined;
   const bullets: string[] = [...(s.bullets ?? [])];
   // PDF-40 G.1e — methodology stays on the structured no-data layout only;
   // never append it into the client bullet stream (reads as internal jargon

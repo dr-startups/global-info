@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 62,
-  "totalChars": 55226,
+  "totalChars": 53151,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -219,8 +219,7 @@
     {
       "slideKey": "p06_ru_toc",
       "text": {
-        "title": "Россия: Цифровой профиль",
-        "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «Россия»: какие темы формируют риск и что проверить в первую очередь."
+        "title": "Россия: Цифровой профиль"
       },
       "baseSlotId": "p06_ru_toc",
       "template": "orion_golden_region_divider"
@@ -280,9 +279,6 @@
       },
       "baseSlotId": "p08_ru_metrics",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — affarsposten.se, bildarkiv-nordic.se, bizdaily-nordic.se, delovoy-vestnik.ru и ещё 2."
-      ],
       "table": {
         "headers": [
           "Система",
@@ -356,9 +352,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — stockholm-kuriren.se, nordmarket-watch.se, granskaren.se и kapitalnytt.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -408,9 +401,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — rynok-segodnya.ru, pravo-obzor.ru, reestr-novosti.ru и svenskt-naringsliv-nytt.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -460,9 +450,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — stockholm-kuriren.se, nordmarket-watch.se, granskaren.se и kapitalnytt.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -512,9 +499,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — rynok-segodnya.ru, pravo-obzor.ru, reestr-novosti.ru и affarsposten.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -564,9 +548,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — nordmarket-watch.se, granskaren.se, delovoy-vestnik.ru и pravo-obzor.ru."
-      ],
       "table": {
         "headers": [
           "№",
@@ -616,9 +597,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — affarsposten.se, finansbladet.se, delovoy-vestnik.ru и bizdaily-nordic.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -668,9 +646,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — affarsposten.se, finansbladet.se, delovoy-vestnik.ru и bizdaily-nordic.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -720,9 +695,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — svenskt-naringsliv-nytt.se, stockholm-kuriren.se, finansbladet.se и kapitalnytt.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -772,9 +744,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — rynok-segodnya.ru, bizdaily-nordic.se, svenskt-naringsliv-nytt.se и stockholm-kuriren.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -824,9 +793,6 @@
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — finansbladet.se, kapitalnytt.se, rynok-segodnya.ru и bizdaily-nordic.se."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1133,8 +1099,7 @@
     {
       "slideKey": "p23_uae_toc",
       "text": {
-        "title": "ОАЭ: Цифровой профиль",
-        "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «ОАЭ / международный»: какие темы формируют риск и что проверить в первую очередь."
+        "title": "ОАЭ: Цифровой профиль"
       },
       "baseSlotId": "p23_uae_toc",
       "template": "orion_golden_region_divider"
@@ -1182,9 +1147,6 @@
       },
       "baseSlotId": "p25_uae_metrics",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — abudhabi-capital-news.ae, bildarkiv-nordic.se, difc-briefing.ae, dubai-market-daily.ae и ещё 2."
-      ],
       "table": {
         "headers": [
           "Система",
@@ -1246,9 +1208,6 @@
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — gulf-business-review.ae, emirates-ledger.ae, dubai-market-daily.ae и khaleej-finance-post.ae."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1298,9 +1257,6 @@
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — difc-briefing.ae, abudhabi-capital-news.ae, gulf-business-review.ae и emirates-ledger.ae."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1350,9 +1306,6 @@
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — dubai-market-daily.ae, khaleej-finance-post.ae, difc-briefing.ae и abudhabi-capital-news.ae."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1402,9 +1355,6 @@
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — gulf-business-review.ae, emirates-ledger.ae, dubai-market-daily.ae и khaleej-finance-post.ae."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1454,9 +1404,6 @@
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источники — difc-briefing.ae, abudhabi-capital-news.ae, gulf-business-review.ae и emirates-ledger.ae."
-      ],
       "table": {
         "headers": [
           "№",
@@ -1631,9 +1578,6 @@
       },
       "baseSlotId": "p33_compliance_toc",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источник: комплаенс-базы (существующий контур, без расширения источников)."
-      ],
       "table": {
         "headers": [
           "База данных",
@@ -1665,9 +1609,6 @@
       },
       "baseSlotId": "p34_dow_jones",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источник: Dow Jones (существующий контур)."
-      ],
       "table": {
         "headers": [
           "Параметр",
@@ -1725,9 +1666,6 @@
       },
       "baseSlotId": "p35_lexis_visual",
       "template": "orion_golden_search_table",
-      "bullets": [
-        "Источник: LexisNexis (существующий контур)."
-      ],
       "table": {
         "headers": [
           "Параметр",

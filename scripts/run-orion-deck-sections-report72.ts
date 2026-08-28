@@ -43,6 +43,7 @@ import {
   DECK_ASSET_FIXTURE_MISSING,
   DECK_ASSET_FIXTURE_PATH,
 } from "./deck-asset-fixture-path";
+import { CLIENT_TEXT_FIELDS } from "./lib/client-text-snapshot";
 
 const ANALYTICS_DIR = join(process.cwd(), "baselines", "report-72", "artifacts", "analytics");
 const OUTPUT_ROOT = join(process.cwd(), "baselines", "report-72", "artifacts", "deck-sections");
@@ -531,6 +532,8 @@ async function main(): Promise<void> {
       subjectName: SUBJECT_NAME,
       assets,
     });
+    const finalSlides = (payload.deckManifest as { finalSlides: Array<Record<string, unknown>> })
+      .finalSlides;
     const payloadPath = join(OUTPUT_ROOT, "render-payload.json");
     writeFileSync(payloadPath, JSON.stringify(payload), "utf8");
     const pptxPath = join(OUTPUT_ROOT, "rendered-client.pptx");
@@ -626,6 +629,39 @@ async function main(): Promise<void> {
         ) as string[])
       : [];
 
+    // Нарисованный текст страниц — из готового PPTX, тем же инспектором,
+    // который читает геометрию. Инструмент намеренно не тот, что верстает
+    // страницу: проверка вёрстки её собственной мерой подтверждает сама себя.
+    const pptxPageTexts = ((): string[] => {
+      const raw = JSON.parse(
+        execFileSync(
+          pythonInterpreter(),
+          ["-X", "utf8", "scripts/inspect-first36-pptx-geometry.py", pptxPath, "--texts"],
+          { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+        )
+      ) as unknown;
+      // Инспектор без python-pptx отдаёт объект с ошибкой: тогда следов нет ни
+      // у одного поля, и ворот краснеет — проверка без входа не пропуск.
+      return Array.isArray(raw) ? (raw as string[]) : [];
+    })();
+    const fieldsWithoutTrace = textFieldsWithoutTraceOnTheirPage(
+      finalSlides,
+      (page) => pptxPageTexts[page - 1] ?? ""
+    );
+    console.log("=== TEXT FIELDS ON THEIR PAGE ===");
+    if (fieldsWithoutTrace.length === 0) {
+      console.log(`след на своей странице оставили все поля ${finalSlides.length} слайдов`);
+    } else {
+      console.error(
+        `CRITICAL: полей без следа на своей странице — ${fieldsWithoutTrace.length}`
+      );
+      for (const miss of fieldsWithoutTrace.slice(0, 25)) {
+        console.error(
+          `  CRITICAL стр.${miss.page} ${miss.slideKey} ${miss.field}: «${miss.text.slice(0, 90)}»`
+        );
+      }
+    }
+
     // Content report: client-copy level facts across the assembled deck.
     const redMarkerRows = result.assembly.rendererSlides
       .flatMap((s) => s.table?.rows ?? [])
@@ -703,9 +739,12 @@ async function main(): Promise<void> {
         // Страницы регионов говорят о чтении. На эталоне это честная ветка
         // «не читались» — ворота не вакуумны, а числовую ветку закрепляют
         // юниты и смок: артефактов чтения у report-72 нет.
-        regionalPagesCarryReadingStatus: regionalPagesCarryReadingStatus(
-          (payload.deckManifest as { finalSlides: Array<Record<string, unknown>> }).finalSlides
-        ),
+        regionalPagesCarryReadingStatus: regionalPagesCarryReadingStatus(finalSlides),
+        // Переданное текстовое поле оставило след на своей странице. Ворот
+        // ловит не обрезку, а исчезновение: поле, которое шаблон не рисует,
+        // уезжает в рендерер и пропадает молча — ни телеметрии, ни отказа.
+        // Дека без слайдов — отказ, а не пропуск.
+        everyTextFieldReachesItsPage: finalSlides.length > 0 && fieldsWithoutTrace.length === 0,
         // Методология страницы проверки доехала до листа, а не только до
         // полезной нагрузки: этот зазор и пропустил регресс.
         wikipediaCheckTextInPdf: wikipediaCheckTextInPdf(
@@ -889,6 +928,84 @@ export function wikipediaCheckTextInPdf(
 /** Одна форма для сверки с текстом PDF: буквы и цифры, без пробелов. */
 function compactForCompare(text: string): string {
   return normalizeForCompare(text).replace(/\s+/gu, "");
+}
+
+/**
+ * Что из поля обязано найтись на листе.
+ *
+ * Обложка составляет заголовок сама: служебную приставку «Отчёт о цифровом
+ * профиле — » она отбрасывает и печатает хвост после тире (ветка
+ * `orion_golden_cover` в `renderer/orion_golden_render/slides.py`). Требовать
+ * от неё начала поля значило бы краснеть на замысле, а снять заголовок обложки
+ * с проверки — перестать сторожить единственное место листа, где стоит имя
+ * субъекта.
+ */
+function drawnPartOfTextField(template: string, field: string, value: string): string {
+  if (template === "orion_golden_cover" && field === "title") {
+    return value.split(/\s+[—–-]\s+/u).pop() ?? value;
+  }
+  return value;
+}
+
+/** Поле нагрузки, которого на его странице не нашлось. */
+export type TextFieldWithoutTrace = {
+  slideKey: string;
+  page: number;
+  field: string;
+  text: string;
+};
+
+/**
+ * Сколько знаков начала поля ищется на листе.
+ *
+ * Столько же требует ворот страницы проверки Википедии: голова короче начинает
+ * случайно совпадать с соседним текстом, длиннее — краснеть на законной
+ * обрезке. Поле короче этого сравнивается целиком.
+ */
+const TRACE_HEAD_CHARS = 40;
+
+/**
+ * Каждое переданное текстовое поле оставило след на своей странице.
+ *
+ * Нагрузка говорит, что на странице напечатано; нарисованный текст читается из
+ * готового PPTX — вторым инструментом, а не тем, который эту страницу верстает.
+ * Между ними живёт молчаливая потеря: поле доезжает до рендерера целым, а его
+ * ветка на листе не исполняется. Так `sourceNote` страницы выдачи ехал
+ * единственным буллетом на 18 страницах эталона и не был напечатан ни на одной:
+ * при непустой таблице `elif bullets` не выполняется.
+ *
+ * Утверждение намеренно слабое — «поле не исчезло целиком». Рендерер законно
+ * переносит, склеивает и режет по словам, а обрезку судит ворот телеметрии
+ * (`services/render-telemetry-gate.ts`); требование дословного совпадения
+ * краснело бы на здоровом прогоне, и ворот выключили бы.
+ *
+ * Перечень полей — общий со снимком клиентского текста
+ * (`lib/client-text-snapshot.ts`), плюс каждый элемент списка отдельно: у списка
+ * пропадает не всё поле, а одна строка.
+ */
+export function textFieldsWithoutTraceOnTheirPage(
+  finalSlides: ReadonlyArray<Record<string, unknown>>,
+  pageText: (pageNumber: number) => string
+): TextFieldWithoutTrace[] {
+  const out: TextFieldWithoutTrace[] = [];
+  for (const slide of finalSlides) {
+    const page = Number(slide.pageNumber);
+    const drawn = compactForCompare(pageText(page));
+    const bullets = Array.isArray(slide.bullets) ? (slide.bullets as unknown[]) : [];
+    const fields: Array<[string, unknown]> = [
+      ...CLIENT_TEXT_FIELDS.map((field) => [field, slide[field]] as [string, unknown]),
+      ...bullets.map((value, i) => [`bullets[${i}]`, value] as [string, unknown]),
+    ];
+    for (const [field, value] of fields) {
+      if (typeof value !== "string") continue;
+      const expected = drawnPartOfTextField(String(slide.template ?? ""), field, value);
+      const head = compactForCompare(expected).slice(0, TRACE_HEAD_CHARS);
+      if (!head) continue;
+      if (drawn.includes(head)) continue;
+      out.push({ slideKey: String(slide.slideKey ?? ""), page, field, text: value });
+    }
+  }
+  return out;
 }
 
 /**

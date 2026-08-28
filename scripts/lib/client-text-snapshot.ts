@@ -13,8 +13,15 @@
  * `slideKey` и `baseSlotId` оставлены как якоря — без них diff нечитаем.
  */
 
-/** Поля слайда, содержащие клиентский текст. Порядок — как в снимке. */
-const TEXT_FIELDS = [
+/**
+ * Поля слайда, содержащие клиентский текст. Порядок — как в снимке.
+ *
+ * Перечень объявлен здесь один раз и на два потребителя: снимок клиентского
+ * текста и приёмочный ворот «переданное поле оставило след на своей странице»
+ * (`run-orion-deck-sections-report72.ts`). Второй список полей означал бы, что
+ * новое поле попадает под один сторож и проходит мимо другого.
+ */
+export const CLIENT_TEXT_FIELDS = [
   "title",
   "subtitle",
   "narrative",
@@ -88,7 +95,7 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
 
   for (const raw of slides) {
     const text: Record<string, string> = {};
-    for (const field of TEXT_FIELDS) {
+    for (const field of CLIENT_TEXT_FIELDS) {
       const v = norm(raw[field]);
       if (v) text[field] = v;
     }

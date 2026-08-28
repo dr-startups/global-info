@@ -27,6 +27,7 @@
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,
     "regionalPagesCarryReadingStatus": true,
+    "everyTextFieldReachesItsPage": true,
     "wikipediaCheckTextInPdf": true,
     "pageParity": true
   },

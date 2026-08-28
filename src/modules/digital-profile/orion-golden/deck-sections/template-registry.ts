@@ -488,3 +488,21 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
 export function getTemplate(templateId: DeckTemplateId): DeckTemplateDef {
   return DECK_TEMPLATE_REGISTRY[templateId];
 }
+
+/**
+ * Есть ли у этого макета рендерера список.
+ *
+ * Ответ уже записан ёмкостью: ноль означает «списка на странице нет». Спрашивают
+ * по имени макета рендерера, потому что дальше сборки деки шаблон известен
+ * только им; один макет обслуживает несколько шаблонов (`orion_golden_surface_panel`
+ * — три), и список есть, если он есть хоть у одного из них.
+ *
+ * Незнакомый макет — «список есть»: молча выбросить содержимое хуже, чем
+ * провезти лишнее поле.
+ */
+export function rendererTemplateHasBulletList(rendererTemplate: string): boolean {
+  const declared = Object.values(DECK_TEMPLATE_REGISTRY).filter(
+    (t) => t.rendererTemplate === rendererTemplate
+  );
+  return declared.length === 0 || declared.some((t) => t.maxBulletsPerSlide > 0);
+}
