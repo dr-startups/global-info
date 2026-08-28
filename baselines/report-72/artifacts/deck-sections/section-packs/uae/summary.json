@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
   "contentHash": "sha256:4bdf96bb12c65b342c9ddf8031e79d170b5b991228e40687b570c624e0d63654",
-  "contentVersion": "deck-sections-v133",
+  "contentVersion": "deck-sections-v134",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -136,7 +136,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SUMMARY",
-  "generatedAt": "2026-08-27T17:14:22.368Z",
+  "generatedAt": "2026-08-27T19:50:47.255Z",
   "inputHash": "sha256:ea0caa501e8dd331b17326684529f48eefcf8422b5905c4fc40322936ab950ea:34c806b75f673376",
   "inputs": {
     "evidenceRefs": [

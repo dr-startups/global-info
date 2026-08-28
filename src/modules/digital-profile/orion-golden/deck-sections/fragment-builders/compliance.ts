@@ -496,47 +496,46 @@ export function buildComplianceFragment(
   const lexisHits = hitsOfProvider("LEXISNEXIS");
 
   /**
-   * Пустая страница базы называет то, что о проверке известно.
+   * Исход проверки по одной базе — словами и в одном месте.
    *
-   * Прежняя формула «Проверка по базе X выполнена: записей о субъекте не
-   * зафиксировано» печаталась всегда — в том числе там, где проверки не было
-   * вовсе (официального доступа к Dow Jones / LexisNexis у контура нет).
-   * NOT_CONFIGURED, выданный за «совпадений нет», сообщает банку, что человек
-   * проверен, когда он не проверен. Ветвь выбирают данные: есть строка рана —
-   * проверка была, нет строки — не была.
+   * Тем же исходом базу описывают два листа: страница базы (абзацем) и сводный
+   * лист при нуле совпадений (строкой перечня). Вторая формулировка того же
+   * исхода означала бы, что одна и та же проверка на двух страницах отчёта
+   * названа по-разному, — поэтому слова живут здесь, а листы их только
+   * оформляют.
+   *
+   * Ветвь выбирают данные, а не конфигурация: есть строка рана — проверка
+   * была, нет строки — не была. Чтение окружения сделало бы клиентский текст
+   * зависимым от машины, на которой собирают отчёт.
+   *
+   * `result` — продолжение слова «Проверка»: «выполнена 12.05.2026: совпадений
+   * по субъекту не найдено», «не выполнена: доступ к базе не настроен».
    */
-  const emptyPageCopy = (
-    provider: string,
+  const screeningOutcome = (
     providerKey: string
-  ): { narrative: string; whatToCheck: string; emptyStateReason: string } => {
+  ): {
+    kind: "performed-clean" | "records-excluded" | "not-performed" | "never-run";
+    result: string;
+    emptyStateReason: string;
+  } => {
     const run = (extras.complianceScreenings ?? []).find(
       (s) => String(s.provider ?? "").toUpperCase() === providerKey
     );
     if (run && String(run.status).toUpperCase() === "SUCCESS") {
       const date = run.finishedAt ? formatRuDate(String(run.finishedAt)) : null;
-      const performed = `Проверка по базе ${provider}${date ? ` выполнена ${date}` : " выполнена"}`;
-      // Ран нашёл записи, а на странице их нет: они сняты разбором или отсеяны
-      // как служебные. Назвать это «совпадений не найдено» — то же ложное
-      // утверждение о проверке, что и «выполнена» там, где её не было; поэтому
-      // печатаются оба числа, а причина расхождения не выдумывается.
+      const performed = date ? `выполнена ${date}` : "выполнена";
       if (Number(run.hitCount ?? 0) > 0) {
         return {
-          narrative:
-            `${performed}: найдено записей — ${Number(run.hitCount)}, но в материал отчёта ` +
-            "не вошла ни одна. Это результат на дату проверки, а не вывод об отсутствии рисков.",
-          whatToCheck:
-            `Открыть записи по базе ${provider} в деле и проверить, почему они не вошли в отчёт; ` +
-            "снятые по ошибке — вернуть в рассмотрение.",
+          kind: "records-excluded",
+          result:
+            `${performed}: найдено записей — ${Number(run.hitCount)}, ` +
+            "но в материал отчёта не вошла ни одна",
           emptyStateReason: "compliance-records-excluded",
         };
       }
       return {
-        narrative:
-          `${performed}: совпадений по субъекту не найдено. Это результат на дату проверки, ` +
-          "а не вывод об отсутствии рисков.",
-        whatToCheck:
-          `Повторить сверку по базе ${provider} при следующем обновлении данных; при появлении ` +
-          "записи запросить полную карточку и сверить идентификаторы субъекта.",
+        kind: "performed-clean",
+        result: `${performed}: совпадений по субъекту не найдено`,
         emptyStateReason: "no-compliance-records",
       };
     }
@@ -546,23 +545,72 @@ export function buildComplianceFragment(
         SCREENING_FAILURE_REASONS[String(run.status).toUpperCase()] ??
         "источник не ответил в этом прогоне";
       return {
-        narrative:
-          `Проверка по базе ${provider} не выполнена: ${reason}. ` +
-          "Записей ручного импорта по этой базе в деле нет.",
-        whatToCheck:
-          `Устранить причину и повторить проверку по базе ${provider}; до этого пустая ` +
-          "страница не означает «совпадений нет».",
+        kind: "not-performed",
+        result: `не выполнена: ${reason}`,
         emptyStateReason: "compliance-check-not-performed",
       };
     }
     return {
+      kind: "never-run",
+      result: "по официальному API не выполнялась: доступ подключается по договору",
+      emptyStateReason: "compliance-check-not-performed",
+    };
+  };
+
+  /**
+   * Пустая страница базы называет то, что о проверке известно.
+   *
+   * Прежняя формула «Проверка по базе X выполнена: записей о субъекте не
+   * зафиксировано» печаталась всегда — в том числе там, где проверки не было
+   * вовсе (официального доступа к Dow Jones / LexisNexis у контура нет).
+   * NOT_CONFIGURED, выданный за «совпадений нет», сообщает читателю, что его
+   * профиль по этой базе чист, когда он по ней не проверен.
+   */
+  const emptyPageCopy = (
+    provider: string,
+    providerKey: string
+  ): { narrative: string; whatToCheck: string; emptyStateReason: string } => {
+    const outcome = screeningOutcome(providerKey);
+    // Ран нашёл записи, а на странице их нет: они сняты разбором или отсеяны
+    // как служебные. Назвать это «совпадений не найдено» — то же ложное
+    // утверждение о проверке, что и «выполнена» там, где её не было; поэтому
+    // печатаются оба числа, а причина расхождения не выдумывается.
+    if (outcome.kind === "records-excluded" || outcome.kind === "performed-clean") {
+      return {
+        // Оговорка «результат на дату проверки» одна на обе выполненные
+        // проверки: расхождение этой фразы между ними было бы разницей без
+        // причины.
+        narrative:
+          `Проверка по базе ${provider} ${outcome.result}. Это результат на дату проверки, ` +
+          "а не вывод об отсутствии рисков.",
+        whatToCheck:
+          outcome.kind === "records-excluded"
+            ? `Открыть записи по базе ${provider} в деле и проверить, почему они не вошли в ` +
+              "отчёт; снятые по ошибке — вернуть в рассмотрение."
+            : `Повторить сверку по базе ${provider} при следующем обновлении данных; при ` +
+              "появлении записи запросить полную карточку и сверить идентификаторы субъекта.",
+        emptyStateReason: outcome.emptyStateReason,
+      };
+    }
+    if (outcome.kind === "not-performed") {
+      return {
+        narrative:
+          `Проверка по базе ${provider} ${outcome.result}. ` +
+          "Записей ручного импорта по этой базе в деле нет.",
+        whatToCheck:
+          `Устранить причину и повторить проверку по базе ${provider}; до этого пустая ` +
+          "страница не означает «совпадений нет».",
+        emptyStateReason: outcome.emptyStateReason,
+      };
+    }
+    return {
       narrative:
-        `Записей о субъекте по базе ${provider} в этом прогоне нет. Проверка по официальному ` +
-        "API не выполнялась: доступ подключается по договору; ручной импорт записей не содержит.",
+        `Записей о субъекте по базе ${provider} в этом прогоне нет. Проверка ${outcome.result}; ` +
+        "ручной импорт записей не содержит.",
       whatToCheck:
         `Подключить официальный доступ к базе ${provider} по договору или импортировать запись ` +
         "вручную; до этого отсутствие записей не является результатом проверки.",
-      emptyStateReason: "compliance-check-not-performed",
+      emptyStateReason: outcome.emptyStateReason,
     };
   };
 
@@ -660,12 +708,6 @@ export function buildComplianceFragment(
    * записям и совпадает с числом строк таблицы.
    */
   const summaryNarrative = (): string => {
-    if (hits.length === 0) {
-      return (
-        "Совпадений по субъекту в комплаенс-базах в этом прогоне не зафиксировано. " +
-        "Что проверялось по каждой базе и с каким результатом — на страницах баз."
-      );
-    }
     const bases = enumerateRu([...new Set(hits.map((h) => hitLabel(h).provider))], 4);
     const collapsed = collapsedCount > 0 ? `; повторные записи объединены: ${collapsedCount}` : "";
     return (
@@ -678,30 +720,115 @@ export function buildComplianceFragment(
    * Сводная таблица разбивается на листы так же, как карточки.
    *
    * Полос-заголовков у неё нет, поэтому разбивка простая — по числу строк. При
-   * пустом наборе лист всё равно один: он печатает, что записей нет, и это
-   * ответ проверки, а не отсутствие страницы.
+   * пустом наборе листов таблицы нет вовсе: страница остаётся, но говорит
+   * словами (см. `emptySummarySlide`).
    */
-  const summaryTablePages = hits.length > 0 ? chunk(hits, SUMMARY_PAGE_ROWS) : [[]];
+  const summaryTablePages = chunk(hits, SUMMARY_PAGE_ROWS);
   const summaryTable = (pageHits: ComplianceHitEntry[]) => ({
     headers: [...COMPLIANCE_SUMMARY_HEADERS],
     rows: pageHits.map(summaryRowOf),
   });
 
-  const summarySlide = makeSlotSlide({
-    slot: summarySlot,
-    sectionId,
-    templateId: "serp-table",
-    content: {
-      narrative: summaryNarrative(),
-      table: summaryTable(summaryTablePages[0]!),
-      whatToCheck:
-        "Верифицировать каждое потенциальное совпадение вручную: сопоставить идентификаторы субъекта с записью базы.",
-      sourceNote: COMPLIANCE_SOURCE_NOTE,
-    },
-    evidenceRefs: [...refs, ...hits.map(([r]) => r)],
-    findingIds: scoped.findings.map((f) => f.findingId),
-    metrics: { complianceItems: refs.length, hits: hits.length },
-  });
+  /**
+   * Сводный лист при нуле совпадений — то же решение, что уже принято для
+   * страницы базы (шаг 13, C13): таблицы нет вовсе, и лист говорит словами.
+   *
+   * Пока лист объявлял `table` с пустым `rows`, рендерер шёл запасной веткой
+   * `if not rows and bullets`: ставил заголовки таблицы поиска «Поз. / Домен /
+   * Заголовок / Риск» и разбирал в строки то, что подвернулось. Клиент читал
+   * выдуманную таблицу поиска на странице комплаенса — и одну строку прочерков
+   * вместо ответа проверки.
+   *
+   * Перечень баз — из ранов скрининга: базы, по которой рана нет, лист не
+   * называет, потому что о ней и сказать нечего, кроме «не проверяли», и это
+   * говорит её собственная страница. Строк не больше четырёх — столько баз, по
+   * которым бывает ран (`ComplianceProviderName` без `MANUAL_IMPORT`), и ровно
+   * столько печатает карточка листа.
+   */
+  const emptySummarySlide = (): SlideContentContract => {
+    const outcomes = (extras.complianceScreenings ?? []).map((run) => {
+      const providerKey = String(run.provider ?? "").toUpperCase();
+      return { provider: complianceProviderLabel(run.provider), ...screeningOutcome(providerKey) };
+    });
+    // Перечень строится по самим ранам, поэтому «рана нет» здесь не бывает:
+    // непроверенная база — это ран с отказом.
+    const unchecked = outcomes.filter((o) => o.kind === "not-performed");
+    /*
+     * Смысл пустоты — читателю, и ровно один раз.
+     *
+     * Отчёт читает сам субъект, и рекомендации вида «подключить официальный
+     * доступ по договору» или «повторить сверку при следующем обновлении
+     * данных» описывают нашу работу: выполнить их читатель не может. Поэтому
+     * на месте рекомендации стоит то, что отсутствие совпадений значит и чего
+     * не значит, — и стоит в абзаце, а не отдельным полем: макет печатает
+     * `whatToCheck` карточкой «Что проверить», то есть под заголовком,
+     * обещающим действие. Оговорка при этом печатается один раз: на коротком
+     * листе она стояла в обеих карточках из двух.
+     *
+     * Порядок фраз тоже смысловой. Там, где не проверяли ни одной базы, лист
+     * начинается состоянием проверки: «совпадений не зафиксировано» первым
+     * читается как вывод, которого у непроверенной базы нет.
+     *
+     * Внутренних слов здесь быть не может по той же причине: «записей о
+     * проверках в артефактах прогона нет» — наша лексика, читателю она не
+     * говорит ничего. Состояние называется тем, что он понимает: база не
+     * проверялась.
+     */
+    const narrative =
+      outcomes.length === 0
+        ? "Ни одна комплаенс-база в этом прогоне не проверялась. Поэтому вывода об " +
+          "отсутствии записей здесь нет: отсутствие совпадений результатом проверки не является."
+        : unchecked.length > 0
+          ? "Совпадений по субъекту в комплаенс-базах в этом прогоне не зафиксировано. " +
+            "Ниже — что проверялось по каждой базе: там, где проверка не состоялась, вывода " +
+            "нет, и её молчание результатом проверки не является."
+          : "Совпадений по субъекту в комплаенс-базах в этом прогоне не зафиксировано. " +
+            "Ниже — что проверялось по каждой базе: это результат на дату проверки, а не " +
+            "вывод об отсутствии рисков.";
+    return makeSlotSlide({
+      slot: summarySlot,
+      sectionId,
+      templateId: "coverage-empty-state",
+      content: {
+        narrative,
+        // Строк не больше четырёх — столько баз, по которым бывает ран, и
+        // столько же печатает карточка листа. Равенство не на глаз: его
+        // сверяет `empty-compliance-summary-speaks-in-words.test.ts` по
+        // перечню провайдеров и ёмкости шаблона.
+        bullets: outcomes.map((o) => `${o.provider} — проверка ${o.result}.`),
+        sourceNote: COMPLIANCE_SOURCE_NOTE,
+      },
+      evidenceRefs: [...refs],
+      findingIds: scoped.findings.map((f) => f.findingId),
+      metrics: { complianceItems: refs.length, hits: 0 },
+      // «Проверено, записей нет» и «проверка не выполнялась» — разные ответы
+      // читателю: первый говорит, что по базе его нет, второй — что о базе мы
+      // ничего не знаем. Разбор качества отчёта различает их по этому признаку.
+      emptyStateReason:
+        unchecked.length === 0 && outcomes.length > 0
+          ? "no-compliance-records"
+          : "compliance-check-not-performed",
+    });
+  };
+
+  const summarySlide =
+    summaryTablePages.length === 0
+      ? emptySummarySlide()
+      : makeSlotSlide({
+          slot: summarySlot,
+          sectionId,
+          templateId: "serp-table",
+          content: {
+            narrative: summaryNarrative(),
+            table: summaryTable(summaryTablePages[0]!),
+            whatToCheck:
+              "Верифицировать каждое потенциальное совпадение вручную: сопоставить идентификаторы субъекта с записью базы.",
+            sourceNote: COMPLIANCE_SOURCE_NOTE,
+          },
+          evidenceRefs: [...refs, ...hits.map(([r]) => r)],
+          findingIds: scoped.findings.map((f) => f.findingId),
+          metrics: { complianceItems: refs.length, hits: hits.length },
+        });
 
   /**
    * Карточки баз, у которых нет своей страницы (OpenSanctions, World-Check).

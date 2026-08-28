@@ -177,14 +177,17 @@ export function getComplianceProviderStatus(name: ComplianceProviderName): Compl
   };
 }
 
+/**
+ * Все провайдеры — исчерпывающим перечнем, выведенным из карты названий.
+ *
+ * Здесь стоял литеральный список с приведением `as ComplianceProviderName[]`, и
+ * приведение молчало ровно там, где нужен голос: новый провайдер в типе
+ * компилятор требует дописать в `LABELS` и `NOTES` (это `Record` по объединению),
+ * а в список — нет. Провайдер, забытый в списке, не появился бы ни в кабинете,
+ * ни в проверках, которые считают базы по этому перечню.
+ */
+export const COMPLIANCE_PROVIDER_NAMES = Object.keys(LABELS) as ComplianceProviderName[];
+
 export function listComplianceProviderStatus(): ComplianceProviderStatus[] {
-  return (
-    [
-      "OPEN_SANCTIONS",
-      "DOW_JONES",
-      "LEXISNEXIS",
-      "WORLD_CHECK",
-      "MANUAL_IMPORT",
-    ] as ComplianceProviderName[]
-  ).map(getComplianceProviderStatus);
+  return COMPLIANCE_PROVIDER_NAMES.map(getComplianceProviderStatus);
 }

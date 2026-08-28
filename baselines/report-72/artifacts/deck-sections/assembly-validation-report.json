@@ -20,6 +20,7 @@
     "unexplainedAdverseMarkerCountZero": true,
     "visualCardsResolvedOrLabeled": true,
     "noMateriallyEmptyPages": true,
+    "declaredTablesHaveRows": true,
     "quotesWholeAndSourced": true,
     "pageAccountingComplete": true,
     "sidebarScopeSubsets": true,

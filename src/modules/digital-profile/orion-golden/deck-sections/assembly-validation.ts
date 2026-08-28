@@ -21,6 +21,7 @@ import {
   undeclaredClientTextDomains,
 } from "./section-validation";
 import { NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
+import { pluralRu } from "../../report/i18n/plural-ru";
 
 /** Renderer templates that draw the analytical sidebar next to a visual. */
 const SIDEBAR_TEMPLATES = new Set([
@@ -83,9 +84,14 @@ export const SYSTEMIC_DEFECT_PAGES = 3;
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
 /**
- * Какие дефекты текста останавливают сборку.
+ * Какие дефекты останавливают сборку — и с какого порога.
  *
- * Отдельной функцией, чтобы порог можно было проверить в лоб, не собирая ради
+ * Дефекты текста (разорванная цитата, внутренний код, панель, спорящая с
+ * текстом) блокируют по существенности: эвристика ошибается на живых данных, и
+ * единичный случай не должен ронять оплаченный прогон. Структурные — с первой
+ * страницы: таблица без строк законной не бывает.
+ *
+ * Отдельной функцией, чтобы пороги можно было проверить в лоб, не собирая ради
  * этого манифест с пакетами и находками.
  */
 export function blockingIssues(input: {
@@ -95,6 +101,8 @@ export function blockingIssues(input: {
   codes?: ReadonlySet<string>;
   /** Страницы, чей текст спорит с нарисованной на них панелью. */
   panelMismatchSlides?: ReadonlySet<string>;
+  /** Страницы, объявившие таблицу без единой строки. */
+  emptyTableSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
   /*
@@ -135,6 +143,23 @@ export function blockingIssues(input: {
   const panels = input.panelMismatchSlides ?? new Set<string>();
   if (panels.size >= SYSTEMIC_DEFECT_PAGES) {
     out.push(`панели не сходятся с текстом на ${panels.size} страницах: ${name(panels)}`);
+  }
+  /*
+   * Таблица без строк блокирует с первой же страницы, а не с третьей.
+   *
+   * Порог существенности заведён для текстовых эвристик, которые ошибаются на
+   * живых данных: единичный спорный случай не должен останавливать оплаченный
+   * прогон. Здесь утверждение структурное — таблицы без строк не бывает
+   * законной ни у одного построителя, честное пустое состояние строится
+   * шаблоном без таблицы, — а цена пропуска высокая: рендерер такую таблицу
+   * заполняет сам.
+   */
+  const emptyTables = input.emptyTableSlides ?? new Set<string>();
+  if (emptyTables.size > 0) {
+    out.push(
+      `таблица объявлена без строк на ${emptyTables.size} ` +
+        `${pluralRu(emptyTables.size, "странице", "страницах", "страницах")}: ${name(emptyTables)}`
+    );
   }
   return out;
 }
@@ -563,6 +588,31 @@ export function validateAssembly(input: {
   checks.noMateriallyEmptyPages = materiallyEmptyPages === 0;
 
   /*
+   * 4а. Слайд не объявляет таблицу, которой у него нет.
+   *
+   * Пустая таблица — не пустая страница, а приглашение рендереру выдумать
+   * содержимое: `slides.py` идёт веткой `if not rows and bullets`, ставит
+   * заголовки таблицы поиска «Поз. / Домен / Заголовок / Риск» и разбирает в
+   * её строки буллеты слайда. Так сводная страница комплаенса при нуле
+   * совпадений печатала клиенту таблицу поиска со строкой прочерков.
+   *
+   * Ворот стоит здесь, а не в рендерере: запасная ветка живёт в другой единице
+   * деплоя, а дверь закрывают там, где она есть. Утверждение структурное и
+   * закрывает класс для всех построителей: честное пустое состояние строится
+   * шаблоном `coverage-empty-state` и таблицы не несёт вовсе.
+   */
+  const emptyTableSlides = new Set<string>();
+  for (const slide of rendererSlides) {
+    if (slide.table && slide.table.rows.length === 0) {
+      emptyTableSlides.add(slide.slideKey);
+      issues.push(
+        `declared table without rows: ${slide.slideKey} (${templateBySlot.get(slide.slideKey) ?? ""})`
+      );
+    }
+  }
+  checks.declaredTablesHaveRows = emptyTableSlides.size === 0;
+
+  /*
    * 4б. Цитата доходит до читателя целой.
    *
    * Отчёт цитирует источники дословно, и обрывок в кавычках — это уже не
@@ -844,6 +894,7 @@ export function validateAssembly(input: {
     codeSlides: new Set(internalCodes.map((f) => f.slide)),
     codes: new Set(internalCodes.map((f) => f.code)),
     panelMismatchSlides,
+    emptyTableSlides,
   });
 
   return { passed: issues.length === 0, issues, notes, checks, blocking, skipped };
