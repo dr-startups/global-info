@@ -11,7 +11,6 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { organicSearchDepth } from "@/modules/digital-profile/providers/search-depth";
-import { serperSearch } from "@/modules/digital-profile/providers/serper-search-provider";
 import { SERP_AUDIT_DEPTH } from "@/modules/digital-profile/services/orion-search-profile-service";
 
 const realFetch = globalThis.fetch;
@@ -54,6 +53,13 @@ function yandexPageResponse(count: number): string {
   return JSON.stringify({ rawData: Buffer.from(xml, "utf8").toString("base64") });
 }
 
+/*
+ * Серперной половины здесь больше нет: с постраничным сбором `num` равен десяти
+ * в каждом запросе, и утверждение `num === 10` стало тавтологией — зелёной даже
+ * тогда, когда проба листает две страницы. То, что оно проверяло, теперь держит
+ * `serper-collects-depth-page-by-page.test.ts`: проба обязана уложиться в один
+ * вызов.
+ */
 describe("глубина доезжает до тела запроса", () => {
   it("Яндекс листает вторую страницу и на пробе", async () => {
     // Двадцать у Яндекса — это две страницы по десять: просьба видна тем, что
@@ -90,31 +96,5 @@ describe("глубина доезжает до тела запроса", () => {
     expect(run.status).toBe("SUCCESS");
     expect(pages).toEqual(["0", "1"]);
     expect(run.results.length).toBe(20);
-  });
-
-  it("Serper на пробе остаётся на умолчании провайдера", async () => {
-    let num: unknown;
-    globalThis.fetch = (async (_url: string, init: { body?: string }) => {
-      num = (JSON.parse(String(init?.body ?? "{}")) as { num?: number }).num;
-      return {
-        status: 200,
-        ok: true,
-        text: async () => JSON.stringify({ organic: [] }),
-      } as unknown as Response;
-    }) as typeof globalThis.fetch;
-    const depth = organicSearchDepth({
-      provider: "serper",
-      purpose: "adverse_lookup",
-      auditDepth: SERP_AUDIT_DEPTH,
-    });
-    await serperSearch({
-      caseId: "case-depth",
-      subjectFullName: "Виктор Рашников",
-      aliases: [],
-      query: "рашников компромат",
-      region: "ae",
-      ...(depth === undefined ? {} : { limit: depth }),
-    });
-    expect(num).toBe(10);
   });
 });

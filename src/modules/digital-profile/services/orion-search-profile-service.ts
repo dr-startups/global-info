@@ -27,7 +27,12 @@ import {
 } from "../search-surfaces/subject-query-set";
 import { serperAutocomplete } from "../providers/serper-surfaces";
 import { yandexSearchProvider } from "../providers/yandex-search-provider";
-import type { SearchProviderRequest, SearchProviderResult } from "../providers/types";
+import type {
+  ProviderRunResult,
+  SearchProviderRequest,
+  SearchProviderResult,
+  SerpDepthAudit,
+} from "../providers/types";
 import { normalizeUrl } from "./evidence-service";
 import { searchResultDedupHash } from "./search-result-identity";
 import { createManySearchSurfaceItems } from "./search-surface-service";
@@ -201,15 +206,65 @@ function serperItemToSurfaceInput(
   };
 }
 
-async function persistOrganicResults(
+/**
+ * `rawMetadata` строки органической выдачи — собирается в одном месте.
+ *
+ * Учёт глубины едет сюда потому, что смотреть на него будут по собранному
+ * кейсу: внутри адаптера он никому не виден, а по нему отличают «глубже ничего
+ * нет» от «провайдер параметр страницы проигнорировал и мы заплатили за дубли».
+ */
+export function organicRowMetadata(input: {
+  engine: SearchEngine;
+  orionRegion: OrionRegionCode;
+  querySpec: OrionQuerySpec;
+  result: SearchProviderResult;
+  depthAudit?: SerpDepthAudit;
+}): Record<string, unknown> {
+  const { engine, orionRegion, querySpec, result, depthAudit } = input;
+  return {
+    demo: false,
+    provider: result.provider,
+    query: querySpec.query,
+    orionQuery: querySpec.query,
+    queryId: querySpec.queryId,
+    queryPlanId: querySpec.queryPlanId,
+    queryPurpose: querySpec.purpose,
+    providerPreference: querySpec.providerPreference,
+    identityStrictness: querySpec.identityStrictness,
+    orionRegion,
+    region: orionRegion,
+    // Глубина, которую просили у провайдера по этому запросу: настройка
+    // сама по себе её больше не определяет.
+    providerLimit:
+      organicSearchDepth({
+        provider: engine === "GOOGLE" ? "serper" : "yandex",
+        purpose: querySpec.purpose,
+        auditDepth: SERP_AUDIT_DEPTH,
+      }) ??
+      (engine === "GOOGLE"
+        ? providerConfig.google.resultsPerQuery
+        : providerConfig.yandex.resultsPerQuery),
+    ...(depthAudit ? { depthAudit } : {}),
+    ...(result.rawMetadata as object),
+  };
+}
+
+/**
+ * Пишет строки органической выдачи и уносит в каждую учёт глубины прогона.
+ *
+ * Экспортируется ради шва «учёт из адаптера → `rawMetadata` строки»: это
+ * единственное место, где одно соединяется с другим, и без проверки его можно
+ * было убрать, не покраснев ни одним тестом.
+ */
+export async function persistOrganicResults(
   caseId: string,
   engine: SearchEngine,
-  results: SearchProviderResult[],
+  run: ProviderRunResult,
   orionRegion: OrionRegionCode,
   querySpec: OrionQuerySpec
 ): Promise<number> {
   const source = engine === "GOOGLE" ? "real:GOOGLE" : "real:YANDEX";
-  const rows = results.map((r) => {
+  const rows = run.results.map((r) => {
     const normUrl = normalizeUrl(r.url);
     return {
       caseId,
@@ -228,31 +283,13 @@ async function persistOrganicResults(
       snippet: r.snippet || null,
       rank: r.rank,
       source,
-      rawMetadata: {
-        demo: false,
-        provider: r.provider,
-        query: querySpec.query,
-        orionQuery: querySpec.query,
-        queryId: querySpec.queryId,
-        queryPlanId: querySpec.queryPlanId,
-        queryPurpose: querySpec.purpose,
-        providerPreference: querySpec.providerPreference,
-        identityStrictness: querySpec.identityStrictness,
+      rawMetadata: organicRowMetadata({
+        engine,
         orionRegion,
-        region: orionRegion,
-        // Глубина, которую просили у провайдера по этому запросу: настройка
-        // сама по себе её больше не определяет.
-        providerLimit:
-          organicSearchDepth({
-            provider: engine === "GOOGLE" ? "serper" : "yandex",
-            purpose: querySpec.purpose,
-            auditDepth: SERP_AUDIT_DEPTH,
-          }) ??
-          (engine === "GOOGLE"
-            ? providerConfig.google.resultsPerQuery
-            : providerConfig.yandex.resultsPerQuery),
-        ...(r.rawMetadata as object),
-      } as Prisma.InputJsonValue,
+        querySpec,
+        result: r,
+        depthAudit: run.depthAudit,
+      }) as Prisma.InputJsonValue,
     };
   });
   const inserted = await prisma.searchResult.createMany({ data: rows, skipDuplicates: true });
@@ -309,7 +346,7 @@ async function runRegionOrganic(
       const run = await yandexSearchProvider.search(withDepth(req, "yandex"));
       if (run.status === "SUCCESS") {
         yandexStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec);
+        organic += await persistOrganicResults(caseId, "YANDEX", run, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         yandexStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_SUPPORTED";
       } else if (yandexStatus !== "COLLECTED") {
@@ -328,7 +365,7 @@ async function runRegionOrganic(
       );
       if (run.status === "SUCCESS") {
         googleStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec);
+        organic += await persistOrganicResults(caseId, "GOOGLE", run, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         googleStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_QUERIED";
       } else if (googleStatus !== "COLLECTED") {

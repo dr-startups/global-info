@@ -97,7 +97,16 @@ export function evidenceRefOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
-/** Позиция материала в выдаче, если поисковик её сообщил. */
+/**
+ * Позиция материала в выдаче, если поисковик её сообщил.
+ *
+ * Ключей два, и второй — не запас на всякий случай: `position` носили серперные
+ * строки до того, как это имя отдали числу самого провайдера (оно нумерует
+ * строки своей страницы с единицы и позицией не является). У кейсов, собранных
+ * раньше, ключа `rank` нет вовсе, а материал без позиции в анализ не берётся —
+ * убрать второе чтение значит молча урезать ТОП-20 и матрицу на пересборке
+ * старого кейса.
+ */
 export function rankOf(item: RawInventoryItem): number | null {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
   const raw = meta.rank ?? meta.position;

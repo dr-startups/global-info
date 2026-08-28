@@ -137,7 +137,8 @@ export function answerBoxItem(
 export async function serperOrganicWithExtras(
   request: SearchProviderRequest,
   region: OrionRegionCode,
-  limit: number
+  /** `undefined` — глубина по умолчанию провайдера, то есть один кредит. */
+  limit?: number
 ): Promise<SerperSurfaceBatchResult> {
   if (!serperReady()) return failBatch("NOT_CONFIGURED", "Serper API key not configured");
   try {
@@ -370,11 +371,25 @@ export async function serperAutocomplete(
   }
 }
 
-/** Convenience: fetch all Serper surfaces for one primary query. */
+/**
+ * Четыре поверхности одного запроса.
+ *
+ * `mediaLimit` — глубина картинок и видео: там она доезжает до страниц отчёта,
+ * и у `/images` сотня — допустимое значение.
+ *
+ * Органика этого батча глубины не просит вовсе, и причина наблюдаемая: у
+ * `/search` `num` больше десяти не бывает — провайдер сам называет это поле
+ * «maximum number of results per page» и допускает для типа `search` ровно одно
+ * значение, 10. То есть прежний `num: 20` в этом вызове просто игнорировался.
+ * Просить же глубину для строк, которые вызывающий выбрасывает, бессмысленно и
+ * помимо этого: из ответа нужны только связанные запросы и карточка знания.
+ * Позиционные таблицы собирает не этот батч, а `serperSearch` со своей
+ * постраничной глубиной.
+ */
 export async function serperAllSurfacesForQuery(
   request: SearchProviderRequest,
   region: OrionRegionCode,
-  limit: number
+  mediaLimit: number
 ): Promise<{
   organic: SerperSurfaceBatchResult;
   images: SerperSurfaceBatchResult;
@@ -382,9 +397,9 @@ export async function serperAllSurfacesForQuery(
   autocomplete: SerperSurfaceBatchResult;
 }> {
   const [organic, images, videos, autocomplete] = await Promise.all([
-    serperOrganicWithExtras(request, region, limit),
-    serperImageSearch(request, region, limit),
-    serperVideoSearch(request, region, limit),
+    serperOrganicWithExtras(request, region),
+    serperImageSearch(request, region, mediaLimit),
+    serperVideoSearch(request, region, mediaLimit),
     serperAutocomplete(request, region),
   ]);
   return { organic, images, videos, autocomplete };
