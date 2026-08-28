@@ -111,8 +111,10 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
       sourceUrl: "https://www.cnbc.com/deripaska-vtb",
       snippet: "",
     });
-    expect(scoreExampleForTheme(strong, financialTheme)).toBeGreaterThan(
-      scoreExampleForTheme(bare, financialTheme)
+    // Признак негатива у обоих одинаковый: сравнивается вес темы и заголовка,
+    // а негатив приносит вызывающий (у него он уже посчитан вердиктом).
+    expect(scoreExampleForTheme(strong, financialTheme, true)).toBeGreaterThan(
+      scoreExampleForTheme(bare, financialTheme, true)
     );
     const picked = pickClaimExamples([bare, strong], financialTheme, [bare, strong]);
     expect(picked).toHaveLength(1);

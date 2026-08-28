@@ -9,7 +9,7 @@ import type { SurfaceAnalysisUnit } from "../../contracts/surface-analysis";
 import { slotsForFragment } from "../canonical-slots";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import { packSentencesNoTruncate } from "../semantic-summary-pagination";
-import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import { getAdversePatterns } from "../../../config/finding-themes";
 import { pluralRu } from "../../../report/i18n/plural-ru";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import { formatRuDate } from "../../../services/report-material-freshness";
@@ -516,7 +516,7 @@ export function buildIdentityFragment(
     ),
   ].slice(0, 4);
   const hasAdverseRow = identityRefs.some((r) =>
-    ADVERSE_PATTERNS.test(String(scoped.evidenceIndex[r]?.title ?? ""))
+    getAdversePatterns().test(String(scoped.evidenceIndex[r]?.title ?? ""))
   );
 
   /*

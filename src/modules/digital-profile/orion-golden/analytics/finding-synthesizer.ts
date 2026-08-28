@@ -41,9 +41,9 @@ import {
   looksLikeSurfaceBlockHeading,
 } from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
-import { sourceTypeFromDomain, type SourceType } from "./source-type";
 import { sourceAttribution } from "../client/client-address";
-import { publicDomainOf } from "./public-domain";
+import { readableSnippet, resolveItemAdverse } from "./item-adverse";
+import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
 import { pluralRu } from "../../report/i18n/plural-ru";
 
 export type { ThemeDef };
@@ -107,50 +107,10 @@ function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
-/**
- * Площадки, у которых сниппет выдачи — оглавление сайта, а не текст о человеке.
- *
- * Реестр и каталог устроены одинаково: карточка человека перечисляет разделы,
- * которые на ней есть, и поисковик забирает этот перечень в сниппет. На живом
- * прогоне 20.08 (кейс Прохоров) банк получил ключевым риском №1 «Криминальные /
- * судебные материалы» — под находкой стояла одна карточка `bizfiles.org` с
- * двадцатого места Яндекса, страница не читалась, а весь «криминал» был словом
- * «суды» в строке «Сводка информации, аффилированность, финансы, суды».
- * Такой перечень стоит на карточке любого человека на этом сайте.
- *
- * Тип спрашивается у `source-type.ts`, а не задаётся вторым списком доменов:
- * ответ на вопрос «что это за площадка» в проекте уже есть, и он один.
- */
-const DIRECTORY_SOURCE_TYPES: ReadonlySet<SourceType> = new Set<SourceType>([
-  "База данных / реестр",
-  "Агрегатор / каталог",
-]);
-
-/**
- * Сниппет наблюдения — или пусто, если читать его как утверждение нельзя.
- *
- * Режется именно сниппет, а не материал целиком: заголовок карточки реестра
- * («Суд взыскал с …») — по-прежнему утверждение, и тему он даёт. Прочитанная
- * страница ничего не теряет и здесь: её темы идут своим путём, через
- * `run-link-verdicts.ts` → `link-theme-clustering.ts`, а в него `itemText` не
- * входит.
- */
-function readableSnippet(item: RawInventoryItem): string | undefined {
-  const type = sourceTypeFromDomain(publicDomainOf(item.sourceUrl));
-  return type && DIRECTORY_SOURCE_TYPES.has(type) ? undefined : item.snippet;
-}
-
 function itemText(item: RawInventoryItem): string {
   return [item.title, readableSnippet(item), item.classification, item.sourceUrl]
     .filter(Boolean)
     .join(" ");
-}
-
-function itemIsAdverse(item: RawInventoryItem): boolean {
-  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
-  if (meta.analystNeutral === true) return false;
-  if (meta.analystAdverse === true) return true;
-  return getAdversePatterns().test(itemText(item));
 }
 
 /**
@@ -452,15 +412,33 @@ export function isWeakExampleTitle(
   return false;
 }
 
-/** PDF-44 H.1 — rank evidence for client quotes (theme hit in title beats snippet-only). */
-export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): number {
+/**
+ * PDF-44 H.1 — rank evidence for client quotes (theme hit in title beats snippet-only).
+ *
+ * Негативность приходит признаком, а не считается здесь заново: её уже
+ * посчитал тот, кто собирает находку, — и посчитал с вердиктом прочитанной
+ * страницы, которого у ранжировщика нет.
+ */
+export function scoreExampleForTheme(
+  item: RawInventoryItem,
+  theme: ThemeDef,
+  /**
+   * Негативен ли материал. Обязателен намеренно: со значением по умолчанию
+   * вызов из двух аргументов молча означал бы «не негатив», а раньше он
+   * означал «спроси словарь».
+   */
+  adverse: boolean
+): number {
   const title = cleanExampleTitle(String(item.title ?? ""));
   const snippet = String(item.snippet ?? "").trim();
   const domain = domainOf(item.sourceUrl);
   let score = 0;
   if (theme.keywords.test(title)) score += 8;
   else if (snippet && theme.keywords.test(snippet)) score += 3;
-  if (itemIsAdverse(item)) score += 2;
+  // Пол-ступени сверх целой шкалы: негативный материал выигрывает у равного по
+  // прочим признакам и у того, кто на две ступени выше по длине заголовка, но
+  // совпадению темы в заголовке (восемь ступеней) не перечит.
+  if (adverse) score += 2.5;
   const tokens = title.split(/\s+/u).filter(Boolean).length;
   if (tokens >= 6) score += 2;
   else if (tokens >= 4) score += 1;
@@ -559,11 +537,11 @@ export function pickClaimExamples(
   adverseItems: RawInventoryItem[] = []
 ): ClaimEvidenceExample[] {
   const adverseSet = new Set(adverseItems);
-  const ranked = [...items].sort((a, b) => {
-    const sa = scoreExampleForTheme(a, theme) + (adverseSet.has(a) ? 0.5 : 0);
-    const sb = scoreExampleForTheme(b, theme) + (adverseSet.has(b) ? 0.5 : 0);
-    return sb - sa;
-  });
+  const ranked = [...items].sort(
+    (a, b) =>
+      scoreExampleForTheme(b, theme, adverseSet.has(b)) -
+      scoreExampleForTheme(a, theme, adverseSet.has(a))
+  );
   const examples: ClaimEvidenceExample[] = [];
   const seen = new Set<string>();
   for (const i of ranked) {
@@ -767,14 +745,15 @@ function promotionFor(risk: RiskLevel, confidence: number): PromotionPriority {
 
 function detectContradictions(
   themeId: string,
-  items: RawInventoryItem[]
+  items: RawInventoryItem[],
+  /** Негативные материалы темы — те же, по которым считается её уровень. */
+  adverse: RawInventoryItem[]
 ): { contradictions: FindingContradiction[]; limitations: string[] } {
   const contradictions: FindingContradiction[] = [];
   const limitations: string[] = [];
 
   const cfg = resolveFindingThemesConfig();
   const unverified = items.filter((i) => cfg.unverifiedClaimPatterns.test(itemText(i)));
-  const adverse = items.filter((i) => itemIsAdverse(i));
   const positive = items.filter((i) => cfg.positivePatterns.test(itemText(i)));
 
   if (unverified.length > 0) {
@@ -825,6 +804,12 @@ export function synthesizeFindings(input: {
   sourceHashes: string[];
   /** Coverage-driven limitations, e.g. "images (UAE): NOT_COLLECTED". */
   coverageLimitations?: string[];
+  /**
+   * Решения по прочитанным страницам. Уровень темы обязан их знать: материал,
+   * чью страницу открыли и признали благоприятной, негативом не считается —
+   * иначе отчёт предлагает субъекту убирать то, что говорит о нём хорошо.
+   */
+  verdictByRef?: ObservationVerdictByRef;
 }): FindingSynthesisResult {
   const themeAssignments = new Map<string, string[]>();
   const byDecisionTheme = new Map<string, RawInventoryItem[]>(); // `${decision}|${themeId}`
@@ -916,7 +901,7 @@ export function synthesizeFindings(input: {
     subjectMatch: "SUBJECT_MATCH" | "LIKELY_SUBJECT" | "AMBIGUOUS" | "OTHER_SUBJECT"
   ): Finding => {
     const theme = FINDING_THEMES.find((t) => t.themeId === themeId)!;
-    const adverseItems = items.filter((i) => itemIsAdverse(i));
+    const adverseItems = items.filter((i) => resolveItemAdverse(i, input.verdictByRef));
     const risk = riskFor(theme, adverseItems.length, items.length);
     const evidenceRefs = items.map(refOf);
     const domains = [...new Set(items.map((i) => domainOf(i.sourceUrl)).filter(Boolean))];
@@ -931,7 +916,7 @@ export function synthesizeFindings(input: {
         )
       ),
     ];
-    const { contradictions, limitations } = detectContradictions(themeId, items);
+    const { contradictions, limitations } = detectContradictions(themeId, items, adverseItems);
     if (subjectMatch === "AMBIGUOUS") {
       limitations.push("Принадлежность части свидетельств проверяемому лицу не установлена однозначно.");
     }

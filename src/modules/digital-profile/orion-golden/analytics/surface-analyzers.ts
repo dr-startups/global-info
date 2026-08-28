@@ -20,14 +20,10 @@ import {
 } from "../contracts/surface-analysis";
 import type { SubjectRelevanceDecision, SurfaceKind } from "../contracts/common";
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
-import { getAdversePatterns } from "../../config/finding-themes";
+import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
+import { resolveItemAdverse } from "./item-adverse";
 
 export type ResolutionLookup = Map<string, SubjectResolutionItem>; // by evidenceRef
-
-/** REMEDIATION §3.1 — live view of configured adversePatterns. */
-export const ADVERSE_PATTERNS: Pick<RegExp, "test"> = {
-  test: (text: string) => getAdversePatterns().test(text),
-};
 
 /**
  * Слова, которыми строка-маркер говорит «поверхность спрошена, данных нет».
@@ -46,18 +42,6 @@ function refOf(item: RawInventoryItem): string {
 
 function decisionFor(item: RawInventoryItem, lookup: ResolutionLookup): SubjectRelevanceDecision {
   return lookup.get(refOf(item))?.decision ?? "INSUFFICIENT_IDENTIFIERS";
-}
-
-function isAdverse(item: RawInventoryItem): boolean {
-  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
-  // Analyst overrides (§1.3): manual neutral wins; manual adverse forces adverse.
-  if (meta.analystNeutral === true) return false;
-  if (meta.analystAdverse === true) return true;
-  const text = [item.title, item.snippet, item.classification].filter(Boolean).join(" ");
-  if (/criminal_allegation|adverse_media|sanctions|pep_rca|PEP|SANCTIONS/iu.test(String(item.classification ?? ""))) {
-    return true;
-  }
-  return ADVERSE_PATTERNS.test(text);
 }
 
 /**
@@ -127,13 +111,18 @@ function groupBy(
   return [...map.values()];
 }
 
-function buildUnit(acc: UnitAccumulator, lookup: ResolutionLookup): SurfaceAnalysisUnit {
+function buildUnit(
+  acc: UnitAccumulator,
+  lookup: ResolutionLookup,
+  verdictByRef?: ObservationVerdictByRef
+): SurfaceAnalysisUnit {
   const collected = acc.items.filter((i) => !isEmptyMarker(i));
   const emptyMarkers = acc.items.length - collected.length;
   const subjectMatched = collected.filter((i) => decisionFor(i, lookup) === "SUBJECT_MATCH");
   const likelySubject = collected.filter((i) => decisionFor(i, lookup) === "LIKELY_SUBJECT");
   const otherSubject = collected.filter((i) => decisionFor(i, lookup) === "OTHER_SUBJECT");
   const ambiguous = collected.filter((i) => decisionFor(i, lookup) === "AMBIGUOUS");
+  const isAdverse = (item: RawInventoryItem): boolean => resolveItemAdverse(item, verdictByRef);
   const adverseSubject = subjectMatched.filter(isAdverse);
 
   // Empty markers (NO_RESULTS / «не найден») mean the surface was probed —
@@ -254,12 +243,18 @@ export function runSurfaceAnalyzers(input: {
   items: RawInventoryItem[];
   resolutionLookup: ResolutionLookup;
   sourceHashes: string[];
+  /**
+   * Решения по прочитанным страницам: «негативных: N» в таблице метрик региона
+   * обязано совпадать с оценкой той же строки в таблице выдачи, а её решает
+   * прочитанная страница.
+   */
+  verdictByRef?: ObservationVerdictByRef;
 }): Record<SurfaceKind, SurfaceAnalysis> {
   const out = {} as Record<SurfaceKind, SurfaceAnalysis>;
   for (const def of SURFACE_ANALYZERS) {
     const selected = input.items.filter(def.select);
     const units = groupBy(selected, def.surface, def.withEngine).map((acc) =>
-      buildUnit(acc, input.resolutionLookup)
+      buildUnit(acc, input.resolutionLookup, input.verdictByRef)
     );
     out[def.surface] = SurfaceAnalysisSchema.parse({
       schemaVersion: SURFACE_ANALYSIS_SCHEMA_VERSION,

@@ -719,6 +719,14 @@ export type PageEvidenceView = {
   supportDomains: Map<string, string[]>;
   /** findingId → номера напечатанных строк, которые его поддерживают. */
   supportRows: Map<string, number[]>;
+  /**
+   * Строки, которые страница действительно напечатала.
+   *
+   * Единица счёта листа: таблица выдачи сводит наблюдения по материалу, и
+   * «негативных заголовков — 2» над одной строкой «Нежелательный» читается как
+   * ошибка. Есть у того, кто такие строки печатает; у сетки и панели их нет.
+   */
+  printedRows?: PrintedPageRow[];
 };
 
 /**
@@ -809,7 +817,14 @@ export function buildPageEvidenceView(
     for (const d of support) domains.add(d);
   }
   findings.sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0));
-  return { refs: pageRefs, domains: [...domains], findings, supportDomains, supportRows };
+  return {
+    refs: pageRefs,
+    domains: [...domains],
+    findings,
+    supportDomains,
+    supportRows,
+    ...(printedRows ? { printedRows } : {}),
+  };
 }
 
 /**
@@ -1014,6 +1029,44 @@ export function evidenceRowAdverse(
   );
 }
 
+/**
+ * Вся ли нарисованная строка о другом лице.
+ *
+ * В одной строке живут все наблюдения материала, и решения о принадлежности у
+ * них бывают разными: один запрос отнёс страницу к однофамильцу, другой — к
+ * субъекту. «О другом лице» такая строка только тогда, когда **каждая** её
+ * ссылка такая, — иначе лист печатал «негативных заголовков — 0» над строкой,
+ * которую сам же назвал «Нежелательной». Ответ один: его спрашивают и оценка в
+ * таблице выдачи, и счёт строк страницы.
+ */
+export function evidenceRowsAreOtherSubject(
+  scoped: ScopedFragmentInput,
+  refs: string[]
+): boolean {
+  return (
+    refs.length > 0 &&
+    refs.every(
+      (ref) => scoped.evidenceIndex[ref]?.subjectDecision === OTHER_SUBJECT_DECISION
+    )
+  );
+}
+
+/**
+ * Негативна ли **нарисованная строка**: у материала одно решение на все ссылки.
+ *
+ * Наблюдения различаются запросом, а страницу читали не по запросу, поэтому
+ * решение берётся один раз; словарь при этом смотрит каждое наблюдение —
+ * сниппеты у них разные, и сигнал в любом из них принадлежит материалу.
+ *
+ * Спрашивают отсюда двое: сама таблица выдачи (колонка «Оценка») и счёт строк
+ * страницы. Второй ответ на этот вопрос — это «негативных заголовков — 2» над
+ * одной красной строкой.
+ */
+export function evidenceRowsAdverse(scoped: ScopedFragmentInput, refs: string[]): boolean {
+  const verdict = refs.map((ref) => evidenceRowVerdict(scoped.evidenceIndex[ref])).find(Boolean);
+  return refs.some((ref) => evidenceRowAdverse(scoped.evidenceIndex[ref], verdict));
+}
+
 /** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
 export type PageRowComposition = {
   shown: number;
@@ -1034,32 +1087,45 @@ export type PageRowComposition = {
  */
 export function composePageRowComposition(
   scoped: ScopedFragmentInput,
-  pageRefs: string[]
+  pageRefs: string[],
+  /**
+   * Нарисованные строки, если страница их печатает.
+   *
+   * Тогда единица счёта — строка, а не ссылка: таблица выдачи сводит наблюдения
+   * по материалу, и страница, найденная двумя запросами, — одна строка. Без
+   * этого лист печатал «Показано 8 результатов» над четырьмя строками и
+   * «негативных заголовков — 2» над одной красной.
+   */
+  printedRows?: PrintedPageRow[]
 ): PageRowComposition {
+  const units = printedRows ? printedRows.map((r) => r.refs) : pageRefs.map((ref) => [ref]);
   let subjectMatch = 0;
   let likelySubject = 0;
-  const domainCounts = new Map<string, number>();
-  for (const ref of pageRefs) {
-    const e = scoped.evidenceIndex[ref] ?? {};
-    if (e.subjectDecision === "SUBJECT_MATCH") subjectMatch += 1;
-    else if (e.subjectDecision === "LIKELY_SUBJECT") likelySubject += 1;
-    const domain =
-      e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
-    if (domain && domain !== "—") {
-      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
-    }
-  }
   let adverseHeadlines = 0;
-  for (const ref of pageRefs) {
-    const e = scoped.evidenceIndex[ref] ?? {};
-    // Негативный заголовок о другом лице фон вокруг субъекта не формирует.
+  const domainCounts = new Map<string, number>();
+  for (const refs of units) {
+    const decisions = refs.map((ref) => scoped.evidenceIndex[ref]?.subjectDecision);
+    if (decisions.includes("SUBJECT_MATCH")) subjectMatch += 1;
+    else if (decisions.includes("LIKELY_SUBJECT")) likelySubject += 1;
+    // Негативный заголовок о другом лице фон вокруг субъекта не формирует. Но
+    // «о другом лице» — это про всю строку целиком: у первой её ссылки решение
+    // может быть чужим, а у второй — своим, и тогда строка о субъекте.
     if (
       countsTowardSubjectNegative({
-        adverse: evidenceRowAdverse(e),
-        decision: e.subjectDecision,
+        adverse: evidenceRowsAdverse(scoped, refs),
+        decision: evidenceRowsAreOtherSubject(scoped, refs)
+          ? OTHER_SUBJECT_DECISION
+          : undefined,
       })
     ) {
       adverseHeadlines += 1;
+    }
+  }
+  for (const ref of pageRefs) {
+    const e = scoped.evidenceIndex[ref] ?? {};
+    const domain = e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
+    if (domain && domain !== "—") {
+      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
     }
   }
   const topDomains = [...domainCounts.entries()]
@@ -1067,12 +1133,32 @@ export function composePageRowComposition(
     .slice(0, 4)
     .map(([d]) => d);
   return {
-    shown: pageRefs.length,
+    shown: units.length,
     subjectMatch,
     likelySubject,
     adverseHeadlines,
     topDomains,
   };
+}
+
+/**
+ * Что страница говорит о негативе, который сама же напечатала строками.
+ *
+ * Фраза одна на два места: на страницу без выделенной темы и на страницу, где
+ * тема есть, но её уровень не «повышенное внимание». Пока их было две — одна
+ * считала негатив по строкам, другая по уровню тем, — лист печатал
+ * «Показанные на странице материалы не формируют негативного фона вокруг
+ * субъекта» прямо над строкой с оценкой «Нежелательный».
+ *
+ * Единица счёта здесь — строка этого листа, тем же предикатом, каким заполнена
+ * колонка «Оценка».
+ */
+function pageAdverseRowsLine(adverseRows: number): string {
+  return adverseRows > 0
+    ? `На странице есть негативные заголовки (${adverseRows}) — они влияют на первое ` +
+        "впечатление при проверке, даже если отдельная тема повышенного внимания на ней " +
+        "не выделена."
+    : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.";
 }
 
 /** Descriptive sidebar from page rows when no finding is page-supported (§7.1). */
@@ -1105,7 +1191,7 @@ export function pageRowCompositionBlocks(
     ),
     whyItMatters: clampClientText(
       composition.adverseHeadlines > 0
-        ? `На странице есть негативные заголовки (${composition.adverseHeadlines}) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом.`
+        ? pageAdverseRowsLine(composition.adverseHeadlines)
         : composition.likelySubject > 0
           ? `Часть строк отмечена как «Вероятно» о субъекте — их нельзя игнорировать, но и нельзя включать в подтверждённые выводы без уточнения принадлежности.`
           : "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
@@ -1149,6 +1235,15 @@ export function pageFindingBlocks(
 ): Partial<SlideBody> {
   const adverse = view.findings.filter(isAdverse);
   const top = view.findings[0];
+  /*
+   * Состав строк листа считается один раз и здесь.
+   *
+   * «Есть ли на этой странице негатив» — вопрос о строках, и отвечать на него
+   * уровнем темы нельзя: тема низкого уровня уживается на одном листе со
+   * строкой «Нежелательный», и лист начинал спорить сам с собой.
+   */
+  const composition =
+    opts.composition ?? composePageRowComposition(scoped, view.refs, view.printedRows);
   if (top) {
     return {
       whatWasFound: pageScopedConclusion(top, view, opts),
@@ -1159,7 +1254,7 @@ export function pageFindingBlocks(
             // склоняется, а причина названа словами.
             `На странице ${adverse.length} ${pluralRu(adverse.length, "тема", "темы", "тем")} ` +
               "повышенного внимания — эти материалы видны при первой же проверке субъекта."
-          : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+          : pageAdverseRowsLine(composition.adverseHeadlines),
         320
       ),
       whatToCheck: clampClientText(
@@ -1171,19 +1266,12 @@ export function pageFindingBlocks(
     };
   }
   if (view.refs.length > 0) {
-    return pageRowCompositionBlocks(
-      opts.composition ?? composePageRowComposition(scoped, view.refs),
-      view,
-      opts
-    );
+    return pageRowCompositionBlocks(composition, view, opts);
   }
   return {
     whatWasFound:
       "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-    whyItMatters: clampClientText(
-      "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
-      320
-    ),
+    whyItMatters: clampClientText(pageAdverseRowsLine(composition.adverseHeadlines), 320),
     whatToCheck: clampClientText("Мониторить изменения выдачи.", 220),
     statusNote: statusLine(undefined),
     sourceNote: pageSourceLine(view),
@@ -1294,6 +1382,28 @@ function withoutLeadingTheme(lines: string[], theme: string): string[] {
   return lines;
 }
 
+/**
+ * Слова, которыми начинается ввод к цитатам («Найдены публикации по теме…»).
+ *
+ * Список один на деку: по нему перекладка абзаца отличает ввод от текста, а
+ * карточка матрицы — ввод от строки статистики. Разъедутся — карточка снова
+ * напечатает ввод вместо чисел.
+ */
+const QUOTE_INTRO_WORDS = "Найдены|Есть публикации|В открытой";
+const QUOTE_INTRO_RE = new RegExp(`^(?:${QUOTE_INTRO_WORDS})`, "u");
+
+/**
+ * Строка претензии — ввод к цитатам, а не утверждение.
+ *
+ * Двоеточие в конце — не единственный признак: перекладка абзаца его снимает, и
+ * строка остаётся вводом («Найдены материалы делового профиля»), который
+ * повторяет заголовок карточки и склеивается с рекомендацией без точки.
+ */
+export function isQuoteIntroLine(line: string): boolean {
+  const l = String(line ?? "").trim();
+  return l.endsWith(":") || QUOTE_INTRO_RE.test(l);
+}
+
 export function reflowThemeBullet(text: string): string {
   const original = String(text ?? "").replace(/\r\n/gu, "\n");
   const markerMatch = original.match(/(\s*\[finding-[^\]]+\])\s*$/u);
@@ -1314,7 +1424,7 @@ export function reflowThemeBullet(text: string): string {
     if (n === 1 && /(?:Всего по теме:|В корпусе:|Для банка|Банки |Риск в том|Что делать:)/u.test(l)) {
       return true;
     }
-    return /^«[^»]{2,80}»\s+(?:Найдены|Есть публикации|В открытой)/u.test(l);
+    return new RegExp(`^«[^»]{2,80}»\\s+(?:${QUOTE_INTRO_WORDS})`, "u").test(l);
   };
   // `\b` в JavaScript определён на ASCII и после кириллического «источник»
   // границы не находит вовсе: строка-цитата не опознавалась, уже размеченный
@@ -1336,7 +1446,7 @@ export function reflowThemeBullet(text: string): string {
   if (
     themeM &&
     !/источник/iu.test(themeM[1]) &&
-    /^(Найдены|Есть публикации|В открытой)/u.test(themeM[3] ?? "")
+    QUOTE_INTRO_RE.test(themeM[3] ?? "")
   ) {
     theme = themeM[1];
     rest = themeM[3] ?? "";
@@ -1443,7 +1553,10 @@ export function structureThemeClaimText(text: string): string {
       !/[.!?…]/.test(left) &&
       !/\d+\s+публикац/iu.test(left)
     ) {
-      theme = left;
+      // Ярлык темы печатается заголовком строки, и двоеточие там лишнее. У
+      // ввода к цитатам оно часть фразы: без него «Найдены материалы …»
+      // упирается прямо в цитату.
+      theme = isQuoteIntroLine(left) ? `${left}:` : left;
       rest = (colon[2] ?? "").trim();
     }
   }

@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:606e5ef7c3ec783c983228637bdf5ac08d6e648b63a696e37f2dbdce55d563d0",
-  "contentVersion": "deck-sections-v135",
+  "contentHash": "sha256:c897245ff3a87952702a24ba389e1d7d79268dd9b8d2858a2d8daba309cba8df",
+  "contentVersion": "deck-sections-v138",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -211,7 +211,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SUMMARY",
-  "generatedAt": "2026-08-28T00:52:35.377Z",
+  "generatedAt": "2026-08-28T05:39:57.299Z",
   "inputHash": "sha256:842e2199078a2eb1c48c135d07d9e14e652fa3d0f450e294baf7db144bcfdb0e:1f84c7af4b1b9a32",
   "inputs": {
     "evidenceRefs": [
@@ -612,8 +612,8 @@
       "baseSlotId": "p07_ru_summary",
       "content": {
         "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]",
-          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news «Сергей Глинка стремится через Automecanica SA взять под контроль молдавский завод Popeci и расширить влияние на оборонку • Портал «Картотека»» — источник kartoteka.news.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]"
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]",
+          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news «Сергей Глинка стремится через Automecanica SA взять под контроль молдавский завод Popeci и расширить влияние на оборонку • Портал «Картотека»» — источник kartoteka.news.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]"
         ],
         "kpis": [
           {
@@ -805,9 +805,9 @@
       "baseSlotId": "p07_ru_summary",
       "content": {
         "bullets": [
-          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
           "«Деловой профиль»\nНайдены публикации по теме:\n«Biography of Glinka Sergei - A Transportation Pioneer Few Heard Of - Highways Today» — источник highways.today\n«Бизнесмен Сергей Глинка - биография, личная жизнь и взгляд на тренды общественного транспорта - Аргументы Недели» — источник argumenti.ru.\nГде видно: highways.today, argumenti.ru. [finding-business_profile-subject_match-a59d6fee]",
-          "«Семья и деловые связи»\nНайдены публикации по теме\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-family_associates-subject_match-a4427a53]"
+          "«Семья и деловые связи»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-family_associates-subject_match-a4427a53]"
         ],
         "sourceNote": "Источники — argumenti.ru, argumentiru.com, audit-it.ru, belcanto.ru и ещё 2."
       },

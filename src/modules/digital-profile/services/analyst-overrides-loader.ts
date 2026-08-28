@@ -581,13 +581,3 @@ export function mergeGuaranteedFindings(input: {
       .flatMap((f) => f.evidenceRefs),
   };
 }
-
-/** Whether item was manually marked neutral / excluded from adverse. */
-export function isAnalystNeutral(item: RawInventoryItem): boolean {
-  return (item.rawMetadata as Record<string, unknown> | undefined)?.analystNeutral === true;
-}
-
-/** Whether item was manually marked adverse. */
-export function isAnalystAdverse(item: RawInventoryItem): boolean {
-  return (item.rawMetadata as Record<string, unknown> | undefined)?.analystAdverse === true;
-}

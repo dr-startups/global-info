@@ -28,6 +28,7 @@ import {
   changeSinceLastReportLine,
   chunk,
   claimBodyWithoutTheme,
+  isQuoteIntroLine,
   clampClientText,
   fitClientSentences,
   fitStructuredBullet,
@@ -778,14 +779,21 @@ function isUnconfirmedRow(f: Finding): boolean {
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
   // PDF-40 G.1b — headline уже показывает тему, поэтому строка темы снимается.
   const claimLines = claimBodyWithoutTheme(f).split("\n").map((l) => l.trim());
+  /*
+   * Строкой «в чём проблема» становится масштаб темы: он несёт числа, а первой
+   * строкой претензии стоит ввод к цитатам («Найдены материалы делового и
+   * биографического профиля»), который повторяет заголовок карточки.
+   *
+   * Двоеточие в конце ввода признаком быть не может: перекладка абзаца его
+   * снимает, и достаточно одной цитаты вместо двух, чтобы карточка напечатала
+   * ввод и склеила его с рекомендацией в строку без точки — «…профиля Что
+   * делать: …». Масштаба нет — печатается то, что есть, а висящее двоеточие
+   * снимается.
+   */
   let head = claimLines[0] ?? "";
-  if (head.endsWith(":")) {
-    // Первой строкой претензии бывает не статистика, а ввод к цитатам
-    // («Найдены публикации по теме:»). Цитат в сводке нет — значит, нет и
-    // обещания: строкой «в чём проблема» становится масштаб темы, он из той же
-    // претензии и несёт числа. Нет и его — двоеточие просто снимается.
+  if (isQuoteIntroLine(head)) {
     const scale = claimLines.find((l) => /^(Всего по теме|В корпусе):/u.test(l));
-    head = scale ?? `${head.slice(0, -1)}.`;
+    head = scale ?? `${head.replace(/:$/u, "")}.`;
   }
   const problem = clampClientText(head, RISK_MATRIX_PROBLEM_CHARS);
   const lines = [problem];

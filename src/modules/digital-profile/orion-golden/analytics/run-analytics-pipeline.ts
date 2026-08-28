@@ -36,7 +36,9 @@ import {
   type SubjectIdentity,
 } from "./subject-resolution-classifier";
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
-import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
+import { runSurfaceAnalyzers } from "./surface-analyzers";
+import { resolveItemAdverse, spreadVerdictsOverMaterials } from "./item-adverse";
+import { observationVerdictsForVisuals } from "../../serp-observation/resolve-observation-highlights";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import { loadReusableLinkVerdicts, runLinkVerdicts } from "./run-link-verdicts";
 import { verdictAuditLogLine } from "./link-verdict-audit-agent";
@@ -504,33 +506,6 @@ export async function runOrionAnalyticsPipeline(
     emit("gpt-identity-resolution.json", identityArtifact);
   }
 
-  // Complete provider delta with relevance/adverse figures.
-  const enrichmentRefs = new Set(enrichmentItems.map((i) => `inventory:${i.inventoryId}`));
-  let relevantCount = 0;
-  let ambiguousCount = 0;
-  let otherSubjectCount = 0;
-  let newAdverse = 0;
-  for (const item of enrichmentItems) {
-    const d = resolutionByRef.get(`inventory:${item.inventoryId}`)?.decision;
-    if (d === "SUBJECT_MATCH") relevantCount += 1;
-    else if (d === "AMBIGUOUS") ambiguousCount += 1;
-    else if (d === "OTHER_SUBJECT") otherSubjectCount += 1;
-    const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
-    const adverse =
-      meta.analystNeutral === true
-        ? false
-        : meta.analystAdverse === true ||
-          ADVERSE_PATTERNS.test([item.title, item.snippet, item.classification].filter(Boolean).join(" "));
-    if (d === "SUBJECT_MATCH" && adverse) {
-      newAdverse += 1;
-    }
-  }
-  composite.providerDelta.relevantCount = relevantCount;
-  composite.providerDelta.ambiguousCount = ambiguousCount;
-  composite.providerDelta.otherSubjectCount = otherSubjectCount;
-  composite.providerDelta.newAdverseFindingCount = newAdverse;
-  void enrichmentRefs;
-
   // 2d. Область анализа: предмет аудита — ТОП-20 выдачи и международные базы.
   //
   // Разбор личности (кто на материале) идёт по всему собранному: страницы
@@ -710,6 +685,51 @@ export async function runOrionAnalyticsPipeline(
     console.log(wikipediaArticleReviewLogLine(articleReview));
   }
 
+  /*
+   * Карта решений по прочитанным страницам — один раз на прогон и сразу
+   * разложенная по материалам.
+   *
+   * Её спрашивают все трое, кто считает негатив: прирост обогащения, разбор
+   * поверхностей и синтез находок. Собирать её у каждого значило бы завести
+   * три ключа к одному ответу, а разъехавшийся ключ виден только на живом
+   * прогоне: офлайн чтение ссылок выключено, и карта пуста.
+   *
+   * Раскладка обязательна: страницы читаются по одному разу на адрес, и без
+   * неё второе наблюдение того же материала осталось бы при словарной метке —
+   * ровно тот спор с таблицей выдачи, который дека уже закрыла у себя.
+   */
+  const verdictByRef = spreadVerdictsOverMaterials(
+    input.items,
+    observationVerdictsForVisuals(linkVerdicts)
+  );
+
+  /*
+   * Прирост обогащения: сколько материалов провайдер добавил и сколько из них
+   * негативных.
+   *
+   * Стоит здесь, а не рядом с составным набором, потому что негатив считается
+   * тем же предикатом, что и в отчёте, а тому нужны решения прочитанных
+   * страниц. Артефакт `provider-delta.json` пишется много позже, так что
+   * порядок ничего не задерживает.
+   */
+  let relevantCount = 0;
+  let ambiguousCount = 0;
+  let otherSubjectCount = 0;
+  let newAdverse = 0;
+  for (const item of enrichmentItems) {
+    const d = resolutionByRef.get(`inventory:${item.inventoryId}`)?.decision;
+    if (d === "SUBJECT_MATCH") relevantCount += 1;
+    else if (d === "AMBIGUOUS") ambiguousCount += 1;
+    else if (d === "OTHER_SUBJECT") otherSubjectCount += 1;
+    if (d === "SUBJECT_MATCH" && resolveItemAdverse(item, verdictByRef)) {
+      newAdverse += 1;
+    }
+  }
+  composite.providerDelta.relevantCount = relevantCount;
+  composite.providerDelta.ambiguousCount = ambiguousCount;
+  composite.providerDelta.otherSubjectCount = otherSubjectCount;
+  composite.providerDelta.newAdverseFindingCount = newAdverse;
+
   // 3. Typed surface analyzers.
   const surfaceAnalyses = runSurfaceAnalyzers({
     caseId: input.caseId,
@@ -717,6 +737,7 @@ export async function runOrionAnalyticsPipeline(
     items: input.items,
     resolutionLookup: resolutionByRef,
     sourceHashes,
+    verdictByRef,
   });
 
   // 4. Finding synthesis → VerifiedFindingBundle.
@@ -730,6 +751,7 @@ export async function runOrionAnalyticsPipeline(
     resolutionByRef,
     sourceHashes,
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
+    verdictByRef,
   });
   synthesis = {
     ...synthesis,

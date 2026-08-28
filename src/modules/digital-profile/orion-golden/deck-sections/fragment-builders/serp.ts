@@ -32,14 +32,13 @@ import {
   claimText,
   clampClientText,
   compactRanges,
-  composePageRowComposition,
   coverageContent,
   distribute,
   domainOfUrl,
   emptyStatusForReason,
-  evidenceRowAdverse,
-  evidenceRowVerdict,
   evidenceRowWasRead,
+  evidenceRowsAdverse,
+  evidenceRowsAreOtherSubject,
   fitClientSentences,
   makeSlotSlide,
   packBulletPages,
@@ -576,12 +575,7 @@ export function buildSerpFragment(
      * смотрит каждое наблюдение — сниппеты у них разные, и сигнал в любом из
      * них принадлежит материалу.
      */
-    const verdict = group.refs
-      .map((ref) => evidenceRowVerdict(scoped.evidenceIndex[ref]))
-      .find(Boolean);
-    const adverse = group.refs.some((ref) =>
-      evidenceRowAdverse(scoped.evidenceIndex[ref], verdict)
-    );
+    const adverse = evidenceRowsAdverse(scoped, group.refs);
     /*
      * «Нейтральный» — это результат проверки, а не её отсутствие.
      *
@@ -601,9 +595,7 @@ export function buildSerpFragment(
      * данных. Однофамилец при этом не должен выглядеть материалом о субъекте —
      * поэтому у него своя оценка, а не «Нейтральный».
      */
-    const other =
-      group.refs.length > 0 &&
-      group.refs.every((ref) => scoped.evidenceIndex[ref]?.subjectDecision === "OTHER_SUBJECT");
+    const other = evidenceRowsAreOtherSubject(scoped, group.refs);
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
     //

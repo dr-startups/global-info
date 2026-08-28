@@ -117,13 +117,22 @@ function tinyCoverageRows(): Parameters<typeof runOrionAnalyticsPipeline>[0]["co
   })) as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
 }
 
-/** Прогон аналитики на этом корпусе с каталогом артефактов вызывающего. */
-export async function runTinyAnalytics(artifactsDir: string) {
+/**
+ * Прогон аналитики на этом корпусе с каталогом артефактов вызывающего.
+ *
+ * `extraItems` дописываются к корпусу, а не подменяют его: проверке про второе
+ * наблюдение того же адреса или про материал обогатителя нужен свой материал, а
+ * трогать общий корпус нельзя — на нём стоят ожидания десятка других тестов.
+ */
+export async function runTinyAnalytics(
+  artifactsDir: string,
+  extraItems: RawInventoryItem[] = []
+) {
   return await runOrionAnalyticsPipeline({
     caseId: TINY_CASE_ID,
     datasetId: compositeDatasetIdFor(TINY_JOB_ID),
     inventoryReportRunId: TINY_BASE_RUN_ID,
-    items: tinyInventory(),
+    items: [...tinyInventory(), ...extraItems],
     binding: null,
     coverageRows: tinyCoverageRows(),
     subjectProfile: tinySubjectProfile(),

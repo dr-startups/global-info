@@ -153,7 +153,10 @@ describe("тема без опоры среди напечатанных стр�
     const view = buildPageEvidenceView(scoped, ["i1", "i2"], [{ rank: 1, refs: ["i1"] }]);
     const blocks = pageFindingBlocks(scoped, view, { namePageDomains: false });
     expect(String(blocks.whatWasFound ?? "")).not.toContain(THEME);
-    expect(String(blocks.whatWasFound ?? "")).toContain("Показано 2 результата");
+    // Считается напечатанное: набор страницы здесь шире листа — две ссылки,
+    // одна строка, — и «Показано 2 результата» отправляло бы читателя искать
+    // вторую строку.
+    expect(String(blocks.whatWasFound ?? "")).toContain("Показано 1 результат");
   });
 
   it("та же страница с напечатанной строкой опоры тему называет", () => {

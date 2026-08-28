@@ -8,7 +8,6 @@
 import type { RawInventoryItem } from "../types";
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
 import type { Finding } from "../contracts/finding";
-import { ADVERSE_PATTERNS } from "./surface-analyzers";
 
 export type BenchmarkTraceStatus =
   | "ABSENT_IN_RAW"

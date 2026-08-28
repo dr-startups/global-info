@@ -28,7 +28,11 @@ import {
 } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
 import type { AppliedOverrideRecord } from "../../services/analyst-overrides-loader";
-import type { AnalystDecision } from "../../serp-observation/resolve-observation-highlights";
+import {
+  verdictStrength,
+  type AnalystDecision,
+  type ObservationVerdict,
+} from "../../serp-observation/resolve-observation-highlights";
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
@@ -267,17 +271,18 @@ export function applyLinkVerdictsToEvidence(
   /*
    * Один материал — одно решение, и оно сильнейшее.
    *
-   * Прочитанная страница сильнее отказа чтения: одну и ту же страницу могли
-   * запросить дважды, и площадка отдала её только со второго раза. Среди
-   * прочитанных сильнее нежелательный вывод с цитатой — то же правило, по
-   * которому таблица выдачи берёт у материала сильнейшую оценку его
-   * наблюдений. Иначе нейтральное решение, пришедшее в артефакте первым,
-   * молча стирало бы негатив вместе с цитатой.
+   * Само правило живёт рядом с предикатом (`verdictStrength`): по нему выбирает
+   * решение и раскладка карты решений в аналитике. Здесь к нему добавлено
+   * только «отказ чтения решения не приносит» — у строки артефакта, в отличие
+   * от готового решения, отказ ещё может стоять.
    */
   const strength = (v: LinkVerdictRow): number => {
     if (v.readFailure) return 0;
-    const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
-    return v.tone === "adverse" && quoted ? 2 : 1;
+    return verdictStrength({
+      tone: (v.tone as ObservationVerdict["tone"]) ?? "neutral",
+      quoted: (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0),
+      subjectMatch: "unclear",
+    });
   };
   const chosen = new Map<string, LinkVerdictRow>();
   for (const v of verdicts) {

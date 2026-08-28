@@ -7,6 +7,13 @@
  */
 
 /**
+ * Насколько длинным должно быть общее начало, чтобы считать сюжет тем же.
+ * Имя субъекта встречается почти в каждом заголовке темы — по такому
+ * совпадению склеивать материалы нельзя.
+ */
+const MIN_STORY_OVERLAP = 40;
+
+/**
  * Отпечаток заголовка: сам сюжет, без хвоста площадки.
  *
  * Издания дописывают к заголовку название раздела и сайта через «•», а
@@ -23,6 +30,30 @@ export function titleFingerprint(title: string): string {
 }
 
 /**
+ * Тот же отпечаток, но без рубрики издания впереди.
+ *
+ * Перепечатка приписывает к заголовку свой раздел («Хроника: …»,
+ * «Подробности: …», «Комментарий: …»), и в исполнительной сводке одна
+ * публикация выходила двумя свидетельствами с разными рубриками — читатель
+ * видел одну фразу дважды подряд.
+ *
+ * Рубрика снимается **только для проверки на дословное совпадение** и только
+ * когда после неё остаётся достаточно текста, чтобы сюжет опознавался сам:
+ * «Бизнесмен Глинка: биография» без первой части — уже не сюжет.
+ *
+ * Что это значит для правила «у разных издателей заголовок-надмножество —
+ * самостоятельный материал»: **на дословную перепечатку оно больше не
+ * распространяется.** Совпадение ядер склеивает такие заголовки независимо от
+ * домена — как и прежнее совпадение отпечатков целиком. Проверка «содержит»
+ * по-прежнему требует одного издателя, а разошедшиеся заголовки одного сюжета
+ * (обрезка площадкой) — общего начала не короче сорока знаков.
+ */
+function storyCore(fingerprint: string): string {
+  const withoutRubric = fingerprint.replace(/^[^:«»]{2,20}:\s+/u, "");
+  return withoutRubric.length >= MIN_STORY_OVERLAP ? withoutRubric : fingerprint;
+}
+
+/**
  * Выбрать до `limit` заголовков про **разные** сюжеты.
  *
  * Прежде брались просто два лучших по счёту (`slice(0, 2)`), и один сюжет
@@ -36,16 +67,10 @@ export function titleFingerprint(title: string): string {
  * выглядит как два независимых свидетельства. Читатель при этом видит одно и
  * то же предложение подряд — самый заметный признак выгрузки.
  *
- * Ширина охвата не теряется: домены обоих источников по-прежнему называет
- * строка «Где видно».
+ * Ширина охвата при этом сужается, и это принятая цена: строка «Где видно»
+ * называет до двух доменов — домены снятых перепечаток в неё попадают не
+ * всегда, а прослеживаемость держится на адресе рядом с самой цитатой.
  */
-/**
- * Насколько длинным должно быть общее начало, чтобы считать сюжет тем же.
- * Имя субъекта встречается почти в каждом заголовке темы — по такому
- * совпадению склеивать материалы нельзя.
- */
-const MIN_STORY_OVERLAP = 40;
-
 /** Домен без регистра и ведущего `www.`; пустая строка, если его нет. */
 function normalizeDomain(domain: string | null | undefined): string {
   return String(domain ?? "").trim().toLowerCase().replace(/^www\./u, "");
@@ -56,16 +81,17 @@ export function pickDistinctTitles<T extends { title: string; domain?: string | 
   limit: number
 ): T[] {
   const picked: T[] = [];
-  const seen: Array<{ fp: string; domain: string }> = [];
+  const seen: Array<{ fp: string; core: string; domain: string }> = [];
   for (const c of candidates) {
     if (picked.length >= limit) break;
     const fp = titleFingerprint(c.title);
     if (!fp) continue;
     // Один сюжет — если отпечатки совпали или один целиком начинает другой:
     // площадки обрезают длинные заголовки по-разному.
+    const core = storyCore(fp);
     const domain = normalizeDomain((c as { domain?: string | null }).domain);
     const duplicate = seen.some((prev) => {
-      if (prev.fp === fp) return true;
+      if (prev.fp === fp || prev.core === core) return true;
       const long = prev.fp.length >= fp.length ? prev.fp : fp;
       const short = prev.fp.length >= fp.length ? fp : prev.fp;
       if (short.length < MIN_STORY_OVERLAP) return false;
@@ -77,7 +103,7 @@ export function pickDistinctTitles<T extends { title: string; domain?: string | 
       return Boolean(domain) && prev.domain === domain && long.includes(short);
     });
     if (duplicate) continue;
-    seen.push({ fp, domain });
+    seen.push({ fp, core, domain });
     picked.push(c);
   }
   return picked;

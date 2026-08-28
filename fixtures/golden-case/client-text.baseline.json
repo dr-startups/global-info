@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 62,
-  "totalChars": 53151,
+  "totalChars": 52137,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -39,7 +39,7 @@
         {
           "headline": "",
           "status": "",
-          "detail": "Деловые связи, владение и контрагенты. Найдены конкретные материалы, в том числе «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» (difc-briefing.ae): «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23) В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту. Деловые связи и круг связанных лиц могут расширять периметр due diligence. Публикация (kapitalnytt.se, stockholm-kuriren.se) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения."
+          "detail": "Деловые связи, владение и контрагенты. Найдены конкретные материалы, в том числе «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» (difc-briefing.ae): «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту. Деловые связи и круг связанных лиц могут расширять периметр due diligence. Публикация (kapitalnytt.se, stockholm-kuriren.se) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения."
         },
         {
           "headline": "",
@@ -56,7 +56,7 @@
         "Материалов собрано: 318",
         "О субъекте: 301",
         "Вероятно о субъекте: 3",
-        "Тем риска: 3",
+        "Тем риска: 2",
         "Ключевых тем: 5"
       ]
     },
@@ -101,7 +101,7 @@
         {
           "headline": "PEP / RCA / watchlist-сигналы",
           "status": "Высокий",
-          "detail": "Всего по теме: 14 материалов, с негативным контекстом — 10. Что делать: Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+          "detail": "Всего по теме: 14 материалов, с негативным контекстом — 7. Что делать: Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
         },
         {
           "headline": "Материалы с вероятной принадлежностью",
@@ -147,14 +147,14 @@
       "template": "orion_golden_risk_matrix_grid",
       "keyFindings": [
         {
-          "headline": "Офшоры / корпоративное владение",
-          "status": "Средний",
-          "detail": "Всего по теме: 4 материала, с негативным контекстом — 1. Что делать: Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
-        },
-        {
           "headline": "Деловой профиль",
           "status": "Низкий",
           "detail": "Всего по теме: 3 материала, с негативным контекстом — 1. Что делать: Поддерживать и усиливать позитивный деловой контент (профили, интервью, официальные сайты): он закрепляет верхние позиции выдачи и вытесняет потенциальный негатив."
+        },
+        {
+          "headline": "Офшоры / корпоративное владение",
+          "status": "Низкий",
+          "detail": "Всего по теме: 4 материала. Что делать: Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
         }
       ],
       "table": {
@@ -166,16 +166,16 @@
         ],
         "rows": [
           [
-            "Офшоры / корпоративное владение",
-            "Средний",
-            "P2",
-            "finding-offshore_corporate-subject_match-4cc9cf0d"
-          ],
-          [
             "Деловой профиль",
             "Низкий",
             "P3",
             "finding-business_profile-subject_match-15a54088"
+          ],
+          [
+            "Офшоры / корпоративное владение",
+            "Низкий",
+            "P3",
+            "finding-offshore_corporate-subject_match-4cc9cf0d"
           ]
         ]
       }
@@ -183,13 +183,13 @@
     {
       "slideKey": "p05_profile_dashboard",
       "text": {
-        "title": "Цифровой профиль: 3 темы повышенного внимания",
+        "title": "Цифровой профиль: 2 темы повышенного внимания",
         "narrative": "Предмет аудита — результаты поиска ТОП-20 в Яндексе и Google (Россия, ОАЭ) и международные базы: 71 материал. По собранным источникам: 318 материалов из 2 региональных контуров (Россия: 232, ОАЭ: 86). Принадлежность каждого материала к проверяемому лицу проверена. Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       },
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5) «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник (stockholm-kuriren.se/stockholm-court-schedules-hearing-involving-ande-25)"
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5) Где видно: kapitalnytt.se, stockholm-kuriren.se. Всего по теме: 5 материалов, с негативным контекстом — 3."
       ],
       "actions": [
         "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
@@ -200,20 +200,19 @@
         "Вероятно о субъекте: 3",
         "Требуют идентификации: 9",
         "Относятся к другим лицам: 5",
-        "Тем повышенного внимания: 3",
+        "Тем повышенного внимания: 2",
         "Региональные контуры: Россия · ОАЭ"
       ]
     },
     {
       "slideKey": "p05_profile_dashboard__cont1",
       "text": {
-        "title": "Цифровой профиль: 3 темы повышенного внимания (продолжение 2/2)"
+        "title": "Цифровой профиль: 2 темы повышенного внимания (продолжение 2/2)"
       },
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1) «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник (reestr-novosti.ru/nordkap-capital-board-appoints-independent-compl-10)",
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник (rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7)"
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1) Где видно: stockholm-kuriren.se, bizdaily-nordic.se. Всего по теме: 14 материалов, с негативным контекстом — 7."
       ]
     },
     {
@@ -228,14 +227,14 @@
       "slideKey": "p07_ru_summary",
       "text": {
         "title": "Россия: в выдаче есть материалы повышенного внимания",
-        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 232. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшоры / корпоративное владение. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 232. Подтверждённых тем: 4, из них повышенного внимания: 2. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались."
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se Где видно: stockholm-kuriren.se, kapitalnytt.se. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 3 материала, с негативным контекстом — 3.",
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se Где видно: bizdaily-nordic.se, stockholm-kuriren.se. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 8 материалов, с негативным контекстом — 4."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se Где видно: stockholm-kuriren.se, kapitalnytt.se. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 3 материала, с негативным контекстом — 3.",
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник reestr-novosti.ru Где видно: bizdaily-nordic.se, stockholm-kuriren.se. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 8 материалов, с негативным контекстом — 4."
       ],
       "actions": [
         "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
@@ -243,7 +242,7 @@
       "metrics": [
         "В аудите (ТОП-20): 41",
         "Собрано по региону: 232",
-        "Тем повышенного внимания: 3",
+        "Тем повышенного внимания: 2",
         "Тем подтверждено: 4",
         "Вероятно о субъекте: 3"
       ]
@@ -256,8 +255,8 @@
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник (rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7) Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала.",
-        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23) Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1."
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник (finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3) Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1.",
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2) «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник (rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7) Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала."
       ]
     },
     {
@@ -291,13 +290,13 @@
             "Google",
             "Результаты поиска",
             "66",
-            "негативных: 14; подтверждена связь с лицом: 58"
+            "негативных: 12; подтверждена связь с лицом: 58"
           ],
           [
             "Яндекс",
             "Результаты поиска",
             "68",
-            "негативных: 10; подтверждена связь с лицом: 67"
+            "негативных: 7; подтверждена связь с лицом: 67"
           ],
           [
             "Яндекс",
@@ -338,7 +337,7 @@
           [
             "Все системы",
             "Темы повышенного внимания",
-            "3",
+            "2",
             "см. матрицу рисков"
           ]
         ]
@@ -348,7 +347,7 @@
       "slideKey": "p09_ru_serp_table",
       "text": {
         "title": "Россия — Яндекс, ТОП-20 (1/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Криминальные / судебные материалы» — высокий уровень внимания (строка 4). На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Криминальные / судебные материалы» — высокий уровень внимания (строка 4). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -397,7 +396,7 @@
       "slideKey": "p09_ru_serp_table__cont1",
       "text": {
         "title": "Россия — Яндекс, ТОП-20 (2/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 7). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 7). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -495,7 +494,7 @@
       "slideKey": "p09_ru_serp_table__cont3",
       "text": {
         "title": "Россия — Яндекс, ТОП-20 (4/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Офшоры / корпоративное владение» — средний уровень внимания (строка 15). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». «Офшоры / корпоративное владение» — низкий уровень внимания (строка 15). На странице есть негативные заголовки (1) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -691,7 +690,7 @@
       "slideKey": "p09_ru_serp_table__cont7",
       "text": {
         "title": "Россия — Google, ТОП-20 (3/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». «Криминальные / судебные материалы» — высокий уровень внимания (строка 10). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». «Криминальные / судебные материалы» — высокий уровень внимания (строка 10). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -740,7 +739,7 @@
       "slideKey": "p09_ru_serp_table__cont8",
       "text": {
         "title": "Россия — Google, ТОП-20 (4/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Показано 8 результатов; из них о субъекте — 8, вероятно о субъекте — 0, негативных заголовков — 0. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 0. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
@@ -1159,7 +1158,7 @@
             "Google",
             "Результаты поиска",
             "44",
-            "негативных: 6; подтверждена связь с лицом: 44"
+            "негативных: 4; подтверждена связь с лицом: 44"
           ],
           [
             "Google",
