@@ -122,6 +122,85 @@ function withUnicode(flags: string): string {
   return flags.includes("u") ? flags : `${flags}u`;
 }
 
+/**
+ * Верхнеуровневые альтернативы выражения — по одной на слово словаря.
+ *
+ * `split("|")` не годится: у словаря есть альтернативы внутри групп
+ * (`побо(?:и|ев|ям|ями|ях)`, `долг(?:а|ам|…)`) и внутри классов (`снят[оы]`),
+ * и наивное деление разрезало бы их пополам, а сравнение списков после этого
+ * отвечало бы не на тот вопрос.
+ */
+function topLevelAlternatives(source: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let inClass = false;
+  let current = "";
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i]!;
+    if (ch === "\\") {
+      current += ch + (source[i + 1] ?? "");
+      i += 1;
+      continue;
+    }
+    if (inClass) {
+      if (ch === "]") inClass = false;
+      current += ch;
+      continue;
+    }
+    if (ch === "[") inClass = true;
+    else if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (ch === "|" && depth === 0) {
+      out.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  out.push(current);
+  return out.filter((alt) => alt.length > 0);
+}
+
+/**
+ * Сильный словарь как подмножество общего — вычисленное, а не обещанное.
+ *
+ * Правило («слово, краснящее мягкую площадку, обязано краснить и обычную») до
+ * сих пор жило одним комментарием, и нарушить его можно было одной строкой в
+ * файле переопределения: тогда пост в соцсети получал рамку по слову, от
+ * которого страница обычного издания оставалась чистой.
+ *
+ * Два случая разведены намеренно. Файл, который **назвал** сильные слова сам,
+ * отвергается с перечислением лишних: это его ошибка, и молча её исправлять
+ * значило бы печатать не тот словарь, который написан. Файл, который сильных
+ * слов не называл, наследует умолчание — но суженное до того, что знает его
+ * собственный общий словарь: так `finding-themes.example.json` со своим
+ * коротким `adversePatterns` продолжает компилироваться и при этом не краснит
+ * мягкую площадку словом «arrest», которого его общий словарь не знает.
+ */
+function strongSubsetOfAdverse(
+  adverseSource: string,
+  strongSource: string,
+  strongWasSupplied: boolean
+): string {
+  const general = new Set(topLevelAlternatives(adverseSource));
+  const strong = topLevelAlternatives(strongSource);
+  const outside = strong.filter((alt) => !general.has(alt));
+  if (strongWasSupplied && outside.length > 0) {
+    throw new FindingThemesConfigError(
+      `strongAdversePatterns не подмножество adversePatterns: вне общего словаря ${outside.join(", ")}`
+    );
+  }
+  const inside = strong.filter((alt) => general.has(alt));
+  if (inside.length === 0) {
+    // Пустое выражение совпадает с любой строкой — мягкие площадки покраснели
+    // бы целиком. Такой файл чинит человек, а не умолчание.
+    throw new FindingThemesConfigError(
+      "strongAdversePatterns пуст: adversePatterns не знает ни одного сильного слова"
+    );
+  }
+  return inside.join("|");
+}
+
 /** Universal default theme set — no case-specific «транспортный контур» tuning. */
 export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
   return {
@@ -227,7 +306,55 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       // есть левая граница и нет правой, и для латинских слов это цена без
       // выгоды: русские основы наращиваются («судебн», «прокурат»), английские
       // — нет.
-      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд(?!острое|ьб)|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb",
+      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд(?!острое|ьб)|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb|" +
+      /*
+       * Обвинение — второй способ рассказать тот же сюжет, и словарь его не знал.
+       *
+       * «Сульянов обвинил Кремлева в нападении» и «Умар Кремлев обвинен в
+       * избиении на Красной площади» — одно событие в двух подачах, и обе строки
+       * сходились на «Не проверено»: ни «обвин», ни «нападени», ни «избие» в
+       * словаре не было. `prosecut` и `whistleblow` — та же дыра с другой
+       * стороны: по-русски «прокур» здесь стоит с самого начала, латинского
+       * не было, и «Prosecutors request documents from …» проходило молча.
+       *
+       * Правая граница ставится там, где корень попадается в чужом слове:
+       * «побои» без неё ловит «поборника», «насил» — наречие «насилу». Основа
+       * `избие` (а не `изби`) по той же причине: «избирательная комиссия».
+       *
+       * «Насильно» из `насил` **не** исключено, и это решение, а не недосмотр:
+       * «насильно удерживали» и «насильно вывезли» в заголовках встречаются
+       * чаще пословицы «насильно мил не будешь». Цена — пословица краснеет, и
+       * на мягкой площадке тоже: корень входит в сильное подмножество.
+       */
+      "обвин|нападени|избие|побо(?:и|ев|ям|ями|ях)(?!\\p{L})|насил(?!у(?!\\p{L}))|prosecut|whistleblow|" +
+      /*
+       * Категории комплаенс-скрининга и метаслова — сигнал, но не обвинение.
+       *
+       * `pep`, `rca`, `ofac` называют **категорию проверки**, а не поступок:
+       * попасть в список политически значимых лиц можно родством. Поэтому в
+       * сильное подмножество они не входят (на карточке реестра это рубрика
+       * страницы, а не сигнал о человеке), а строку выдачи объясняет клиенту
+       * рубрика справочника — «Сигналы PEP / RCA», — и правило «совпадение по
+       * комплаенсу не подтверждается автоматически» остаётся в силе.
+       *
+       * Латинские корни здесь пишутся `pep(?!\p{L})`, а **не** `\bpep\b`: в
+       * JavaScript граница слова определена на ASCII, и в «pepа» с кириллической
+       * «а» она срабатывает — совпадение прошло бы.
+       *
+       * Цена этой защиты названа целиком: краснит **любой самостоятельный
+       * токен** такого написания, в каком бы смысле он ни стоял, — «Pep
+       * Guardiola visits Moscow», «RCA (root cause analysis) completed by the
+       * auditor», «Offshore development centre opened in Minsk». Сузить это
+       * границей нельзя, различает только смысл: снимают прочитанная страница
+       * и правка аналитика.
+       *
+       * `beneficia` в словарь не добавлен намеренно, хотя `бенефициар` добавлен:
+       * по замеру на золотом кейсе он красит «Beneficial ownership disclosure
+       * lists …» — раскрытие бенефициара это подача документов, а не сигнал, и
+       * субъекту предлагалось бы убирать собственное раскрытие. Английская форма
+       * остаётся ключевым словом темы, где вопрос другой — классификация.
+       */
+      "ofac(?!\\p{L})|pep(?!\\p{L})|rca(?!\\p{L})|lawsuit|offshore|оф{1,2}шор|бенефициар|нежелат|негативн|undesirable",
     adverseFlags: "iu",
     /*
      * Слова, которые краснят строку даже на мягкой площадке.
@@ -236,10 +363,19 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
      * судятся: «скандалы» в оглавлении статьи — жанр, а не сигнал. Но пост в X
      * «Уголовное дело против …» рамку получить обязан, иначе площадка слепа
      * целиком. Это **подмножество** `adversePatterns`, а не второй словарь:
-     * слово, краснящее мягкую площадку, обязано краснить и обычную.
+     * слово, краснящее мягкую площадку, обязано краснить и обычную. Подмножество
+     * проверяется при компиляции, а не обещано этим комментарием.
+     *
+     * Из обвинительных слов сюда идёт только происшествие: избиение, нападение,
+     * побои, насилие. `обвин` остаётся вне — в оглавлении справочной страницы
+     * («биография, бизнес, обвинения») это рубрика раздела, и оба заголовка
+     * замечания владельца всё равно краснят мягкую площадку по слову
+     * происшествия. Категории комплаенса (`pep`, `rca`, `ofac`, `offshore`) и
+     * метаслова (`нежелат`, `негативн`) сюда не идут по той же причине.
      */
     strongAdversePatterns:
-      "санкц|sanction|уголов|criminal|арест|arrest|мошенн|fraud|коррупц|corrupt|компромат",
+      "санкц|sanction|уголов|criminal|арест|arrest|мошенн|fraud|коррупц|corrupt|компромат|" +
+      "нападени|избие|побо(?:и|ев|ям|ями|ях)(?!\\p{L})|насил(?!у(?!\\p{L}))",
     strongAdverseFlags: "iu",
     unverifiedDomains: "rucriminal|sledstvie|compromat|kompromat",
     unverifiedDomainsFlags: "iu",
@@ -320,9 +456,16 @@ export function compileFindingThemesConfig(
       "adversePatterns"
     ),
     // Файл переопределения, написанный до появления подмножества, читается как
-    // «сильных слов нет своих» — берутся значения по умолчанию.
+    // «сильных слов нет своих» — берутся значения по умолчанию, суженные до
+    // того, что знает его собственный общий словарь.
     strongAdversePatterns: compileRegex(
-      withWordStart(cfg.strongAdversePatterns ?? defaults.strongAdversePatterns!),
+      withWordStart(
+        strongSubsetOfAdverse(
+          cfg.adversePatterns,
+          cfg.strongAdversePatterns ?? defaults.strongAdversePatterns!,
+          cfg.strongAdversePatterns !== undefined
+        )
+      ),
       withUnicode(cfg.strongAdverseFlags ?? cfg.adverseFlags),
       "strongAdversePatterns"
     ),

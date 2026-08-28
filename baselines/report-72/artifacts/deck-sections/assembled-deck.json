@@ -2434,11 +2434,11 @@
       "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
       "highlightExplanations": [
         {
-          "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
           "frameTone": "red"
         },
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/ru/person/8095).",
           "frameTone": "red"
         }
       ]
@@ -2721,7 +2721,7 @@
       "statusNote": "Изображений, ведущих на негативные источники, — 1; каждое требует сверки с первоисточником.",
       "highlightExplanations": [
         {
-          "clientReason": "Криминальные / судебные материалы — kompromat1.online; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "Страница не читалась в этом прогоне. (kompromat1.online/articles/364300-byvshij_partner_oligarhov_nahodjashchihsja_pod_sanktsijami_sergej_glinka_16_millionov_evro_na_zahvat_moldavskogo_zavoda_s_voennymi_vozmozhnostjami_pod).",
           "frameTone": "red"
         }
       ]
@@ -3867,7 +3867,7 @@
       "statusNote": "Тема подтверждена, уровень внимания — средний; оценка достоверна.",
       "highlightExplanations": [
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
           "frameTone": "red"
         }
       ]
@@ -3995,23 +3995,23 @@
       "statusNote": "Изображений, ведущих на негативные источники, — 5; каждое требует сверки с первоисточником.",
       "highlightExplanations": [
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — vlasti.io; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "Страница не читалась в этом прогоне. (vlasti.io/news/191197-sergey_glinka_a_previous_associate_of_sanctioned_oligarchs_allocated_16_million_to_acquire_a_moldovan_facility_with_military_potential_purportedly_under_the_eus).",
           "frameTone": "red"
         },
         {
-          "clientReason": "Потенциально негативные публикации — ontheditch.com; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки.",
+          "clientReason": "Потенциально негативные публикации — ontheditch.com; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
           "frameTone": "red"
         },
         {
-          "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки.",
+          "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
           "frameTone": "red"
         },
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
           "frameTone": "red"
         },
         {
-          "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта.",
+          "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
           "frameTone": "red"
         }
       ]
