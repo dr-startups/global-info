@@ -21,7 +21,7 @@ import {
   runUnifiedCollectionTick,
   type UnifiedOrchestratorDeps,
 } from "../services/unified-orion-collection-orchestrator";
-import { UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
+import { STAGE_OWNER, UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
@@ -87,14 +87,16 @@ export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | n
 /**
  * Позиция стадии джобы в конвейере — чтобы понимать «дошли до сюда или дальше».
  *
- * `CLIENT_CONTENT` делит позицию с `ORION_PREPARE`: это движение внутри одного
- * шага подготовки отчёта.
+ * Стадия внутри шага (`CLIENT_CONTENT`) занимает позицию своего шага, и кто
+ * чей — сказано данными в реестре (`STAGE_OWNER`). Числа здесь нет намеренно:
+ * вторая половина сравнения ниже читается из реестра, и записанная числом
+ * первая разъехалась бы с ней при первой же вставке шага.
+ *
+ * `0` — стадия конвейеру не принадлежит вовсе (отказ, отмена, готовый отчёт).
  */
 function jobStagePosition(stage: string): number {
-  const byStage = UNIFIED_PIPELINE.find((d) => d.stage === stage);
-  if (byStage) return byStage.position;
-  if (stage === "CLIENT_CONTENT") return 4;
-  return 0;
+  const owner = STAGE_OWNER.get(stage) ?? stage;
+  return UNIFIED_PIPELINE.find((d) => d.stage === owner)?.position ?? 0;
 }
 
 /**

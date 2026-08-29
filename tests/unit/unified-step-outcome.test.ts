@@ -118,6 +118,15 @@ describe("исход шага выводится из состояния джо�
     expect(outcomeFromJob(base, here, here, NOW).kind).toBe("waiting");
   });
 
+  it("клиентский контент закрывает шаги, стоящие до подготовки отчёта", () => {
+    // Позиция `CLIENT_CONTENT` — та же, что у `ORION_PREPARE`, и на нынешнем
+    // реестре это четвёрка. Ответ на сегодняшнем реестре меняться не должен:
+    // выведение позиции из реестра чинит будущую вставку шага, а не сегодня.
+    const merge: WorkflowStepRow = { ...STEP, name: "COMPOSITE_MERGE", position: 3 };
+    const ahead = job({ stage: "CLIENT_CONTENT" });
+    expect(outcomeFromJob(merge, ahead, ahead, NOW).kind).toBe("done");
+  });
+
   it("переход между внутренними стадиями шага подготовки не считается завершением", () => {
     // ORION_PREPARE → CLIENT_CONTENT — движение внутри одного шага REPORT_PREPARE.
     const prepare: WorkflowStepRow = { ...STEP, name: "REPORT_PREPARE", position: 4 };
