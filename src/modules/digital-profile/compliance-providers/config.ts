@@ -2,6 +2,7 @@
  * Stage C1 — compliance provider configuration (no secrets in exports).
  */
 
+import { boolSetting } from "../config/defaults";
 import type { ComplianceProviderName, ComplianceProviderStatus } from "./types";
 
 function envBool(value: string | undefined, fallback = false): boolean {
@@ -26,13 +27,16 @@ export const complianceProviderConfig = {
   realEnabled: envBool(process.env.DIGITAL_PROFILE_COMPLIANCE_REAL_ENABLED, false),
   /**
    * OpenSanctions — открытый агрегатор санкционных списков, PEP и розыска
-   * (шаг 04.3). Включён по умолчанию: он не требует контракта, и раздел
-   * комплаенса без него остаётся пустым. Ключ нужен облачному сервису;
-   * самостоятельно поднятый `yente` работает без него, поэтому в обязательные
-   * ключи он не входит.
+   * (шаг 04.3). Ключ нужен облачному сервису; самостоятельно поднятый `yente`
+   * работает без него, поэтому в обязательные ключи он не входит.
+   *
+   * Умолчание переключателя записано вместе с остальными — в
+   * `config/defaults.ts`, и читается общим разбором: локальный `envBool` читал
+   * непонятое значение как «выключено», то есть опечатка молча убирала раздел
+   * комплаенса из отчёта.
    */
   openSanctions: {
-    enabled: envBool(process.env.OPEN_SANCTIONS_ENABLED, true),
+    enabled: boolSetting("OPEN_SANCTIONS_ENABLED"),
     apiBaseUrl: envStr(process.env.OPEN_SANCTIONS_API_BASE_URL) ?? "https://api.opensanctions.org",
     webBaseUrl: envStr(process.env.OPEN_SANCTIONS_WEB_BASE_URL) ?? "https://www.opensanctions.org",
     apiKey: envStr(process.env.OPEN_SANCTIONS_API_KEY),
