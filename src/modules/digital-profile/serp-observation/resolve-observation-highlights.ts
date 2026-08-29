@@ -31,9 +31,27 @@ const ADVERSE_DOMAIN_RE =
  * — «Нежелательный» по слову «скандалы» в заголовке рядом с `ru.wikipedia.org`,
  * оценённой по прочитанной странице: две энциклопедии об одном человеке
  * расходились в оценке из-за формы заголовка.
+ *
+ * **Мягкость — свойство издателя, поэтому список читает имя хоста, и у каждого
+ * имени есть левая граница** (начало хоста или точка перед ним). Платят за обе
+ * вольности сразу. Без границы `x\.com` делал мягким любой хост с таким
+ * окончанием — `netflix.com`, `linux.com`, `forex.com`, `yandex.com`,
+ * `equifax.com`, — и целый класс изданий судился сильным подмножеством словаря
+ * вместо полного. От чтения адреса целиком обычному изданию хватало
+ * трекинг-метки `?utm_source=x.com`, чтобы стать «биографией».
+ *
+ * `x.com` стоит отдельным альтернативом и названа хостом целиком намеренно:
+ * имя `x` внутри общей группы значило бы «`x` на любом домене верхнего
+ * уровня», то есть мягкими стали бы и `x.ru`, и `x.org` — односимвольное имя
+ * живёт у кого угодно. Свернуть её в группу «ради единообразия» нельзя.
+ *
+ * Соседний `ADVERSE_DOMAIN_RE` читает адрес целиком **намеренно**, и сводить
+ * два списка к одному входу нельзя: там вопрос «кто это перепечатал», и ответ
+ * виден ровно в пути (`x.com/rucriminalinfo/…`), здесь вопрос «кто издатель»,
+ * и путь на него не отвечает — раздел сайта издателя не меняет.
  */
 const SOFT_PROFILE_DOMAIN_RE =
-  /forbes\.|klerk\.|tadviser\.|wikipedia\.|ruwiki\.|wikiwand\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|imslp\./i;
+  /(?:^|\.)(?:forbes|klerk|tadviser|wikipedia|ruwiki|wikiwand|linkedin|rusprofile|audit-it|zachestnyibiznes|labyrinth|instagram|facebook|twitter|youtube|imslp)\.|(?:^|\.)x\.com/i;
 
 type ThemeRule = { key: string; title: string; match: RegExp };
 
@@ -258,10 +276,12 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
   // Мягкая площадка не слепа: сильные слова краснят строку и там. Пост в
   // соцсети «Уголовное дело против …» — сигнал, а «биография, бизнес,
   // скандалы» в оглавлении энциклопедии — жанр.
-  const dictionary =
-    SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain)
-      ? getStrongAdversePatterns()
-      : getAdversePatterns();
+  //
+  // Спрашивается имя хоста, а не весь адрес; почему именно так — сказано один
+  // раз, у `SOFT_PROFILE_DOMAIN_RE`.
+  const dictionary = SOFT_PROFILE_DOMAIN_RE.test(domain)
+    ? getStrongAdversePatterns()
+    : getAdversePatterns();
   return dictionary.test(text) && !dictionaryHitIsNegated(text, dictionary);
 }
 

@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v145" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v146" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -408,8 +408,19 @@ export const DECK_CONTENT_VERSION = "deck-sections-v145" as const;
  * но на живых данных правка меняет разметку, то есть собранную деку изменить
  * может, и на исключение не претендует: исключение даётся ветке, которой на
  * деке нет вовсе, а не правке, которую эталон не покрывает.
+ *
+ * 29.08 номер двинут до v146: мягкая площадка стала свойством издателя.
+ * `SOFT_PROFILE_DOMAIN_RE` стоял без левой границы и сверялся с адресом
+ * целиком, и обе вольности отдавали сигнал молча: `x\.com` делал мягким любой
+ * хост с таким окончанием (`netflix.com`, `linux.com`, `forex.com`,
+ * `yandex.com`, `equifax.com`), а обычному изданию хватало трекинг-метки
+ * `?utm_source=x.com`, чтобы судиться сильным подмножеством словаря вместо
+ * полного. Теперь список читает имя хоста с границей «начало или точка».
+ * На обоих корпусах эталонов дифф пуст — измерено по 110 доменам, ни один не
+ * меняет классификацию, — но на живых данных правка меняет колонку «Оценка»
+ * и состав рамок, то есть на исключение не претендует.
  */
-export const DECK_BUILDER_FINGERPRINT = "e222743a06abeb84" as const;
+export const DECK_BUILDER_FINGERPRINT = "1768e4b6f7bc8afc" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -432,7 +443,7 @@ export const DECK_BUILDER_FINGERPRINT = "e222743a06abeb84" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v145" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v146" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
