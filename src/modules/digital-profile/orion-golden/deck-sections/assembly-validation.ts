@@ -9,6 +9,7 @@ import type { RendererSlide } from "./deck-assembler";
 import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
 import { CANONICAL_SLOT_IDS, type VisualAssetsBySlot } from "./canonical-slots";
+import { assetKindDrawsRedFrames } from "../assets/red-frame-asset-kinds";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
@@ -85,6 +86,19 @@ export const SYSTEMIC_DEFECT_PAGES = 3;
 
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
+/*
+ * Перечень объявляет, что он неполон.
+ *
+ * Печаталось «на 6 страницах: <пять имён>» — шестая не называлась, и по строке
+ * нельзя было понять, что список обрезан. Читатель отчёта об отказе такой же
+ * читатель, как читатель отчёта: недоговорённость он принимает за полный
+ * список.
+ */
+function namedList(items: readonly string[], limit = 5): string {
+  if (items.length <= limit) return items.join(", ");
+  return `${items.slice(0, limit).join(", ")} и ещё ${items.length - limit}`;
+}
+
 /**
  * Какие дефекты останавливают сборку — и с какого порога.
  *
@@ -110,19 +124,7 @@ export function blockingIssues(input: {
   emptyTableSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
-  /*
-   * Перечень объявляет, что он неполон.
-   *
-   * Печаталось «на 6 страницах: <пять имён>» — шестая не называлась, и по
-   * строке нельзя было понять, что список обрезан. Читатель отчёта об отказе
-   * такой же читатель, как читатель отчёта: недоговорённость он принимает за
-   * полный список.
-   */
-  const name = (s: ReadonlySet<string>, limit = 5): string => {
-    const all = [...s];
-    if (all.length <= limit) return all.join(", ");
-    return `${all.slice(0, limit).join(", ")} и ещё ${all.length - limit}`;
-  };
+  const name = (s: ReadonlySet<string>, limit = 5): string => namedList([...s], limit);
   if (input.quoteDefectSlides.size >= SYSTEMIC_DEFECT_PAGES) {
     out.push(
       `цитаты разорваны на ${input.quoteDefectSlides.size} страницах: ${name(input.quoteDefectSlides)}`
@@ -554,27 +556,114 @@ export function validateAssembly(input: {
   }
   checks.emptySidebarCountZero = emptySidebarCount === 0;
 
-  // 2. unexplainedAdverseMarkerCount=0: every red/adverse highlight on a SERP
-  //    screenshot slide must be explained in the adjacent panel.
+  /*
+   * 2. unexplainedAdverseMarkerCount=0: каждая нарисованная красная рамка
+   *    объяснена в панели рядом.
+   *
+   * Ворот сравнивал с объяснениями **число негативных находок слайда** —
+   * величину, к рамкам отношения не имеющую. Замер на эталоне 72: у
+   * `p15_ru_images_2` и `p16_ru_images_3` рамок нет вовсе при одной негативной
+   * находке, у `p17_ru_images_4` находок две при одной рамке. Пять рамок при
+   * трёх находках и трёх объяснениях старая редакция пропускала — так рамка,
+   * которую никто не объяснил, и доехала до клиента при 26 зелёных воротах.
+   *
+   * Единица счёта — **различный `ref`**, а не нарисованный прямоугольник:
+   * у `p10_ru_serp_visual` два привязанных снимка рисуют одни и те же две
+   * строки (экземпляров 4, материалов 2, объяснений 2), и счёт по
+   * прямоугольникам покраснел бы на здоровом эталоне. Тем же ключом сводит
+   * строки построитель объяснений (`adverseVisualSidebar`).
+   *
+   * Смотрит ворот на любой слайд с привязанным ассетом, а не только на снимок
+   * выдачи: рамки рисует и сетка изображений, и панель поверхности, и до сих
+   * пор их не проверял никто. Но **не всякая картинка рисует рамки**, а
+   * `adverse` во `visibleItems` ставит один классификатор всем видам сразу.
+   * Отвечает на это `assetKindDrawsRedFrames` — один на продукт, рядом с
+   * рисующими; списка шаблонов здесь нет намеренно, второй ответ на тот же
+   * вопрос разошёлся бы с первым.
+   *
+   * **Где ворот заговорит по делу, а не по ошибке.** Объяснения строят три
+   * построителя из четырёх — снимок выдачи, сетка изображений и панель
+   * подсказок, — и все три берут их из тех же `visibleItems` с той же
+   * дедупликацией по `ref`, поэтому равенство у них выполняется по
+   * построению; ворот сторожит участок **после** построителя. Четвёртый,
+   * панель связанных запросов (`related.ts`), объяснений не пишет вовсе, а
+   * рамки на её панели рисуются: негативный связанный запрос на живом прогоне
+   * даст «рамок 1, объяснений 0». Это не ложное срабатывание — фразы «почему
+   * выделено» под рамкой действительно нет (на эталоне 72 негативных строк в
+   * этом блоке ноль, поэтому приёмка зелёная).
+   *
+   * Считается по списку слайда, а не по сайдбару пейлоада: `buildVisualAnalysis`
+   * (`run-deck-build.ts`) печатает первые `SIDEBAR_HIGHLIGHT_SLOTS` объяснений
+   * и называет остаток числом («ещё 3»), то есть объявленная урезка, а не
+   * потеря.
+   */
   let unexplainedAdverseMarkerCount = 0;
-  const adverseFindingIds = new Set(
-    input.bundle.findings
-      .filter((f) => (RISK_ORDER[f.riskLevel] ?? 0) >= 2 && f.subjectMatch === "SUBJECT_MATCH")
-      .map((f) => f.findingId)
-  );
+  let slidesMeasured = 0;
+  const slidesWithoutAssetMeta: string[] = [];
+  const unknownAssetKinds = new Set<string>();
+  const frameIssues: string[] = [];
   for (const slide of rendererSlides) {
-    if (slide.template !== "orion_golden_serp_screenshot") continue;
     if (slide.visualAssetRefs.length === 0) continue;
-    const adverseOnSlide = slide.findingIds.filter((id) => adverseFindingIds.has(id)).length;
+    // Продолжение объяснений не несёт по той же причине, что и сайдбара выше.
+    if (slide.isContinuation) continue;
+    const metas = input.visualAssets?.[slide.baseSlotId] ?? [];
+    if (metas.length === 0) {
+      slidesWithoutAssetMeta.push(slide.slideKey);
+      continue;
+    }
+    const unknown = metas.filter((m) => assetKindDrawsRedFrames(m.kind) === null);
+    if (unknown.length > 0) {
+      for (const m of unknown) unknownAssetKinds.add(m.kind);
+      continue;
+    }
+    slidesMeasured += 1;
+    const framedRefs = new Set<string>();
+    for (const meta of metas) {
+      if (!assetKindDrawsRedFrames(meta.kind)) continue;
+      for (const row of meta.visibleItems ?? []) {
+        if (row.adverse === true) framedRefs.add(row.ref);
+      }
+    }
     const explained = slide.highlightExplanations?.length ?? 0;
-    if (adverseOnSlide > 0 && explained < adverseOnSlide) {
-      unexplainedAdverseMarkerCount += adverseOnSlide - explained;
-      issues.push(
-        `slide ${slide.slideKey}: ${adverseOnSlide} adverse highlight(s) but only ${explained} explanation(s)`
+    if (framedRefs.size > explained) {
+      unexplainedAdverseMarkerCount += framedRefs.size - explained;
+      frameIssues.push(
+        `страница ${slide.slideKey}: рамок на привязанных ассетах ${framedRefs.size}, объяснений ${explained}`
       );
     }
   }
-  checks.unexplainedAdverseMarkerCountZero = unexplainedAdverseMarkerCount === 0;
+  issues.push(...frameIssues.slice(0, 10));
+  /*
+   * Невыполнимая проверка объявляется словами.
+   *
+   * Ветка `gpt-copy` инициализирует `visualAssetsBySlot = {}` и оставляет
+   * пустым, если `visual-assets-by-slot.json` не прочитался; пустой объект
+   * истинен, и ворот нашёл бы ноль рамок на каждой странице — зелено
+   * вакуумно. Поэтому страница, измерить которую нечем, называется строкой, а
+   * ключа в `checks` не появляется вовсе: скрипт приёмки читает его как
+   * `?? false` и покраснеет, а не примет пропуск за проход. Ключ исчезает и
+   * при одной такой странице: ворот, измеривший половину деки, снаружи
+   * неотличим от ворота, измерившего её целиком.
+   */
+  const cannotMeasure: string[] = [];
+  if (slidesWithoutAssetMeta.length > 0) {
+    cannotMeasure.push(
+      `у страниц ${namedList(slidesWithoutAssetMeta)} привязан ассет, но его меты во входе нет`
+    );
+  }
+  if (unknownAssetKinds.size > 0) {
+    cannotMeasure.push(
+      `о видах ассетов ${namedList([...unknownAssetKinds])} не сказано, рисуют ли они рамки`
+    );
+  }
+  if (cannotMeasure.length === 0 && slidesMeasured === 0) {
+    cannotMeasure.push("в деке нет ни одной страницы с привязанным ассетом");
+  }
+  if (cannotMeasure.length > 0) {
+    skipped.push(`проверка «каждая рамка объяснена» пропущена: ${cannotMeasure.join("; ")}`);
+  } else {
+    checks.unexplainedAdverseMarkerCountZero = unexplainedAdverseMarkerCount === 0;
+  }
 
   // 3. Every visual card slide either binds a rendered asset, carries an
   //    explicit fallback/empty-state reason, or downgrades to a text layout
