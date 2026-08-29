@@ -163,7 +163,7 @@ export function deriveJobStage(
     // Невосстановимый отказ (`retryable: false`) закрывает шаг, не потратив
     // весь бюджет, и по числу попыток выглядел бы как «можно попробовать ещё»,
     // то есть выдавал бы безнадёжную джобу за восстановимую.
-    const willRetry = failed.nextRunAt !== null && failed.attempts < failed.maxAttempts;
+    const willRetry = failedStepWillRetry(failed);
     return {
       stage: willRetry ? "FAILED_RETRYABLE" : "FAILED_TERMINAL",
       status: "FAILED",
@@ -294,6 +294,24 @@ export function applyStepOutcome(
       };
     }
   }
+}
+
+/**
+ * Проснётся ли упавший шаг **сам**: назначен срок и бюджет отказов не исчерпан.
+ *
+ * Это не то же самое, что `stepIsRetryable` рядом: та отвечает «можно ли
+ * повторить вручную» и смотрит только на остаток попыток. Здесь вопрос другой —
+ * «вернётся ли конвейер без человека», и на него отвечает **назначенный срок**:
+ * невосстановимый отказ закрывает шаг, не потратив бюджета, и по числу попыток
+ * выглядел бы как «попробует ещё».
+ *
+ * Ответ один на весь модуль: его спрашивают и вывод стадии, и сверка стадии
+ * после шага.
+ */
+export function failedStepWillRetry(
+  step: Pick<WorkflowStepRow, "nextRunAt" | "attempts" | "maxAttempts">
+): boolean {
+  return step.nextRunAt !== null && step.attempts < step.maxAttempts;
 }
 
 /**

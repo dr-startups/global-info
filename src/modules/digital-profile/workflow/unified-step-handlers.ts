@@ -21,7 +21,7 @@ import {
   runUnifiedCollectionTick,
   type UnifiedOrchestratorDeps,
 } from "../services/unified-orion-collection-orchestrator";
-import { STAGE_OWNER, UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
+import { STAGE_OWNER, UNIFIED_PIPELINE, failedStepWillRetry, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
@@ -289,8 +289,22 @@ export async function reconcileStageAfterStep(step: WorkflowStepRow): Promise<vo
       settled?.state === "DONE" || settled?.state === "SKIPPED";
     const failureInvolved =
       drift.derivedStage.startsWith("FAILED") || drift.storedStage.startsWith("FAILED");
+    /*
+     * Шаг, который больше не проснётся, — тоже граница.
+     *
+     * Исключение «отказы не трогаем» защищает **смысл** отказа: какой код и
+     * что произошло, знают обработчики стадий, и переписывать это здесь
+     * вслепую нельзя. Но стадия отвечает и на второй вопрос — «вернётся ли
+     * конвейер сам», — а он выводится из строки шага: срок не назначен, значит
+     * никто не проснётся. Джоба, продолжающая называть себя возобновляемой,
+     * обещает оператору то, чего не будет, и последняя строка лога владельца
+     * (`workflow-stage-drift:FAILED_RETRYABLE!=FAILED_TERMINAL`) — про это.
+     *
+     * Код и текст отказа при этом не трогаются: патч несёт только стадию.
+     */
+    const spent = settled?.state === "FAILED" && !failedStepWillRetry(settled);
 
-    if (boundary && !failureInvolved) {
+    if ((boundary && !failureInvolved) || spent) {
       console.warn(
         `[workflow] стадия джобы ${job.unifiedJobId} приведена к шагам: ` +
           `${drift.storedStage} → ${drift.derivedStage}`
