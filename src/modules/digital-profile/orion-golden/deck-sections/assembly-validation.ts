@@ -12,6 +12,8 @@ import { CANONICAL_SLOT_IDS, type VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
+import { normalizeForCompare } from "./text-compare";
+import { withoutFindingMarkers } from "./slide-markers";
 import { SERP_TABLE_TOP_N, rankSourceBelongsToEngine } from "./fragment-builders/serp";
 import { sameSerpQuery } from "./fragment-builders/shared";
 import { serpMaterialKey } from "../../serp-observation/material-key";
@@ -89,7 +91,8 @@ const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3
  * Дефекты текста (разорванная цитата, внутренний код, панель, спорящая с
  * текстом) блокируют по существенности: эвристика ошибается на живых данных, и
  * единичный случай не должен ронять оплаченный прогон. Структурные — с первой
- * страницы: таблица без строк законной не бывает.
+ * страницы: таблица без строк законной не бывает, и один и тот же текст дважды
+ * на странице тоже.
  *
  * Отдельной функцией, чтобы пороги можно было проверить в лоб, не собирая ради
  * этого манифест с пакетами и находками.
@@ -101,6 +104,8 @@ export function blockingIssues(input: {
   codes?: ReadonlySet<string>;
   /** Страницы, чей текст спорит с нарисованной на них панелью. */
   panelMismatchSlides?: ReadonlySet<string>;
+  /** Страницы, напечатавшие один и тот же блок текста дважды. */
+  repeatedTextSlides?: ReadonlySet<string>;
   /** Страницы, объявившие таблицу без единой строки. */
   emptyTableSlides?: ReadonlySet<string>;
 }): string[] {
@@ -143,6 +148,26 @@ export function blockingIssues(input: {
   const panels = input.panelMismatchSlides ?? new Set<string>();
   if (panels.size >= SYSTEMIC_DEFECT_PAGES) {
     out.push(`панели не сходятся с текстом на ${panels.size} страницах: ${name(panels)}`);
+  }
+  /*
+   * Повтор блока блокирует с первой же страницы, а не с порога в три.
+   *
+   * Порог существенности заведён для эвристик, которые ошибаются на живых
+   * данных. Здесь ошибаться нечему: сравниваются два блока одной страницы,
+   * страницы с сырыми строками провайдера исключены, и ложных срабатываний на
+   * обоих эталонах ноль. Зато цена пропуска высокая — на живом пути читается
+   * только `blocking`, поэтому при пороге в три отчёт с дублем на одной
+   * странице уезжал бы клиенту, а жаловался владелец ровно на один слайд.
+   * Отказ при этом дешёвый: пакеты секций лежат в кэше, и пересборка не платит
+   * за стадии GPT заново.
+   */
+  const repeatedText = input.repeatedTextSlides ?? new Set<string>();
+  if (repeatedText.size > 0) {
+    out.push(
+      `один и тот же текст напечатан дважды на ${repeatedText.size} ` +
+        `${pluralRu(repeatedText.size, "странице", "страницах", "страницах")}: ` +
+        `${name(repeatedText)}`
+    );
   }
   /*
    * Таблица без строк блокирует с первой же страницы, а не с третьей.
@@ -649,6 +674,75 @@ export function validateAssembly(input: {
   }
   checks.quotesWholeAndSourced = quoteIntegrityOk;
 
+  /*
+   * 4в. Страница не печатает один и тот же текст дважды.
+   *
+   * Замечание владельца с живого прогона — «дублируется текст на одном
+   * слайде», — и вручную такое не правится: ловить обязан ворот, а не читатель
+   * готового отчёта.
+   *
+   * Сравниваются все блоки страницы, которые видит клиент: абзац, пункты
+   * списка и ссылка на источник. Одних `bullets` мало — форма «абзац повторяет
+   * первый пункт» до клиента доезжала (§«Абзац страницы печатается один раз»),
+   * а на карточной странице матрицы рисков пункты печатаются вовсе не списком,
+   * а плитками тем. Поля `whatWasFound`/`whyItMatters`/`whatToCheck` в перечень
+   * не входят намеренно: их склеивает в абзац `composeFindingProse`, и он же
+   * снимает предложения, уже сказанные абзацем или пунктом, — ответ на этот
+   * вопрос там один и повторять его здесь нельзя.
+   *
+   * Сравнение нормализованное, а не побайтовое: один и тот же блок два
+   * построителя печатают по-разному. `p03_executive` даёт «Криминальные /
+   * судебные материалы» в ёлочках, `p05_profile_dashboard` — без них;
+   * побайтово это разные строки, для читателя — одна. Линейка берётся общая
+   * (`normalizeForCompare`): ею же меряют повтор сборка деки и вычистка
+   * присказок, а вторая линейка «одинаковости текста» — второй ответ на один
+   * вопрос.
+   *
+   * Страницы, где строки — данные провайдера, а не наша проза, исключены тем
+   * же предикатом, что и у соседей (`isDataRowTemplate`): подсказка Google,
+   * дословно совпавшая с подсказкой Яндекса, — два факта, а не повтор, и
+   * вычистка таких строк однажды оставила на странице три запроса из десяти,
+   * нарисованных на панели. Заодно это снимает строки таблиц: две строки
+   * выдачи с одинаковым заголовком законны, их различает адрес под строкой.
+   */
+  const repeatedTextSlides = new Set<string>();
+  let anyPageComparable = false;
+  for (const slide of rendererSlides) {
+    if (isDataRowTemplate(templateBySlot.get(slide.slideKey) ?? "")) continue;
+    const printed = [slide.narrative, ...(slide.bullets ?? []), slide.sourceNote]
+      .map((block) => withoutFindingMarkers(String(block ?? "")))
+      .filter((block) => block.length > 0);
+    if (printed.length >= 2) anyPageComparable = true;
+    const seen = new Set<string>();
+    for (const block of printed) {
+      // Блок, от которого после нормализации не осталось ни слова (одно тире,
+      // многоточие), текстом клиенту не виден: считать такие дублем значило бы
+      // краснеть на вёрстке, а не на повторе.
+      const key = normalizeForCompare(block);
+      if (!key) continue;
+      if (seen.has(key)) {
+        repeatedTextSlides.add(slide.slideKey);
+        issues.push(
+          `repeated text on ${slide.slideKey}: ${block.replace(/\s+/gu, " ").slice(0, 90)}`
+        );
+        continue;
+      }
+      seen.add(key);
+    }
+  }
+  if (!anyPageComparable) {
+    // Ворот без входа выглядит точно так же, как пройденный, поэтому ключа в
+    // `checks` не появляется вовсе, а пропуск называется строкой. Вход — это
+    // страница минимум с двумя блоками: на странице с одним ворот проходит
+    // тривиально и не означает ничего.
+    skipped.push(
+      "проверка «страница не печатает один и тот же текст дважды» пропущена: " +
+        "ни на одной странице деки нет двух блоков клиентского текста"
+    );
+  } else {
+    checks.noRepeatedTextOnPage = repeatedTextSlides.size === 0;
+  }
+
   // 5. Explicit page accounting: every page is a canonical base slot, a
   //    continuation, or an explained optional extra.
   const accountedExtra = new Set(deckManifest.nonCanonicalPages.map((p) => p.slideId));
@@ -901,6 +995,7 @@ export function validateAssembly(input: {
     codeSlides: new Set(internalCodes.map((f) => f.slide)),
     codes: new Set(internalCodes.map((f) => f.code)),
     panelMismatchSlides,
+    repeatedTextSlides,
     emptyTableSlides,
   });
 

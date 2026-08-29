@@ -14,3 +14,15 @@
  * снимка. Модуль, который считает такую страницу пустой, теряет содержимое.
  */
 export const VISUAL_ASSET_UNAVAILABLE = "VISUAL_ASSET_UNAVAILABLE" as const;
+
+/**
+ * Маркер находки в клиентском тексте: `[finding-…]`.
+ *
+ * До клиента он не доходит — `toRendererPayload` снимает его с каждого блока,
+ * — поэтому всякое сравнение «одинаково ли это для читателя» обязано снимать
+ * его тоже: две строки, различающиеся только идентификатором находки, читаются
+ * как одна строка дважды.
+ */
+export function withoutFindingMarkers(text: string): string {
+  return text.replace(/\s*\[finding-[^\]]+\]/gu, "").trim();
+}

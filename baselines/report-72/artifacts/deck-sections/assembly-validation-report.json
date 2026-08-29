@@ -22,6 +22,7 @@
     "noMateriallyEmptyPages": true,
     "declaredTablesHaveRows": true,
     "quotesWholeAndSourced": true,
+    "noRepeatedTextOnPage": true,
     "pageAccountingComplete": true,
     "sidebarScopeSubsets": true,
     "regionScopeIsolation": true,
