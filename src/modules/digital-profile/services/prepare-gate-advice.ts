@@ -24,6 +24,15 @@ const DETERMINISTIC_GATES = [
   "MATERIAL_THEME_COVERAGE",
   "P1_P2_ACCOUNTED",
   "SEMANTIC_EXCERPT_TRUNCATIONS",
+  // Абзац не влез в лист и текст, выброшенный резаком абзацев: те же пакеты
+  // секций дают тот же текст и ту же длину, поэтому второй заход подготовки
+  // получит ровно тот же ответ — а стоит он четырёх стадий модели.
+  //
+  // Метит эти отказы `prepareBlockedErrorFor`, и только он: тот же код
+  // `ASSEMBLY_QA_FAILED` выдают ворота сборки, а часть их проверок читает
+  // текст модели, и там повтор законен. Признак стоит на отказе, а не на коде.
+  "NARRATIVE_OVER_BUDGET",
+  "NARRATIVE_REFLOW_LOSS",
 ] as const;
 
 export type DeterministicGate = (typeof DETERMINISTIC_GATES)[number];
@@ -41,14 +50,49 @@ export function isDeterministicPrepareGate(message: string | null | undefined): 
 }
 
 /**
+ * Страницы, названные в тексте отказа.
+ *
+ * Оба отказа сборки печатают их первым словом каждого куска, разделяя куски
+ * точкой с запятой: `<лист> [<шаблон>] 1013>998; <лист> …`. Оператору нужна
+ * именно страница — по ней он находит место в отчёте.
+ */
+function pagesNamedIn(message: string): string[] {
+  const body = message.slice(message.indexOf(":") + 1);
+  return body
+    .split(";")
+    .map((part) => part.trim().split(/\s+/u)[0] ?? "")
+    .filter((token) => /^[a-z0-9_]+$/iu.test(token));
+}
+
+/** «страница p13» или «страницы p13, p29» — без этого фраза не согласуется. */
+function pagesPhrase(message: string | null | undefined): { subject: string; verb: string } {
+  const pages = pagesNamedIn(String(message ?? ""));
+  if (pages.length === 0) return { subject: "абзац страницы отчёта", verb: "не помещается" };
+  if (pages.length === 1) return { subject: `абзац страницы ${pages[0]}`, verb: "не помещается" };
+  return { subject: `абзацы страниц ${pages.join(", ")}`, verb: "не помещаются" };
+}
+
+/** Общий хвост совета: что цело и что делать дальше. */
+const DATA_INTACT_TAIL =
+  "Собранные данные целы, платить за сбор заново не нужно; " +
+  "после исправления доступна кнопка «Пересобрать отчёт».";
+
+/**
  * Что делать оператору вместо повтора.
  *
  * Совет обязан быть выполнимым: «повторите» здесь — неправда, а «обратитесь к
  * разработчику» — отписка. Поэтому называется конкретное действие, меняющее
  * входные данные.
+ *
+ * `default` здесь нет намеренно: `switch` исчерпывающий по `DeterministicGate`,
+ * и имя, добавленное в список гейтов без ветки совета, **не скомпилируется**.
+ * Иначе пропуск невидим ни компилятору, ни тесту, а оператор читает машинный
+ * маркер первой строкой.
  */
 export function prepareGateAdvice(message: string | null | undefined): string | null {
-  switch (deterministicGateOf(message)) {
+  const gate = deterministicGateOf(message);
+  if (!gate) return null;
+  switch (gate) {
     case "MATERIAL_THEME_COVERAGE":
       return (
         "Тема повышенного внимания осталась без материала, надёжно отнесённого к субъекту. " +
@@ -66,8 +110,18 @@ export function prepareGateAdvice(message: string | null | undefined): string | 
         "Цитаты в резюме обрываются на середине мысли. Повтор сборки это не изменит: " +
         "нужна правка правил формирования цитат."
       );
-    default:
-      return null;
+    case "NARRATIVE_OVER_BUDGET": {
+      const { subject, verb } = pagesPhrase(message);
+      return `Отчёт не собрался: ${subject} ${verb} на лист. ${DATA_INTACT_TAIL}`;
+    }
+    case "NARRATIVE_REFLOW_LOSS": {
+      const pages = pagesNamedIn(String(message ?? ""));
+      const where = pages.length > 0 ? ` (${pages.join(", ")})` : "";
+      return (
+        `Отчёт не собрался: при разбивке абзаца на страницы часть текста была бы ` +
+        `потеряна${where}. ${DATA_INTACT_TAIL}`
+      );
+    }
   }
 }
 

@@ -30,6 +30,7 @@ import {
   patchUnifiedCollectionJob,
   unifiedJobDir,
 } from "@/modules/digital-profile/services/unified-collection-job-store";
+import { recordParkedDeckVersion } from "@/modules/digital-profile/services/parked-deck-version";
 import { seedUnifiedRebuildInputs } from "../fixtures/unified-rebuild-inputs";
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
 
@@ -51,6 +52,13 @@ async function jobWith(patch: Partial<UnifiedCollectionJob>): Promise<UnifiedCol
     completedAt: new Date().toISOString(),
     ...seed,
     ...patch,
+    /*
+     * Прогон, вставший на отказе, несёт версию деки, при которой это случилось:
+     * с шага 0039 замок пересборки держит, только пока она равна нынешней —
+     * иначе он переживал бы выкат исправления и оставлял прогон без кнопок
+     * навсегда. Здесь состояние «код с тех пор не менялся».
+     */
+    warnings: recordParkedDeckVersion(patch.warnings ?? []),
   });
   return await loadUnifiedCollectionJob(CASE);
 }

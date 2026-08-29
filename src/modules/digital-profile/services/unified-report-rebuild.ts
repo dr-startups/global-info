@@ -27,6 +27,7 @@ import type {
 import type { CompositeMergeResult } from "./composite-serp-merge";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import { autoResumeState } from "../workflow/auto-resume";
+import { parkedOnCurrentDeckVersion } from "./parked-deck-version";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { stripGptCopyFromSectionPacksOnDisk } from "../orion-golden/deck-sections/run-deck-build";
 
@@ -307,11 +308,21 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
 /** Отметка неудачной попытки пересборки: код отказа той попытки. */
 export const REBUILD_FAILED_MARKER_PREFIX = "report-rebuild-failed:";
 
-/** Провалилась ли пересборка ровно тем же кодом, что несёт прогон сейчас. */
+/**
+ * Провалилась ли пересборка ровно тем же кодом, что несёт прогон сейчас, —
+ * **и с тех пор ничего не изменилось**.
+ *
+ * Отметку отказа не снимает никто, поэтому без второго условия замок переживал
+ * выкат исправления: прогон, которому нажали «Пересобрать отчёт» до правки,
+ * оставался без единой кнопки навсегда. Версия деки отвечает на «изменилось
+ * ли»: она же ключ кэша пакетов, то есть ровно то, что делает следующую
+ * пересборку осмысленной.
+ */
 function rebuildAlreadyFailedTheSameWay(job: UnifiedCollectionJob): boolean {
   const code = String(job.lastErrorCode ?? "").trim();
   if (!code) return false;
-  return (job.warnings ?? []).includes(`${REBUILD_FAILED_MARKER_PREFIX}${code}`);
+  if (!(job.warnings ?? []).includes(`${REBUILD_FAILED_MARKER_PREFIX}${code}`)) return false;
+  return parkedOnCurrentDeckVersion(job.warnings);
 }
 
 /**

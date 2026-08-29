@@ -101,7 +101,8 @@ import {
   type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
-import { prepareGateFailureMessage } from "./prepare-gate-advice";
+import { isDeterministicPrepareGate, prepareGateFailureMessage } from "./prepare-gate-advice";
+import { recordParkedDeckVersion } from "./parked-deck-version";
 import {
   deriveEnrichmentProgress,
   detectEnrichmentProgressDrift,
@@ -1744,6 +1745,22 @@ async function stepPrepare(
       code === "ASSEMBLY_QA_FAILED" ||
       /required sections failed/i.test(message);
     const assemblySparse = isAssemblyFailure && linkageIncomplete;
+    /*
+     * Отказ, который повтор не лечит, автоматически не повторяется.
+     *
+     * Круг повтора платный: `resumeCheckpoint: ASSEMBLY` означает
+     * `resumeFrom: "full"`, то есть каждая попытка заново вызывает модель на
+     * стадиях 1, 1.5, 2 (принудительно) и 3, а бюджет отказов шага — десять.
+     * Два прогона владельца так и крутились на детерминированном дефекте
+     * сборки: те же пакеты дают тот же текст и ту же длину.
+     *
+     * Спрашивается тот же предикат, которым уже пользуется восстановление, —
+     * иначе на один вопрос отвечали бы дважды и по-разному: автоматика
+     * «повторяем» списком кодов, кнопка «не поможет» по маркеру гейта. Код
+     * здесь ни при чём: `ASSEMBLY_QA_FAILED` выдают и ворота сборки, часть
+     * которых читает текст модели, и им повтор оставлен.
+     */
+    const retryWouldRepeatItself = isDeterministicPrepareGate(message);
 
     if (code === "RENDER_FAILED") {
       return await failRetryable(job, "RENDER_FAILED", message, [
@@ -1760,14 +1777,14 @@ async function stepPrepare(
 
     // Assembly/section QA failures are retryable when collection data is intact
     // (live §3.2 regression: uncategorized refs → RU/UAE SUMMARY FAILED).
-    if (isAssemblyFailure && !linkageIncomplete) {
+    if (isAssemblyFailure && !linkageIncomplete && !retryWouldRepeatItself) {
       return await failRetryable(job, code, message, [
         "CANONICAL_PREPARE_BLOCKED",
         "retryable-assembly-failure",
       ]);
     }
 
-    if (linkageIncomplete || assemblySparse) {
+    if ((linkageIncomplete || assemblySparse) && !retryWouldRepeatItself) {
       return await failRetryable(
         job,
         assemblySparse ? "ASSEMBLY_INCOMPLETE_ENRICHMENT" : code,
@@ -1776,7 +1793,19 @@ async function stepPrepare(
       );
     }
 
-    const restored = await restoreAfterFailedRebuild(job, code, message);
+    /*
+     * Прогон паркуется — и вместе с ним записывается версия деки, на которой он
+     * встал. По ней замки («Возобновить» и «Пересобрать отчёт») отличают
+     * «повтор даст то же самое» от «код с тех пор изменился»; без неё они
+     * переживали выкат исправления и оставляли оплаченный прогон мёртвым.
+     *
+     * Запись делается один раз здесь, до развилки: обе ветки парковки —
+     * возврат после неудавшейся пересборки и терминальный патч — уносят её с
+     * собой.
+     */
+    const parked = { ...job, warnings: recordParkedDeckVersion(job.warnings) };
+
+    const restored = await restoreAfterFailedRebuild(parked, code, message);
     if (restored) return restored;
 
     return (
@@ -1789,7 +1818,7 @@ async function stepPrepare(
         lastError: prepareGateFailureMessage(message),
         lastErrorCode: code,
         completedAt: new Date().toISOString(),
-        warnings: [...job.warnings, "CANONICAL_PREPARE_BLOCKED"],
+        warnings: [...parked.warnings, "CANONICAL_PREPARE_BLOCKED"],
       }) ?? job
     );
   }

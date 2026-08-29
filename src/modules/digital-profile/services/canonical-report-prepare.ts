@@ -182,8 +182,30 @@ export function prepareBlockedErrorFor(err: unknown): CanonicalPrepareBlockedErr
   if (err instanceof BulletFitNotConvergedError) {
     return new CanonicalPrepareBlockedError("CONTENT_DROPPED_BY_RENDERER", err.message);
   }
-  if (err instanceof NarrativeOverBudgetError || err instanceof NarrativeReflowLossError) {
-    return new CanonicalPrepareBlockedError("ASSEMBLY_QA_FAILED", err.message);
+  /*
+   * Оба отказа называют себя гейтом — маркером `<ИМЯ>=<число листов>` перед
+   * прежним текстом.
+   *
+   * Так в проекте уже отвечают на вопрос «лечится ли отказ подготовки
+   * повтором» (`prepare-gate-advice`), и отвечают именно строкой сообщения:
+   * кнопку восстановления считают из `job.lastError` уже после перезапуска
+   * процесса, когда объекта ошибки не существует. Поле на ошибке потребовало
+   * бы колонки в базе, а маркер попадает в строку джобы сам.
+   *
+   * Ставится он только здесь: тем же кодом отказывают ворота сборки, часть
+   * которых читает текст модели, — там повтор законен, и метить их нечем.
+   */
+  if (err instanceof NarrativeOverBudgetError) {
+    return new CanonicalPrepareBlockedError(
+      "ASSEMBLY_QA_FAILED",
+      `NARRATIVE_OVER_BUDGET=${err.slides.length} ${err.message}`
+    );
+  }
+  if (err instanceof NarrativeReflowLossError) {
+    return new CanonicalPrepareBlockedError(
+      "ASSEMBLY_QA_FAILED",
+      `NARRATIVE_REFLOW_LOSS=${err.slides.length} ${err.message}`
+    );
   }
   return null;
 }

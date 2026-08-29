@@ -27,7 +27,7 @@ import {
   loadReusableAssembledDeck,
   type AssembledDeckReuseResult,
 } from "./canonical-report-prepare";
-import { isDeterministicPrepareGate } from "./prepare-gate-advice";
+import { prepareRetryIsPointless } from "./parked-deck-version";
 import { evaluateLegacyRecoveryEligibility } from "./unified-recovery-legacy-heuristic";
 import {
   planResumeFromSteps,
@@ -223,6 +223,16 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
           recoveryReason: null,
         };
       case "resume":
+        // Шаги знают, **где** прогон встал, но не знают, лечится ли отказ
+        // повтором. «Та же подготовка» — это про `REPORT_PREPARE`: подводка
+        // Arsenkin подводит оплаченные наблюдения, а не повторяет сборку.
+        if (stepPlan.stepName === "REPORT_PREPARE" && prepareRetryIsPointless(job)) {
+          return {
+            recoveryAllowed: false,
+            recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
+            recoveryReason: null,
+          };
+        }
         return {
           recoveryAllowed: true,
           recoveryBlockerReason: null,
