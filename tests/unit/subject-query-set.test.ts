@@ -3,7 +3,6 @@ import {
   SUBJECT_QUERY_LIMIT,
   buildSubjectQuerySet,
   normalizeSubjectQuery,
-  subjectQuerySetClientLine,
 } from "@/modules/digital-profile/search-surfaces/subject-query-set";
 
 const PROFILE = {
@@ -131,20 +130,6 @@ describe("buildSubjectQuerySet", () => {
       capturedAt: AT,
     });
     expect(set.queries[1]?.query).toBe("sergei glinka biography");
-  });
-
-  it("клиентская строка называет запросы и дату", () => {
-    const set = buildSubjectQuerySet({
-      profile: PROFILE,
-      suggestions: [suggestion("сергей глинка биография", 1)],
-      region: "RU",
-      language: "ru",
-      capturedAt: AT,
-    });
-    const line = subjectQuerySetClientLine(set);
-    expect(line).toContain("«Глинка Сергей Михайлович»");
-    expect(line).toContain("13.08.2026");
-    expect(line).not.toMatch(/suggestion|rank|origin/i);
   });
 
   it("нормализация схлопывает регистр, кавычки и пробелы", () => {

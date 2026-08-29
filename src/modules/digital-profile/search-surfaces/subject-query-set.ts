@@ -297,19 +297,3 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
     rejected,
   };
 }
-
-/** Клиентская строка: по каким запросам смотрели и на какую дату. */
-export function subjectQuerySetClientLine(set: SubjectQuerySet): string {
-  if (set.queries.length === 0) return "";
-  const list = set.queries.map((q) => `«${q.query}»`).join(", ");
-  const date = set.capturedAt.slice(0, 10).split("-").reverse().join(".");
-  return `Проверено ${set.queries.length} ${plural(set.queries.length)}: ${list}. По состоянию на ${date}.`;
-}
-
-function plural(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "запрос";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "запроса";
-  return "запросов";
-}
