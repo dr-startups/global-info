@@ -81,8 +81,10 @@ describe("строка счёта на региональной странице
     const claim = localizedThemedClaim(
       twoObservations,
       uaeScoped({
-        "ev-uae-q1": { ...material, url: "https://gulfnews.com/a?q=1" },
-        "ev-uae-q2": { ...material, url: "https://gulfnews.com/a?q=2" },
+        // Запрос живёт в ключе наблюдения, адрес страницы один — различаться
+        // может только написание: ключ материала читает адрес.
+        "ev-uae-q1": { ...material, url: "https://gulfnews.com/a" },
+        "ev-uae-q2": { ...material, url: "http://www.gulfnews.com/a/" },
       })
     );
     expect(claim).toContain("Всего по теме: 1 материал, с негативным контекстом — 1.");

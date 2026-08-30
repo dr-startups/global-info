@@ -8,6 +8,10 @@
  * полной выдачи из восьми строк. Поэтому утверждение одно — «позиции 1–8 из
  * ТОП-20», — а причину пропусков объясняет строка под таблицей.
  *
+ * Вход у глубины один — напечатанные позиции. Пока их было три (`positional`,
+ * `missing`, `printedRanks`), рассогласованный кадр печатал «ТОП-20» над
+ * таблицей из трёх строк и «позиции Infinity–-Infinity» над пустой.
+ *
  * Формулировку не исполняет ни один эталон: у золотого кейса таблицы полные,
  * у `report-72` — непозиционные. Сторожей два: этот юнит держит саму функцию,
  * а `serp-table-caption-tells-collected-range.test.ts` — проводку через
@@ -17,7 +21,6 @@
 import { describe, expect, it } from "vitest";
 import {
   SERP_TABLE_TOP_N,
-  missingSerpRanks,
   serpTablePageTitle,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import {
@@ -26,7 +29,7 @@ import {
   stripContinuationSuffix,
 } from "@/modules/digital-profile/orion-golden/deck-sections/continuation-slide";
 
-/** Позиционная таблица с собранными номерами: `missing` считает тот же помощник, что и построитель. */
+/** Таблица с собранными номерами: единственный вход — сами напечатанные позиции. */
 function positionalTitle(
   ranks: number[],
   extra: { engineLabel?: string | null; suffix?: string } = {}
@@ -34,23 +37,17 @@ function positionalTitle(
   return serpTablePageTitle({
     region: "Россия",
     engineLabel: extra.engineLabel === undefined ? "Google" : extra.engineLabel,
-    positional: true,
     printedRanks: ranks,
-    missing: missingSerpRanks(ranks),
     suffix: extra.suffix ?? "",
   });
 }
 
-/** Выдача без единой своей позиции: номера строк — порядок сбора, а не места. */
+/**
+ * Выдача без единой своей позиции: номера строк — порядок сбора, а не места.
+ * Отдельного поля у этого состояния нет — это пустой список позиций.
+ */
 function unrankedTitle(extra: { engineLabel?: string | null; suffix?: string } = {}): string {
-  return serpTablePageTitle({
-    region: "Россия",
-    engineLabel: extra.engineLabel === undefined ? "Google" : extra.engineLabel,
-    positional: false,
-    printedRanks: [],
-    missing: "",
-    suffix: extra.suffix ?? "",
-  });
+  return positionalTitle([], extra);
 }
 
 const FULL = Array.from({ length: SERP_TABLE_TOP_N }, (_, i) => i + 1);
@@ -74,11 +71,60 @@ describe("заголовок таблицы выдачи называет глу
     expect(positionalTitle([4, 6, 7, 8, 9, 10])).toBe("Россия — Google, позиции 4–10 из ТОП-20");
   });
 
+  it("диапазон считается по краям набора, а не по краям списка", () => {
+    /*
+     * Позиции приходят в порядке строк таблицы, и он не обязан быть
+     * возрастающим: строки сортирует построитель по своим правилам. Пока
+     * проверки подавали только упорядоченные наборы, правка «взять первый и
+     * последний элемент» проходила зелёной и печатала клиенту «позиции 9–4».
+     */
+    expect(positionalTitle([9, 4, 7])).toBe("Россия — Google, позиции 4–9 из ТОП-20");
+  });
+
   it("непозиционная таблица не получает ни глубины, ни диапазона", () => {
     const title = unrankedTitle();
     expect(title).toBe("Россия — Google: собранная выдача");
     expect(title).not.toContain("ТОП-");
     expect(title).not.toContain("позиции");
+  });
+});
+
+describe("глубину решает один вход", () => {
+  it("пустой список позиций печатает собранную выдачу, а не Infinity", () => {
+    // `Math.min(...[])` — это `Infinity`, и заголовок печатал клиенту
+    // «позиции Infinity–-Infinity из ТОП-20».
+    const title = positionalTitle([]);
+    expect(title).toBe("Россия — Google: собранная выдача");
+    expect(title).not.toContain("Infinity");
+    expect(title).not.toContain("NaN");
+    expect(title).not.toContain("позиции");
+  });
+
+  it("поля прежней сигнатуры ответа изменить не могут", () => {
+    /*
+     * Глубину решали три поля: `printedRanks`, `missing` и `positional`, — и
+     * рассогласованный кадр печатал «Россия — Google, ТОП-20» над таблицей из
+     * трёх строк либо «позиции Infinity–-Infinity» над пустой. Вход остался
+     * один; проверка кладёт старые поля со **спорящим** значением и требует,
+     * чтобы ответ шёл за позициями. Вернуть второй вход, не уронив её, нельзя.
+     */
+    const stale = (extra: Record<string, unknown>, ranks: number[]): string =>
+      serpTablePageTitle({
+        region: "Россия",
+        engineLabel: "Google",
+        printedRanks: ranks,
+        suffix: "",
+        ...extra,
+      } as unknown as Parameters<typeof serpTablePageTitle>[0]);
+    expect(stale({ positional: true, missing: "" }, [1, 2, 3])).toBe(
+      "Россия — Google, позиции 1–3 из ТОП-20"
+    );
+    expect(stale({ positional: false, missing: "" }, [1, 2, 3])).toBe(
+      "Россия — Google, позиции 1–3 из ТОП-20"
+    );
+    expect(stale({ positional: true, missing: "4–20" }, [])).toBe(
+      "Россия — Google: собранная выдача"
+    );
   });
 });
 

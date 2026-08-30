@@ -25,12 +25,15 @@ function scoped(evidenceIndex: Record<string, unknown>): ScopedFragmentInput {
 
 describe("сведение строк выдачи по материалу", () => {
   it("одна страница, найденная двумя запросами, — одна строка", () => {
+    // Запрос живёт в ключе наблюдения, а не в адресе страницы: у двух
+    // наблюдений одной страницы один адрес, различаться может только его
+    // написание — ключ материала читает адрес.
     const material = { title: "Суд по иску о взыскании", domain: "dzen.ru" };
     const merged = mergeSerpRowsByMaterial(
       ["ev-q1", "ev-q2"],
       scoped({
-        "ev-q1": { ...material, url: "https://dzen.ru/a?q=1" },
-        "ev-q2": { ...material, url: "https://dzen.ru/a?q=2" },
+        "ev-q1": { ...material, url: "https://dzen.ru/a" },
+        "ev-q2": { ...material, url: "http://www.dzen.ru/a/" },
       })
     );
     expect(merged).toHaveLength(1);

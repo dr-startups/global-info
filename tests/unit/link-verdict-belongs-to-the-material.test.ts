@@ -163,7 +163,10 @@ describe("у материала побеждает сильнейшее реше
 });
 
 describe("цитата не переезжает на чужой адрес", () => {
-  it("оценка материала общая, а дословная цитата остаётся у своего наблюдения", () => {
+  it("другая страница с тем же заголовком — другой материал, вердикт не переезжает", () => {
+    // Прежний ключ «домен|заголовок» склеивал эти две страницы в один материал,
+    // и оценка прочитанной доставалась чужой. Ключ читает адрес, и решение
+    // человека больше не расползается на страницу, которую никто не читал.
     const index = {
       "inventory:read": {
         url: "https://www.opensanctions.org/entities/Q55102113/",
@@ -188,13 +191,39 @@ describe("цитата не переезжает на чужой адрес", ()
     expect(index["inventory:read"]!.pageQuote).toBe(
       "Запись значится в санкционном реестре с 2023 года."
     );
-    // Оценка и тема — свойство материала, цитата — свойство прочитанной страницы.
-    expect(index["inventory:other-url"]!.readVerdictTone).toBe("adverse");
-    expect(index["inventory:other-url"]!.verdictTheme).toBe("Санкционный контур");
+    expect(index["inventory:other-url"]!.readVerdictTone).toBeUndefined();
+    expect(index["inventory:other-url"]!.verdictTheme).toBeUndefined();
     expect(index["inventory:other-url"]!.pageQuote).toBeUndefined();
   });
 
-  it("тот же адрес с трекинг-параметром цитату получает", () => {
+  it("тот же адрес с иначе обрезанным заголовком получает и вердикт, и цитату", () => {
+    // Ровно та запись, которой прежний ключ решение не отдавал: свой же адрес,
+    // но заголовок провайдер обрезал по-другому.
+    const index = {
+      "inventory:read": { url: URL, domain: "opensanctions.org", title: TITLE },
+      "inventory:same": {
+        url: "https://www.opensanctions.org/entities/Q55102113",
+        domain: "opensanctions.org",
+        title: "Umar Nazarovich Kremlev — sanctions list…",
+      },
+    } as unknown as Index;
+    applyLinkVerdictsToEvidence(index, [
+      {
+        evidenceRef: "inventory:read",
+        tone: "adverse",
+        subjectMatch: "subject",
+        quotes: [{ text: "Запись значится в санкционном реестре с 2023 года." }],
+      },
+    ]);
+    expect(index["inventory:same"]!.readVerdictTone).toBe("adverse");
+    expect(index["inventory:same"]!.pageQuote).toBe(
+      "Запись значится в санкционном реестре с 2023 года."
+    );
+  });
+
+  it("адрес с трекинг-параметром — другой материал: ни вердикта, ни цитаты", () => {
+    // Решение владельца 3A: метки отслеживания остаются частью ключа, второй
+    // список меток в дереве не заводится. Цена записана в опись пунктом EL.
     const index = {
       "inventory:read": { url: `${URL}?srsltid=abc`, domain: "opensanctions.org", title: TITLE },
       "inventory:same": { url: URL, domain: "opensanctions.org", title: TITLE },
@@ -207,8 +236,30 @@ describe("цитата не переезжает на чужой адрес", ()
         quotes: [{ text: "Запись значится в санкционном реестре с 2023 года." }],
       },
     ]);
-    expect(index["inventory:same"]!.pageQuote).toBe(
-      "Запись значится в санкционном реестре с 2023 года."
+    expect(index["inventory:same"]!.readVerdictTone).toBeUndefined();
+    expect(index["inventory:same"]!.pageQuote).toBeUndefined();
+  });
+
+  it("в заголовочной группе цитата остаётся у своего наблюдения", () => {
+    // Псевдоадрес настоящим адресом не является, и группу держит фраза; но
+    // дословная цитата обязана прослеживаться до наблюдения со своим адресом —
+    // на соседний хеш она не переезжает, хотя вердикт общий.
+    const index = {
+      "inventory:read": { url: "arsenkin://suggest/aaa111", title: "глинка сергей михайлович" },
+      "inventory:sibling": { url: "arsenkin://suggest/bbb222", title: "глинка сергей михайлович" },
+    } as unknown as Index;
+    applyLinkVerdictsToEvidence(index, [
+      {
+        evidenceRef: "inventory:read",
+        tone: "adverse",
+        subjectMatch: "subject",
+        quotes: [{ text: "Подсказка ведёт на публикации о судебном споре вокруг компании субъекта." }],
+      },
+    ]);
+    expect(index["inventory:sibling"]!.readVerdictTone).toBe("adverse");
+    expect(index["inventory:sibling"]!.pageQuote).toBeUndefined();
+    expect(index["inventory:read"]!.pageQuote).toBe(
+      "Подсказка ведёт на публикации о судебном споре вокруг компании субъекта."
     );
   });
 });

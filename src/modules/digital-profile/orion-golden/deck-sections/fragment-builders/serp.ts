@@ -206,7 +206,7 @@ const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
  * Пустая строка означает полную таблицу: подпись о потерях появляется только
  * там, где потери есть.
  */
-export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): string {
+export function missingSerpRanks(printed: readonly number[], topN = SERP_TABLE_TOP_N): string {
   const present = new Set(printed);
   const missing: number[] = [];
   for (let rank = 1; rank <= topN; rank += 1) if (!present.has(rank)) missing.push(rank);
@@ -226,6 +226,14 @@ export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): st
  * Печатается вычисленный диапазон, а не количество строк: на наборе
  * {4, 6, 7, 8, 9, 10} «собрано 6» и «позиции 4–10» — разные факты.
  *
+ * **Вход один — напечатанные позиции.** Пропущенные номера функция считает
+ * сама, а «есть ли у строк позиции» выводит из непустого списка. Пока полей
+ * было три, рассогласованный кадр печатал «Россия — Google, ТОП-20» над
+ * таблицей из трёх строк, а вырожденный (`positional: true` при пустом списке)
+ * — «позиции Infinity–-Infinity из ТОП-20»: `Math.min` пустого набора. На живом
+ * вызове оба снятых поля выводились из тех же `printedRanks`, поэтому ни одна
+ * собранная дека от этого не меняется — снимается возможность, а не поведение.
+ *
  * Формулировка живёт здесь и больше нигде, и эталоны её не исполняют: у
  * золотого кейса таблицы полные, у `report-72` — непозиционные. Сторожей два, и
  * они разные: `serp-table-title-names-the-range-once.test.ts` держит саму
@@ -242,16 +250,17 @@ export function serpTablePageTitle(input: {
   region: string;
   /** Поисковик, если его можно назвать клиенту. */
   engineLabel: string | null;
-  /** Номера строк — позиции выдачи, а не порядок сбора. */
-  positional: boolean;
-  /** Напечатанные позиции всей таблицы, а не одного её листа. */
+  /**
+   * Напечатанные позиции всей таблицы, а не одного её листа.
+   *
+   * Пустой список — выдача без единой своей позиции: номера строк там порядок
+   * сбора, а не места.
+   */
   printedRanks: readonly number[];
-  /** Ответ `missingSerpRanks`: пустая строка — таблица полная. */
-  missing: string;
   /** Номер листа цепочки вида « (1/2)» или пустая строка. */
   suffix: string;
 }): string {
-  const { region, engineLabel, positional, printedRanks, missing, suffix } = input;
+  const { region, engineLabel, printedRanks, suffix } = input;
   /*
    * «Движок назван?» — один вопрос, и ответ на него ниже один.
    *
@@ -265,11 +274,15 @@ export function serpTablePageTitle(input: {
    */
   const engine = engineLabel || null;
   const unrankedTail = engine ? ": собранная выдача" : "";
-  const depth = !positional
-    ? unrankedTail
-    : missing
-      ? `, позиции ${Math.min(...printedRanks)}–${Math.max(...printedRanks)} из ТОП-${SERP_TABLE_TOP_N}`
-      : `, ТОП-${SERP_TABLE_TOP_N}`;
+  // Пропущенные номера спрашиваются там же, где читаются: отдельная
+  // переменная под них означала бы, что «собраны ли позиции» решается дважды —
+  // при её вычислении и при выборе ветки.
+  const depth =
+    printedRanks.length === 0
+      ? unrankedTail
+      : missingSerpRanks(printedRanks)
+        ? `, позиции ${Math.min(...printedRanks)}–${Math.max(...printedRanks)} из ТОП-${SERP_TABLE_TOP_N}`
+        : `, ТОП-${SERP_TABLE_TOP_N}`;
   return `${region} — ${engine ?? "выдача"}${depth}${suffix}`;
 }
 
@@ -690,14 +703,7 @@ export function buildSerpFragment(
       // приходит меткой раздела, а «международный» — строчным.
       const region = regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
       pages.push({
-        title: serpTablePageTitle({
-          region,
-          engineLabel: label,
-          positional: table.positional,
-          printedRanks,
-          missing,
-          suffix,
-        }),
+        title: serpTablePageTitle({ region, engineLabel: label, printedRanks, suffix }),
         rows: rowChunks[i] ?? [],
         addresses: addressChunks[i] ?? [],
         printedRows: printedRowChunks[i] ?? [],

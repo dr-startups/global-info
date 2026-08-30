@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v147" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v148" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -434,7 +434,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v147" as const;
  * меняет классификацию, — но на живых данных правка меняет колонку «Оценка»
  * и состав рамок, то есть на исключение не претендует.
  */
-export const DECK_BUILDER_FINGERPRINT = "65e8deb4376a3125" as const;
+export const DECK_BUILDER_FINGERPRINT = "5b2c5a2d5d4830af" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -457,7 +457,7 @@ export const DECK_BUILDER_FINGERPRINT = "65e8deb4376a3125" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v147" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v148" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

@@ -28,11 +28,12 @@ function index(): ScopedEvidenceIndex {
       url: "https://finansbladet.se/a",
       region: "RU",
     },
-    // Тот же материал, найденный вторым запросом: домен и заголовок те же.
+    // Тот же материал, найденный вторым запросом: адрес тот же, различается
+    // только написание — ключ материала читает адрес.
     "inventory:obs-a-second-query": {
       title: "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
       domain: "finansbladet.se",
-      url: "https://finansbladet.se/a?utm=2",
+      url: "http://www.finansbladet.se/a/",
       region: "RU",
     },
     // Тот же сайт, другой материал.

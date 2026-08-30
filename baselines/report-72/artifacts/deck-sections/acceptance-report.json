@@ -23,6 +23,7 @@
     "serpTableRanksFromOwnEngine": true,
     "riskMatrixTelemetryPresent": true,
     "complianceRowsNameTheirBases": true,
+    "serpTableAddressesPrintedOnce": true,
     "noOtherSubjectInNeutralRows": true,
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,

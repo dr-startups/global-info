@@ -21,6 +21,7 @@ import { pluralRu } from "../../../report/i18n/plural-ru";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import { collapseEmptySurfaceSlots } from "../empty-surface-collapse";
 import {
+  adverseVisualSidebar,
   buildPageEvidenceView,
   clampClientText,
   countsTowardSubjectNegative,
@@ -213,6 +214,22 @@ export function buildRelatedQueriesFragment(
     }
     const pageRefs = rows.map((r) => r.ref);
     const view = buildPageEvidenceView(scoped, pageRefs);
+    /*
+     * Рамка на панели получает свою фразу — как у трёх соседних поверхностей.
+     *
+     * `buildSurfacePanelSvg` обводит негативную строку красным и ставит плашку
+     * «нежелательный», а объяснений эта страница не писала вовсе: рамка стояла
+     * без основания в документе, который читает сам субъект. Разбор общий на
+     * все поверхности (`adverseVisualSidebar`) — своей ветки здесь нет
+     * намеренно, второй ответ на «как строится объяснение» разошёлся бы с
+     * первым.
+     *
+     * Поле пишется только непустым: `highlightExplanations: []` и отсутствие
+     * ключа для рендерера одинаковы, но безусловное поле сдвинуло бы
+     * `contentHash` пакетов у страниц без негатива — там, где содержимое не
+     * изменилось.
+     */
+    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped);
     return visualSlide({
       slot,
       sectionId,
@@ -227,9 +244,20 @@ export function buildRelatedQueriesFragment(
           collected: collected.length,
           fromPanel: fromPanel.length > 0,
         }),
+        ...(sidebar.explanations.length ? { highlightExplanations: sidebar.explanations } : {}),
         sourceNote: pageSourceLine(view),
       },
-      evidenceRefs: pageRefs,
+      /*
+       * Доказательства страницы вбирают ссылки сайдбара — как у трёх соседних
+       * построителей. Строки страницы сводит `panelRows` по **тексту**
+       * заголовка, а объяснения `adverseVisualSidebar` — по **`ref`**: два
+       * связанных запроса с одинаковым текстом и разными записями дают одну
+       * строку и две фразы, и вторая называет домен, которого в
+       * доказательствах страницы нет. Ворот `sourceFooterFromSidebarEvidence`
+       * на этом краснеет по делу — клиент читает про домен, за который
+       * страница не отвечает.
+       */
+      evidenceRefs: [...new Set([...pageRefs, ...sidebar.gridRefs])],
       findingIds: view.findings.map((f) => f.findingId),
       metrics: {
         items: rows.length,

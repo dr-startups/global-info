@@ -36,6 +36,7 @@ import type {
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
+import { serpMaterialKey } from "../src/modules/digital-profile/serp-observation/material-key";
 import { evidenceRowVerdict } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import { panelRowWithOwnership } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
@@ -680,6 +681,13 @@ async function main(): Promise<void> {
     const contentPath = join(OUTPUT_ROOT, "content-report.json");
     writeFileSync(contentPath, JSON.stringify(contentReport, null, 2), "utf8");
 
+    // Повторы адресов считаются до карты ворот: провалившийся ворот обязан
+    // назвать страницы и адреса, а не только своё имя.
+    const repeatedAddresses = repeatedSerpTableAddresses(result.assembly.rendererSlides);
+    for (const repeat of repeatedAddresses) {
+      console.error(`  ПОВТОР АДРЕСА В ТАБЛИЦЕ: ${repeat}`);
+    }
+
     // Acceptance report: aggregated gate summary for this deck build.
     const acceptance = {
       version: "deck-sections-acceptance-v1",
@@ -732,6 +740,12 @@ async function main(): Promise<void> {
           result.assembly.rendererSlides,
           ANALYTICS_DIR
         ),
+        // Один адрес — одна строка таблицы своего движка. Деку без единой
+        // полосы адреса ворота считают непроверенной: пропуск громче прохода.
+        serpTableAddressesPrintedOnce:
+          result.assembly.rendererSlides.some((s) =>
+            (s.table?.rowAddresses ?? []).some((a) => String(a ?? "").trim())
+          ) && repeatedAddresses.length === 0,
         // Строка о другом лице печатается с пометкой на всех поверхностях,
         // кроме приложения: без неё запрос про композитора-однофамильца
         // читается как запрос о субъекте.
@@ -810,6 +824,52 @@ async function main(): Promise<void> {
  * наблюдений — если считать его по выходу построителя, ворота подтвердят любую
  * поломку сами себе. Отсутствие входа — отказ, а не пропуск.
  */
+/**
+ * Повторно напечатанные адреса в таблицах выдачи.
+ *
+ * Единственный сторож работы «ключ материала предпочитает адрес» на уровне
+ * напечатанного: юниты ключа видят пары ключей, но не видят таблицу, и возврат
+ * заголовочного приоритета вернул бы шесть пар строк «Россия — Яндекс» молча —
+ * по закоммиченным пакетам такой проверке считать нельзя, по свежесобранной
+ * деке можно и нужно. Единица — таблица одного движка одного региона
+ * (`sectionKey|serpEngine`): между движками и регионами один адрес законен,
+ * у каждой таблицы своя выдача. Сравнение — тем же ключом, каким строки сводит
+ * сама таблица (`serpMaterialKey`): два написания одного адреса — одна строка,
+ * как бы их ни напечатали.
+ */
+export function repeatedSerpTableAddresses(
+  rendererSlides: ReadonlyArray<{
+    slideKey?: string;
+    sectionKey?: string;
+    metrics?: Record<string, unknown>;
+    table?: { rows: string[][]; rowAddresses?: string[] } | null;
+  }>
+): string[] {
+  const repeats: string[] = [];
+  const firstPrinted = new Map<string, string>();
+  for (const slide of rendererSlides) {
+    const addresses = slide.table?.rowAddresses ?? [];
+    if (addresses.length === 0) continue;
+    const tableId = `${String(slide.sectionKey ?? "")}|${String(slide.metrics?.serpEngine ?? "")}`;
+    for (const raw of addresses) {
+      const printed = String(raw ?? "").trim();
+      // Пустая полоса адреса — отдельная беда (её ловит сверка печати с
+      // наблюдениями), но не повтор: две строки без адреса не «одна страница».
+      if (!printed) continue;
+      const key = `${tableId}|${serpMaterialKey({ url: printed })}`;
+      const first = firstPrinted.get(key);
+      if (first === undefined) {
+        firstPrinted.set(key, printed);
+        continue;
+      }
+      repeats.push(
+        `${String(slide.slideKey ?? "")}: адрес «${printed}» уже напечатан в этой таблице (${first})`
+      );
+    }
+  }
+  return repeats;
+}
+
 export function complianceRowsNameTheirBases(
   rendererSlides: ReadonlyArray<{
     baseSlotId?: string;

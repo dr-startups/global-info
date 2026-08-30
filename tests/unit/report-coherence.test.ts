@@ -233,10 +233,12 @@ describe("C11 — пустая поверхность не отвечает за
 describe("D7 — одна страница выдачи это одна строка таблицы", () => {
   const scoped = {
     evidenceIndex: {
+      // Повторное наблюдение — тот же адрес: ключ материала читает адрес, а
+      // написание (схема, `www.`, хвостовой слэш) различать ключи не должно.
       a: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "https://ru.wikipedia.org/wiki/x" },
-      b: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "https://ru.wikipedia.org/wiki/x?utm=1" },
+      b: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "http://ru.wikipedia.org/wiki/x/" },
       c: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://youtube.com/watch?v=1" },
-      d: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://youtube.com/watch?v=1&t=2" },
+      d: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://www.youtube.com/watch?v=1" },
       e: { domain: "forbes.ru", title: "Павел Дуров", url: "https://forbes.ru/1" },
     },
   } as never;
@@ -270,7 +272,7 @@ describe("D7 — одна страница выдачи это одна стро
     );
   });
 
-  it("без заголовка материал опознаётся по адресу", () => {
+  it("материал опознаётся по адресу, и написание адреса ключа не меняет", () => {
     expect(serpMaterialKey({ domain: "rbc.ru", url: "https://rbc.ru/a/" })).toBe(
       serpMaterialKey({ domain: "rbc.ru", url: "http://www.rbc.ru/a" })
     );
