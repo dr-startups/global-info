@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pythonInterpreter } from "./lib/python";
+import { pagesDirectoryMismatch } from "./lib/deck-pages";
 import {
   loadDeckInputsFromAnalyticsDir,
   runDeckBuildMeasured,
@@ -767,6 +768,9 @@ async function main(): Promise<void> {
           result.assembly.rendererSlides,
           (page) => pdfPageTexts[page - 1] ?? ""
         ),
+        // Число страниц меряется декой, а не числом файлов: каталог
+        // дописывается, и пропавшая страница вместе с лишней давали прежний
+        // счёт при зелёном вороте (замер: `page-13.png` → `page-99.png`).
         pageParity: (() => {
           if (!existsSync(pdfPath)) return false;
           const pdfPages = Number(
@@ -776,11 +780,12 @@ async function main(): Promise<void> {
               { encoding: "utf8" }
             ).trim()
           );
-          const pngPages = readdirSync(pagesDir).filter((f) => f.endsWith(".png")).length;
-          return (
-            pdfPages === result.assembly.deckManifest.pageCount &&
-            pngPages === result.assembly.deckManifest.pageCount
+          const pagesComplaint = pagesDirectoryMismatch(
+            readdirSync(pagesDir),
+            result.assembly.deckManifest.pageCount
           );
+          if (pagesComplaint) console.log(`pageParity: ${pagesComplaint}`);
+          return pdfPages === result.assembly.deckManifest.pageCount && pagesComplaint === null;
         })(),
       },
       notes: [

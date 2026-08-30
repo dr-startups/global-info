@@ -36,6 +36,7 @@ import {
   type GptDeckComposition,
 } from "./gpt-deck-composer";
 import { applyExecutiveFreshnessChangeToPacks } from "./fragment-builders";
+import { boolSetting } from "../../config/defaults";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 
@@ -109,14 +110,23 @@ export type GptDeckBuildResult = DeckBuildResult & {
   gptComposition?: GptDeckComposition | null;
 };
 
-/** Stage-3 editor is on by default with a GPT layer; ORION_GPT_DECK_EDITOR=0 disables. */
-function deckEditorEnabled(): boolean {
-  return String(process.env.ORION_GPT_DECK_EDITOR ?? "1") !== "0";
+/**
+ * Stage-3 editor; on by default with a GPT layer, ORION_GPT_DECK_EDITOR=0 off.
+ *
+ * The default lives in `config/defaults.ts` and is read by the shared
+ * `boolSetting`. The local parser understood exactly one word for «off» (`0`),
+ * so a deliberate `ORION_GPT_DECK_EDITOR=false` left the stage running; and the
+ * setting itself is not a secret, so the environment is the wrong home for it.
+ */
+export function deckEditorEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return boolSetting("ORION_GPT_DECK_EDITOR", env);
 }
 
-/** Stage-1.5 composer is on by default with a GPT layer; ORION_GPT_DECK_COMPOSER=0 disables. */
-function deckComposerEnabled(): boolean {
-  return String(process.env.ORION_GPT_DECK_COMPOSER ?? "1") !== "0";
+/** Stage-1.5 composer; same default and same shared parser as the editor. */
+export function deckComposerEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return boolSetting("ORION_GPT_DECK_COMPOSER", env);
 }
 
 export async function runDeckBuildWithGptCopy(input: {

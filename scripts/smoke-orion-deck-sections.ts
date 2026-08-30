@@ -58,6 +58,7 @@ import type {
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
 import { findPythonInterpreter } from "./lib/python";
+import { pagesDirectoryMismatch } from "./lib/deck-pages";
 
 const inputs = loadReport72DeckInputs();
 
@@ -831,8 +832,9 @@ describe("rendered artifacts parity", () => {
           "import fitz",
           "pptx_n = len(Presentation(sys.argv[1]).slides)",
           "pdf_n = fitz.open(sys.argv[2]).page_count",
-          "png_n = len(glob.glob(sys.argv[3] + '/page-*.png'))",
-          "print(json.dumps({'pptx': pptx_n, 'pdf': pdf_n, 'png': png_n}))",
+          // Имена, а не счёт: какая страница пропала, по числу не видно.
+          "names = [p.rsplit('/', 1)[-1] for p in glob.glob(sys.argv[3] + '/*.png')]",
+          "print(json.dumps({'pptx': pptx_n, 'pdf': pdf_n, 'png': names}))",
         ].join("\n"),
         pptx,
         pdf,
@@ -843,14 +845,16 @@ describe("rendered artifacts parity", () => {
     const counts = JSON.parse(out.trim().split("\n").pop()!) as {
       pptx: number;
       pdf: number;
-      png: number;
+      png: string[];
     };
     const deckManifest = JSON.parse(
       readFileSync(join(root, "report-deck-manifest.json"), "utf8")
     ) as { pageCount: number };
     assert.equal(counts.pptx, deckManifest.pageCount);
     assert.equal(counts.pdf, deckManifest.pageCount);
-    assert.equal(counts.png, deckManifest.pageCount);
+    // Не счёт файлов: каталог дописывается, и пропавшая страница вместе с
+    // лишней сохраняли число — подтест оставался зелёным (замер 30.08).
+    assert.equal(pagesDirectoryMismatch(counts.png, deckManifest.pageCount), null);
   });
 
   it("NETWORK_CALLS=0: deck-sections modules make no network/LLM calls", () => {

@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PIL import Image, ImageDraw  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
+from smoke_ts_constants import ts_int  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from orion_golden_render.common import FONT, TYPE_SCALE_PT  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
@@ -125,6 +126,117 @@ def render_matrix_page(cards: list[dict]) -> bytes | None:
     if not pages or out.get("pdfExportMode") != "libreoffice":
         return None
     return base64.b64decode(pages[0]["contentBase64"])
+
+
+#: Сколько знаков построитель отдаёт одному объяснению панели
+#: (`SIDEBAR_HIGHLIGHT_BUDGET` реестра шаблонов). Число читается из TypeScript:
+#: второго ответа о бюджете здесь заводить нельзя.
+SIDEBAR_HIGHLIGHT_BUDGET = ts_int(
+    Path(__file__).resolve().parent.parent
+    / "src/modules/digital-profile/orion-golden/deck-sections/template-registry.ts",
+    r"export const SIDEBAR_HIGHLIGHT_BUDGET = (\d+);",
+)
+
+
+def _padded(text: str, length: int) -> str:
+    """Фраза ровно объявленной длины — худший законный случай, а не типичный."""
+    tail = " Формулировка приведена дословно по строке выдачи и не пересказывается."
+    while len(text) < length:
+        text = f"{text}{tail}"
+    return text[:length].rstrip()
+
+
+#: Два объяснения негативной подсказки — то, что построитель кладёт на панель
+#: поверхности при первом же прогоне с негативной строкой.
+PANEL_REASONS = [
+    _padded(
+        "Негативная формулировка в подсказке: запрос связывает субъекта с уголовным делом "
+        "и хищением средств; строка показана поисковой системой в первой десятке и "
+        "повторяется на обоих контурах сбора. Страница не читалась в этом прогоне.",
+        SIDEBAR_HIGHLIGHT_BUDGET,
+    ),
+    _padded(
+        "Негативная формулировка в связанном запросе: субъект упоминается вместе со "
+        "словами о банкротстве и претензиях кредиторов; запрос показан над органической "
+        "выдачей. Оценка сделана по формулировке запроса.",
+        SIDEBAR_HIGHLIGHT_BUDGET,
+    ),
+]
+PANEL_MORE_SIGNALS = 3
+
+
+def render_surface_panel_page() -> tuple[bytes, bytes] | None:
+    """Панель поверхности с блоком «Почему выделено»; None — растр не от LibreOffice.
+
+    Блок рисует `_sidebar_analysis` при `sidebarMode == "adverse_explanation"`,
+    и на панели поверхности (подсказки, связанные запросы) он **не рисовался
+    ни разу**: у всех восьми таких слайдов обоих эталонов объяснений нет —
+    непустые `highlightExplanations` есть только у снимка выдачи и сетки
+    изображений. Значит, первым зрителем этой геометрии оказался бы клиент
+    первого же живого прогона с негативной подсказкой, а прогон этот платный.
+
+    Панель без картинки вырождается в полностраничные карточки
+    (`_render_visual_with_sidebar` → `_render_analysis_cards_full_width`), и
+    сайдбара на такой странице нет вовсе. Поэтому ассет обязателен: без него
+    проверка смотрела бы на другой макет.
+    """
+    from orion_golden_render import render_orion_golden  # noqa: PLC0415
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1200, 760), (0xF2, 0xF5, 0xF3)).save(buf, format="PNG")
+    payload = {
+        "subjectName": "Тест",
+        "assets": [
+            {
+                "assetRef": "surface_panel_adverse",
+                "kind": "visual",
+                "title": "Подсказки",
+                "imageData": base64.b64encode(buf.getvalue()).decode("ascii"),
+            }
+        ],
+        "deckManifest": {
+            "toc": [],
+            "sectionPageRanges": [],
+            "finalSlides": [
+                {
+                    "slideKey": "p11_ru_suggestions_yandex",
+                    "sectionKey": "RU_PROFILE",
+                    "template": "orion_golden_surface_panel",
+                    "title": "Россия — подсказки Яндекса: есть негативные формулировки",
+                    "pageNumber": 1,
+                    "totalPageCount": 1,
+                    "assetRefs": ["surface_panel_adverse"],
+                    "visualAnalysis": {
+                        "sidebarMode": "adverse_explanation",
+                        "headlineConclusion": (
+                            "На панели — 10 подсказок: 3 несут негативную формулировку, "
+                            "остальные нейтральны."
+                        ),
+                        "whatIsVisible": "Подсказки показывают, что чаще всего ищут о субъекте.",
+                        "clientMeaning": (
+                            "Негативная подсказка видна каждому, кто набирает имя в строке поиска."
+                        ),
+                        "highlightExplanations": [
+                            {"clientReason": PANEL_REASONS[0], "frameTone": "red"},
+                            {"clientReason": PANEL_REASONS[1], "frameTone": "amber"},
+                        ],
+                        "moreSignalsCount": PANEL_MORE_SIGNALS,
+                        "recommendedActions": [
+                            "Сверить формулировки подсказок с профилем субъекта."
+                        ],
+                        "provenanceLabel": (
+                            "Источники — поисковая выдача; полный перечень в приложении."
+                        ),
+                    },
+                }
+            ],
+        },
+    }
+    out = render_orion_golden(payload)
+    pages = out.get("pages") or []
+    if not pages or out.get("pdfExportMode") != "libreoffice" or not out.get("pdfBase64"):
+        return None
+    return base64.b64decode(pages[0]["contentBase64"]), base64.b64decode(out["pdfBase64"])
 
 
 def scan_badges(png: bytes) -> dict:
@@ -390,6 +502,60 @@ def main() -> int:
                 statuses["pixels"]["amber"] > 100,
                 f"янтарных пикселей: {statuses['pixels']['amber']}",
             )
+
+    # --- Панель поверхности рисует «Почему выделено» ---------------------
+    #
+    # Первая отрисовка этой геометрии. Блок объяснений на панели поверхности
+    # необязателен для рендерера: `write_block` выбрасывает его **целиком**,
+    # если он не влезает в колонку, и делает это молча — ни телеметрии, ни
+    # предупреждения. Пока такой страницы не было ни в одном эталоне, ответ на
+    # вопрос «влезает ли» никто не получал.
+    #
+    # Свойства проверяются двумя приборами, потому что вопросы разные.
+    # Геометрию — по растру (`check_pages`, наших мер не касается). Наличие
+    # именно этих фраз — по текстовому слою PDF: растр умеет сказать «чернила
+    # есть», но не «нарисована вторая фраза», а выброшен бывает как раз
+    # блок целиком, и колонка при этом остаётся заполненной заголовком.
+    panel = render_surface_panel_page()
+    if panel is None:
+        print("# SKIP панель поверхности — растр не получен от LibreOffice")
+    else:
+        panel_png, panel_pdf = panel
+        with tempfile.TemporaryDirectory() as tmp:
+            panel_path = Path(tmp) / "page-01.png"
+            panel_path.write_bytes(panel_png)
+            panel_report = check_pages([panel_path])
+            check(
+                "панель поверхности с объяснениями не выходит за края листа",
+                panel_report.passed and not panel_report.findings,
+                "; ".join(f"{f.code} — {f.detail}" for f in panel_report.findings)
+                or f"проверено страниц: {panel_report.pages_checked}",
+            )
+            pdf_path = Path(tmp) / "panel.pdf"
+            pdf_path.write_bytes(panel_pdf)
+            import fitz  # noqa: PLC0415
+
+            drawn = " ".join(fitz.open(str(pdf_path))[0].get_text().split())
+        check(
+            "заголовок блока «Почему выделено» нарисован",
+            "Почему выделено" in drawn,
+        )
+        missing_reasons = [
+            i + 1
+            for i, reason in enumerate(PANEL_REASONS)
+            if " ".join(reason.split()) not in drawn
+        ]
+        check(
+            "обе фразы объяснений нарисованы целиком",
+            not missing_reasons,
+            f"не нарисованы объяснения: {missing_reasons}"
+            if missing_reasons
+            else f"по {SIDEBAR_HIGHLIGHT_BUDGET} знаков каждое",
+        )
+        check(
+            "остаток сигналов назван числом",
+            f"Ещё {PANEL_MORE_SIGNALS} похожих сигнала" in drawn,
+        )
 
     # --- ADR-0008: типографическая шкала закрыта -------------------------
     #

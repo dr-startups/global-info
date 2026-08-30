@@ -117,6 +117,13 @@ export const SMOKES: Smoke[] = [
     about: "карточки матрицы рисков: нарисовано всё, потеря слышна (нужны Python-пакеты)",
   },
   {
+    name: "card-narrative-capacity",
+    argv: ["PYTHON", "renderer/smoke_card_narrative_capacity.py"],
+    tier: "full",
+    about:
+      "ёмкость абзаца карточной страницы подтверждается отрисовкой, а не записью (нужны Python-пакеты)",
+  },
+  {
     name: "bullet-clip",
     argv: ["PYTHON", "renderer/smoke_bullet_clip_keeps_head.py"],
     tier: "full",
