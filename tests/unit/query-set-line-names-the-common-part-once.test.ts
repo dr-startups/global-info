@@ -119,6 +119,7 @@ describe("единственный запрос справку по-прежне
       engineLabel: "Яндекса",
       query: "Anders Holmström",
       missing: "",
+      positional: true,
       queriesLine: subjectQueriesLine(scopedWithQueries(["Anders Holmström"])),
       subjectQueries: ["Anders Holmström"],
     });

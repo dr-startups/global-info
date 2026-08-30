@@ -190,7 +190,12 @@ describe("страница называет запрос своей таблиц
     expect(String(slide.content.narrative ?? "")).not.toContain("Выдача проверена по");
     const printed = pageSentences(slide);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
-    expect(printed[1]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
+    // Второе предложение — оговорка про нумерацию (она печатается всегда),
+    // третье — вывод страницы. Повтор запроса не появляется ни там, ни там.
+    expect(printed[1]).toBe(
+      "Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят."
+    );
+    expect(printed[2]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
   });
 
   it("при нескольких запросах перечень есть, но вывод он не съедает", () => {
@@ -210,7 +215,9 @@ describe("страница называет запрос своей таблиц
     const printed = pageSentences(slide);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
     expect(printed[1]).not.toContain("Выдача проверена по");
-    expect(printed[1]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
+    expect(printed[2]).not.toContain("Выдача проверена по");
+    // Вывод страницы стоит после оговорки про нумерацию, а справка — после него.
+    expect(printed[2]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
   });
 
   it("на неполной таблице второе предложение — причина пропусков", () => {

@@ -340,34 +340,6 @@ export class NarrativeSplitLossError extends Error {
   }
 }
 
-/**
- * Страница отдаётся резаку уже абзацами — и он её не трогает.
- *
- * `reflowNarrativeParagraphs` ломает сплошной текст на три абзаца и при этом
- * **теряет** хвост: его предел на абзац считается от длины текста, а укладка
- * идёт целыми предложениями, так что остаток не всегда влезает. Страницу,
- * которую мы только что собрали сами, ломать второй раз незачем: она приходит
- * готовой, а `reflowNarrativeParagraphs` текст с переводами строк возвращает
- * как есть.
- */
-function asParagraphs(text: string, maxParas = 3): string {
-  const sentences = text.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
-  if (text.length < 220 || sentences.length <= 1) return text;
-  const target = Math.ceil(text.length / Math.min(maxParas, sentences.length));
-  const paras: string[] = [];
-  let buf = "";
-  for (const sentence of sentences) {
-    const trial = buf ? `${buf} ${sentence}` : sentence;
-    if (buf && trial.length > target && paras.length < maxParas - 1) {
-      paras.push(buf);
-      buf = sentence;
-    } else {
-      buf = trial;
-    }
-  }
-  if (buf) paras.push(buf);
-  return paras.join("\n");
-}
 
 /**
  * Раскладка предложений по страницам: кусок `i` влезает в комнату страницы `i`.
@@ -469,7 +441,15 @@ function splitNarrativeEvenly(
    * пропажа хвоста. Сравнение без пробелов — разделители меняются (страница
    * получает абзацы), а знаки нет.
    */
-  const laid = pages.map((page) => (page ? asParagraphs(page) : ""));
+  /*
+   * Разбивка сплошного абзаца на ≤3 абзаца — один вопрос и один ответ.
+   *
+   * Здесь стояла своя укладка `asParagraphs`, а в `reflowNarrativeParagraphs`
+   * — вторая, через `splitClientParagraphs`, которая на пределе абзацев
+   * **выбрасывала остаток** (замер: 944 знака → 708). Между двумя ответами на
+   * один вопрос лежало 1350 строк одного файла.
+   */
+  const laid = pages.map((page) => (page ? reflowNarrativeParagraphs(page) : ""));
   const kept = laid.join(" ").replace(/\s+/gu, "").length;
   const whole = text.replace(/\s+/gu, "").length;
   if (kept !== whole) throw new NarrativeSplitLossError(slideId, whole, kept);
@@ -1722,10 +1702,31 @@ export function reflowNarrativeParagraphs(text: string, maxParas = 3): string {
    * обе стороны резака (`narrativeReflowLoss`) роняет сборку. Возвращаем как
    * есть: читаемость от разбивки не выиграет, а знаки останутся на месте.
    */
-  if (raw.split(/(?<=[.!?…])\s+/u).filter((x) => x.trim()).length <= 1) return raw;
-  return splitClientParagraphs(raw, Math.max(180, Math.floor(raw.length / maxParas)), maxParas).join(
-    "\n"
-  );
+  const sentences = raw.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  if (sentences.length <= 1) return raw;
+  /*
+   * Последний абзац забирает остаток — поэтому знаков не теряется.
+   *
+   * `splitClientParagraphs`, которым эта функция пользовалась раньше, на
+   * пределе абзацев делает `return paras` и остаток выбрасывает; её саму
+   * трогать нельзя — у неё три вызова в `executive.ts`, где обрезка до
+   * `maxParas` намеренная. Здесь обрезка не нужна вовсе: абзац уезжает
+   * рендереру целиком, а на страницу его укладывает мера.
+   */
+  const target = Math.ceil(raw.length / Math.min(maxParas, sentences.length));
+  const paras: string[] = [];
+  let buf = "";
+  for (const sentence of sentences) {
+    const trial = buf ? `${buf} ${sentence}` : sentence;
+    if (buf && trial.length > target && paras.length < maxParas - 1) {
+      paras.push(buf);
+      buf = sentence;
+    } else {
+      buf = trial;
+    }
+  }
+  if (buf) paras.push(buf);
+  return paras.join("\n");
 }
 
 /**

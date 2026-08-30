@@ -14,6 +14,7 @@ import {
   narrativeOverBudget,
   narrativeReflowLoss,
 } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { reflowNarrativeParagraphs } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import { getClientTextFieldBudgets } from "@/modules/digital-profile/orion-golden/client/load-client-text-contract";
 import type { SectionPackV2 } from "@/modules/digital-profile/orion-golden/deck-sections/contracts";
 
@@ -273,26 +274,67 @@ describe("резак абзацев не выбрасывает текст мо�
     ).toEqual([]);
   });
 
-  it("шаблон из списка известных потерь не проверяется", () => {
+  it("поимённых допусков у сторожа больше нет", () => {
+    /*
+     * Допуск существовал ради одного шаблона: абзац `p03_executive` золотого
+     * кейса уходил резаку на 892 знака и возвращался 770 — молча терялось 122
+     * (перемерено 30.08 прогоном золотого кейса с опустошённым допуском:
+     * `narrative reflow dropped text: p03_executive 892->770`). Резак больше
+     * не теряет знаков, поэтому исключение снято: любая потеря — дефект.
+     */
+    expect(
+      [...REFLOW_LOSS_PREEXISTING_TEMPLATES],
+      "поимённый допуск снят вместе с потерей: резак укладывает абзац без потерь"
+    ).toEqual([]);
+  });
+
+  it("исполнительная сводка проверяется наравне со всеми", () => {
     expect(
       narrativeReflowLoss([
         { slideKey: "p03_executive", templateId: "executive-summary", before: "а".repeat(892), after: "а".repeat(770) },
       ])
-    ).toEqual([]);
+    ).toEqual([{ slideKey: "p03_executive", before: 892, after: 770 }]);
+  });
+});
+
+describe("резак укладывает абзац, не теряя знаков", () => {
+  const SENTENCES = [
+    "Первое предложение о деловом профиле субъекта и его публичном контуре.",
+    "Второе предложение про упоминания в отраслевых изданиях за последний год.",
+    "Третье предложение о повторяющемся сюжете вокруг профильного актива компании.",
+    "Четвёртое предложение о позиции сторон разбирательства в судах инстанций.",
+    "Пятое предложение о сроках рассмотрения и составе участников этого спора.",
+    "Шестое предложение про публикации в изданиях нескольких стран подряд снова.",
+    "Седьмое предложение о том, что часть материалов повторяет один и тот же сюжет.",
+    "Восьмое предложение о подробностях сделки, которые добавляют новые издания.",
+    "Девятое предложение про оценку принадлежности материалов проверяемому лицу.",
+    "Десятое предложение о том, что медийные утверждения не равны фактам.",
+  ];
+  const compact = (s: string): number => s.replace(/\s+/gu, "").length;
+
+  it.each([8, 10])("сплошной ввод из %i предложений не теряет ни знака", (n) => {
+    const text = SENTENCES.slice(0, n).join(" ");
+    expect(compact(reflowNarrativeParagraphs(text))).toBe(compact(text));
   });
 
-  it("состав известных потерь закреплён поимённо", () => {
-    /*
-     * Это единственное, что держит `npm run ci` зелёным на золотом кейсе:
-     * абзац `p03_executive` уходит резаку на 892 знака и возвращается 770 —
-     * молча теряется 122. Без этой строки самый дешёвый путь к зелёному у
-     * следующего, кто получит красноту, — дописать свой шаблон сюда, и не
-     * заметит этого ни одна проверка. Расширять список нельзя: краснота
-     * означает, что абзац надо чинить.
-     */
-    expect(
-      [...REFLOW_LOSS_PREEXISTING_TEMPLATES],
-      "список известных потерь расширять нельзя: p03_executive теряет 122 знака из 892 (золотой кейс), и это единственное записанное исключение"
-    ).toEqual(["executive-summary"]);
+  it("абзацев не больше трёх", () => {
+    const text = SENTENCES.join(" ");
+    expect(reflowNarrativeParagraphs(text).split("\n")).toHaveLength(3);
+  });
+
+  it("текст без единой границы предложения возвращается как есть", () => {
+    // Защита партии 0039: резать нечем, а обрубок по границе слова — потеря
+    // там, где резать было незачем.
+    const text = `${SENTENCES[0]!.replace(".", "")} ${"а".repeat(300)}`;
+    expect(reflowNarrativeParagraphs(text)).toBe(text);
+  });
+
+  it("текст с переводами строк возвращается как есть", () => {
+    const text = "Первая строка.\nВторая строка.";
+    expect(reflowNarrativeParagraphs(text)).toBe(text);
+  });
+
+  it("три и более перевода схлопываются до двух", () => {
+    expect(reflowNarrativeParagraphs("Первая.\n\n\n\nВторая.")).toBe("Первая.\n\nВторая.");
   });
 });

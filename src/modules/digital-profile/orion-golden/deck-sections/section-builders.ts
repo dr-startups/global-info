@@ -221,7 +221,7 @@ function composeFragment(
       return buildRegionalSummaryFragment(key, section, region, scoped, extras);
     case "RU_SERP":
     case "UAE_SERP":
-      return buildSerpFragment(key, section, region, scoped);
+      return buildSerpFragment(key, section, region, scoped, extras);
     case "RU_SERP_SCREENSHOT":
     case "UAE_SERP_SCREENSHOT":
       return buildSerpScreenshotFragment(key, section, region, scoped, extras);

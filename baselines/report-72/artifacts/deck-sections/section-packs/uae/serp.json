@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:2a646ad34166c8cdbe1b2bca7fe6e9854e84ecb6ed5d3b0cc9fb13a306f29d52",
-  "contentVersion": "deck-sections-v148",
+  "contentHash": "sha256:e24327b4acefdded71cf487e9a423d75164cbfdd86b6c67e1971823c8ed836c0",
+  "contentVersion": "deck-sections-v149",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -91,7 +91,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SERP",
-  "generatedAt": "2026-08-30T03:57:25.822Z",
+  "generatedAt": "2026-08-30T12:44:45.706Z",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:78c52e3c81c48a5d",
   "inputs": {
     "evidenceRefs": [
@@ -241,7 +241,7 @@
     {
       "baseSlotId": "p26_uae_serp_table",
       "content": {
-        "narrative": "«PEP / RCA / watchlist-сигналы» — средний уровень внимания (строка 3).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «PEP / RCA / watchlist-сигналы» — средний уровень внимания (строка 3).",
         "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org и klerk.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — средний; оценка достоверна.",
         "table": {
@@ -327,7 +327,7 @@
     {
       "baseSlotId": "p26_uae_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 6).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 6).",
         "sourceNote": "Источники — tadviser.com, audit-it.ru, techcult.ru и instagram.com.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
@@ -412,7 +412,7 @@
     {
       "baseSlotId": "p26_uae_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 9–12).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 9–12).",
         "sourceNote": "Источники — runews24.ru, bitva.wiki, forbes.ru и piter.tv.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -495,7 +495,7 @@
     {
       "baseSlotId": "p26_uae_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "sourceNote": "Источники — x.com, ru.wikipedia.org, utro.ru и labyrinth.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {

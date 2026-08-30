@@ -85,6 +85,64 @@ function uncategorizedBulletForRegion(
   };
 }
 
+/** Единица строки таблицы метрик до печати: пара «Система + Показатель» и числа. */
+export type MetricSurfaceRow = {
+  engine: string;
+  label: string;
+  total: number;
+  adverse: number;
+  matched: number;
+};
+
+/**
+ * Строки таблицы метрик, сведённые по паре «Система + Показатель».
+ *
+ * `p25_uae_metrics` печатал подряд «Поисковые системы | Изображения в поиске |
+ * 19» и «… | 30»: у всех единиц поверхности `images` поле `engine` равно
+ * `null`, поэтому подпись системы честно одна и та же, а различает эти две
+ * единицы **регион** (`INTERNATIONAL` и `UAE`) — которого в таблице нет ни в
+ * одной колонке. Клиент видел один показатель дважды с разными числами и не
+ * мог сказать, чем они отличаются.
+ *
+ * Отвергнуто дописывание региона в «Комментарий»: колонка «Система»
+ * продолжила бы печатать одно слово дважды — на взгляд клиента страница не
+ * изменилась бы, — а в колонку счётчиков въехал бы факт другого рода.
+ * Отвергнута и печать региона в колонке «Система»: регион не система, а
+ * заголовок колонки закреплён эталоном.
+ *
+ * Счётчики складываются **числами**, а не склеиваются строками, и формулировка
+ * у слитой строки та же, что у одиночной: она собирается здесь один раз.
+ * Двойного счёта сложение не добавляет — строка «Материалы региона» и сегодня
+ * даёт дедуплицированное число отдельно, а две строки, читаемые подряд, уже
+ * складывались читателем.
+ *
+ * Порядок: слитая строка стоит на месте **первой** из слитых.
+ */
+export function mergeMetricRows(input: ReadonlyArray<MetricSurfaceRow>): string[][] {
+  const merged = new Map<string, MetricSurfaceRow>();
+  for (const row of input) {
+    const key = `${row.engine}\u0000${row.label}`;
+    const prev = merged.get(key);
+    if (prev) {
+      prev.total += row.total;
+      prev.adverse += row.adverse;
+      prev.matched += row.matched;
+    } else {
+      merged.set(key, { ...row });
+    }
+  }
+  return [...merged.values()].map((r) => [
+    r.engine,
+    r.label,
+    String(r.total),
+    r.adverse > 0
+      ? `негативных: ${r.adverse}; подтверждена связь с лицом: ${r.matched}`
+      : r.matched > 0
+        ? `подтверждена связь с лицом: ${r.matched}`
+        : "негативных сигналов не выявлено",
+  ]);
+}
+
 export function buildRegionalSummaryFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -350,21 +408,21 @@ export function buildRegionalSummaryFragment(
     const m = u.metrics.find((x) => x.key === key);
     return typeof m?.value === "number" ? m.value : Number(m?.value ?? 0) || 0;
   };
+  const surfaceRows: MetricSurfaceRow[] = [];
   for (const u of scoped.surfaceUnits) {
     const label = SURFACE_TABLE_LABELS[u.surface];
     if (!label) continue;
     const total = metricOf(u, "totalCount");
     if (total === 0) continue;
-    const adverse = metricOf(u, "adverseSubjectCount");
-    const matched = metricOf(u, "subjectMatchCount");
-    const comment =
-      adverse > 0
-        ? `негативных: ${adverse}; подтверждена связь с лицом: ${matched}`
-        : matched > 0
-          ? `подтверждена связь с лицом: ${matched}`
-          : "негативных сигналов не выявлено";
-    rows.push([engineLabel(u.engine), label, String(total), comment]);
+    surfaceRows.push({
+      engine: engineLabel(u.engine),
+      label,
+      total,
+      adverse: metricOf(u, "adverseSubjectCount"),
+      matched: metricOf(u, "subjectMatchCount"),
+    });
   }
+  rows.push(...mergeMetricRows(surfaceRows));
   for (const u of urlAuditUnits) {
     const checked = u.evidenceRefs.length;
     // Metric keys are internal (totalCount/…); the client sees a plain summary.

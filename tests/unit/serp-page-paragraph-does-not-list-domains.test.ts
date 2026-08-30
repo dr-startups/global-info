@@ -123,10 +123,15 @@ describe("справка о наборе запросов", () => {
       engineLabel: "Google",
       query: QUERY,
       missing: "",
+      positional: true,
       queriesLine: `Выдача проверена по 1 запросу: «${QUERY}».`,
       subjectQueries: [QUERY],
     });
     expect(prose.tail).toBeUndefined();
-    expect(prose.head).toBe(`Показана выдача Google по запросу «${QUERY}».`);
+    // Оговорка про нумерацию печатается всегда — она и есть второе предложение.
+    expect(prose.head).toBe(
+      `Показана выдача Google по запросу «${QUERY}». ` +
+        "Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят."
+    );
   });
 });

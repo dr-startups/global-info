@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:375f1cbcb495e4a4567fce9106abf3fd2feaccf5cf909d7a0d829b4ac38d5156",
-  "contentVersion": "deck-sections-v148",
+  "contentHash": "sha256:e2b7823cde82043659b70985e46c44b3757920e2f701c7a12f7bc043b462ee58",
+  "contentVersion": "deck-sections-v149",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,8 +149,8 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP",
-  "generatedAt": "2026-08-30T03:57:25.806Z",
-  "inputHash": "sha256:8ca0c44623b3ed1a4e615b99778ad230433773d78a0693e8bf4d223984e21748:a24473095f588937",
+  "generatedAt": "2026-08-30T12:44:45.690Z",
+  "inputHash": "sha256:c1c2280b667e7c4aa3e5ec389a3cdf630ff144550560309842da8a21c53c8533:a24473095f588937",
   "inputs": {
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -386,7 +386,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 1–4).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4).",
         "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru и tadviser.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -480,7 +480,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 6–8).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 6–8).",
         "sourceNote": "Источники — yandex.ru, klerk.ru, piter.tv и argumenti.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -570,7 +570,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 9–12).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 9–12).",
         "sourceNote": "Источники — kulturologia.ru, nakanune.ru, shkolazhizni.ru и tadviser.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -656,7 +656,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "sourceNote": "Источники — audit-it.ru, ru.wikipedia.org, zachestnyibiznes.ru и dzen.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
@@ -741,7 +741,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 1–4).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4).",
         "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru и klerk.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -838,7 +838,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
         "sourceNote": "Источники — piter.tv, tadviser.ru, audit-it.ru и zachestnyibiznes.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
@@ -928,7 +928,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Деловой профиль» — низкий уровень внимания (строки 9, 11).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 9, 11).",
         "sourceNote": "Источники — techcult.ru, moskva.bezformata.com, labyrinth.ru и utro.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
@@ -947,25 +947,25 @@
           "rows": [
             [
               "9",
-              "https://www.techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-foto-istoriya-uspeha…",
+              "Биография бизнесмена Сергея Глинки: фото, история ...",
               "—",
               "Не проверено"
             ],
             [
               "10",
-              "https://moskva.bezformata.com/listnews/sergey-glinka/148682615/",
+              "Заголовок не отдан поисковой системой",
               "—",
               "Не проверено"
             ],
             [
               "11",
-              "https://labyrinth.ru/content/card.asp?cardid=92628",
+              "ГЛИНКА Сергей Михайлович - Биография",
               "—",
               "Не проверено"
             ],
             [
               "12",
-              "https://utro.ru/release/2025/08/01/1563439.shtml",
+              "Бизнесмен Сергей Глинка: биография, личная жизнь ...",
               "—",
               "Не проверено"
             ]
@@ -1012,7 +1012,7 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
+        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "sourceNote": "Источники — x.com и rupep.org.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
@@ -1029,13 +1029,13 @@
           "rows": [
             [
               "13",
-              "https://x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
+              "Связанный с Россией бизнесмен Сергей Глинка ...",
               "Соцсеть",
               "Нежелательный"
             ],
             [
               "14",
-              "https://rupep.org/ru/person/8095",
+              "Заголовок не отдан поисковой системой",
               "База данных / реестр",
               "Нежелательный"
             ]

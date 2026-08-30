@@ -1351,7 +1351,15 @@ describe("REMEDIATION §7.1 page row composition sidebar", () => {
       assert.match(String(s.content.whatWasFound), /Показано \d+/u);
       assert.ok(!String(s.content.whatWasFound).includes("не обнаружено"));
       // Renderer reads narrative above the table — must carry the same copy.
-      assert.equal(s.content.narrative, s.content.whatWasFound);
+      //
+      // Равенство точное, а не «начинается/кончается»: пара предикатов держала
+      // бы концы абзаца и пропускала лишнее предложение между ними, а прежнее
+      // `assert.equal` середину держало. Лид стоит перед выводом: оговорка о
+      // том, что означают номера строк, печатается на каждом листе выдачи.
+      assert.equal(
+        s.content.narrative,
+        `Номера строк — порядок в собранной сводке, а не места в выдаче. ${s.content.whatWasFound}`
+      );
       // Continuations must keep a filled sidebar (§7.1).
       if (s.isContinuation) {
         assert.ok(String(s.content.whatWasFound ?? "").length > 20);

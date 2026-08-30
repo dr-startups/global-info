@@ -29,6 +29,7 @@ import {
   PERSONA_DECISION_ARTIFACT,
 } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
+import { serpTitleWasGiven } from "./fragment-builders/serp";
 import type { AppliedOverrideRecord } from "../../services/analyst-overrides-loader";
 import {
   verdictStrength,
@@ -266,6 +267,70 @@ export function applyAnalystDecisionsToEvidence(
  * Материал, признанный чужим («это однофамилец»), перестаёт быть подтверждением
  * чего-либо о субъекте.
  */
+/**
+ * Заголовок, которого поисковик не отдал, — у той же страницы из другого места.
+ *
+ * Тот же адрес, найденный другим запросом или в другом контуре, часто приходит
+ * **с** заголовком. Замер эталона-72: из шести строк, печатавших свой адрес,
+ * четыре имеют настоящий заголовок в наблюдении ОАЭ (`techcult.ru`,
+ * `labyrinth.ru`, `utro.ru`, `x.com`). Не доезжали они потому, что фрагмент
+ * региона видит только наблюдения своего региона, а сведение по материалу идёт
+ * **внутри** фрагмента.
+ *
+ * Правится `title` на месте, а не заводится второе поле «для показа»: в
+ * `title` лежит адрес, который положили туда **мы сами**
+ * (`canonical-report-prepare.ts`, `title: text || obs.title || obs.url ||
+ * obs.key`). Это наша порча, а не данные провайдера, и обходить её вторым
+ * полем значило бы оставить адрес на входе словаря негатива и тем.
+ *
+ * Заимствуется **одно поле**. Регион, тип источника, оценка и ссылки на
+ * наблюдения не трогаются: уехавшая вместе с заголовком ссылка чужого региона
+ * покраснела бы воротом `regionScopeIsolation`, который сравнивает
+ * `evidenceRefs` слайда с регионом записи.
+ *
+ * Донор — запись **того же материала** (ключ `serpMaterialKey`), то есть той же
+ * страницы. Заголовок другого адреса не годится: `rupep.org/ru/person/8095` и
+ * `rupep.org/en/person/8095` — разные страницы, и подстановка между ними завела
+ * бы ровно тот дефект, который тут чинится.
+ *
+ * Выбор при нескольких кандидатах детерминирован: побеждает заголовок,
+ * отданный поисковиком чаще, при равенстве — меньший по порядку знаков. Два
+ * прогона обязаны дать один текст, и это уже требует сверка на детерминизм.
+ *
+ * @returns сколько записей получили заголовок.
+ */
+export function borrowTitlesWithinMaterial(evidenceIndex: ScopedEvidenceIndex): number {
+  const byMaterial = refsByMaterial(evidenceIndex);
+  let borrowed = 0;
+  for (const refs of byMaterial.values()) {
+    if (refs.length < 2) continue;
+    const needy = refs.filter(
+      (ref) => !serpTitleWasGiven(evidenceIndex[ref]?.title, evidenceIndex[ref]?.url)
+    );
+    if (needy.length === 0 || needy.length === refs.length) continue;
+    const counts = new Map<string, number>();
+    for (const ref of refs) {
+      if (needy.includes(ref)) continue;
+      const title = String(evidenceIndex[ref]?.title ?? "").trim();
+      if (title) counts.set(title, (counts.get(title) ?? 0) + 1);
+    }
+    let donor: string | undefined;
+    let best = 0;
+    for (const [title, count] of counts) {
+      if (count > best || (count === best && donor !== undefined && title < donor)) {
+        donor = title;
+        best = count;
+      }
+    }
+    if (!donor) continue;
+    for (const ref of needy) {
+      evidenceIndex[ref]!.title = donor;
+      borrowed += 1;
+    }
+  }
+  return borrowed;
+}
+
 export function applyLinkVerdictsToEvidence(
   evidenceIndex: ScopedEvidenceIndex,
   verdicts: LinkVerdictRow[]
@@ -313,11 +378,27 @@ export function applyLinkVerdictsToEvidence(
   }
 }
 
-/** Адрес без трекинг-хвоста и якоря — для сравнения «та же это страница или нет». */
+/**
+ * Адрес, приведённый к сравнению «та же это страница или нет».
+ *
+ * Приведение то же, что у ключа материала (`normalizedUrlForKey`): схема,
+ * `www.` и хвостовой слэш снимаются. Пока схему и `www.` здесь оставляли,
+ * страница, прочитанная как `https://www.x.ru/a`, отдавала свой вердикт записи
+ * `http://x.ru/a/`, а дословную цитату — нет: линейка считала два написания
+ * одного адреса разными страницами.
+ *
+ * Разница с ключом материала ровно одна и она здесь: снимается строка
+ * параметров и якорь. Обратный ход — срезать `?…` в самом ключе — запрещён
+ * замером: на эталоне-72 по строке параметров распадается группа
+ * `youtube.com/watch?v=…`, и срез склеил бы одиннадцать разных видео в один
+ * материал.
+ */
 function normalizedAddress(url: string | undefined): string {
   return String(url ?? "")
     .trim()
     .toLowerCase()
+    .replace(/^https?:\/\//u, "")
+    .replace(/^www\./u, "")
     .replace(/[?#].*$/u, "")
     .replace(/\/+$/u, "");
 }
@@ -734,6 +815,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     }
   }
 
+  /*
+   * Заголовок берётся у той же страницы до всего остального.
+   *
+   * Индекс здесь ещё целый — до разрезания по регионам, — а фрагмент региона
+   * видит только свои наблюдения. Ключи материалов от подстановки не двигаются:
+   * заимствуют её только записи с настоящим адресом (у них ключ адресный), а
+   * доноры не меняются вовсе.
+   */
+  borrowTitlesWithinMaterial(evidenceIndex);
   applyLinkVerdictsToEvidence(evidenceIndex, linkVerdicts?.verdicts ?? []);
   /*
    * Явные решения аналитика по материалам.

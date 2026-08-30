@@ -20,6 +20,11 @@ import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
+import { clientAddress } from "../../client/client-address";
+import {
+  freshnessFootnote,
+  type MaterialFreshness,
+} from "../../../services/report-material-freshness";
 import type { FragmentBuildOutput, FragmentExtras, PrintedPageRow } from "./shared";
 import {
   RISK_ORDER,
@@ -85,6 +90,48 @@ export const SERP_TABLE_HEADERS = ["№", "Заголовок", "Тип исто
  * подрезанный заголовок — это то, что читает клиент.
  */
 const SERP_TITLE_MAX_CHARS = 95;
+
+/**
+ * Слова на месте заголовка, которого поисковик не отдал.
+ *
+ * Формулировка одна на оба случая — заголовка нет вовсе и заголовок оказался
+ * адресом строки: для клиента это один и тот же факт, а две разные заглушки в
+ * одной таблице читаются как два разных.
+ */
+export const SERP_TITLE_NOT_GIVEN = "Заголовок не отдан поисковой системой";
+
+/**
+ * Отдал ли поисковик заголовок этой строки.
+ *
+ * Адрес в поле заголовка кладём **мы сами**: адаптер Arsenkin честно пишет
+ * `null`, когда карта сниппетов заголовка не содержит, а
+ * `canonical-report-prepare.ts` подставляет `title: text || obs.title ||
+ * obs.url || obs.key`. Печатник поэтому видит непустой заголовок, и прежнее
+ * запасное «(без заголовка)» не срабатывало — оно ждало `undefined`. Замер
+ * эталона-72: шесть строк из 46 печатали свой адрес в колонке «Заголовок», и
+ * он же стоял полосой под строкой.
+ *
+ * Сравнение идёт **существующим** `clientAddress` — единственным ответом
+ * проекта на «как выглядит адрес для клиента»; новой нормализации здесь не
+ * заводится. Отвергнут более широкий предикат «заголовок начинается с `http`»:
+ * он назвал бы неотданным и заголовок с **чужим** адресом внутри (в корпусе
+ * такой есть — видео с `title`, начинающимся с `https://t.me/…`), а это другой
+ * факт: поисковик заголовок отдал, просто в нём стоит ссылка.
+ */
+export function serpTitleWasGiven(title: string | undefined, url: string | undefined): boolean {
+  const text = String(title ?? "").trim();
+  if (!text) return false;
+  const asAddress = clientAddress(text);
+  // Заголовок вообще не адрес — значит отдан. `undefined === undefined` иначе
+  // назвал бы неотданным любой заголовок у записи без разбираемого адреса.
+  if (asAddress === undefined) return true;
+  return asAddress !== clientAddress(url);
+}
+
+/** Ячейка «Заголовок»: заголовок поисковика либо слова о том, что его нет. */
+export function serpRowTitleCell(title: string | undefined, url: string | undefined): string {
+  return serpTitleWasGiven(title, url) ? serpRowTitle(String(title).trim()) : SERP_TITLE_NOT_GIVEN;
+}
 
 /** Заголовок строки: рез по границе слова, с многоточием. */
 function serpRowTitle(raw: string): string {
@@ -301,12 +348,40 @@ export function serpTablePageTitle(input: {
  * запросу «X». Выдача проверена по 1 запросу: «X».») и вытесняет с листа
  * вывод.
  */
+/**
+ * Что означает «№» в позиционной таблице.
+ *
+ * Спецблоки названы, потому что печатаем мы органику: клиент, сверяющий номер
+ * с экраном браузера, иначе решит, что строки съехали.
+ */
+const SERP_RANKS_ARE_POSITIONS =
+  "Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят.";
+
+/**
+ * Что означает «№» в таблице без позиций.
+ *
+ * Набор, собранный до того, как позиция стала сохраняться, нумеруется порядком
+ * сбора. Молчание об этом и прочиталось владельцем как «ТОП-20»: заголовок
+ * листа честно говорил «собранная выдача», а абзац страницы состоял из одной
+ * фразы про уровень внимания.
+ */
+const SERP_RANKS_ARE_COLLECTION_ORDER =
+  "Номера строк — порядок в собранной сводке, а не места в выдаче.";
+
 export function serpTablePageProse(input: {
   /** Название поисковика в родительном падеже: «Яндекса», «Google». */
   engineLabel: string | null;
   query: string | null;
   /** Перечень несобранных номеров; пусто — таблица полная. */
   missing: string;
+  /**
+   * Номера строк — позиции выдачи или порядок нашей сводки. Ответ известен
+   * всегда, поэтому и печатается всегда, но фразы **разные**: одна общая
+   * обещала бы позиции там, где их нет.
+   */
+  positional: boolean;
+  /** Даты съёмки материалов; единственный источник — `report-material-freshness`. */
+  freshness?: MaterialFreshness | null;
   /** Справка о наборе запросов прогона и сам набор, по которому она решается. */
   queriesLine?: string;
   subjectQueries?: string[];
@@ -316,17 +391,27 @@ export function serpTablePageProse(input: {
     const engine = input.engineLabel ? `выдача ${input.engineLabel}` : "выдача";
     parts.push(`Показана ${engine} по запросу «${input.query}».`);
   }
+  /*
+   * Дата съёмки — только у `report-material-freshness`, и второго ответа о
+   * дате в проекте не заводится. Своё `new Date()` или `generatedAt` пакета
+   * сюда попасть не должны: `generatedAt` — время сборки, а не съёмки, и
+   * пересборка через месяц напечатала бы клиенту ложную дату.
+   *
+   * Эпоха-заглушка датой не считается — её отсеивает `isUsableCollectedAt`
+   * внутри `freshnessFootnote`. Отвергнут вариант печатать «дата сбора не
+   * записана»: это фраза о нашем хранилище, а не об источнике.
+   */
+  const collected = input.freshness ? freshnessFootnote(input.freshness) : undefined;
+  if (collected) parts.push(`${collected[0]!.toUpperCase()}${collected.slice(1)}.`);
   if (input.missing) {
     parts.push(
       `Позиции ${input.missing} в собранных данных отсутствуют: эти строки потеряны при сборе, а не пусты в выдаче.`
     );
   }
+  parts.push(input.positional ? SERP_RANKS_ARE_POSITIONS : SERP_RANKS_ARE_COLLECTION_ORDER);
   const queries = input.subjectQueries ?? [];
   const repeatsTableQuery = queries.length === 1 && sameSerpQuery(queries[0], input.query);
   const tail = input.queriesLine && !repeatsTableQuery ? input.queriesLine : undefined;
-  // Заголовка выдачи нет вовсе (набор без запросов) — тогда справка и есть всё,
-  // что о запросах известно, и она встаёт первой строкой, как стояла раньше.
-  if (!input.query && tail) return { head: tail };
   return { head: parts.join(" "), ...(tail ? { tail } : {}) };
 }
 
@@ -375,7 +460,18 @@ export function buildSerpFragment(
   key: FragmentKey,
   sectionId: SectionType,
   regionLabel: string,
-  scoped: ScopedFragmentInput
+  scoped: ScopedFragmentInput,
+  /*
+   * Дата съёмки приходит сюда единственным путём — тем же полем, каким её
+   * читают исполнительная сводка и страница региона.
+   *
+   * Необязателен намеренно: без него куска про дату в лиде просто нет — тот же
+   * исход, что и при непригодной дате. Двум десяткам юнитов, собирающих
+   * фрагмент из голого `scoped`, дата не нужна, и требовать от них пустой
+   * объект значило бы менять их ради подписи. Живой путь передаёт `extras`
+   * всегда (`section-builders.ts`).
+   */
+  extras?: Pick<FragmentExtras, "materialFreshness">
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment(key);
   const organic = scoped.surfaceUnits.filter((u) => u.surface === "organic");
@@ -631,7 +727,7 @@ export function buildSerpFragment(
     return {
       cells: [
         String(rank),
-        serpRowTitle(e.title ?? "(без заголовка)"),
+        serpRowTitleCell(e.title, e.url),
         resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—",
         rating,
       ],
@@ -694,6 +790,8 @@ export function buildSerpFragment(
       engineLabel: serpEngineLabelGenitive(table.engine),
       query: table.query,
       missing,
+      positional: table.positional,
+      freshness: extras?.materialFreshness ?? null,
       queriesLine,
       subjectQueries: queryList,
     });

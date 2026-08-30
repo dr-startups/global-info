@@ -21,6 +21,7 @@
     "visualCardsResolvedOrLabeled": true,
     "noMateriallyEmptyPages": true,
     "declaredTablesHaveRows": true,
+    "serpRowTitleIsNotItsAddress": true,
     "quotesWholeAndSourced": true,
     "noRepeatedTextOnPage": true,
     "pageAccountingComplete": true,

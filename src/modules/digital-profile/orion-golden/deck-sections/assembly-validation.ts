@@ -122,6 +122,8 @@ export function blockingIssues(input: {
   repeatedTextSlides?: ReadonlySet<string>;
   /** Страницы, объявившие таблицу без единой строки. */
   emptyTableSlides?: ReadonlySet<string>;
+  /** Страницы, где строка таблицы печатает свой же адрес в другой своей ячейке. */
+  ownAddressRowSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
   const name = (s: ReadonlySet<string>, limit = 5): string => namedList([...s], limit);
@@ -194,7 +196,69 @@ export function blockingIssues(input: {
         `${pluralRu(emptyTables.size, "странице", "страницах", "страницах")}: ${name(emptyTables)}`
     );
   }
+  /*
+   * Строка печатает свой адрес дважды — блокирует с первой же строки.
+   *
+   * **Это не то же самое, что ворот «страница не печатает один и тот же текст
+   * дважды».** Тот сравнивает блоки прозы страницы между собой и страницы с
+   * данными провайдера исключает намеренно: две строки выдачи с одинаковым
+   * заголовком — законные данные, их различает адрес под строкой. Этот
+   * сравнивает **ячейку строки с адресом этой же строки**, то есть работает
+   * ровно там, где тот отступает. Слить их в один нельзя: у первого предмет —
+   * наша проза, у второго — данные провайдера.
+   *
+   * Порог существенности не нужен по той же причине, что и у таблицы без
+   * строк: утверждение структурное, эвристики в нём нет, а построитель делает
+   * состояние недостижимым — печатник спрашивает «отдал ли поисковик
+   * заголовок» одним предикатом. Значит, здоровый прогон ворот не уронит.
+   */
+  const ownAddressRows = input.ownAddressRowSlides ?? new Set<string>();
+  if (ownAddressRows.size > 0) {
+    out.push(
+      `строка печатает свой адрес и в ячейке, и полосой на ${ownAddressRows.size} ` +
+        `${pluralRu(ownAddressRows.size, "странице", "страницах", "страницах")}: ` +
+        `${name(ownAddressRows)}`
+    );
+  }
   return out;
+}
+
+/**
+ * Строки таблиц, печатающие свой адрес ещё и в ячейке.
+ *
+ * Единица счёта — напечатанная строка: слайд и её номер в таблице. Сравнение
+ * идёт печатью адреса (`clientAddress`) против полосы адреса этой же строки,
+ * которую печатает `clientLink`, — то есть двумя формами одного разбора, а не
+ * новой нормализацией.
+ *
+ * Хвостовое многоточие снимается перед сравнением: наш собственный рез
+ * заголовка (95 знаков) укорачивал адрес сверху, оставляя полный снизу, — и
+ * именно так выглядела первая из шести строк эталона-72. Поэтому совпадением
+ * считается **начало** полосы, а не всё её содержимое.
+ */
+export function rowsPrintingTheirOwnAddress(
+  slides: ReadonlyArray<{
+    slideKey: string;
+    table?: { rows: string[][]; rowAddresses?: string[] } | undefined;
+  }>
+): Array<{ slideKey: string; row: number }> {
+  const found: Array<{ slideKey: string; row: number }> = [];
+  for (const slide of slides) {
+    const addresses = slide.table?.rowAddresses ?? [];
+    if (addresses.length === 0) continue;
+    slide.table!.rows.forEach((cells, i) => {
+      const band = String(addresses[i] ?? "").trim().toLowerCase();
+      if (!band) return;
+      for (const cell of cells) {
+        const printed = clientAddress(String(cell ?? "").replace(/…+$/u, "").trim());
+        if (printed && band.startsWith(printed.toLowerCase())) {
+          found.push({ slideKey: slide.slideKey, row: i + 1 });
+          return;
+        }
+      }
+    });
+  }
+  return found;
 }
 
 /**
@@ -740,6 +804,31 @@ export function validateAssembly(input: {
   checks.declaredTablesHaveRows = emptyTableSlides.size === 0;
 
   /*
+   * 4а-бис. Строка таблицы не печатает свой адрес дважды.
+   *
+   * Ворот стоит здесь, а не в приёмке эталона: защищать он обязан **живой**
+   * прогон, где провайдер такие заголовки и отдаёт. Чем он отличается от
+   * ворота «страница не печатает один и тот же текст дважды», объяснено при
+   * блокирующем отказе (`blockingIssues`).
+   */
+  const ownAddressRowSlides = new Set<string>();
+  const ownAddressRows = rowsPrintingTheirOwnAddress(rendererSlides);
+  for (const row of ownAddressRows) {
+    ownAddressRowSlides.add(row.slideKey);
+    issues.push(`row prints its own address twice: ${row.slideKey} row ${row.row}`);
+  }
+  if (rendererSlides.every((s) => (s.table?.rowAddresses ?? []).length === 0)) {
+    // Ворот без входа выглядит точно так же, как пройденный: в деке без единой
+    // строки с полосой адреса проверять нечего, и ключа в `checks` не будет.
+    skipped.push(
+      "проверка «строка не печатает свой адрес дважды» пропущена: " +
+        "в деке нет ни одной строки таблицы с полосой адреса"
+    );
+  } else {
+    checks.serpRowTitleIsNotItsAddress = ownAddressRowSlides.size === 0;
+  }
+
+  /*
    * 4б. Цитата доходит до читателя целой.
    *
    * Отчёт цитирует источники дословно, и обрывок в кавычках — это уже не
@@ -1094,6 +1183,7 @@ export function validateAssembly(input: {
     panelMismatchSlides,
     repeatedTextSlides,
     emptyTableSlides,
+    ownAddressRowSlides,
   });
 
   return { passed: issues.length === 0, issues, notes, checks, blocking, skipped };
