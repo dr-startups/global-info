@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/page-narrative";
 
 /** Сколько раз нормализованная фраза встречается в тексте. */
 function occurrences(text: string, phrase: string): number {

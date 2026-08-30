@@ -31,7 +31,12 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import { getClientTextContract } from "../client/load-client-text-contract";
 import { toneForRiskLabel } from "../client/risk-scale";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
-import { normalizeForCompare } from "./text-compare";
+import {
+  CARD_STRUCTURED_TEMPLATES,
+  composeFindingProse,
+  pageNarrativeOf,
+} from "./page-narrative";
+import { normalizeForCompare, withoutRepeatedSentences } from "./text-compare";
 import {
   DECK_TEMPLATE_REGISTRY,
   SIDEBAR_HIGHLIGHT_BUDGET,
@@ -505,18 +510,6 @@ export type RendererAssetEntry = {
   storageKey?: string;
 } & Record<string, unknown>;
 
-/**
- * Макеты, которые рисуют поля карточками, а не одним склеенным абзацем.
- *
- * У них рекомендация печатается своей карточкой, поэтому во вклейку нарратива
- * она не идёт (иначе «Мы предлагаем …» стоит на странице дважды), а буллеты
- * остаются списком: фолд «нарратив первым буллетом» здесь и погубил страницу
- * Википедии — 1387-символьный буллет ножницы рендерера превратили в пустоту.
- */
-const CARD_STRUCTURED_TEMPLATES = new Set([
-  "orion_golden_no_data_compact",
-  "orion_golden_wikipedia_check",
-]);
 
 /**
  * Абзацы, которые не влезут в свой лист.
@@ -688,18 +681,9 @@ export function toRendererPayload(input: {
     // Рекомендация в этот абзац не подмешивается там, где макет печатает её
     // собственной карточкой: на странице пустого состояния «Мы предлагаем …»
     // стояло дважды — в «Статусе сбора» и в «Что проверить».
-    const composedNarrative = [
-      raw.narrative,
-      composeFindingProse({
-        ...(CARD_STRUCTURED_TEMPLATES.has(raw.template) ? { ...raw, whatToCheck: undefined } : raw),
-        tableCells: raw.table?.rows.flat(),
-      }),
-    ]
-      .filter((part): part is string => Boolean(part && part.trim()))
-      .join("\n");
     // Что подали резаку и что он вернул — обе стороны нужны сверке ниже:
     // после него потерянного текста уже нет, и мерить нечего.
-    const beforeReflow = composedNarrative ? stripFindingMarkers(composedNarrative) : undefined;
+    const beforeReflow = pageNarrativeOf(raw, raw.template);
     const afterReflow = beforeReflow ? reflowNarrativeParagraphs(beforeReflow) : raw.narrative;
     if (beforeReflow) {
       reflowPairs.push({
@@ -1104,39 +1088,12 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
 }
 
 /**
- * Убирает из текста предложения, уже встречавшиеся раньше, и запоминает
- * оставшиеся.
- *
- * Сравнение — по нормализованному виду (`normalizeForCompare`): кавычки, тире и
- * регистр у одного и того же предложения в разных блоках отличаются, а смысл
- * нет. Пустой остаток возвращается как `undefined`, чтобы не осталось
- * заголовка блока без текста под ним.
+ * Нормализатор и снятие повторов живут в `text-compare`, чтобы ими могли
+ * пользоваться и сборщик деки, и вычистка присказок, и склейка абзаца
+ * страницы, не замыкая импорты в кольцо. Здесь оставлены ре-экспорты: на них
+ * ссылаются проверки панели.
  */
-export function withoutRepeatedSentences(
-  text: string | undefined,
-  said: Set<string>
-): string | undefined {
-  const src = (text ?? "").trim();
-  if (!src) return undefined;
-  const kept: string[] = [];
-  for (const sentence of src.split(/(?<=[.!?…])\s+/u)) {
-    const piece = sentence.trim();
-    if (!piece) continue;
-    const key = normalizeForCompare(piece);
-    if (!key) continue;
-    if (said.has(key)) continue;
-    said.add(key);
-    kept.push(piece);
-  }
-  return kept.length > 0 ? kept.join(" ") : undefined;
-}
-
-/**
- * Нормализатор живёт в `text-compare`, чтобы им могли пользоваться и сборщик
- * деки, и вычистка присказок, не замыкая импорты в кольцо. Здесь оставлен
- * ре-экспорт: на него ссылаются проверки панели.
- */
-export { normalizeForCompare };
+export { normalizeForCompare, withoutRepeatedSentences };
 
 /**
  * Подзаголовок перед абзацем — но не тогда, когда абзац им же и начинается.
@@ -1159,74 +1116,6 @@ export function composeSlideNarrative(
   // это законное упоминание темы, а не дубль заголовка.
   if (subKey && normalizeForCompare(body).startsWith(subKey)) return body;
   return `${sub}\n${body}`;
-}
-
-/** Оканчивается ли фраза знаком конца предложения. */
-function endsSentence(text: string): boolean {
-  return /[.!?…»)]\s*$/u.test(text.trim());
-}
-
-/** Приписывает точку, если её нет: куски склеиваются в связный абзац. */
-function asSentence(text: string): string {
-  const t = text.trim();
-  if (!t) return "";
-  return endsSentence(t) ? t : `${t}.`;
-}
-
-/**
- * Текст находки одним абзацем — вместо анкеты из подписей.
- *
- * Прежде эти же поля уезжали в буллеты префиксами «Что обнаружено: …»,
- * «Почему важно: …», «Что проверить: …», одинаково на каждой странице с
- * данными. Читатель получал бланк проверки, повторённый тридцать раз, и ни одна
- * страница не читалась как связный текст.
- *
- * Найденное и его значение — это одна мысль, а не две графы, поэтому они
- * склеиваются в абзац. Рекомендация остаётся отдельным предложением в конце:
- * это вывод, и по нему принимают решение.
- */
-export function composeFindingProse(s: {
-  whatWasFound?: string;
-  whyItMatters?: string;
-  whatToCheck?: string;
-  /** Уже показанный на странице текст: вводный абзац и буллеты. */
-  narrative?: string;
-  bullets?: string[];
-  /**
-   * Ячейки таблицы этого слайда. Страница печатает свою таблицу, значит всё,
-   * что в ней стоит, на странице уже есть: у профильных карточек комплаенса
-   * «Почему важно» и «Что сделать» — это строки «Параметр | Значение», и тем
-   * же текстом они уезжали в абзац.
-   */
-  tableCells?: string[];
-}): string | undefined {
-  /*
-   * Дедупликация обязательна, а не желательна.
-   *
-   * Строители нередко кладут в `whatWasFound` ровно то, что уже стоит первым
-   * буллетом. Пока текст ехал под подписью «Что обнаружено:», повтор выглядел
-   * как отдельная графа и в глаза не бросался. Стоило подпись убрать — и один
-   * и тот же факт пошёл в абзаце дважды подряд.
-   *
-   * Сравнение идёт **по предложениям**, а не по целому полю. Целыми полями оно
-   * срабатывало только при побайтном равенстве `narrative` и `whatWasFound`:
-   * на прогоне без записанного запроса выдачи лида нет, поля совпадают и
-   * повтора не видно, а на любом прогоне с записанным запросом лид сдвигает
-   * строку — и вывод страницы печатается вторым экземпляром подряд.
-   */
-  const said = new Set<string>();
-  for (const shown of [s.narrative ?? "", ...(s.bullets ?? []), ...(s.tableCells ?? [])]) {
-    withoutRepeatedSentences(shown, said);
-  }
-  const take = (part?: string): string => {
-    const kept = withoutRepeatedSentences(part, said);
-    return kept ? asSentence(kept) : "";
-  };
-
-  const paragraph = [take(s.whatWasFound), take(s.whyItMatters)].filter(Boolean).join(" ");
-  const closing = take(s.whatToCheck);
-  const blocks = [paragraph, closing].filter(Boolean);
-  return blocks.length ? blocks.join("\n") : undefined;
 }
 
 function buildRendererBullets(s: RendererSlide): string[] | undefined {

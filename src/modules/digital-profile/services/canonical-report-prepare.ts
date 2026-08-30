@@ -35,6 +35,7 @@ import {
   NarrativeOverBudgetError,
   NarrativeReflowLossError,
 } from "../orion-golden/deck-sections/run-deck-build";
+import { NarrativeSplitLossError } from "../orion-golden/deck-sections/fragment-builders/shared";
 import {
   GptCaseAnalysisSchema,
   GPT_CASE_ANALYSIS_VERSION,
@@ -205,6 +206,20 @@ export function prepareBlockedErrorFor(err: unknown): CanonicalPrepareBlockedErr
     return new CanonicalPrepareBlockedError(
       "ASSEMBLY_QA_FAILED",
       `NARRATIVE_REFLOW_LOSS=${err.slides.length} ${err.message}`
+    );
+  }
+  /*
+   * Разбивка абзаца по листам не смогла обойтись без потери знаков.
+   *
+   * Природа та же, что у соседей: те же пакеты дают ту же раскладку и ту же
+   * потерю, поэтому второй заход по определению кончится тем же. В маркере —
+   * сколько знаков потерялось бы, а не сколько листов: отказ приходит с одной
+   * страницы, и число страниц ничего бы не сказало.
+   */
+  if (err instanceof NarrativeSplitLossError) {
+    return new CanonicalPrepareBlockedError(
+      "ASSEMBLY_QA_FAILED",
+      `NARRATIVE_SPLIT_LOSS=${Math.max(0, err.before - err.after)} ${err.message}`
     );
   }
   return null;

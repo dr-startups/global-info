@@ -32,6 +32,7 @@ import {
   NarrativeOverBudgetError,
   NarrativeReflowLossError,
 } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { NarrativeSplitLossError } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import { blockingIssues } from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "@/modules/digital-profile/services/unified-collection-recovery";
 import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
@@ -68,6 +69,9 @@ const overBudget = () =>
 
 const reflowLoss = () =>
   prepareBlockedErrorFor(new NarrativeReflowLossError([{ slideKey: "p03_persona", before: 403, after: 344 }]));
+
+/** Разбивка абзаца по листам не смогла обойтись без потери знаков. */
+const splitLoss = () => prepareBlockedErrorFor(new NarrativeSplitLossError("p13_ru_wikipedia", 1200, 998));
 
 /**
  * Отказ ворот сборки: тот же код, другая природа — читается текст модели.
@@ -177,6 +181,16 @@ describe("детерминированный отказ подготовки", (
 
     expect(job.stage).toBe("FAILED_TERMINAL");
     expect(job.lastError).toContain("NARRATIVE_REFLOW_LOSS=");
+    expect(job.warnings).not.toContain("retryable-assembly-failure");
+  });
+
+  it("потеря разбивки абзаца останавливает так же", async () => {
+    // Третий отказ той же природы: те же паки — та же раскладка — та же
+    // потеря. Повтор её не лечит, а стоит четырёх стадий модели.
+    const job = await failPrepareWith(splitLoss());
+
+    expect(job.stage).toBe("FAILED_TERMINAL");
+    expect(job.lastError).toContain("NARRATIVE_SPLIT_LOSS=");
     expect(job.warnings).not.toContain("retryable-assembly-failure");
   });
 

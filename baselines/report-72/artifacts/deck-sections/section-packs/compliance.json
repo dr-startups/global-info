@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
   "contentHash": "sha256:33fb326844fe58285e592ec34c4720ee8c9c218c5e74bf2bbcc4cc164095642c",
-  "contentVersion": "deck-sections-v146",
+  "contentVersion": "deck-sections-v147",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:db-cmreb8ztt001zmm0fluvc61al",
@@ -96,7 +96,7 @@
     "inventory:rf-cmreano06009xo30fyhy23c7d"
   ],
   "fragmentKey": "COMPLIANCE_MAIN",
-  "generatedAt": "2026-08-29T03:21:55.586Z",
+  "generatedAt": "2026-08-30T00:48:24.643Z",
   "inputHash": "sha256:e2f20d12e6d246fb68bcf4e4f7928ac6b8c0da10d3992bf286ddeec55c2862ee:c8976e3f72184a2b",
   "inputs": {
     "evidenceRefs": [

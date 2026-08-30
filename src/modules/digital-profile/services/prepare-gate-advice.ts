@@ -33,6 +33,9 @@ const DETERMINISTIC_GATES = [
   // текст модели, и там повтор законен. Признак стоит на отказе, а не на коде.
   "NARRATIVE_OVER_BUDGET",
   "NARRATIVE_REFLOW_LOSS",
+  // Разбивка абзаца по листам, которая не может обойтись без потери знаков:
+  // тот же абзац при том же бюджете разложится так же и упадёт так же.
+  "NARRATIVE_SPLIT_LOSS",
 ] as const;
 
 export type DeterministicGate = (typeof DETERMINISTIC_GATES)[number];
@@ -113,6 +116,14 @@ export function prepareGateAdvice(message: string | null | undefined): string | 
     case "NARRATIVE_OVER_BUDGET": {
       const { subject, verb } = pagesPhrase(message);
       return `Отчёт не собрался: ${subject} ${verb} на лист. ${DATA_INTACT_TAIL}`;
+    }
+    case "NARRATIVE_SPLIT_LOSS": {
+      const pages = pagesNamedIn(String(message ?? ""));
+      const where = pages.length > 0 ? ` (${pages.join(", ")})` : "";
+      return (
+        `Отчёт не собрался: абзац страницы не удалось разложить по листам без ` +
+        `потери текста${where}. ${DATA_INTACT_TAIL}`
+      );
     }
     case "NARRATIVE_REFLOW_LOSS": {
       const pages = pagesNamedIn(String(message ?? ""));

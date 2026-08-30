@@ -21,3 +21,31 @@ export function normalizeForCompare(text: string): string {
     .replace(/\s+/gu, " ")
     .trim();
 }
+
+/**
+ * Убирает из текста предложения, уже встречавшиеся раньше, и запоминает
+ * оставшиеся.
+ *
+ * Сравнение — по нормализованному виду (`normalizeForCompare`): кавычки, тире и
+ * регистр у одного и того же предложения в разных блоках отличаются, а смысл
+ * нет. Пустой остаток возвращается как `undefined`, чтобы не осталось
+ * заголовка блока без текста под ним.
+ */
+export function withoutRepeatedSentences(
+  text: string | undefined,
+  said: Set<string>
+): string | undefined {
+  const src = (text ?? "").trim();
+  if (!src) return undefined;
+  const kept: string[] = [];
+  for (const sentence of src.split(/(?<=[.!?…])\s+/u)) {
+    const piece = sentence.trim();
+    if (!piece) continue;
+    const key = normalizeForCompare(piece);
+    if (!key) continue;
+    if (said.has(key)) continue;
+    said.add(key);
+    kept.push(piece);
+  }
+  return kept.length > 0 ? kept.join(" ") : undefined;
+}

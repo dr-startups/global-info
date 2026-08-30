@@ -15,6 +15,7 @@ import {
   SILENTLY_CLIPPED_NARRATIVE_TEMPLATES,
   type DeckTemplateId,
 } from "./template-registry";
+import { narrativeBudgetOf, pageNarrativeOf } from "./page-narrative";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import {
@@ -166,12 +167,7 @@ const TEXT_BUDGETS = getClientTextFieldBudgets();
  * Требовать от них того же значило бы завалить приёмку на здоровой деке
  * числом, которое никто не мерил.
  */
-export function narrativeBudgetOf(templateId: string): number {
-  const template = DECK_TEMPLATE_REGISTRY[templateId as DeckTemplateId];
-  return template && SILENTLY_CLIPPED_NARRATIVE_TEMPLATES.has(templateId as DeckTemplateId)
-    ? template.layout.narrativeCharBudget
-    : TEXT_BUDGETS.narrative;
-}
+export { narrativeBudgetOf };
 
 export function validateSectionPack(input: {
   pack: SectionPackV2;
@@ -247,11 +243,20 @@ export function validateSectionPack(input: {
   // (covered by findingIds check + bullets carry [findingId] markers).
   for (const slide of pack.slides) {
     checkText(issues, slide.slideId, "title", slide.title, TEXT_BUDGETS.title);
+    /*
+     * Меряется абзац **страницы**, а не абзац построителя: проза находки
+     * приклеивается к нему уже в нагрузке и добавляет сотни знаков. Пока
+     * сверка смотрела на `content.narrative`, 416 знаков проходили, а на лист
+     * уезжало 620 — и на живых прогонах лист перерастал ёмкость.
+     */
     checkText(
       issues,
       slide.slideId,
       "narrative",
-      slide.content.narrative,
+      pageNarrativeOf(
+        slide.content,
+        DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId]?.rendererTemplate ?? ""
+      ),
       narrativeBudgetOf(slide.templateId)
     );
     checkText(issues, slide.slideId, "whatWasFound", slide.content.whatWasFound, TEXT_BUDGETS.whatWasFound);

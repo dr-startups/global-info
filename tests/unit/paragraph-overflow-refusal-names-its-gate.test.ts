@@ -27,6 +27,7 @@ import {
   NarrativeOverBudgetError,
   NarrativeReflowLossError,
 } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { NarrativeSplitLossError } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import { blockingIssues } from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
 
 /** Ровно тот отказ, на котором встали два оплаченных прогона владельца. */
@@ -38,6 +39,9 @@ const OVER_BUDGET = new NarrativeOverBudgetError([
 const REFLOW_LOSS = new NarrativeReflowLossError([
   { slideKey: "p03_persona", before: 403, after: 344 },
 ]);
+
+/** Разбивка абзаца по листам не смогла обойтись без потери знаков. */
+const SPLIT_LOSS = new NarrativeSplitLossError("p13_ru_wikipedia", 1200, 998);
 
 describe("отказ переполнения абзаца — детерминированный гейт", () => {
   it("называет себя маркером с числом листов", () => {
@@ -66,6 +70,19 @@ describe("отказ переполнения абзаца — детермин�
     expect(deterministicGateOf(blocked?.message)).toBe("NARRATIVE_REFLOW_LOSS");
     expect(blocked?.code).toBe("ASSEMBLY_QA_FAILED");
     expect(blocked?.message).toContain("narrative reflow dropped text: p03_persona 403->344");
+  });
+
+  it("потеря разбивки — тоже гейт, и своим именем", () => {
+    // Отказ детерминирован ровно так же: тот же абзац при том же бюджете
+    // разложится так же и упадёт так же. Без имени он доехал бы до
+    // оркестратора обычным отказом подготовки и получил бы десять оплаченных
+    // кругов — ровно ту течь, которую этот шаг и закрывает.
+    const blocked = prepareBlockedErrorFor(SPLIT_LOSS);
+
+    expect(blocked?.code).toBe("ASSEMBLY_QA_FAILED");
+    expect(blocked?.message).toContain("NARRATIVE_SPLIT_LOSS=202");
+    expect(deterministicGateOf(blocked?.message)).toBe("NARRATIVE_SPLIT_LOSS");
+    expect(blocked?.message).toContain("narrative split would drop text: p13_ru_wikipedia 1200->998");
   });
 
   it("маркер переживает обёртку для оператора", () => {
@@ -146,5 +163,17 @@ describe("причина названа словами, а не маркером
     // Контроль: ветки добавлены рядом, а не поверх.
     expect(prepareGateAdvice("MATERIAL_THEME_COVERAGE=87.5")).toContain("Повтор сборки это не изменит");
     expect(prepareGateAdvice("качество сборки: страница печатает текст дважды")).toBeNull();
+  });
+});
+
+describe("потеря разбивки объясняется оператору словами", () => {
+  it("называет страницу, целость данных и следующий шаг", () => {
+    const shown = prepareGateFailureMessage(prepareBlockedErrorFor(SPLIT_LOSS)?.message);
+
+    expect(shown.startsWith("Отчёт не собрался")).toBe(true);
+    expect(shown).toContain("p13_ru_wikipedia");
+    expect(shown).toContain("Собранные данные целы");
+    expect(shown).toContain("платить за сбор заново не нужно");
+    expect(shown).toContain("Пересобрать отчёт");
   });
 });

@@ -18,7 +18,7 @@ import {
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import { DECK_TEMPLATE_REGISTRY } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
-import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/page-narrative";
 import type { SlideContentContract } from "@/modules/digital-profile/orion-golden/deck-sections/contracts";
 
 const QUERY = "Рашников Виктор Филиппович";

@@ -406,7 +406,7 @@
         "blockGapPt": 10
       },
       "budgets": {
-        "narrativeChars": 1113,
+        "narrativeChars": 998,
         "itemChars": 400,
         "maxBulletsPerSlide": 4,
         "maxTableRowsPerSlide": 0

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  composeFindingProse,
-  composeSlideNarrative,
-} from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { composeSlideNarrative } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/page-narrative";
 
 /**
  * Текст находки собирается абзацем вместо анкеты из трёх подписей.

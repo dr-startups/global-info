@@ -71,9 +71,15 @@ describe("ни один абзац собранной деки не длинне
   });
 
   it("бюджет страницы Википедии приведён к измеренной ёмкости листа", () => {
-    // Телеметрия эталона, запись `orion_text_body_p31`: 196 знаков в 2 строках,
-    // 10,19 строки помещается → ≈998 знаков. Объявленные 900 были меньше
-    // замера, и абзац золотого эталона в 952 знака их уже превышал.
+    /*
+     * Число померено рисованием карточки тем же вызовом, каким её рисует
+     * рендерер (`_render_status_cards` → `content_card`): пол ёмкости — 1016
+     * знаков, рецепт замера стоит при `CARD_NARRATIVE_CHAR_BUDGET`. Прежде
+     * здесь стояла ссылка на телеметрию `orion_text_body_p31` — запись
+     * **соседней** страницы, к карточке отношения не имеющая; из неё же
+     * однажды и уехала не та цифра. Нижняя граница — абзац золотого эталона
+     * (952), который объявленные когда-то 900 уже превышал.
+     */
     const budget = budgetOf("wikipedia-check");
     expect(budget).toBeGreaterThanOrEqual(952);
     expect(budget).toBeLessThanOrEqual(998);
@@ -183,19 +189,36 @@ describe("последний рубеж стоит после склейки, а
    * знаков. На золотом эталоне это 620 у построителя против 952 на проводе —
    * то есть проверка одного пакета такую потерю пропускает по построению.
    */
+  // Бюджет берётся у реестра, а не переписывается числом: он там померен, и
+  // вторая копия числа разъехалась бы с первой на следующей правке ёмкости.
+  const PERSONA_BUDGET = narrativeBudgetOf("persona-check");
+
   it("абзац, переросший бюджет уже после склейки, назван поимённо", () => {
     const over = narrativeOverBudget([
-      { slideKey: "p03_persona", templateId: "persona-check", narrative: "я".repeat(1114) },
+      {
+        slideKey: "p03_persona",
+        templateId: "persona-check",
+        narrative: "я".repeat(PERSONA_BUDGET + 1),
+      },
     ]);
     expect(over).toEqual([
-      { slideKey: "p03_persona", templateId: "persona-check", length: 1114, budget: 1113 },
+      {
+        slideKey: "p03_persona",
+        templateId: "persona-check",
+        length: PERSONA_BUDGET + 1,
+        budget: PERSONA_BUDGET,
+      },
     ]);
   });
 
   it("абзац по бюджету пропускается", () => {
     expect(
       narrativeOverBudget([
-        { slideKey: "p03_persona", templateId: "persona-check", narrative: "я".repeat(1113) },
+        {
+          slideKey: "p03_persona",
+          templateId: "persona-check",
+          narrative: "я".repeat(PERSONA_BUDGET),
+        },
       ])
     ).toEqual([]);
   });

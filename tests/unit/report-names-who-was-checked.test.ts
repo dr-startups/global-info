@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildFrontMatterFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/front-matter";
 import { buildIdentityFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/identity";
 import { slotsForFragment } from "@/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
-import { DECK_TEMPLATE_REGISTRY } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
+import {
+  CARD_NARRATIVE_CHAR_BUDGET,
+  DECK_TEMPLATE_REGISTRY,
+} from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { DeckTemplateId } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { SlideContentContract } from "@/modules/digital-profile/orion-golden/deck-sections/contracts";
 import type {
@@ -235,12 +238,16 @@ describe("абзац листа влезает на лист", () => {
   });
 
   it("бюджет листа объявлен по замеру рендерера, а не на глаз", () => {
-    // Телеметрия разметки эталона, запись `orion_text_body_p49`
-    // (`orion_golden_no_data_compact`): 104 знака в одной строке, 10,7 строки
-    // помещается → ≈1113 знаков. Бюджет не вправе быть больше замера.
+    /*
+     * Ёмкость этой карточки — общая для всей ветки `_render_status_cards`, и
+     * ответ на неё один: `CARD_NARRATIVE_CHAR_BUDGET`, при котором записан
+     * рецепт замера. Прежде здесь стояло собственное число 1113, выведенное из
+     * телеметрии **соседней** страницы (`orion_text_body_p49`); замер той же
+     * карточки дал 1016, то есть 1113 разрешали молчаливую потерю хвоста.
+     * Правило, а не второе число: бюджет обязан **равняться** общей константе.
+     */
     const tpl = DECK_TEMPLATE_REGISTRY[slotsForFragment("FRONT_MATTER_MAIN")[2]!.templateId];
-    expect(tpl.layout.narrativeCharBudget).toBeLessThanOrEqual(1113);
-    expect(tpl.layout.narrativeCharBudget).toBeGreaterThanOrEqual(600);
+    expect(tpl.layout.narrativeCharBudget).toBe(CARD_NARRATIVE_CHAR_BUDGET);
   });
 });
 

@@ -12,8 +12,10 @@ import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import {
   DECK_TEMPLATE_REGISTRY,
   SIDEBAR_HIGHLIGHT_BUDGET,
+  SILENTLY_CLIPPED_NARRATIVE_TEMPLATES,
   type DeckTemplateId,
 } from "../template-registry";
+import { builderNarrativeRoomOn, narrativeBudgetOf } from "../page-narrative";
 import { balanceTailPage } from "../semantic-summary-pagination";
 import { buildContinuationSlide } from "../continuation-slide";
 import {
@@ -311,6 +313,169 @@ export function packBulletPages(
  * complete-sentence paragraphs instead of being clamped — the full meaning
  * stays in the report, each slide's narrative stays within its budget.
  */
+/**
+ * Абзац, разложенный по страницам поровну и без потери знаков.
+ *
+ * Равномерно — потому что жадная набивка на 1400 знаках оставляла второй
+ * странице триста знаков при первой в 1079: лист с одним предложением в
+ * карточке читается как ошибка вёрстки, а не как продолжение. Минимум страниц
+ * — потому что каждая лишняя страница в отчёте стоит внимания читателя.
+ *
+ * Разрез идёт по границам предложений: разорванное посередине предложение —
+ * это тот самый обрубок, ради ухода от которого работа и делается. Если
+ * предложение не помещается на страницу целиком, разбивка отказывает **вслух**
+ * (`NarrativeSplitLossError`), а не режет.
+ */
+export class NarrativeSplitLossError extends Error {
+  readonly slideId: string;
+  readonly before: number;
+  readonly after: number;
+
+  constructor(slideId: string, before: number, after: number) {
+    super(`narrative split would drop text: ${slideId} ${before}->${after}`);
+    this.name = "NarrativeSplitLossError";
+    this.slideId = slideId;
+    this.before = before;
+    this.after = after;
+  }
+}
+
+/**
+ * Страница отдаётся резаку уже абзацами — и он её не трогает.
+ *
+ * `reflowNarrativeParagraphs` ломает сплошной текст на три абзаца и при этом
+ * **теряет** хвост: его предел на абзац считается от длины текста, а укладка
+ * идёт целыми предложениями, так что остаток не всегда влезает. Страницу,
+ * которую мы только что собрали сами, ломать второй раз незачем: она приходит
+ * готовой, а `reflowNarrativeParagraphs` текст с переводами строк возвращает
+ * как есть.
+ */
+function asParagraphs(text: string, maxParas = 3): string {
+  const sentences = text.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  if (text.length < 220 || sentences.length <= 1) return text;
+  const target = Math.ceil(text.length / Math.min(maxParas, sentences.length));
+  const paras: string[] = [];
+  let buf = "";
+  for (const sentence of sentences) {
+    const trial = buf ? `${buf} ${sentence}` : sentence;
+    if (buf && trial.length > target && paras.length < maxParas - 1) {
+      paras.push(buf);
+      buf = sentence;
+    } else {
+      buf = trial;
+    }
+  }
+  if (buf) paras.push(buf);
+  return paras.join("\n");
+}
+
+/**
+ * Раскладка предложений по страницам: кусок `i` влезает в комнату страницы `i`.
+ *
+ * Инвариант держится тем, что страница **закрывается тем, что набрано**, как
+ * только очередное предложение в неё не влезло, — и предложение начинает
+ * следующую. Прежде такая страница молча пропускалась, и набранное под комнату
+ * продолжения возвращалось первым куском, то есть уезжало на первую страницу
+ * сверх её комнаты: разбивка, поставленная чинить переполнение листа, сама его
+ * производила.
+ *
+ * Пустая первая страница законна и означает «абзац начинается с продолжения»:
+ * на ней остаётся проза находки, а знаки не теряются. Комната первой страницы
+ * меньше комнаты продолжения ровно на длину этой прозы, поэтому пустой может
+ * оказаться только она.
+ */
+function packNarrativePages(
+  sentences: readonly string[],
+  roomFor: (page: number) => number,
+  limitFor: (page: number, rest: readonly string[]) => number
+): string[] {
+  const pages: string[] = [];
+  let buf = "";
+  let index = 0;
+  // Предел считается **на открытии страницы**: доля оставшегося текста должна
+  // быть посчитана один раз, иначе она сжимается с каждым положенным
+  // предложением и страница закрывается раньше, чем следует.
+  let limit = 0;
+  while (index < sentences.length) {
+    const rest = sentences.slice(index);
+    if (!buf) limit = Math.min(roomFor(pages.length), limitFor(pages.length, rest));
+    const trial = buf ? `${buf} ${rest[0]}` : rest[0]!;
+    if (trial.length <= limit) {
+      buf = trial;
+      index += 1;
+      continue;
+    }
+    if (!buf && pages.length > 0) {
+      /*
+       * Предложение не влезает даже в комнату продолжения — класть его некуда.
+       * Открывать пустые страницы дальше бессмысленно (комната больше не
+       * растёт), поэтому раскладка останавливается, и потерю называет числом
+       * сторож у вызывающего. Штатно сюда не попасть: такое предложение
+       * отсеивается раньше — но «не попасть» не должно означать «зациклиться».
+       */
+      break;
+    }
+    pages.push(buf);
+    buf = "";
+  }
+  pages.push(buf);
+  return pages;
+}
+
+function splitNarrativeEvenly(
+  narrative: string,
+  firstRoom: number,
+  continuationRoom: number,
+  slideId: string
+): Array<string | undefined> {
+  const text = narrative.trim();
+  if (!text) return [undefined];
+  if (text.length <= firstRoom) return [text];
+
+  const sentences = text.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  const roomFor = (page: number): number => (page === 0 ? firstRoom : continuationRoom);
+  const widest = Math.max(firstRoom, continuationRoom);
+  if (sentences.some((x) => x.length > widest)) {
+    /*
+     * Предложение не помещается **ни на одну** страницу: резать его по границам
+     * предложений нечем, а молчаливый обрубок — ровно то, что запрещено. Второе
+     * число — сколько знаков сохранится, то есть ноль: раскладки не будет вовсе.
+     * Комната здесь стояла бы неправдой — оператор читал бы «потеряется сто
+     * знаков» там, где теряется абзац целиком.
+     */
+    throw new NarrativeSplitLossError(slideId, text.length, 0);
+  }
+
+  // Минимум страниц даёт жадная набивка: предела, кроме комнаты, у неё нет.
+  const greedy = packNarrativePages(sentences, roomFor, () => Number.POSITIVE_INFINITY);
+  /*
+   * Та же раскладка с прицелом на равные страницы: предел — доля оставшегося
+   * текста на оставшиеся страницы, но не меньше первого предложения (иначе
+   * страница не сдвинется) и не больше комнаты. Жадная набивка на 1400 знаках
+   * оставляла второй странице триста знаков при первой в 1079: лист с одним
+   * предложением в карточке читается как ошибка вёрстки.
+   */
+  const even = packNarrativePages(sentences, roomFor, (page, rest) => {
+    const restChars = rest.reduce((n, x) => n + x.length + 1, -1);
+    const share = Math.ceil(restChars / Math.max(1, greedy.length - page));
+    return Math.max(share, rest[0]?.length ?? 0);
+  });
+  // Ровнее — да, но не ценой лишней страницы.
+  const pages = even.length <= greedy.length ? even : greedy;
+
+  /*
+   * Знаки не теряются. Обе раскладки забирают весь текст по построению, и сюда
+   * попасть можно только если их перепишут. Тогда это громкий отказ, а не тихая
+   * пропажа хвоста. Сравнение без пробелов — разделители меняются (страница
+   * получает абзацы), а знаки нет.
+   */
+  const laid = pages.map((page) => (page ? asParagraphs(page) : ""));
+  const kept = laid.join(" ").replace(/\s+/gu, "").length;
+  const whole = text.replace(/\s+/gu, "").length;
+  if (kept !== whole) throw new NarrativeSplitLossError(slideId, whole, kept);
+  return laid;
+}
+
 export function withContinuations(
   base: SlideContentContract,
   templateId: DeckTemplateId,
@@ -366,8 +531,29 @@ export function withContinuations(
       ? chunk(addresses, tpl.maxTableRowsPerSlide)
       : [addresses]
     : undefined;
-  const narrativeChunks =
-    narrative.length > narrativeBudget
+  /*
+   * Абзац режется по ёмкости **этого листа**, а не по общему бюджету поля.
+   *
+   * Прежде порог брался из клиентского контракта (1100 знаков на любое поле),
+   * то есть отвечал на чужой вопрос: у листа своя померенная ёмкость, и она
+   * меньше. Резалась при этом не та величина — абзац построителя, к которому
+   * проза находки приклеится позже, уже в нагрузке. Отсюда и вставшие прогоны:
+   * 1013 и 1014 знаков на листе ёмкостью 998, и ни одна проверка по дороге не
+   * возражала.
+   *
+   * Проза приклеивается только к первой странице (`buildContinuationSlide`
+   * снимает её поля с продолжений), поэтому первой странице оставляется
+   * комната за вычетом прозы, а продолжениям — полный бюджет листа.
+   */
+  const measuredRoom = SILENTLY_CLIPPED_NARRATIVE_TEMPLATES.has(templateId)
+    ? {
+        first: builderNarrativeRoomOn(base.content, templateId, tpl.rendererTemplate),
+        continuation: narrativeBudgetOf(templateId),
+      }
+    : null;
+  const narrativeChunks = measuredRoom
+    ? splitNarrativeEvenly(narrative, measuredRoom.first, measuredRoom.continuation, base.slideId)
+    : narrative.length > narrativeBudget
       ? splitClientParagraphs(narrative, narrativeBudget, 4)
       : [narrative || undefined];
   const total = Math.max(bulletChunks.length, rowChunks.length, narrativeChunks.length);
@@ -1526,6 +1712,17 @@ export function reflowNarrativeParagraphs(text: string, maxParas = 3): string {
   if (!raw) return raw;
   if (raw.includes("\n")) return raw.replace(/\n{3,}/gu, "\n\n").trim();
   if (raw.length < 220) return raw;
+  /*
+   * Одно предложение резать нечем.
+   *
+   * Ниже текст делится по границам предложений и всё, что не влезло в три
+   * абзаца, **отбрасывается**; для текста без единой границы это означает
+   * обрубок по границе слова — то есть молчаливую потерю там, где резать было
+   * незачем. Такая страница сегодня не доезжает до клиента вовсе: сверка по
+   * обе стороны резака (`narrativeReflowLoss`) роняет сборку. Возвращаем как
+   * есть: читаемость от разбивки не выиграет, а знаки останутся на месте.
+   */
+  if (raw.split(/(?<=[.!?…])\s+/u).filter((x) => x.trim()).length <= 1) return raw;
   return splitClientParagraphs(raw, Math.max(180, Math.floor(raw.length / maxParas)), maxParas).join(
     "\n"
   );
