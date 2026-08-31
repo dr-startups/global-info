@@ -15,7 +15,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { failedAcceptanceGates } from "../../scripts/run-orion-deck-sections-report72";
+import {
+  acceptanceGateSummary,
+  failedAcceptanceGates,
+} from "../../scripts/run-orion-deck-sections-report72";
 
 describe("приёмочные ворота сборки деки", () => {
   it("все пройдены — отказов нет", () => {
@@ -38,5 +41,45 @@ describe("приёмочные ворота сборки деки", () => {
 
   it("пустой набор ворот успехом не считается", () => {
     expect(failedAcceptanceGates({})).toHaveLength(1);
+  });
+
+  it("пропуск отказом не считается — но и проходом тоже", () => {
+    // Сверка, которой нечем было мериться, — отдельный исход. Выданная за
+    // проход, она делает ворот неотличимым от неработающего.
+    expect(failedAcceptanceGates({ a: true, b: "SKIP" })).toEqual([]);
+  });
+});
+
+describe("сводка приёмки называет пропуски", () => {
+  it("пропущенный ворот не попадает в число пройденных и назван по имени", () => {
+    const summary = acceptanceGateSummary({
+      sectionQa: true,
+      geometryClean: true,
+      serpTableMatchesObservations: "SKIP",
+    });
+    expect(summary.total).toBe(3);
+    expect(summary.passed).toBe(2);
+    expect(summary.skipped).toEqual(["serpTableMatchesObservations"]);
+    expect(summary.failed).toEqual([]);
+    // Строку читает человек: «28 из 28» на пропущенной сверке — то, ради чего
+    // раннер смоков когда-то и завели.
+    expect(summary.line).toContain("пройдено 2 из 3");
+    expect(summary.line).toContain("пропущено 1");
+    expect(summary.line).toContain("serpTableMatchesObservations");
+  });
+
+  it("без пропусков строка о них не говорит", () => {
+    const summary = acceptanceGateSummary({ sectionQa: true, geometryClean: true });
+    expect(summary.line).toBe("приёмка: пройдено 2 из 2 ворот");
+    expect(summary.skipped).toEqual([]);
+  });
+
+  it("провал остаётся провалом и при пропуске рядом", () => {
+    const summary = acceptanceGateSummary({
+      sectionQa: false,
+      serpTableMatchesObservations: "SKIP",
+    });
+    expect(summary.failed).toEqual(["sectionQa"]);
+    expect(summary.passed).toBe(0);
   });
 });

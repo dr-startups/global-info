@@ -12,7 +12,10 @@
  *
  * Разрешением у этого источника служит не флаг, а адрес и ключ: облачный
  * сервис отвечает по своему адресу, самостоятельно поднятый `yente` — по
- * своему. Поэтому умолчание «включён» ничего не открывает и не тратит.
+ * своему. Поэтому умолчание «включён» ничего не открывает и не тратит, а
+ * наблюдаемым здесь служит именно флаг (`status.enabled`): составной статус
+ * отвечает ещё и на вопрос о ключе, и его держит соседняя проверка
+ * `open-sanctions-key-is-the-permission.test.ts`.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -95,8 +98,14 @@ describe("умолчание OpenSanctions живёт в config/defaults.ts", ()
     expect(boolSetting("OPEN_SANCTIONS_ENABLED", {})).toBe(true);
   });
 
-  it("при пустом окружении источник включён и настроен", async () => {
+  it("при пустом окружении источник включён, а недостаёт ему только ключа", async () => {
     const status = await statusUnder({});
+    expect(status.enabled).toBe(true);
+    expect(status.missingConfigKeys).toEqual(["OPEN_SANCTIONS_API_KEY"]);
+  });
+
+  it("с ключом источник настроен полностью", async () => {
+    const status = await statusUnder({ OPEN_SANCTIONS_API_KEY: "os-key" });
     expect(status.status).toBe("ENABLED");
     expect(status.missingConfigKeys).toEqual([]);
   });
@@ -105,7 +114,7 @@ describe("умолчание OpenSanctions живёт в config/defaults.ts", ()
     // У OpenSanctions нет контракта, поэтому он и не подчиняется выключателю
     // платных подписок: иначе стенд без договоров остался бы без комплаенса.
     const status = await statusUnder({ DIGITAL_PROFILE_COMPLIANCE_REAL_ENABLED: "false" });
-    expect(status.status).toBe("ENABLED");
+    expect(status.enabled).toBe(true);
   });
 });
 
@@ -122,7 +131,8 @@ describe("выключить источник можно только осозн
     "непонятое значение %j источник не выключает",
     async (value) => {
       const status = await statusUnder({ OPEN_SANCTIONS_ENABLED: value });
-      expect(status.status).toBe("ENABLED");
+      expect(status.enabled).toBe(true);
+      expect(status.status).not.toBe("DISABLED");
     }
   );
 });
@@ -136,7 +146,8 @@ describe("выключенный источник в сеть не ходит", 
   });
 
   it("включённый источник запрос делает — счёт вызовов не вакуумный", async () => {
-    const result = await screenUnder({});
+    // С ключом: без него разрешения нет и вызова не будет по другой причине.
+    const result = await screenUnder({ OPEN_SANCTIONS_API_KEY: "os-key" });
     expect(result.status).toBe("SUCCESS");
     expect(http.calls).toHaveLength(1);
   });

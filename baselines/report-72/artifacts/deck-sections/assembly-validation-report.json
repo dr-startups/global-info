@@ -29,7 +29,6 @@
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
     "panelPagesMatchDrawnRows": true,
-    "serpTableRanksFromOwnEngine": true,
     "noStalePacks": true,
     "packSelfContainedLineage": true,
     "sectionQaAllPassed": true

@@ -15,7 +15,7 @@ import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-
 import { quoteIntegrityProblems } from "./quote-integrity";
 import { normalizeForCompare } from "./text-compare";
 import { withoutFindingMarkers } from "./slide-markers";
-import { SERP_TABLE_TOP_N, rankSourceBelongsToEngine } from "./fragment-builders/serp";
+import { SERP_TABLE_TOP_N } from "./fragment-builders/serp";
 import { sameSerpQuery } from "./fragment-builders/shared";
 import { serpMaterialKey } from "../../serp-observation/material-key";
 import { clientAddress } from "../client/client-address";
@@ -283,6 +283,7 @@ export type SerpObservationForGate = {
   region?: string;
   query?: string;
   rank?: number;
+  /** Кто измерил позицию. Фильтром не служит — называется в сообщении отказа. */
   rankSource?: string;
   url?: string;
   title?: string;
@@ -303,6 +304,34 @@ function printedDomain(link: string): string {
   return bareDomain(link).split("/")[0]!.trim();
 }
 
+/** Напечатанный адрес: текст в сравнимом виде и признак обрезки многоточием. */
+type PrintedAddress = { text: string; truncated: boolean };
+
+/** Адрес в сравнимом виде: без схемы, www, регистра и хвостовой косой черты. */
+function comparableAddress(raw: string): string {
+  return bareDomain(raw).replace(/\/+$/u, "").trim();
+}
+
+function withoutQuery(address: string): string {
+  return address.replace(/[?#].*$/u, "");
+}
+
+/**
+ * Тот ли это адрес, что напечатан в таблице.
+ *
+ * Печатная форма (`clientLink`) законно короче исходной двумя способами:
+ * длиннее 165 знаков — режется многоточием, не влезает целиком — теряет строку
+ * параметров. Поэтому обрезанный адрес сравнивается началом, а целый —
+ * целиком либо без параметров. Сравнение «по домену» здесь было бы поблажкой:
+ * строка `vk.ru` прощала бы `vk.ru/umar_kremlev`, которого в деке нет.
+ */
+function printedAddressMatches(printed: PrintedAddress, expected: string): boolean {
+  if (!printed.text || !expected) return false;
+  if (printed.truncated) return expected.startsWith(printed.text);
+  if (printed.text === expected) return true;
+  return withoutQuery(printed.text) === withoutQuery(expected);
+}
+
 /**
  * Печатная таблица выдачи сверяется с артефактом наблюдений — в обе стороны.
  *
@@ -321,7 +350,20 @@ function printedDomain(link: string): string {
 export function serpPrintMatchesObservations(input: {
   rendererSlides: ReadonlyArray<RendererSlide>;
   observations: ReadonlyArray<SerpObservationForGate>;
-}): { issues: string[]; skipped: string[] } {
+}): {
+  issues: string[];
+  skipped: string[];
+  /**
+   * Сколько таблиц сверено — признак «проверка выполнялась», взятый из
+   * данных, а не из наличия строки в `skipped`.
+   *
+   * Пока признаком служило отсутствие объявленного пропуска, снятая строка
+   * сообщения возвращала вакуумный проход: ключ проверки появлялся, и сводка
+   * приёмки печатала «28 из 28» на деке, где сверять было нечего (замерено
+   * мутацией). Число сверенных таблиц снять, не изменив поведения, нельзя.
+   */
+  comparedTables: number;
+} {
   const issues: string[] = [];
   const skipped: string[] = [];
   type PrintedRow = { rank: number; domain: string; slideKey: string };
@@ -329,6 +371,37 @@ export function serpPrintMatchesObservations(input: {
     string,
     { engine: string; query: string; region: string | null; rows: PrintedRow[] }
   >();
+  /**
+   * Все адреса, напечатанные в таблицах региона, — вторая половина вопроса
+   * «доехал ли материал».
+   *
+   * Собираются со **всех** таблиц с колонкой «Ссылка», а не только с
+   * позиционных: у листа «найдено по дополнительным запросам» колонки «№» нет
+   * вовсе, а материал на нём клиент видит. Ключ — регион, потому что и вторая
+   * таблица, и страницы выдачи региональные.
+   */
+  const printedByRegion = new Map<string, PrintedAddress[]>();
+  const regionOf = (slide: RendererSlide): string | null =>
+    slide.sectionKey === "RU_PROFILE" ? "RU" : slide.sectionKey === "UAE_PROFILE" ? "UAE" : null;
+  for (const slide of input.rendererSlides) {
+    if (!slide.table) continue;
+    const addressColumn = (slide.table.headers ?? []).indexOf("Ссылка");
+    if (addressColumn < 0) continue;
+    const bucket = printedByRegion.get(regionOf(slide) ?? "") ?? [];
+    for (const row of slide.table.rows) {
+      const raw = String(row[addressColumn] ?? "").trim();
+      if (!raw) continue;
+      const truncated = /[…]$/u.test(raw);
+      bucket.push({ text: comparableAddress(raw.replace(/…+$/u, "")), truncated });
+    }
+    printedByRegion.set(regionOf(slide) ?? "", bucket);
+  }
+  /** Напечатан ли этот материал хоть где-нибудь в своём регионе. */
+  const printedSomewhere = (region: string | null, expected: string): boolean => {
+    const own = printedByRegion.get(region ?? "") ?? [];
+    const unbound = region === null ? [] : (printedByRegion.get("") ?? []);
+    return [...own, ...unbound].some((p) => printedAddressMatches(p, expected));
+  };
   for (const slide of input.rendererSlides) {
     const engine = String(slide.metrics?.serpEngine ?? "");
     const query = String(slide.metrics?.serpQuery ?? "");
@@ -338,8 +411,7 @@ export function serpPrintMatchesObservations(input: {
     // на каждой строке здорового прогона и уронили бы приёмку.
     const positional = Number(slide.metrics?.serpPositional ?? 0) === 1;
     if (!engine || !query || !positional || !slide.table) continue;
-    const region =
-      slide.sectionKey === "RU_PROFILE" ? "RU" : slide.sectionKey === "UAE_PROFILE" ? "UAE" : null;
+    const region = regionOf(slide);
     const key = `${slide.sectionKey}|${engine}|${query.trim().toLowerCase()}`;
     const table = tables.get(key) ?? { engine, query, region, rows: [] };
     /*
@@ -371,25 +443,26 @@ export function serpPrintMatchesObservations(input: {
     skipped.push(
       "сверка печатной таблицы выдачи с наблюдениями пропущена: в деке нет позиционных таблиц выдачи"
     );
-    return { issues, skipped };
-  }
-  const datasetNamesRankSource = input.observations.some(
-    (o) => Boolean(o.rankSource) && o.rankSource !== "unknown"
-  );
-  if (!datasetNamesRankSource) {
-    skipped.push(
-      "сверка печатной таблицы выдачи с наблюдениями пропущена: в наблюдениях нет поля rankSource (набор собран до его появления)"
-    );
-    return { issues, skipped };
+    return { issues, skipped, comparedTables: 0 };
   }
   for (const table of tables.values()) {
-    // Наблюдения этой самой пары «движок × запрос» с позицией своего движка.
+    /*
+     * Наблюдения этой самой пары «движок × запрос» с позицией не глубже
+     * двадцатой — **кто бы их ни измерил**.
+     *
+     * Здесь стоял тот же предикат `rankSourceBelongsToEngine`, которым
+     * фильтрует строки построитель, и прибор мерил тем, что создаёт дефект.
+     * Замер прогона 91: по паре «YANDEX × Кремлев Умар Назарович» собрано 25
+     * органических наблюдений с позицией ≤ 20, напечатано 16, материалы
+     * позиций 18, 19 и 20 не напечатаны нигде — ворота отдали ноль замечаний
+     * и ноль пропусков. Ожидание ворот обязано быть слепо к решениям
+     * построителя, иначе оно проверяет согласие построителя с самим собой.
+     */
     const owned = input.observations.filter(
       (o) =>
         String(o.surface ?? "organic") === "organic" &&
         String(o.engine ?? "").toUpperCase() === table.engine.toUpperCase() &&
         sameSerpQuery(o.query, table.query) &&
-        rankSourceBelongsToEngine(o.rankSource, table.engine) &&
         typeof o.rank === "number" &&
         o.rank >= 1 &&
         o.rank <= SERP_TABLE_TOP_N &&
@@ -398,15 +471,21 @@ export function serpPrintMatchesObservations(input: {
     );
     // Наблюдения одного материала сводятся в одну строку с лучшей позицией —
     // тем же ключом, что и в построителе.
-    const materials = new Map<string, { rank: number; domain: string }>();
+    type ExpectedMaterial = { rank: number; domain: string; address: string; rankSource: string };
+    const materials = new Map<string, ExpectedMaterial>();
     for (const o of owned) {
       const key = serpMaterialKey(o);
       const domain = bareDomain(o.domain);
       const known = materials.get(key);
-      if (!known || o.rank! < known.rank) materials.set(key, { rank: o.rank!, domain });
+      if (known && known.rank <= o.rank!) continue;
+      materials.set(key, {
+        rank: o.rank!,
+        domain,
+        address: comparableAddress(clientAddress(o.url) ?? o.domain ?? ""),
+        rankSource: String(o.rankSource ?? "неизвестно"),
+      });
     }
     const printedPairs = new Set(table.rows.map((r) => `${r.rank}|${r.domain}`));
-    const printedRanks = new Set(table.rows.map((r) => r.rank));
     const expectedPairs = new Set([...materials.values()].map((m) => `${m.rank}|${m.domain}`));
     for (const row of table.rows) {
       if (expectedPairs.has(`${row.rank}|${row.domain}`)) continue;
@@ -416,15 +495,24 @@ export function serpPrintMatchesObservations(input: {
     }
     for (const m of materials.values()) {
       if (printedPairs.has(`${m.rank}|${m.domain}`)) continue;
-      // Место занято другим материалом того же ранга: дубль позиции —
-      // допустимая потеря, печатается один из двух.
-      if (printedRanks.has(m.rank)) continue;
+      /*
+       * Вопрос — «доехал ли материал», а не «напечатан ли его номер».
+       *
+       * Здесь стояло прощение «номер занят кем-то другим», и оно ошибалось в
+       * обе стороны: на прогоне 91 прощало четыре материала ТОП-20, которых в
+       * деке нет вовсе (`vk.ru/umar_kremlev`, `tiktok.com/@umar_kremlev`,
+       * `rostov.plus.rbc.ru`, `sport.rambler.ru/mma/56528744`), и жаловалось на
+       * два, доехавших второй таблицей. Прощает только печать самого материала
+       * — в любой таблице своего региона.
+       */
+      if (printedSomewhere(table.region, m.address)) continue;
       issues.push(
-        `таблица ${table.engine} «${table.query}»: наблюдение ${m.domain || "без адреса"} (позиция ${m.rank}) не напечатано`
+        `таблица ${table.engine} «${table.query}»: материал ${m.address || m.domain || "без адреса"} ` +
+          `(позиция ${m.rank}, измерил ${m.rankSource}) не напечатан ни в одной таблице региона`
       );
     }
   }
-  return { issues, skipped };
+  return { issues, skipped, comparedTables: tables.size };
 }
 
 export function validateAssembly(input: {
@@ -1145,7 +1233,18 @@ export function validateAssembly(input: {
       rendererSlides,
       observations: input.serpObservations,
     });
-    checks.serpTableRanksFromOwnEngine = serp.issues.length === 0;
+    /*
+     * Пропуск — не проход, и решают это данные, а не название.
+     *
+     * Ключ проверки появляется только там, где сверена хотя бы одна таблица:
+     * `true` на невыполненной сверке делает ворот неотличимым от работающего,
+     * и сводка приёмки печатала «28 из 28» на деке, где сверять было нечего.
+     * Признаком служило отсутствие строки в `skipped` — то есть текст
+     * сообщения; снятая строка возвращала вакуумный проход одной правкой.
+     */
+    if (serp.comparedTables > 0) {
+      checks.serpTableMatchesObservations = serp.issues.length === 0;
+    }
     issues.push(...serp.issues.slice(0, 20));
     skipped.push(...serp.skipped);
   }

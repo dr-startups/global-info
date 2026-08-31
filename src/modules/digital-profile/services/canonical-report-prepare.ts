@@ -86,6 +86,7 @@ import {
   type ReportQualitySummary,
 } from "./report-quality-summary";
 import {
+  complianceCoverageCells,
   resolveComplianceInventoryItems,
   resolveComplianceScreenings,
   type ComplianceInventoryPrisma,
@@ -1325,6 +1326,10 @@ export async function runCanonicalReportPrepare(
       ...genAnswerCoverageCells(
         readJsonSafe(join(input.artifactsDir, "base-collection-manifest.json"))
       ),
+      // Комплаенс наблюдений не оставляет, поэтому о его покрытии рассказывают
+      // сами итоги скринингов — иначе отказ единственной работающей базы не
+      // виден ни в пробелах покрытия, ни в ограничениях резюме.
+      ...complianceCoverageCells(complianceScreenings),
     ] as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
 
     const analytics = await runOrionAnalyticsPipeline({

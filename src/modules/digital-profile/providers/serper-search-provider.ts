@@ -137,19 +137,18 @@ function serperFailure(err: unknown, audit: SerpDepthAudit): ProviderRunResult {
     results: [],
     depthAudit: audit,
   };
-  if (err instanceof ProviderHttpError && err.code === "PROVIDER_BAD_RESPONSE") {
-    // Serper uses 401/403 for bad keys — surface a clearer message.
-    if (/401|403/.test(err.message)) {
-      return {
-        ...failed,
-        error: {
-          code: err.code,
-          message: "Serper rejected the request — check GOOGLE_EXTERNAL_SERP_API_KEY.",
-          retryable: false,
-          provider: "GOOGLE",
-        },
-      };
-    }
+  if (err instanceof ProviderHttpError && err.code === "PROVIDER_UNAUTHORIZED") {
+    // Отвергнутый ключ у Serper — это 401/403, и переменную называем мы: в
+    // сообщении провайдера её имени нет.
+    return {
+      ...failed,
+      error: {
+        code: err.code,
+        message: "Serper rejected the request — check GOOGLE_EXTERNAL_SERP_API_KEY.",
+        retryable: false,
+        provider: "GOOGLE",
+      },
+    };
   }
   return { ...failed, error: toProviderError(err, "GOOGLE") };
 }

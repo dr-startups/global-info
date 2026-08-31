@@ -11,7 +11,7 @@
  * санкционное совпадение от неё не исчезает.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type { ComplianceScreeningRequest } from "@/modules/digital-profile/compliance-providers/types";
 
 const db = vi.hoisted(() => {
@@ -89,10 +89,18 @@ vi.mock("@/server/prisma/client", () => ({ prisma: db.client }));
 
 const CASE_ID = db.caseId;
 
-const http = vi.hoisted(() => ({
-  calls: [] as Array<{ url: string; body: unknown }>,
-  payload: { responses: { subject: { results: [] } } } as unknown,
-}));
+const http = vi.hoisted(() => {
+  /*
+   * Ключ выставляется раньше импортов: конфигурация провайдеров снимается при
+   * загрузке модуля, а облачный OpenSanctions без ключа отдаёт
+   * `NOT_CONFIGURED` и тела запроса не строит вовсе — проверять было бы нечего.
+   */
+  process.env.OPEN_SANCTIONS_API_KEY = "os-key-birthdate";
+  return {
+    calls: [] as Array<{ url: string; body: unknown }>,
+    payload: { responses: { subject: { results: [] } } } as unknown,
+  };
+});
 
 vi.mock("@/modules/digital-profile/providers/http", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -233,4 +241,13 @@ describe("тело запроса /match", () => {
     });
     expect(sentProperties().country).toEqual(["россия", "оаэ"]);
   });
+});
+
+/**
+ * Ключ снимается: файлы идут отдельными процессами, но утёкшее значение
+ * замаскировало бы ровно тот дефект, который чинит работа 1, — соседняя
+ * проверка увидела бы `ENABLED` там, где ждёт `NOT_CONFIGURED`.
+ */
+afterAll(() => {
+  delete process.env.OPEN_SANCTIONS_API_KEY;
 });

@@ -132,3 +132,122 @@ runews24.ru/material`;
     expect(textFieldsWithoutTraceOnTheirPage([slide], () => page)).toEqual([]);
   });
 });
+
+/**
+ * Блоки панели ворот не видел вовсе.
+ *
+ * У панельных макетов (`orion_golden_surface_panel`, `orion_golden_image_grid`,
+ * `orion_golden_serp_screenshot`, `orion_golden_knowledge_panel`) клиентский
+ * текст лежит внутри `visualAnalysis`, а на верхнем уровне слайда его нет.
+ * Замер по нагрузке эталона-72: таких слайдов 16 из 61, и у каждого ворот
+ * проверял ровно одно поле — заголовок.
+ *
+ * Прогон 91, стр. 46: панель подсказок не напечатала ни «Что сделать»
+ * (`recommendedActions`), ни последнее предложение вывода — про негатив в
+ * собранном наборе. Ворот молчал по построению.
+ */
+const PANEL_ANALYSIS = {
+  sidebarMode: "context",
+  headlineConclusion: "Собрано 50 подсказок. На панели показаны 10: 4 относятся к субъекту.",
+  whatIsVisible: "Подсказки описывают интерес к биографии и написанию имени.",
+  clientMeaning: "Подсказки влияют на первое впечатление при поиске.",
+  recommendedActions: ["Проверить строки со статусом «вероятно» и отслеживать риск-формулировки."],
+  provenanceLabel: "Источники — поисковая выдача; полный перечень в приложении.",
+  highlightExplanations: [],
+  moreSignalsCount: 0,
+};
+
+const PANEL_SLIDE = {
+  slideKey: "p11_ru_suggestions_yandex",
+  template: "orion_golden_surface_panel",
+  pageNumber: 11,
+  title: "Россия — подсказки Яндекса",
+  visualAnalysis: PANEL_ANALYSIS,
+};
+
+/** Лист панели: заголовок, подписи блоков и сами блоки. */
+function panelPage(): string {
+  const a = PANEL_ANALYSIS;
+  return [
+    "Россия — подсказки Яндекса",
+    a.headlineConclusion,
+    "Что показывает экран",
+    a.whatIsVisible,
+    "Что это значит",
+    a.clientMeaning,
+    "Что сделать",
+    (a.recommendedActions ?? [])[0],
+    a.provenanceLabel,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+describe("блоки панели тоже оставляют след на своей странице", () => {
+  it("панель, напечатавшая свои блоки, расхождений не даёт", () => {
+    expect(textFieldsWithoutTraceOnTheirPage([PANEL_SLIDE], () => panelPage())).toEqual([]);
+  });
+
+  it("вывод, потерянный при укладке, назван полем и страницей", () => {
+    // Ровно случай стр. 46: последнее предложение блока не влезло, и рендерер
+    // оставил только влезающие — но здесь блока нет целиком.
+    const page = panelPage().replace(PANEL_ANALYSIS.clientMeaning, "");
+    const out = textFieldsWithoutTraceOnTheirPage([PANEL_SLIDE], () => page);
+    expect(out.map((m) => m.field)).toEqual(["visualAnalysis.clientMeaning"]);
+    expect(out[0]!.page).toBe(11);
+    expect(out[0]!.slideKey).toBe("p11_ru_suggestions_yandex");
+  });
+
+  it("рекомендация, выброшенная целиком, названа", () => {
+    const page = panelPage().replace(PANEL_ANALYSIS.recommendedActions[0]!, "");
+    const out = textFieldsWithoutTraceOnTheirPage([PANEL_SLIDE], () => page);
+    expect(out.map((m) => m.field)).toEqual(["visualAnalysis.recommendedActions[0]"]);
+  });
+
+  it("ворот проверяет все блоки панели, а не один заголовок", () => {
+    // Мера слепоты: на пустом листе ворот обязан назвать каждый блок.
+    const out = textFieldsWithoutTraceOnTheirPage([PANEL_SLIDE], () => "");
+    expect(out.map((m) => m.field)).toEqual([
+      "title",
+      "visualAnalysis.headlineConclusion",
+      "visualAnalysis.whatIsVisible",
+      "visualAnalysis.clientMeaning",
+      "visualAnalysis.recommendedActions[0]",
+      "visualAnalysis.provenanceLabel",
+    ]);
+  });
+
+  it("объяснение рамки на месте среднего блока следом считается", () => {
+    /*
+     * Средним блоком панель рисует либо «что показывает экран», либо объяснения
+     * рамок — какое из двух, решает набор рамок и то, нашлась ли для страницы
+     * картинка (`_sidebar_analysis` против `_render_analysis_cards_full_width`).
+     * Требовать оба значило бы краснеть на законной ветке, и ворот выключили бы.
+     */
+    const adverse = {
+      ...PANEL_ANALYSIS,
+      sidebarMode: "adverse_explanation",
+      highlightExplanations: [
+        { clientReason: "На странице rucompromat.eu — обвинения в криминальном прошлом.", frameTone: "red" },
+      ],
+    };
+    const page = [
+      "Россия — снимок выдачи",
+      adverse.headlineConclusion,
+      "Почему выделено",
+      adverse.highlightExplanations[0]!.clientReason,
+      "Что это значит",
+      adverse.clientMeaning,
+      "Что сделать",
+      adverse.recommendedActions[0],
+      adverse.provenanceLabel,
+    ].join("\n");
+    const slide = { ...PANEL_SLIDE, title: "Россия — снимок выдачи", visualAnalysis: adverse };
+    expect(textFieldsWithoutTraceOnTheirPage([slide], () => page)).toEqual([]);
+  });
+
+  it("страница без панели проверяется как прежде", () => {
+    // Слайд без `visualAnalysis` новых полей не приобретает.
+    expect(textFieldsWithoutTraceOnTheirPage([SERP_SLIDE], () => SERP_PAGE)).toEqual([]);
+  });
+});

@@ -8,6 +8,7 @@
  */
 
 import type { RawInventoryItem } from "../orion-golden/types";
+import type { CoverageCellStatusRow } from "../orion-golden/analytics/composite-dataset-builder";
 import type { ComplianceScreeningRecord } from "../orion-golden/deck-sections/scoped-input";
 
 /** Subset of DatabaseProfile columns needed for inventory adaptation. */
@@ -362,6 +363,43 @@ export function latestScreeningPerProvider(
     finishedMs.set(provider, ms);
   }
   return [...byProvider.values()].sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
+/**
+ * Ячейки покрытия из итогов скринингов.
+ *
+ * Покрытие собиралось только из наблюдений выдачи, а скрининг наблюдений не
+ * оставляет: успешная проверка без совпадений — это ноль строк. Поэтому
+ * комплаенса среди ячеек не было ни при каком исходе, и отказ единственного
+ * работающего источника (прогон 91: `401 Invalid API key`) не попадал ни в
+ * пробелы покрытия, ни в ограничения, которые читает клиент.
+ *
+ * Здесь читаются **оба** исхода, а не только отказ, как у пробы нейро-ответа:
+ * там успех доказывают строки наблюдений, а здесь доказывать его нечем.
+ * Регион у проверки по базам не бывает: она задаётся именем и датой рождения,
+ * а не страной поиска.
+ *
+ * Отказ называется теми же словами, что у соседа: «источник ответил ошибкой» —
+ * `ERROR`, «источник не настроен или выключен» — `NOT_COLLECTED`. Для пробела
+ * покрытия разницы нет (обе величины не-`OK`), но артефакт покрытия читает
+ * оператор, а два соседних поставщика ячеек не должны отвечать на один вопрос
+ * по-разному.
+ */
+export function complianceCoverageCells(
+  screenings: ReadonlyArray<ComplianceScreeningRecord>
+): CoverageCellStatusRow[] {
+  const statusOf = (status: string): string => {
+    if (status === "SUCCESS") return "OK";
+    return status === "DISABLED" || status === "NOT_CONFIGURED" ? "NOT_COLLECTED" : "ERROR";
+  };
+  return screenings.map((s) => ({
+    region: "MIXED",
+    engine: s.provider,
+    surface: "compliance",
+    status: statusOf(s.status),
+    provider: s.provider,
+    errorCode: s.errorCode ?? null,
+  }));
 }
 
 /**

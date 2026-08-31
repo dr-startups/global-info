@@ -23,12 +23,22 @@ function envInt(value: string | undefined, fallback: number, min: number, max: n
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/**
+ * Адрес облачного сервиса OpenSanctions.
+ *
+ * Он же умолчание и он же признак «работаем с чужим облаком»: ключ обязателен
+ * ровно тогда, когда запрос уходит сюда. Значение объявлено один раз — иначе
+ * условие «адрес равен умолчанию» и само умолчание разойдутся, и требование
+ * ключа тихо перестанет срабатывать.
+ */
+export const OPEN_SANCTIONS_CLOUD_API_BASE_URL = "https://api.opensanctions.org";
+
 export const complianceProviderConfig = {
   realEnabled: envBool(process.env.DIGITAL_PROFILE_COMPLIANCE_REAL_ENABLED, false),
   /**
    * OpenSanctions — открытый агрегатор санкционных списков, PEP и розыска
-   * (шаг 04.3). Ключ нужен облачному сервису; самостоятельно поднятый `yente`
-   * работает без него, поэтому в обязательные ключи он не входит.
+   * (шаг 04.3). Ключ нужен облачному сервису и обязателен ровно там;
+   * самостоятельно поднятый `yente` работает без него.
    *
    * Умолчание переключателя записано вместе с остальными — в
    * `config/defaults.ts`, и читается общим разбором: локальный `envBool` читал
@@ -37,7 +47,7 @@ export const complianceProviderConfig = {
    */
   openSanctions: {
     enabled: boolSetting("OPEN_SANCTIONS_ENABLED"),
-    apiBaseUrl: envStr(process.env.OPEN_SANCTIONS_API_BASE_URL) ?? "https://api.opensanctions.org",
+    apiBaseUrl: envStr(process.env.OPEN_SANCTIONS_API_BASE_URL) ?? OPEN_SANCTIONS_CLOUD_API_BASE_URL,
     webBaseUrl: envStr(process.env.OPEN_SANCTIONS_WEB_BASE_URL) ?? "https://www.opensanctions.org",
     apiKey: envStr(process.env.OPEN_SANCTIONS_API_KEY),
     dataset: envStr(process.env.OPEN_SANCTIONS_DATASET) ?? "default",
@@ -96,12 +106,22 @@ const NOTES: Record<ComplianceProviderName, string> = {
 export function missingComplianceConfigKeys(name: ComplianceProviderName): string[] {
   if (name === "MANUAL_IMPORT") return [];
   if (name === "OPEN_SANCTIONS") {
-    // Ключ не обязателен: `yente` на своём хосте работает анонимно, а у
-    // облачного сервиса отказ по ключу приходит понятной ошибкой запроса.
-    // Требовать здесь ключ значило бы объявлять ненастроенным работающий
-    // экземпляр.
+    /*
+     * Разрешение — ключ, а не флаг, но только для облака.
+     *
+     * Самостоятельно поднятый `yente` отвечает по своему адресу анонимно, и
+     * требовать ключ безусловно значило бы объявить ненастроенным работающий
+     * экземпляр. А вот запрос в чужое облако без ключа не «вернёт понятную
+     * ошибку», как здесь считалось: на прогоне 91 он унёс туда ФИО, дату
+     * рождения и гражданство живого человека и получил 401. Ключ обязателен
+     * ровно тогда, когда адрес равен облачному умолчанию.
+     */
     const c = complianceProviderConfig.openSanctions;
-    return c.apiBaseUrl ? [] : ["OPEN_SANCTIONS_API_BASE_URL"];
+    if (!c.apiBaseUrl) return ["OPEN_SANCTIONS_API_BASE_URL"];
+    if (c.apiBaseUrl === OPEN_SANCTIONS_CLOUD_API_BASE_URL && !c.apiKey) {
+      return ["OPEN_SANCTIONS_API_KEY"];
+    }
+    return [];
   }
   if (name === "DOW_JONES") {
     const c = complianceProviderConfig.dowJones;

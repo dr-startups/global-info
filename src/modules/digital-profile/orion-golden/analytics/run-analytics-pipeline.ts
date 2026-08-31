@@ -57,6 +57,7 @@ import {
   type ExecutiveSummaryStageInput,
   type SourceQualityEntry,
 } from "../executive-summary/stage-contracts";
+import { clientCoverageLimitationLines } from "../executive-summary/coverage-limitation-lines";
 import {
   runExecutiveSummaryStage,
   type ExecutiveSummaryStageResult,
@@ -266,7 +267,16 @@ export function coverageDataGaps(
     const area = region ? `${label} (${region})` : label;
     if (seen.has(area)) continue;
     seen.add(area);
-    gaps.push({ area, detail: "поверхность не собрана в текущем прогоне" });
+    /*
+     * Причина называется словами своего направления: у базы данных нет
+     * «поверхности», которую можно собрать, и общая фраза читалась бы клиенту
+     * ошибкой отчёта.
+     */
+    const detail =
+      surface === "compliance"
+        ? "проверка по базам в этом прогоне не выполнена"
+        : "поверхность не собрана в текущем прогоне";
+    gaps.push({ area, detail });
   }
   return gaps;
 }
@@ -928,12 +938,9 @@ export async function runOrionAnalyticsPipeline(
   });
   emit("extracted-facts.json", factExtraction);
 
-  // Одна причина — одна строка ограничения: сюда едут только формулировки, без
-  // направлений, и четыре пробела покрытия давали в резюме одну и ту же фразу
-  // трижды через точку с запятой.
-  const clientCoverageLimitations = [
-    ...new Set(executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? []),
-  ];
+  const clientCoverageLimitations = clientCoverageLimitationLines(
+    executiveSummaryInput.dataGaps ?? []
+  );
 
   // Stage 4 — ClientSummaryPack (typed input of the summary the deck prints).
   const regions = [

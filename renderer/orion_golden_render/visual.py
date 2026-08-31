@@ -117,6 +117,51 @@ def _sidebar_sanitize_field(ctx: _Ctx, field: str, text: str) -> str:
     return SIDEBAR_SAFE_FALLBACK
 
 
+def _sidebar_loss(
+    ctx: _Ctx,
+    field: str,
+    kind: str,
+    avail: int,
+    needed: int,
+    size: float,
+    w: int,
+    lost: str,
+) -> None:
+    """Потеря текста на панели — вслух: предупреждением и записью разметки.
+
+    Обе ветки укладки панели молчали. Необязательный блок, у которого не влезло
+    даже первое предложение, выбрасывался целиком, а блок, из которого осталась
+    часть предложений, укорачивался — и ни то ни другое не оставляло следа: на
+    прогоне 91 (стр. 46) страница подсказок не напечатала «Что сделать» и вывод
+    о собранном наборе, а в `layout-telemetry.json` не было ни одной записи об
+    этой странице при 62 записях по деке.
+
+    `dropped_bullets`/`dropped_lines` намеренно не трогаются: они поднимают
+    `CONTENT_DROPPED_BY_RENDERER`, а это блокер выдачи, и живой прогон вставал
+    бы на законном выходе модели. Клип-код блокером не является и уезжает
+    оператору строкой предупреждения.
+
+    `text_length` меряет **потерянное**, а не весь блок: на обрезке часть
+    предложений напечатана, и запись про «700 знаков» там, где до клиента не
+    доехало 300, врёт оператору в ту же сторону, что и молчание.
+    """
+    ctx.warnings.append(f"sidebar-qa:p{ctx.page}:{field}:{kind}")
+    record_text_layout(
+        page=ctx.page,
+        name=f"orion_sidebar_{field}_p{ctx.page}",
+        role="sidebar",
+        font_family=FONT,
+        font_size_pt=size,
+        box_width=w,
+        box_height=max(0, avail),
+        available_height=max(0, avail),
+        required_height=needed,
+        measured_lines=0,
+        text_length=len(lost),
+        clipped=True,
+    )
+
+
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
     """Unified client sidebar panel (v57): one column, no stacked framed cards."""
     analysis = slide.get("visualAnalysis") or {}
@@ -131,7 +176,12 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     if not isinstance(explanations, list):
         explanations = []
     actions = analysis.get("recommendedActions") or []
-    action = _safe(actions[0]) if isinstance(actions, list) and actions else ""
+    # Рисуются **все** рекомендации, а не первая: остальные молча пропадали, а
+    # ворот приёмки проверяет каждую — на нагрузке с двумя рекомендациями он
+    # краснел бы на ветке рендерера, а не на дефекте.
+    action = (
+        " ".join(x for x in (_safe(a) for a in actions) if x) if isinstance(actions, list) else ""
+    )
     provenance = _safe(analysis.get("provenanceLabel") or "")
     more_n = int(analysis.get("moreSignalsCount") or 0)
 
@@ -215,9 +265,14 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
                     )
                     fitted = SIDEBAR_SAFE_FALLBACK
                 else:
+                    _sidebar_loss(ctx, field, "dropped", avail, needed, size, w, body)
                     return
             else:
-                fitted = " ".join(kept)
+                kept_text = " ".join(kept)
+                _sidebar_loss(
+                    ctx, field, "truncated", avail, needed, size, w, body[len(kept_text) :]
+                )
+                fitted = kept_text
         if title:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(220_000))
             tf = box.text_frame
@@ -250,6 +305,20 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         write_block("Что сделать", action, field="recommendedActions", size=11)
     if provenance:
         # Fine print, no frame
+        if cy >= max_bottom - 80_000:
+            # Ветка достижима только когда обязательный вывод не поместился и
+            # заменён запасной фразой: у прочих блоков в запасе остаётся
+            # 160 000 EMU, и подпись после них влезает всегда.
+            _sidebar_loss(
+                ctx,
+                "provenanceLabel",
+                "dropped",
+                max_bottom - cy,
+                measure_text_height(provenance, w - 2 * pad, FS_CAPTION, line_spacing=1.2),
+                FS_CAPTION,
+                w,
+                provenance,
+            )
         if cy < max_bottom - 80_000:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(min(cy, max_bottom - 120_000)), Emu(w - 2 * pad), Emu(140_000))
             tf = box.text_frame

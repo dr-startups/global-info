@@ -140,7 +140,8 @@ describe("настроенный провайдер спрашивает офи�
     reply("Forbidden", 403);
     const failed = await fetchYandexGenAnswer("q");
     if (failed.status !== "FAILED") throw new Error(`ожидался FAILED, получен ${failed.status}`);
-    expect(failed.errorCode).toBe("PROVIDER_BAD_RESPONSE");
+    // Отвергнутый ключ — свой код: «источник ответил мусором» это про другое.
+    expect(failed.errorCode).toBe("PROVIDER_UNAUTHORIZED");
 
     reply("<html>captcha</html>");
     const broken = await fetchYandexGenAnswer("q");

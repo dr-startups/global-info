@@ -33,8 +33,18 @@ from pptx import Presentation  # noqa: E402
 from pptx.util import Emu  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
-from orion_golden_render.common import SLIDE_H, SLIDE_W, _Ctx  # noqa: E402
+from orion_golden_render.common import (  # noqa: E402
+    CONTENT_BOTTOM,
+    CONTENT_W,
+    MARGIN_X,
+    SLIDE_H,
+    SLIDE_W,
+    _Ctx,
+    get_layout_telemetry,
+    reset_layout_telemetry,
+)
 from orion_golden_render.slides import _render_slide  # noqa: E402
+from orion_golden_render.visual import _sidebar_analysis  # noqa: E402
 
 #: Интро страницы тем в том виде, в каком его собирает построитель секций.
 THEMES_INTRO = (
@@ -84,6 +94,184 @@ def page_text(prs: Any) -> str:
                 for cell in row.cells:
                     parts.append(cell.text)
     return "\n".join(parts)
+
+
+#: Блоки панели: вывод, «что показывает экран», «что это значит», «что сделать».
+PANEL_ANALYSIS = {
+    "sidebarMode": "context",
+    "headlineConclusion": "Собрано 50 подсказок. На панели показаны 10.",
+    "whatIsVisible": (
+        "Подсказки описывают общий интерес к личности, биографии и написанию имени. "
+        "Негативных формулировок среди показанных строк нет: прямых запросов про суды, "
+        "долги и санкции не видно. Это не снимает репутационный риск по профилю в целом."
+    ),
+    "clientMeaning": (
+        "Подсказки влияют на первое впечатление при поиске: здесь они не подталкивают "
+        "проверяющего к негативным темам, но оставляют интерес к идентификации персоны."
+    ),
+    "recommendedActions": [
+        "Проверить строки со статусом «вероятно» и регулярно отслеживать появление "
+        "риск-формулировок в подсказках обоих поисковиков."
+    ],
+    "provenanceLabel": "Источники — поисковая выдача; полный перечень в приложении.",
+    "highlightExplanations": [],
+    "moreSignalsCount": 0,
+}
+
+
+#: Короб панели — тот самый, что даёт `_render_visual_with_sidebar`: картинка
+#: занимает 62 % ширины, панели остаётся остальное за вычетом промежутка.
+PANEL_IMG_W = int(CONTENT_W * 0.62)
+PANEL_X = MARGIN_X + PANEL_IMG_W + 120_000
+PANEL_W = CONTENT_W - PANEL_IMG_W - 120_000
+PANEL_Y = 1_210_000
+
+#: Высота панели на странице без второго заголовка: до низа сцены.
+PANEL_H_WHOLE = CONTENT_BOTTOM - 1_150_000 - 80_000 - 60_000
+
+#: Высота, при которой на панель не помещаются два последних блока, а средний
+#: влезает одним предложением из трёх. Выведена из меры самого рендерера:
+#: свободная высота под средним блоком — 697 185 EMU при 395 630 на первое
+#: предложение и 989 076 на два.
+PANEL_H_TIGHT = 1_450_000
+
+#: Высота, при которой не помещается даже обязательный вывод: он заменяется
+#: запасной фразой, а подпись источников уходит за низ панели.
+PANEL_H_CRAMPED = 400_000
+
+
+def sidebar_panel(height: int) -> tuple[Any, str]:
+    """Панель заданной высоты: контекст отрисовки и текст, который на ней есть."""
+    reset_layout_telemetry()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, 46, 94)
+    _sidebar_analysis(
+        ctx,
+        {"visualAnalysis": PANEL_ANALYSIS},
+        x=PANEL_X,
+        y=PANEL_Y,
+        w=PANEL_W,
+        h=height,
+    )
+    return ctx, page_text(prs)
+
+
+def sidebar_drop_checks() -> None:
+    """Проверки Т8д: потеря блока панели слышна, целая панель молчит."""
+    # Тесная панель: средний блок режется по предложениям, два последних не
+    # помещаются вовсе — ровно две ветки `write_block`, которые молчали.
+    ctx, drawn = sidebar_panel(PANEL_H_TIGHT)
+    entries = get_layout_telemetry()
+    action = PANEL_ANALYSIS["recommendedActions"][0]
+    visible_tail = "Это не снимает репутационный риск"
+    check(
+        "Т8д1: тесная панель рекомендацию действительно теряет",
+        action[:40] not in drawn and visible_tail not in drawn,
+        drawn[:160],
+    )
+    check(
+        "Т8д2: выброшенный блок назван предупреждением",
+        any("sidebar-qa" in w and "recommendedActions" in w for w in ctx.warnings),
+        f"предупреждения: {ctx.warnings}",
+    )
+    check(
+        "Т8д2б: обрезанный по предложениям блок назван тоже",
+        any("sidebar-qa" in w and "whatIsVisible" in w for w in ctx.warnings),
+        f"предупреждения: {ctx.warnings}",
+    )
+    check(
+        "Т8д3: потеря записана разметкой как обрезка панели",
+        sum(1 for e in entries if e.get("role") == "sidebar" and e.get("clipped") is True) >= 3,
+        f"записей {len(entries)}: {[(e.get('name'), e.get('clipped')) for e in entries]}",
+    )
+    check(
+        "Т8д4: потеря содержимого рендерером не объявляется",
+        all(not e.get("droppedBullets") and not e.get("droppedLines") for e in entries),
+        f"записи: {[(e.get('name'), e.get('droppedBullets'), e.get('droppedLines')) for e in entries]}",
+    )
+    check(
+        "Т8д5: запись называет свою страницу",
+        all(e.get("page") == 46 for e in entries) and len(entries) > 0,
+        f"страницы: {[e.get('page') for e in entries]}",
+    )
+
+    # Мера потери: запись обязана называть то, что не напечатано, а не весь
+    # блок целиком — иначе оператор прочтёт «потеряно 700 знаков» там, где
+    # потеряно 300.
+    truncated = next(
+        (e for e in entries if e.get("name", "").endswith("whatIsVisible_p46")), {}
+    )
+    check(
+        "Т8д8: запись обрезанного блока меряет потерянное, а не весь блок",
+        0 < int(truncated.get("textLength") or 0) < len(PANEL_ANALYSIS["whatIsVisible"]),
+        f"textLength={truncated.get('textLength')} при длине блока {len(PANEL_ANALYSIS['whatIsVisible'])}",
+    )
+
+    # Подпись источников — третья молчавшая ветка. Она срабатывает только на
+    # панели, где даже обязательный вывод не поместился и заменён запасной
+    # фразой: у прочих блоков в запасе остаётся 160 000 EMU, и подпись после
+    # них всегда влезает (проверено арифметикой `write_block`).
+    cramped_ctx, cramped = sidebar_panel(PANEL_H_CRAMPED)
+    check(
+        "Т8д9: подпись источников на тесной панели действительно не напечатана",
+        str(PANEL_ANALYSIS["provenanceLabel"])[:40] not in cramped,
+        cramped[:200],
+    )
+    check(
+        "Т8д10: невлезшая подпись источников объявлена",
+        any("sidebar-qa" in w and "provenanceLabel" in w for w in cramped_ctx.warnings),
+        f"предупреждения: {cramped_ctx.warnings}",
+    )
+
+    # Вторая рекомендация: ворот приёмки проверяет каждый элемент
+    # `recommendedActions`, а панель рисовала только первый — приёмка краснела
+    # бы на законной ветке рендерера.
+    two_actions = dict(PANEL_ANALYSIS)
+    two_actions["recommendedActions"] = [
+        "Проверить строки со статусом «вероятно».",
+        "Отслеживать появление риск-формулировок ежемесячно.",
+    ]
+    reset_layout_telemetry()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    both_ctx = _Ctx(prs, 47, 94)
+    _sidebar_analysis(
+        both_ctx,
+        {"visualAnalysis": two_actions},
+        x=PANEL_X,
+        y=PANEL_Y,
+        w=PANEL_W,
+        h=PANEL_H_WHOLE,
+    )
+    both = page_text(prs)
+    reset_layout_telemetry()
+    check(
+        "Т8д11: на просторной панели рисуются все рекомендации, а не первая",
+        all(a[:40] in both for a in two_actions["recommendedActions"]),
+        both[-260:],
+    )
+
+    # Просторная панель: все четыре блока на листе, и объявлять нечего.
+    whole_ctx, whole = sidebar_panel(PANEL_H_WHOLE)
+    whole_entries = get_layout_telemetry()
+    reset_layout_telemetry()
+    printed = all(
+        str(text)[:40] in whole
+        for text in (
+            PANEL_ANALYSIS["headlineConclusion"],
+            PANEL_ANALYSIS["clientMeaning"],
+            action,
+        )
+    )
+    check("Т8д6: просторная панель печатает свои блоки", printed, whole[:200])
+    check(
+        "Т8д7: целая панель ни предупреждений, ни записей не даёт",
+        not whole_ctx.warnings and whole_entries == [],
+        f"предупреждения {whole_ctx.warnings}, записей {len(whole_entries)}",
+    )
 
 
 def main() -> int:
@@ -255,6 +443,16 @@ def main() -> int:
         "прочитано" not in page_text(without),
         page_text(without)[:200],
     )
+
+    # --- Т8д. Панель объявляет блок, который не поместился ------------------
+    #
+    # Прогон 91, стр. 46: панель подсказок напечатала вывод и «что показывает
+    # экран», а «Что сделать» не напечатала вовсе — необязательный блок, у
+    # которого не влезло даже первое предложение, `write_block` выбрасывал
+    # целиком (`else: return`). Ни предупреждения, ни записи разметки при этом
+    # не появлялось: в `layout-telemetry.json` прогона 62 записи и ни одной про
+    # эту страницу. Потерянный клиентский текст обязан быть слышен.
+    sidebar_drop_checks()
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))

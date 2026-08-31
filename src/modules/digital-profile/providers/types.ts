@@ -41,6 +41,12 @@ export type ProviderErrorCode =
   | "PROVIDER_REQUEST_FAILED"
   | "PROVIDER_RATE_LIMITED"
   | "PROVIDER_INVALID_RESPONSE"
+  /**
+   * Ключ не принят (401/403). Отдельный код, а не оттенок «плохого ответа»:
+   * до клиента доезжает код, а не текст ошибки, и на живом прогоне 401
+   * «Invalid API key» печатался словами «источник не ответил в этом прогоне».
+   */
+  | "PROVIDER_UNAUTHORIZED"
   | "PROVIDER_BAD_RESPONSE"
   | "PROVIDER_TIMEOUT"
   | "PROVIDER_NETWORK_ERROR";

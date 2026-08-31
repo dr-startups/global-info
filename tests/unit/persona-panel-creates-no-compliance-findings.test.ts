@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Панель отвечает «про кого собирать», скрининг 04.3 — «есть ли совпадение по
@@ -7,6 +7,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * `ComplianceScreeningRun`, запишет `DatabaseProfile` на каждое совпадение и
  * родит находку — то есть ответит на чужой вопрос ещё до первой траты.
  */
+
+/*
+ * Ключ выставляется до импортов (`vi.hoisted` выполняется раньше них):
+ * конфигурация провайдеров снимается при загрузке модуля, а без ключа облачный
+ * OpenSanctions отдаёт `NOT_CONFIGURED` и в сеть не идёт — тогда у проверки
+ * «кого зовёт умолчание источника» не осталось бы предмета.
+ */
+vi.hoisted(() => {
+  process.env.OPEN_SANCTIONS_API_KEY = "os-key-persona";
+});
 
 const screeningCalls: string[] = [];
 vi.mock("@/modules/digital-profile/compliance-providers/service", async (importOriginal) => {
@@ -110,4 +120,13 @@ describe("панель не рождает комплаенс-находок", (
       expect(src, forbidden).not.toContain(forbidden);
     }
   });
+});
+
+/**
+ * Ключ снимается: файлы идут отдельными процессами, но утёкшее значение
+ * замаскировало бы ровно тот дефект, который чинит работа 1, — соседняя
+ * проверка увидела бы `ENABLED` там, где ждёт `NOT_CONFIGURED`.
+ */
+afterAll(() => {
+  delete process.env.OPEN_SANCTIONS_API_KEY;
 });

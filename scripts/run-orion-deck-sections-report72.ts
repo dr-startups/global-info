@@ -723,11 +723,14 @@ async function main(): Promise<void> {
         // пропуск: проверка без входа выглядит точно так же, как пройденная.
         panelPagesMatchDrawnRows:
           result.assemblyValidation?.checks.panelPagesMatchDrawnRows ?? false,
-        // Печатная таблица выдачи сходится с наблюдениями. На эталоне 72
-        // признака `rankSource` в артефактах нет — проверка объявляет пропуск
-        // строкой отчёта, а не молчит.
-        serpTableRanksFromOwnEngine:
-          result.assemblyValidation?.checks.serpTableRanksFromOwnEngine ?? false,
+        // Печатная таблица выдачи сходится с наблюдениями. Сверять нечем —
+        // это **пропуск**, отдельный исход сводки: выданный за проход, он
+        // делает ворот неотличимым от работающего.
+        serpTableMatchesObservations: assemblyGateOutcome(
+          result.assemblyValidation,
+          "serpTableMatchesObservations",
+          "сверка печатной таблицы выдачи"
+        ),
         // Карточные страницы матрицы обязаны отчитаться о нарисованном:
         // без их телеметрии CONTENT_DROPPED_BY_RENDERER судить нечего.
         riskMatrixTelemetryPresent: riskMatrixTelemetryPresent(
@@ -805,17 +808,19 @@ async function main(): Promise<void> {
     // нулём при любом их значении: `geometryClean: false` держался так с
     // начала переработки и никого не останавливал. Зелёный код возврата при
     // красных воротах — это приёмка, которая ничего не принимает.
-    const failed = failedAcceptanceGates(acceptance.gates);
-    const total = Object.keys(acceptance.gates).length;
-    if (failed.length > 0) {
+    const summary = acceptanceGateSummary(acceptance.gates);
+    if (summary.failed.length > 0) {
       console.error(
-        `\nПРИЁМКА НЕ ПРОЙДЕНА: ${failed.length} из ${total} ворот — ${failed.join(", ")}`
+        `\nПРИЁМКА НЕ ПРОЙДЕНА: ${summary.failed.length} из ${summary.total} ворот — ${summary.failed.join(", ")}`
       );
+      if (summary.skipped.length > 0) {
+        console.error(`Не выполнено: ${summary.skipped.join(", ")}`);
+      }
       console.error(`Подробности: ${acceptancePath}`);
       process.exitCode = 1;
       return;
     }
-    console.log(`приёмка: пройдено ${total} из ${total} ворот`);
+    console.log(summary.line);
   }
 }
 
@@ -1055,6 +1060,14 @@ function drawnPartOfTextField(template: string, field: string, value: string): s
   return value;
 }
 
+/**
+ * Поле, которое ищется на листе: имя, переданный текст и равноправные замены.
+ *
+ * Замены нужны там, где лист печатает **одно из двух** — иначе ворот краснеет
+ * на законной ветке рендерера (см. `panelTextFields`). У обычного поля их нет.
+ */
+type TextFieldCheck = [field: string, value: unknown, alternatives: unknown[]];
+
 /** Поле нагрузки, которого на его странице не нашлось. */
 export type TextFieldWithoutTrace = {
   slideKey: string;
@@ -1087,9 +1100,12 @@ const TRACE_HEAD_CHARS = 40;
  * (`services/render-telemetry-gate.ts`); требование дословного совпадения
  * краснело бы на здоровом прогоне, и ворот выключили бы.
  *
- * Перечень полей — общий со снимком клиентского текста
- * (`lib/client-text-snapshot.ts`), плюс каждый элемент списка отдельно: у списка
- * пропадает не всё поле, а одна строка.
+ * Перечень полей — снимок клиентского текста (`lib/client-text-snapshot.ts`)
+ * плюс две добавки: каждый элемент списка отдельно (у списка пропадает не всё
+ * поле, а одна строка) и блоки панели из `visualAnalysis`, которых снимок не
+ * видит вовсе. Второе означает, что клиентский текст шестнадцати панельных
+ * слайдов не закреплён ни одним текстовым эталоном, — это записано строкой в
+ * описи пробелов.
  */
 export function textFieldsWithoutTraceOnTheirPage(
   finalSlides: ReadonlyArray<Record<string, unknown>>,
@@ -1099,17 +1115,27 @@ export function textFieldsWithoutTraceOnTheirPage(
   for (const slide of finalSlides) {
     const page = Number(slide.pageNumber);
     const drawn = compactForCompare(pageText(page));
+    const template = String(slide.template ?? "");
+    /** След оставил хотя бы один из вариантов, которыми лист печатает блок. */
+    const traced = (field: string, variants: readonly unknown[]): boolean =>
+      variants.some((value) => {
+        if (typeof value !== "string") return false;
+        const head = compactForCompare(drawnPartOfTextField(template, field, value)).slice(
+          0,
+          TRACE_HEAD_CHARS
+        );
+        return head.length > 0 && drawn.includes(head);
+      });
     const bullets = Array.isArray(slide.bullets) ? (slide.bullets as unknown[]) : [];
-    const fields: Array<[string, unknown]> = [
-      ...CLIENT_TEXT_FIELDS.map((field) => [field, slide[field]] as [string, unknown]),
-      ...bullets.map((value, i) => [`bullets[${i}]`, value] as [string, unknown]),
+    const fields: TextFieldCheck[] = [
+      ...CLIENT_TEXT_FIELDS.map((field) => [field, slide[field], []] as TextFieldCheck),
+      ...bullets.map((value, i) => [`bullets[${i}]`, value, []] as TextFieldCheck),
+      ...panelTextFields(slide),
     ];
-    for (const [field, value] of fields) {
+    for (const [field, value, alternatives] of fields) {
       if (typeof value !== "string") continue;
-      const expected = drawnPartOfTextField(String(slide.template ?? ""), field, value);
-      const head = compactForCompare(expected).slice(0, TRACE_HEAD_CHARS);
-      if (!head) continue;
-      if (drawn.includes(head)) continue;
+      if (!compactForCompare(value)) continue;
+      if (traced(field, [value, ...alternatives])) continue;
       out.push({ slideKey: String(slide.slideKey ?? ""), page, field, text: value });
     }
   }
@@ -1117,15 +1143,105 @@ export function textFieldsWithoutTraceOnTheirPage(
 }
 
 /**
+ * Клиентские блоки панельного макета — и чем лист вправе их заменить.
+ *
+ * У панелей (`orion_golden_surface_panel`, `orion_golden_image_grid`,
+ * `orion_golden_serp_screenshot`, `orion_golden_knowledge_panel`) клиентского
+ * текста на верхнем уровне слайда нет вовсе: он лежит внутри `visualAnalysis`.
+ * Ворот читал верхний уровень и потому проверял на таких слайдах ровно одно
+ * поле — заголовок; замер по нагрузке эталона это и показал: 16 слайдов из 61.
+ * Ровно там и живёт молчаливая потеря: на прогоне 91 панель подсказок не
+ * напечатала «Что сделать» и вывод о собранном наборе, а сказать об этом было
+ * некому.
+ *
+ * Средний блок панель печатает **либо** «что показывает экран», **либо**
+ * объяснения рамок — что именно, решают набор рамок и то, нашлась ли для
+ * страницы картинка (узкая панель против карточек во всю ширину). Поэтому у
+ * него объявлены равноправные варианты: требовать оба значило бы краснеть на
+ * законной ветке, а ворот, красный на здоровой деке, выключают.
+ */
+function panelTextFields(slide: Record<string, unknown>): TextFieldCheck[] {
+  const analysis = slide.visualAnalysis;
+  if (!analysis || typeof analysis !== "object") return [];
+  const a = analysis as Record<string, unknown>;
+  const explanations = Array.isArray(a.highlightExplanations)
+    ? (a.highlightExplanations as Array<Record<string, unknown>>).map((e) => e?.clientReason)
+    : [];
+  const actions = Array.isArray(a.recommendedActions) ? (a.recommendedActions as unknown[]) : [];
+  return [
+    ["visualAnalysis.headlineConclusion", a.headlineConclusion, []],
+    ["visualAnalysis.whatIsVisible", a.whatIsVisible, explanations],
+    ["visualAnalysis.clientMeaning", a.clientMeaning, []],
+    ...actions.map(
+      (value, i) => [`visualAnalysis.recommendedActions[${i}]`, value, []] as TextFieldCheck
+    ),
+    ["visualAnalysis.provenanceLabel", a.provenanceLabel, []],
+  ];
+}
+
+/**
+ * Исход ворота: пройден, провален или **не выполнялся**.
+ *
+ * Третье значение заведено потому, что пропуск, выданный за проход, невидим:
+ * сводка печатала «28 из 28» на деке, где одну сверку выполнить было нечем.
+ */
+export type AcceptanceGateOutcome = boolean | "SKIP";
+
+/**
  * Ворота, которые не пройдены.
  *
  * Пустой набор ворот — тоже отказ: «0 провалено из 0» неотличимо от «не
  * проверяли», а это ровно тот исход, ради которого писался раннер смоков.
+ * Пропуск отказом не считается — он свой исход и назван отдельно.
  */
-export function failedAcceptanceGates(gates: Record<string, boolean>): string[] {
+export function failedAcceptanceGates(
+  gates: Record<string, AcceptanceGateOutcome>
+): string[] {
   const names = Object.keys(gates);
   if (names.length === 0) return ["<ворота не вычислены>"];
-  return names.filter((k) => gates[k] !== true);
+  return names.filter((k) => gates[k] !== true && gates[k] !== "SKIP");
+}
+
+/**
+ * Сводка приёмки одной строкой — та, которую читает человек.
+ *
+ * Считается здесь, а не печатается по месту: «пройдено N из M» и список
+ * пропусков обязаны быть одним ответом, иначе сводка снова разойдётся с
+ * содержимым `acceptance-report.json`.
+ */
+export function acceptanceGateSummary(gates: Record<string, AcceptanceGateOutcome>): {
+  total: number;
+  passed: number;
+  failed: string[];
+  skipped: string[];
+  line: string;
+} {
+  const names = Object.keys(gates);
+  const failed = failedAcceptanceGates(gates);
+  const skipped = names.filter((k) => gates[k] === "SKIP");
+  const passed = names.filter((k) => gates[k] === true).length;
+  const line =
+    skipped.length > 0
+      ? `приёмка: пройдено ${passed} из ${names.length} ворот; пропущено ${skipped.length}: ${skipped.join(", ")}`
+      : `приёмка: пройдено ${passed} из ${names.length} ворот`;
+  return { total: names.length, passed, failed, skipped, line };
+}
+
+/**
+ * Исход ворота, посчитанного проверкой сборки.
+ *
+ * Ключа нет, а сверка объявила пропуск — это пропуск. Ключа нет и пропуска не
+ * объявлено — отказ: проверка без входа выглядит точно так же, как пройденная.
+ */
+function assemblyGateOutcome(
+  validation: { checks: Record<string, boolean>; skipped: string[] } | null | undefined,
+  key: string,
+  skipMarker: string
+): AcceptanceGateOutcome {
+  const value = validation?.checks[key];
+  if (typeof value === "boolean") return value;
+  if (validation?.skipped.some((s) => s.includes(skipMarker))) return "SKIP";
+  return false;
 }
 
 const isDirectRun = process.argv[1]?.replace(/\\/gu, "/").endsWith("run-orion-deck-sections-report72.ts");

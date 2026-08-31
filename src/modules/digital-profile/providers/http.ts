@@ -114,7 +114,7 @@ export function mapStatusToProviderError(
   }
   if (status === 401 || status === 403) {
     return new ProviderHttpError(
-      "PROVIDER_BAD_RESPONSE",
+      "PROVIDER_UNAUTHORIZED",
       reason
         ? `Provider rejected the request (HTTP ${status}): ${reason}`
         : `Provider rejected the request (HTTP ${status}). Check API key / folder id.`,
