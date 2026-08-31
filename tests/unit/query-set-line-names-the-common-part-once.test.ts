@@ -113,17 +113,23 @@ describe("общая часть не выдумывается", () => {
   });
 });
 
-describe("единственный запрос справку по-прежнему не печатает", () => {
-  it("повтор запроса таблицы справкой не дублируется", () => {
+describe("страница одного запроса справки о наборе не несёт вовсе", () => {
+  it("у абзаца таблицы А нет канала для этой справки", () => {
+    /*
+     * Прежде справка печаталась под лидом и подавлялась, только когда набор
+     * состоял из одного запроса, совпавшего с запросом таблицы. На прогоне 91
+     * запросов было пять, подавление не срабатывало — и страница одного запроса
+     * отвечала на вопрос, которого не задавала. Канал убран целиком: справка
+     * печатается там, где объясняет колонку «Найдено по запросу».
+     */
     const prose = serpTablePageProse({
       engineLabel: "Яндекса",
       query: "Anders Holmström",
-      missing: "",
+      collectedRanks: [1, 2, 3],
       positional: true,
-      queriesLine: subjectQueriesLine(scopedWithQueries(["Anders Holmström"])),
-      subjectQueries: ["Anders Holmström"],
     });
     expect(prose.head).toContain("Показана выдача Яндекса по запросу «Anders Holmström»");
-    expect(prose.tail).toBeUndefined();
+    expect(Object.keys(prose)).toEqual(["head"]);
+    expect(JSON.stringify(prose)).not.toContain("Выдача проверена по");
   });
 });

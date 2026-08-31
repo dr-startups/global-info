@@ -210,9 +210,15 @@ describe("статус страницы не спорит с панелью", ()
     const { slides } = buildSuggestionsFragment("UAE_SUGGESTIONS", "UAE_PROFILE", "ОАЭ", scoped, extras);
     const page = slides.find((s) => s.slideId === "p28_uae_suggestions")!;
     const status = page.content.statusNote ?? "";
-    // Статус про то, что на странице видно, и он не противоречит заголовку.
+    /*
+     * Статус говорит о панели, заголовок — о собранном наборе (решение
+     * владельца 31.08.2026): лист называется выводом, а вывод о подсказках
+     * делается о том, что показывает поисковик, а не о том, что влезло на
+     * картинку. Спора между ними нет: одно предложение прямо объясняет другое.
+     */
     expect(status).toContain("Среди показанных строк негативных формулировок нет");
-    expect(page.title).toContain("негативных формулировок нет");
+    expect(page.title).toContain("1 негативная формулировка");
+    expect(String(page.content.whatWasFound ?? "")).toContain("в собранном наборе — 1");
     expect(status).not.toContain("1 негативный заголовок");
   });
 

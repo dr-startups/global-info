@@ -669,6 +669,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         # нарисована.
         stage_bottom = content_stage(ctx, y)
         table_bottom_budget = stage_bottom if stage_bottom > y else None
+        # Объявленный верх таблицы: он и есть тот верх, от которого выведена
+        # ёмкость листа. Считается **до** отрисовки абзаца, потому что дальше
+        # `y` станет фактическим — а фактический зависит от длины абзаца,
+        # который стадия 2 перепишет уже после мерного прогона.
+        table_top_declared = y + SEARCH_TABLE_INTRO_MAX_H + SEARCH_TABLE_INTRO_GAP if narrative else y
         if narrative:
             # Сколько абзаца влезет — решает мера `ctx.body` в пределах
             # объявленного потолка, а не счётчик предложений здесь. Счётчик
@@ -726,6 +731,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 rows,
                 groups,
                 bottom=table_bottom_budget,
+                declared_top=table_top_declared,
             )
         elif bullets:
             avail = max(400000, CONTENT_BOTTOM - y)

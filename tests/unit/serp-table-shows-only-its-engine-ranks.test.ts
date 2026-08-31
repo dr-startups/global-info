@@ -53,7 +53,13 @@ function uaeTableRows(): { rows: string[][] } {
     evidenceIndex: inputs.evidenceIndex,
   });
   const { slides } = buildSerpFragment("UAE_SERP", "UAE_PROFILE", "ОАЭ", scoped);
-  return { rows: slides.flatMap((s) => s.content.table?.rows ?? []) };
+  // Только позиционная таблица: у второй колонки «№» нет вовсе, и её строки,
+  // прочитанные как номера, дают NaN — счёт номеров стал бы ложным.
+  return {
+    rows: slides
+      .filter((s) => s.metrics?.serpExtraQueries !== 1)
+      .flatMap((s) => s.content.table?.rows ?? []),
+  };
 }
 
 /** Строка таблицы: номер и адрес — то, что читает клиент. */
@@ -67,11 +73,22 @@ const ADDRESS = SERP_TABLE_HEADERS.indexOf("Ссылка");
 const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 describe("таблица ОАЭ — Google на срезе прогона 76", () => {
-  it("не содержит ни одной строки с арсенкинским рангом", () => {
-    const rows = printed(uaeTableRows());
-    expect(rows.every((r) => r.rank <= 10)).toBe(true);
-    expect(rows.some((r) => r.link.includes("metalinfo.ru"))).toBe(false);
-    expect(rows.some((r) => r.link.includes("ko.ru"))).toBe(false);
+  it("позвоночник не уступает своих номеров второму чтению", () => {
+    /*
+     * Дефект прогона 76 был не в том, что позиции обогатителя печатались, а в
+     * том, что они **вытесняли** настоящие: страница показывала двенадцать
+     * строк с чужой нумерацией, а 3 (opensanctions.org), 4 (bloomberg.com) и
+     * 10 (wikidata.org) не печатались вовсе. Решение владельца от 31.08.2026
+     * закрывает это иначе, чем прежний фильтр: номера 1–10 занимает чтение
+     * Serper, и вытеснить их нечем; материалы обогатителя, чьи номера заняты
+     * (4 — metalinfo.ru, 10 — ko.ru), в таблицу А не идут.
+     */
+    const byRank = new Map(printed(uaeTableRows()).map((r) => [r.rank, r.link]));
+    expect(byRank.get(4)).toContain("bloomberg.com");
+    expect(byRank.get(10)).toContain("wikidata.org");
+    const links = printed(uaeTableRows()).map((r) => r.link).join(" | ");
+    expect(links).not.toContain("metalinfo.ru");
+    expect(links).not.toContain("ko.ru");
   });
 
   it("печатает настоящие позиции Serper: 3, 4 и 10", () => {
@@ -82,8 +99,13 @@ describe("таблица ОАЭ — Google на срезе прогона 76", (
     expect(at(10)).toContain("wikidata.org");
   });
 
-  it("показывает ровно десять собранных позиций подряд", () => {
-    expect(printed(uaeTableRows()).map((r) => r.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  it("показывает десять позиций поисковика и хвост второго чтения", () => {
+    // Хвост добирает номера, которых у Serper нет вовсе: 11–20 обогатителя.
+    // Двух одинаковых номеров при этом не появляется — шкала одна.
+    const ranks = printed(uaeTableRows()).map((r) => r.rank);
+    expect(ranks.slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(new Set(ranks).size).toBe(ranks.length);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
   });
 });
 
@@ -172,15 +194,22 @@ describe("датасетная политика неизвестного ист�
     expect(tablesOf(scoped)[0]!.rows.map((r) => r[RANK])).toEqual(["1", "2"]);
   });
 
-  it("в смешанном наборе безымянная позиция в таблицу не входит", () => {
-    // Построчное «источник не назван — значит, свой» и было той лазейкой,
-    // через которой жила потеря признака: смешанный набор проходил целиком.
+  it("в смешанном наборе свободный номер добирает названный измеритель, безымянный — нет", () => {
+    /*
+     * Работа 9 заменила правило «в таблицу входит только своя позиция»:
+     * свободные номера добирает второе чтение. Но **названное**: решение
+     * владельца говорит об обогатителе, а строка, чьей нумерации не поручился
+     * никто, остаётся тем, чем была, — лазейкой, через которую жила потеря
+     * признака (прогон 76, «7 lenta.ru»).
+     */
     const scoped = scopedFrom([
       { ref: "i1", rank: 1, rankSource: "yandex", engine: "YANDEX", query: "рашников", title: "Свой", url: "https://a.ru/1" },
       { ref: "i2", rank: 2, engine: "YANDEX", query: "рашников", title: "Безымянный", url: "https://b.ru/2" },
       { ref: "i3", rank: 3, rankSource: "arsenkin", engine: "YANDEX", query: "рашников", title: "Обогатитель", url: "https://c.ru/3" },
     ]);
-    expect(tablesOf(scoped)[0]!.rows.map((r) => r[TITLE])).toEqual(["Свой"]);
+    const rows = tablesOf(scoped)[0]!.rows;
+    expect(rows.map((r) => r[TITLE])).toEqual(["Свой", "Обогатитель"]);
+    expect(rows.map((r) => r[RANK])).toEqual(["1", "3"]);
   });
 });
 

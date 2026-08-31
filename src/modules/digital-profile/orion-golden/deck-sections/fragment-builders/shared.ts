@@ -18,6 +18,7 @@ import {
 import { builderNarrativeRoomOn, narrativeBudgetOf } from "../page-narrative";
 import { balanceTailPage } from "../semantic-summary-pagination";
 import { buildContinuationSlide } from "../continuation-slide";
+import type { TableCutPlan } from "../measured-table-fit";
 import {
   evidenceMaterialKey,
   normalizeEvidenceRef,
@@ -173,6 +174,21 @@ export type FragmentExtras = {
   uncategorizedMaterials?: UncategorizedMaterialsExtras;
   /** Coverage/provider hints for empty-state copy (§7.4). */
   surfaceCollectionHints?: SurfaceCollectionHint[];
+  /**
+   * Раскрой таблиц, снятый мерой рендерера на черновой сборке.
+   *
+   * Приходит сюда, а не в сборку, потому что режет таблицу построитель: у
+   * каждого её листа свои опоры, свои находки, своя фраза с номерами строк и
+   * свои счётчики. Поля нет — раскладка остаётся реестровой (офлайн-сборка,
+   * рендерер прошлой версии), и это сегодняшний документ, а не пустая таблица.
+   *
+   * В `extrasHash` поле входит — по слотам своего фрагмента. Раскрой выбирает
+   * состав листа, а не только его геометрию, поэтому пакет, записанный без
+   * раскроя, обязан пересобраться, когда раскрой появился: иначе сидовые три
+   * строки на листе пережили бы починку молча. Чем за это платим — сказано в
+   * `extrasHash`.
+   */
+  tableCut?: TableCutPlan;
   /** REMEDIATION §7.2 — earliest/latest material capture times. */
   materialFreshness?: { earliestAt: string; latestAt: string };
   /** REMEDIATION §7.2 — counts vs previous successful report for the case. */
@@ -3339,6 +3355,14 @@ export function panelComposition(rows: readonly PanelRow[]): PanelComposition {
 export function panelCompositionLine(input: {
   composition: PanelComposition;
   collected: number;
+  /**
+   * Негативные строки во всём собранном наборе, если он шире панели.
+   *
+   * Голое «Негативных формулировок нет» на листе, у которого в наборе негатив
+   * есть, спорит с собственным заголовком: панель показывает десять самых
+   * коротких строк, и негативная в них может не попасть.
+   */
+  collectedAdverse?: number;
   /** «подсказка» / «запрос» — в родительном падеже множественного числа. */
   nounOne: string;
   nounFew: string;
@@ -3371,10 +3395,24 @@ export function panelCompositionLine(input: {
     );
   }
   const breakdown = parts.length > 0 ? `: ${enumerateRu(parts, 4)}` : "";
+  /*
+   * Разрыв между заголовком и панелью объясняется **в обеих ветках**.
+   *
+   * Заголовок листа считает негатив по собранному набору, а этот блок — по
+   * панели. Пока оговорка стояла только там, где на панели негатива нет вовсе,
+   * она была недостижима ровно тогда, когда разрыв виден: «5 негативных
+   * формулировок» в заголовке и «С негативной формулировкой — 2» под ним, без
+   * единого слова о том, откуда взялись пять.
+   */
+  const collectedAdverse = Math.max(input.collectedAdverse ?? 0, c.adverse);
+  const inCollected =
+    collectedAdverse > c.adverse ? ` В собранном наборе — ${collectedAdverse}.` : "";
   const adverse =
     c.adverse > 0
-      ? ` С негативной формулировкой — ${c.adverse}.`
-      : " Негативных формулировок нет.";
+      ? ` С негативной формулировкой — ${c.adverse}.${inCollected}`
+      : collectedAdverse > 0
+        ? ` Негативных формулировок среди показанных нет; в собранном наборе — ${collectedAdverse}.`
+        : " Негативных формулировок нет.";
   return `${head}${breakdown}.${adverse}`;
 }
 
@@ -3421,9 +3459,16 @@ export function panelStatusLine(input: {
   if (input.shownAdverse > 0) {
     return `На этой странице ${input.shownAdverse} ${noun(input.shownAdverse)} с негативной формулировкой — их видно до перехода к самим материалам, поэтому они формируют первое впечатление.${tail}`;
   }
-  const hidden = input.collectedAdverse ?? 0;
-  if (hidden > 0) {
-    return `Среди показанных строк негативных формулировок нет; в собранном наборе — ${hidden} ${noun(hidden)}.${tail}`;
+  /*
+   * Про собранный набор говорит `panelCompositionLine` — поле `whatWasFound`,
+   * которое панель рисует первым блоком и которое на листе есть всегда.
+   * Здесь этой фразы больше нет: на прогоне 91 один и тот же факт печатался
+   * трижды подряд, а `statusNote` вдобавок склеивается в блок, который узкая
+   * панель выбрасывает первым (стр. 46 — «Что сделать» и хвост «Что это
+   * значит» не напечатаны вовсе).
+   */
+  if ((input.collectedAdverse ?? 0) > 0) {
+    return `Среди показанных строк негативных формулировок нет.${tail}`;
   }
   // Голое «негативных формулировок нет» рядом с напечатанной строкой про
   // санкционный список читается как враньё, поэтому отрицание называет лицо.
@@ -3447,8 +3492,14 @@ export function panelStatusLine(input: {
  * (`template-registry.ts`, `serp-table`): предел и ёмкость — две половины
  * одного вывода, и опускать предел ради красоты значит платить листами.
  *
- * **165 больше максимума среди печатаемых адресов — 163**, то есть на прогоне 72
+ * **165 больше максимума среди печатаемых адресов — 125**, то есть на прогоне 72
  * не режется ни одна напечатанная строка (46 строк, замер по собранной деке).
+ * Прежний максимум органики был 163 и принадлежал адресу картинок Яндекса с
+ * процентной последовательностью в параметрах; после того как печать стала
+ * раскодировать её, тот же адрес занимает 53 знака, а максимумом стал
+ * `runews24.ru/interview/…` в 125. На прогоне 91 максимум органики 162 (210
+ * уникальных печатных адресов), и раскодирование его не касается — он
+ * латиницей.
  *
  * Это утверждение **про печать, а не про корпус**: в самом корпусе адреса
  * длиннее предела есть — семь, от 169 до 279 знаков, — но все они принадлежат

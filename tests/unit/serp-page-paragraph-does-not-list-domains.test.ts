@@ -118,16 +118,17 @@ describe("остальные поверхности домены называю�
 });
 
 describe("справка о наборе запросов", () => {
-  it("не печатается, когда прогон шёл одним запросом и он же подписывает таблицу", () => {
+  it("на странице одного запроса не печатается вовсе", () => {
     const prose = serpTablePageProse({
       engineLabel: "Google",
       query: QUERY,
-      missing: "",
+      // Полная двадцатка: страница о глубине источника не рассуждает, и
+      // сравнить абзац можно дословно.
+      collectedRanks: Array.from({ length: 20 }, (_, i) => i + 1),
       positional: true,
-      queriesLine: `Выдача проверена по 1 запросу: «${QUERY}».`,
-      subjectQueries: [QUERY],
     });
-    expect(prose.tail).toBeUndefined();
+    // Канала для справки о наборе запросов у абзаца таблицы А больше нет.
+    expect(Object.keys(prose)).toEqual(["head"]);
     // Оговорка про нумерацию печатается всегда — она и есть второе предложение.
     expect(prose.head).toBe(
       `Показана выдача Google по запросу «${QUERY}». ` +

@@ -36,6 +36,8 @@ import {
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import { builderNarrativeRoomOn, narrativeBudgetOf, pageNarrativeOf } from "./page-narrative";
+import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "./template-registry";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
 import { SOURCE_ATTRIBUTION_SOURCE, sourceHostFromMatch } from "../client/client-address";
@@ -204,9 +206,33 @@ function repairTargetChars(budget: number): number {
   return Math.max(80, Math.floor(budget * 0.94));
 }
 
+/**
+ * Сколько знаков остаётся нарративу на каждом слайде.
+ *
+ * Не бюджет поля, а бюджет **шаблона минус проза находки**: она приклеивается
+ * к абзацу страницы уже в нагрузке. Просьба «уложись в 1100» к модели, у
+ * которой к тексту потом добавят 240 знаков, честной не является — второй
+ * раунд сжатия по такому пределу бесполезен по построению.
+ */
+export function narrativeRepairLimits(
+  targets: ReadonlyArray<{ slideId: string; templateId: string; content: SlideContentContract["content"] }>
+): Map<string, number> {
+  const limits = new Map<string, number>();
+  for (const slide of targets) {
+    const template = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId]?.rendererTemplate ?? "";
+    // Комнату считает `builderNarrativeRoomOn` — она же отвечает на этот
+    // вопрос разбивке страниц и вычитает разделитель абзаца. Свой расчёт
+    // ошибался на один знак: текст, уложенный ровно в названный нами предел,
+    // всё равно отвергался, и второй раунд сжатия оставался бесполезным.
+    limits.set(slide.slideId, Math.max(80, builderNarrativeRoomOn(slide.content, slide.templateId, template)));
+  }
+  return limits;
+}
+
 function collectOverBudgetItems(
   overrides: SlideOverride[],
-  knownIds: Set<string>
+  knownIds: Set<string>,
+  narrativeLimits: Map<string, number>
 ): OverBudgetItem[] {
   const items: OverBudgetItem[] = [];
   const scalarFields: ScalarCopyField[] = [
@@ -219,12 +245,16 @@ function collectOverBudgetItems(
     if (!knownIds.has(o.slideId)) continue;
     for (const field of scalarFields) {
       const value = o[field];
-      if (value !== undefined && value.trim().length > TEXT_BUDGETS[field]) {
+      const budget =
+        field === "narrative"
+          ? narrativeLimits.get(o.slideId) ?? TEXT_BUDGETS.narrative
+          : TEXT_BUDGETS[field];
+      if (value !== undefined && value.trim().length > budget) {
         items.push({
           slideId: o.slideId,
           field,
           text: value.trim(),
-          maxChars: repairTargetChars(TEXT_BUDGETS[field]),
+          maxChars: repairTargetChars(budget),
         });
       }
     }
@@ -646,14 +676,19 @@ function applyOverrides(input: {
     const tryField = (
       field: "narrative" | "whatWasFound" | "whyItMatters" | "whatToCheck",
       value: string | undefined,
-      budget: number
+      budget: number,
+      /**
+       * Что именно меряется бюджетом. У нарратива это не само поле, а абзац
+       * страницы: проза находки приклеивается к нему уже в нагрузке.
+       */
+      measured?: (text: string) => string
     ) => {
       if (value === undefined) return;
       const normalized = fixName(
         field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
       );
       const reason =
-        rejectReason(normalized, budget, allowed) ??
+        rejectReason(measured ? measured(normalized) : normalized, budget, allowed) ??
         rejectDroppedNumbers(slide.content[field] ?? "", normalized);
       if (reason) {
         rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
@@ -663,7 +698,21 @@ function applyOverrides(input: {
       appliedFields += 1;
     };
 
-    tryField("narrative", o.narrative, TEXT_BUDGETS.narrative);
+    /*
+     * Нарратив проверяется **последним и абзацем страницы**.
+     *
+     * Линейка у вопроса «влезает ли абзац» одна, и принадлежит она пакетной
+     * сверке: `validatePack` меряет `pageNarrativeOf` против бюджета шаблона.
+     * Пока здесь мерилось сырое поле против `TEXT_BUDGETS.narrative`, поле
+     * проходило, пакет валился — и откатывался **весь фрагмент**: на прогоне 91
+     * так пропали девятнадцать применённых полей RU_IMAGES из-за одного абзаца.
+     *
+     * Последним — потому что абзац страницы склеивается из остальных полей и
+     * **из буллетов**: `composeFindingProse` вычищает из прозы находки
+     * предложения, уже сказанные в них. Измеренный до их применения, абзац
+     * собран из вчерашних буллетов, и `validatePack` меряет другой текст —
+     * ровно то расхождение линеек, которое работа и убирает.
+     */
     tryField("whatWasFound", o.whatWasFound, TEXT_BUDGETS.whatWasFound);
     tryField("whyItMatters", o.whyItMatters, TEXT_BUDGETS.whyItMatters);
     tryField("whatToCheck", o.whatToCheck, TEXT_BUDGETS.whatToCheck);
@@ -701,6 +750,13 @@ function applyOverrides(input: {
         appliedFields += 1;
       }
     }
+
+    tryField("narrative", o.narrative, narrativeBudgetOf(slide.templateId), (text) =>
+      pageNarrativeOf(
+        { ...content, narrative: text },
+        DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId]?.rendererTemplate ?? ""
+      ) ?? text
+    );
 
     return { ...slide, content };
   });
@@ -1038,7 +1094,11 @@ export async function enhanceSectionPacksWithGptCopy(input: {
     const parsed = parseFragmentCopyResponse(queued.value);
     if (parsed) {
       const knownIds = new Set(item.targets.map((s) => s.slideId));
-      const requested = collectOverBudgetItems(parsed.slides, knownIds);
+      const requested = collectOverBudgetItems(
+        parsed.slides,
+        knownIds,
+        narrativeRepairLimits(item.targets)
+      );
       if (requested.length > 0) {
         repairPending.push({ item, overrides: parsed.slides, requested });
         continue;

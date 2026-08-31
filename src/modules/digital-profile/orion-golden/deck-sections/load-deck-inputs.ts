@@ -59,6 +59,14 @@ export type CompositeObservationRow = {
   rank?: number;
   /** Чья позиция записана в `rank` (yandex / serper / arsenkin / unknown). */
   rankSource?: string;
+  /**
+   * Номера всех измерителей материала: `{"yandex": 15, "arsenkin": 17}`.
+   *
+   * Ими лист объясняет пропуск номера в таблице названной причиной. Поле
+   * необязательное: у наборов, снятых до его проводки, такой причины нет, и
+   * ветка не исполняется вовсе.
+   */
+  ranksByProvider?: Record<string, number>;
   /** Запрос, по которому материал показался, и его назначение из плана. */
   query?: string;
   queryPurpose?: string;
@@ -66,6 +74,29 @@ export type CompositeObservationRow = {
   subjectNameQuery?: boolean;
   evidenceRefs: string[];
 };
+
+/**
+ * Номера измерителей двух наблюдений одного материала — в один словарь.
+ *
+ * У каждого измерителя берётся его лучший (меньший) номер: материал приходит
+ * несколькими запросами, и «пятнадцатый по одному запросу» не отменяет
+ * «третьего по другому». Пустой результат не создаётся: отсутствие поля —
+ * признак набора, снятого до его проводки, и подделывать его пустым словарём
+ * нельзя, иначе ветка «номер занят» исполнится на наборе, который этого знать
+ * не может.
+ */
+export function mergeRanksByProvider(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined
+): Record<string, number> | undefined {
+  if (!a && !b) return undefined;
+  const out: Record<string, number> = { ...(a ?? {}) };
+  for (const [provider, rank] of Object.entries(b ?? {})) {
+    const known = out[provider];
+    if (typeof known !== "number" || rank < known) out[provider] = rank;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /** Higher wins when an observation has multiple inventory decisions (§KPI honesty). */
 const DECISION_RANK: Record<string, number> = {
@@ -817,6 +848,14 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           obs.rank <= (evidenceIndex[ref]?.rank ?? Number.MAX_SAFE_INTEGER)
             ? obs.rankSource ?? evidenceIndex[ref]?.rankSource
             : evidenceIndex[ref]?.rankSource,
+        // Номера измерителей сводятся по материалу, а не по наблюдению: один
+        // материал приходит несколькими запросами, и у каждого своя пара
+        // «измеритель → номер». Берётся лучший номер каждого измерителя — той
+        // же линейкой, что и `rank` строкой выше.
+        ranksByProvider: mergeRanksByProvider(
+          evidenceIndex[ref]?.ranksByProvider,
+          obs.ranksByProvider
+        ),
         query: queryOwner.query,
         subjectNameQuery: queryOwner.subjectNameQuery,
         // Назначение запроса живёт отдельно: его пишут и наблюдения без

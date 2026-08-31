@@ -33,7 +33,7 @@ describe("лид позиционной таблицы", () => {
     const prose = serpTablePageProse({
       engineLabel: "Яндекса",
       query: "Anders Holmström",
-      missing: "",
+      collectedRanks: [1, 2, 3],
       positional: true,
     });
     expect(prose.head).toContain("Показана выдача Яндекса по запросу «Anders Holmström».");
@@ -47,7 +47,7 @@ describe("лид непозиционной таблицы", () => {
     const prose = serpTablePageProse({
       engineLabel: "Google",
       query: null,
-      missing: "",
+      collectedRanks: [1, 2, 3],
       positional: false,
     });
     expect(prose.head).toBe(`${WITHOUT_QUERY} ${COLLECTED}`);
@@ -58,7 +58,7 @@ describe("лид непозиционной таблицы", () => {
       const prose = serpTablePageProse({
         engineLabel: "Google",
         query,
-        missing: "",
+        collectedRanks: [1, 2, 3],
         positional: false,
       });
       expect(prose.head).toContain(COLLECTED);
@@ -73,7 +73,7 @@ describe("дата съёмки", () => {
     const prose = serpTablePageProse({
       engineLabel: "Google",
       query: null,
-      missing: "",
+      collectedRanks: [1, 2, 3],
       positional: false,
       freshness: { earliestAt: "2026-08-20T10:00:00.000Z", latestAt: "2026-08-20T10:00:00.000Z" },
     });
@@ -86,7 +86,7 @@ describe("дата съёмки", () => {
     const prose = serpTablePageProse({
       engineLabel: "Google",
       query: null,
-      missing: "",
+      collectedRanks: [1, 2, 3],
       positional: false,
       freshness: { earliestAt: "1970-01-01T00:00:00.000Z", latestAt: "1970-01-01T00:00:00.000Z" },
     });
@@ -103,13 +103,13 @@ describe("лид не выталкивает абзац за бюджет", () =
     const prose = serpTablePageProse({
       engineLabel: "Яндекса",
       query: "Глинка Сергей Михайлович Трансмашхолдинг",
-      missing: "1, 2, 3, 5",
+      // Самый длинный лид: запрос не основной для раздела, даты съёмки названы
+      // и источник вернул меньше двадцати — все три оговорки сразу.
+      regionMainQuery: "Глинка Сергей Михайлович",
+      collectedRanks: [1, 2, 3],
       positional: true,
       freshness: { earliestAt: "2026-01-02T10:00:00.000Z", latestAt: "2026-08-20T10:00:00.000Z" },
-      queriesLine: "Выдача проверена по 3 запросам: «А», «Б», «В».",
-      subjectQueries: ["А", "Б", "В"],
     });
-    const printed = `${prose.head} ${prose.tail ?? ""}`.trim();
-    expect(printed.length).toBeLessThan(Number(budget));
+    expect(prose.head.length).toBeLessThan(Number(budget));
   });
 });

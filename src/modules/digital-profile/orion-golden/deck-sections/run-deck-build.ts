@@ -54,6 +54,7 @@ import {
   type BulletRecutPlan,
   type SlotChain,
 } from "./measured-bullet-fit";
+import { collectTableCutPlan } from "./measured-table-fit";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -282,6 +283,79 @@ export function runDeckBuild(input: {
   return { packs, validationReports, manifest, assembly, assemblyValidation, buildLog, artifacts };
 }
 
+/**
+ * Пакеты секций, собранные под мерой таблиц.
+ *
+ * Порядок именно такой: черновая дека собирается сидом, меряется мерным
+ * прогоном рендерера, и полученный раскрой уезжает **во второе построение**.
+ * Мера снимается здесь, до стадий GPT: стадия 2 переписывает вводный абзац
+ * конкретных листов, и переложить строки после неё значило бы обесценить её
+ * текст — тех листов, которые она правила, больше не было бы.
+ *
+ * Черновик ничего не пишет на диск и никем не судится: он существует ровно
+ * затем, чтобы его померили. Сборка черновика не закрылась — раскроя нет и
+ * пакеты собираются как прежде; судит сборку тот, кто её принимает, а не эта
+ * функция.
+ *
+ * Меры нет (офлайн-сборка, рендерер прошлой версии) — раскладка остаётся
+ * сидовой. Это условие отсутствия окна деплоя, а не осторожность.
+ */
+export async function buildSectionPacksUnderTableMeasure(input: {
+  ctx: SectionBuildContext;
+  bundleForValidation: VerifiedFindingBundle;
+  knownEvidenceRefs: Set<string>;
+  subjectName: string;
+  assets?: RendererAssetEntry[];
+  measure?: BulletMeasureAdapter | null;
+}): Promise<SectionPackV2[]> {
+  const { ctx } = input;
+  if (!input.measure) return buildAllSections(ctx);
+  // Журнал сборки у черновика свой: его пакеты никуда не поедут, а записи
+  // «пересобран/взят из кэша» относятся к настоящему построению ниже.
+  const draftPacks = buildAllSections({ ...ctx, buildLog: [] });
+  const draftReports = new Map<FragmentKey, SectionValidationReport>();
+  for (const pack of draftPacks) {
+    draftReports.set(
+      pack.fragmentKey,
+      validateSectionPack({
+        pack,
+        expectedCaseId: ctx.caseId,
+        expectedReportRunId: ctx.reportRunId,
+        expectedDatasetId: ctx.sourceDatasetId,
+        bundle: input.bundleForValidation,
+        knownEvidenceRefs: input.knownEvidenceRefs,
+        evidenceIndex: ctx.evidenceIndex,
+      })
+    );
+  }
+  const draft = assembleDeck({
+    manifest: buildReportSectionManifest({
+      caseId: ctx.caseId,
+      reportRunId: ctx.reportRunId,
+      sourceDatasetId: ctx.sourceDatasetId,
+      packs: draftPacks,
+      validationReports: draftReports,
+    }),
+    packs: draftPacks,
+    expectedCaseId: ctx.caseId,
+    expectedReportRunId: ctx.reportRunId,
+    expectedDatasetId: ctx.sourceDatasetId,
+  });
+  if (draft.errors.length > 0) return buildAllSections(ctx);
+  const verdict = await input.measure(
+    toRendererPayload({
+      deckManifest: draft.deckManifest,
+      rendererSlides: draft.rendererSlides,
+      subjectName: input.subjectName,
+      assets: input.assets,
+    })
+  );
+  // Пустой раскрой отдельной веткой не обрабатывается: у построителя он и так
+  // означает «режь сидом», а вторая ветка была бы вторым ответом на это.
+  const tableCut = collectTableCutPlan({ slides: draft.rendererSlides, verdict });
+  return buildAllSections({ ...ctx, extras: { ...ctx.extras, tableCut } });
+}
+
 /** Цикл не сошёлся: содержимое всё ещё не помещается на лист. */
 export class BulletFitNotConvergedError extends Error {
   /** Разбор цикла: по нему видно, где именно он встал. */
@@ -417,7 +491,27 @@ export async function runDeckBuildMeasured(
     return { ...built, bulletFit: report };
   };
 
-  let result = runDeckBuild(input);
+  /*
+   * Пакеты собираются здесь, а не внутри `runDeckBuild`, потому что раскрой
+   * таблиц приезжает в **построитель**, а спросить его можно только у меры —
+   * то есть после того, как черновая дека уже собрана и нарисована. Путь со
+   * стадиями GPT приносит свои пакеты (`prebuiltPacks`), и мера у них снята
+   * тем же вызовом до стадии 2.
+   */
+  const buildLog: SectionBuildLogEntry[] = input.prebuiltBuildLog ?? [];
+  const packs =
+    input.prebuiltPacks ??
+    (await buildSectionPacksUnderTableMeasure({
+      ctx: { ...input.ctx, previousPacks: loadPreviousPacks(input.outputRoot), buildLog },
+      bundleForValidation: input.bundleForValidation,
+      knownEvidenceRefs: input.knownEvidenceRefs,
+      subjectName: input.subjectName,
+      assets: input.assets,
+      measure: input.measure,
+    }));
+  const built = { ...input, prebuiltPacks: packs, prebuiltBuildLog: buildLog };
+
+  let result = runDeckBuild(built);
   if (!input.measure) return finish(result);
 
   const limit = Math.max(1, input.maxIterations ?? MAX_FIT_ITERATIONS);
@@ -482,7 +576,7 @@ export async function runDeckBuildMeasured(
     if (fresh.size === 0 || iteration === limit) break;
     for (const [baseSlotId, counts] of fresh) plan.set(baseSlotId, counts);
     result = runDeckBuild({
-      ...input,
+      ...built,
       prebuiltPacks: result.packs,
       prebuiltBuildLog: result.buildLog,
       bulletRecut: plan,

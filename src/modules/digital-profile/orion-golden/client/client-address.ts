@@ -28,12 +28,6 @@ export function parseClientAddress(
   } catch {
     return undefined;
   }
-  let path = parsed.pathname.replace(/\/$/u, "");
-  try {
-    path = decodeURIComponent(path);
-  } catch {
-    // Битая процентная последовательность — печатаем путь как есть.
-  }
   /*
    * Строка параметров и якорь остаются частью адреса.
    *
@@ -42,8 +36,25 @@ export function parseClientAddress(
    * (`utm_*`, `fbclid`) при этом не вычищаются: адрес, который открывается,
    * дороже короткого, а решать, какой параметр адресует страницу, а какой нет,
    * значит гадать.
+   *
+   * Раскодируются все три части одинаково: третья строка стр. 22 прогона 91
+   * печаталась как `yandex.ru/images/search?text=%D0%9A%D1%80%D0%B5%D0%BC…` —
+   * 154 знака и шесть нарисованных строк, самая высокая строка листа, — а тот
+   * же адрес кириллицей занимает около полусотни знаков и одну строку.
+   * Раскодирование ничего не удлиняет, поэтому предел колонки от него не
+   * страдает; битая последовательность печатается как есть.
    */
-  return { host: parsed.hostname.replace(/^www\./u, ""), path: `${path}${parsed.search}${parsed.hash}` };
+  const readable = (part: string): string => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  };
+  return {
+    host: parsed.hostname.replace(/^www\./u, ""),
+    path: `${readable(parsed.pathname.replace(/\/$/u, ""))}${readable(parsed.search)}${readable(parsed.hash)}`,
+  };
 }
 
 /**

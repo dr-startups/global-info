@@ -43,13 +43,16 @@ from orion_golden_render.common import (  # noqa: E402
 )
 from orion_golden_render.common import (  # noqa: E402
     _wrapped_line_count,
+    get_bullet_measure,
     get_layout_telemetry,
+    reset_bullet_measure,
     reset_layout_telemetry,
     text_width_px,
 )
 from orion_golden_render.visual import (  # noqa: E402
     BADGE_PT,
     CELL_MARGINS_EMU,
+    TABLE_MEASURE_KEY_SUFFIX,
     _add_search_table,
     _status_tone,
 )
@@ -442,11 +445,16 @@ def serp_capacity_terms() -> dict[str, int]:
 
 
 def render_page(payload: dict[str, Any]) -> Any:
-    """Отрисовать одну страницу рендерером и отдать её ctx."""
+    """Отрисовать одну страницу рендерером и отдать её ctx.
+
+    Ключ страницы отдаётся контексту так же, как его отдаёт `_draw_deck`: по
+    нему построитель находит свою страницу в вердикте меры, и без него мерные
+    записи страницы были бы безымянными.
+    """
     prs = Presentation()
     prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
-    ctx = _Ctx(prs, 1, 1)
+    ctx = _Ctx(prs, 1, 1, slide_key=str(payload.get("slideKey") or ""))
     _render_slide(ctx, payload, {})
     return ctx
 
@@ -1388,6 +1396,110 @@ def main() -> int:
         len(entries) == 1 and entries[0].get("clipped") is True and entries[0]["role"] == "table",
         f"записей {len(entries)}: {entries[:1]}",
     )
+    reset_layout_telemetry()
+
+    # --- Т16. Мера таблицы пишется всегда, а не только при переполнении -----
+    #
+    # `render/layout-telemetry.json` прогона 91: 62 записи, из них `role:
+    # "table"` — ноль, при 39 листах с таблицами. То есть о таблицах рендерер
+    # не сообщал ничего, и ёмкость листа приходилось выводить из худшего
+    # случая: 3 510 000 / 1 036 320 = три строки при медианной строке
+    # 350 520 EMU. Мера снимает этот вывод — но только если она есть у **всех**
+    # листов, включая те, что влезли.
+    reset_bullet_measure()
+    reset_layout_telemetry()
+    fitting_rows = [
+        [str(i + 1), f"example-{i + 1}.org/material", TITLE_SERP, "СМИ", "Нейтральный"]
+        for i in range(3)
+    ]
+    ctx_fit = render_search_table_page(fitting_rows, "Показана выдача Яндекса по запросу «Кремлев Умар Назарович».")
+    table_fit, _stage_fit = page_shapes(ctx_fit, "страница выдачи")
+    measured = get_bullet_measure()
+    entry = measured[0] if len(measured) == 1 else {}
+    check(
+        "Т16а: лист выдачи, который влез, пишет меру своим ключом",
+        len(measured) == 1 and entry.get("slideKey") == f"p09_ru_serp_table{TABLE_MEASURE_KEY_SUFFIX}",
+        f"записей {len(measured)}: {[m.get('slideKey') for m in measured]}",
+    )
+    # Суффикс ключа объявлен по обе стороны провода, и его равенство — не
+    # формальность: пустой суффикс отдал бы ключ страницы мере таблицы, а по
+    # этому ключу перекладка буллетов ищет свою запись.
+    ts_suffix = re.search(
+        r'export const TABLE_MEASURE_KEY_SUFFIX = "([^"]*)";',
+        (
+            Path(__file__).resolve().parent.parent
+            / "src/modules/digital-profile/orion-golden/deck-sections/measured-table-fit.ts"
+        ).read_text(encoding="utf-8"),
+    )
+    check(
+        "Т16а2: суффикс ключа мерной записи совпадает с объявленным в TypeScript и непуст",
+        bool(ts_suffix)
+        and ts_suffix.group(1) == TABLE_MEASURE_KEY_SUFFIX
+        and TABLE_MEASURE_KEY_SUFFIX != ""
+        and entry.get("slideKey") != "p09_ru_serp_table",
+        f"рендерер {TABLE_MEASURE_KEY_SUFFIX!r}, TypeScript "
+        f"{ts_suffix.group(1) if ts_suffix else 'не найден'!r}, ключ записи {entry.get('slideKey')!r}",
+    )
+    heights = list(entry.get("itemHeights") or [])
+    drawn = [int(r.height) for r in table_fit.table.rows]
+    check(
+        "Т16б: мера перечисляет шапку и строки теми же высотами, какие нарисованы",
+        heights == drawn and len(heights) == len(fitting_rows) + 1,
+        f"мера {heights} против нарисованного {drawn}",
+    )
+    check(
+        "Т16в: сумма меры равна высоте нарисованной таблицы",
+        sum(heights) == int(table_fit.height),
+        f"сумма {sum(heights)}, таблица {int(table_fit.height)}",
+    )
+    row_budget = serp_capacity_terms()["SERP_TABLE_ROW_BUDGET_EMU"]
+    check(
+        "Т16г: бюджет меры за вычетом шапки равен бюджету строк реестра",
+        heights and int(entry.get("availableHeight") or 0) - heights[0] == row_budget,
+        f"available {entry.get('availableHeight')} − шапка {heights[0] if heights else '?'} "
+        f"против SERP_TABLE_ROW_BUDGET_EMU={row_budget}",
+    )
+    reset_bullet_measure()
+    reset_layout_telemetry()
+    long_intro = (
+        "Показана выдача Яндекса по запросу «Кремлев Умар Назарович». "
+        + "Позиции 17–20 в собранных данных отсутствуют. " * 6
+    )
+    ctx_long = render_search_table_page(fitting_rows, long_intro)
+    long_entry = (get_bullet_measure() or [{}])[0]
+    check(
+        "Т16д: длина вводного абзаца бюджет меры не двигает — он объявленный, а не от факта",
+        long_entry.get("availableHeight") == entry.get("availableHeight"),
+        f"короткий абзац {entry.get('availableHeight')}, длинный {long_entry.get('availableHeight')}",
+    )
+    table_long, _stage_long = page_shapes(ctx_long, "страница выдачи с длинным абзацем")
+    check(
+        "Т16е: таблица с длинным абзацем начинается ниже, чем с коротким",
+        int(table_long.top) > int(table_fit.top),
+        f"верх таблицы {int(table_fit.top)} против {int(table_long.top)}",
+    )
+    # Переполнение таблицы **не** объявляется потерей вердикта: строки таблицы
+    # циклу буллетов не подвластны, и `droppedLines > 0` объявил бы ему
+    # несходимость — то есть уронил бы оплаченный прогон из-за одной высокой
+    # строки. О переполнении говорит запись разметки (Т15б), а не мера.
+    reset_bullet_measure()
+    reset_layout_telemetry()
+    over_rows = [
+        [str(i + 1), ADDRESS_BAND_PLAIN, TITLE_95, "Официальный сайт / госресурс", "Нежелательный"]
+        for i in range(12)
+    ]
+    render_search_table_page(over_rows, "Показана выдача Яндекса.")
+    over = (get_bullet_measure() or [{}])[0]
+    clipped = [e for e in get_layout_telemetry() if e.get("role") == "table"]
+    check(
+        "Т16ж: переполнение остаётся громким записью разметки, а не потерей в мере",
+        int(over.get("droppedBullets") or 0) == 0
+        and int(over.get("droppedLines") or 0) == 0
+        and len(clipped) == 1
+        and clipped[0].get("clipped") is True,
+        f"мера {over.get('droppedBullets')}/{over.get('droppedLines')}, записей разметки {len(clipped)}",
+    )
+    reset_bullet_measure()
     reset_layout_telemetry()
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")

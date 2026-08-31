@@ -217,14 +217,30 @@ describe("списки ТОП-20 — только из выдачи родног
     return scoped;
   }
 
-  it("позиция от обогатителя в таблицу не попадает", () => {
-    const rows = [
+  it("свободный номер второе чтение добирает, занятый — нет", () => {
+    /*
+     * Прежде позиция обогатителя в таблицу не попадала вовсе, и на прогоне 91
+     * так выбрасывалась пятая часть собранной органики: 123 наблюдения из 602.
+     * Решение владельца от 31.08.2026: номер занимает своё чтение поисковика, а
+     * свободные номера добираются вторым замером той же выдачи.
+     */
+    const free = [
       { rank: 1, title: "Родной первый", url: "https://a.ru/1", query: QUERY, rankSource: "yandex" },
-      { rank: 2, title: "Чужая нумерация", url: "https://b.ru/2", query: QUERY, rankSource: "arsenkin" },
+      { rank: 2, title: "Второе чтение", url: "https://b.ru/2", query: QUERY, rankSource: "arsenkin" },
       { rank: 3, title: "Родной третий", url: "https://c.ru/3", query: QUERY, rankSource: "yandex" },
     ];
-    const printed = tableRows(scopedWithSources(rows));
-    expect(printed.map((r) => r[TITLE])).toEqual(["Родной первый", "Родной третий"]);
+    expect(tableRows(scopedWithSources(free)).map((r) => r[TITLE])).toEqual([
+      "Родной первый",
+      "Второе чтение",
+      "Родной третий",
+    ]);
+
+    // Занятый номер второе чтение не получает: столбец «№» — одна шкала.
+    const taken = [
+      { rank: 1, title: "Родной первый", url: "https://a.ru/1", query: QUERY, rankSource: "yandex" },
+      { rank: 1, title: "Второе чтение", url: "https://b.ru/2", query: QUERY, rankSource: "arsenkin" },
+    ];
+    expect(tableRows(scopedWithSources(taken)).map((r) => r[TITLE])).toEqual(["Родной первый"]);
   });
 
   it("старый набор без источника позиции таблицу не теряет", () => {

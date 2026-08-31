@@ -182,6 +182,15 @@ function toRow(
   const queryText = String(meta.queryText ?? meta.query ?? item.query ?? "").trim();
   const queryPurpose = String(meta.queryPurpose ?? "").trim();
   const rankSource = String(meta.rankSource ?? "").trim();
+  const ranksByProvider = ((): Record<string, number> | undefined => {
+    const raw = meta.ranksByProvider;
+    if (!raw || typeof raw !== "object") return undefined;
+    const pairs = Object.entries(raw as Record<string, unknown>)
+      .map(([provider, value]) => [provider, Number(value)] as const)
+      .filter(([, value]) => Number.isFinite(value) && value > 0)
+      .map(([provider, value]) => [provider, Math.trunc(value)] as const);
+    return pairs.length > 0 ? Object.fromEntries(pairs) : undefined;
+  })();
   const surface = mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic"));
   const snippet = String(item.snippet ?? "").trim();
   return {
@@ -189,6 +198,10 @@ function toRow(
     ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
     // Источник позиции без позиции не существует: поле едет вместе с рангом.
     ...(Number.isFinite(rawRank) && rawRank > 0 && rankSource ? { rankSource } : {}),
+    // Номера обоих чтений — ими лист объясняет пропуск номера в таблице. Поле
+    // необязательное: наборы, снятые до его проводки, его не несут, и ветка
+    // «номер занят материалом, показанным выше» у них не исполняется вовсе.
+    ...(ranksByProvider ? { ranksByProvider } : {}),
     ...(queryText ? { query: queryText } : {}),
     ...(queryPurpose ? { queryPurpose } : {}),
     // Пометка живёт при своём запросе: без текста запроса она не значит

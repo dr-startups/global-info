@@ -12,9 +12,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FragmentKey, SectionPackV2 } from "./contracts";
 import { FRAGMENT_ARTIFACT_PATHS } from "./contracts";
-import { buildAllSections, type SectionBuildContext } from "./section-builders";
+import type { SectionBuildContext } from "./section-builders";
 import { validateSectionPack } from "./section-validation";
 import {
+  buildSectionPacksUnderTableMeasure,
   loadPreviousPacks,
   runDeckBuildMeasured,
   type BulletFitReport,
@@ -159,7 +160,19 @@ export async function runDeckBuildWithGptCopy(input: {
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const ctx: SectionBuildContext = { ...input.ctx, previousPacks, buildLog };
 
-  let packs: SectionPackV2[] = buildAllSections(ctx);
+  /*
+   * Раскрой таблиц снимается мерой **до** стадий GPT: стадия 2 переписывает
+   * абзац конкретных листов, и перекладка после неё оставила бы её текст на
+   * страницах, которых больше нет.
+   */
+  let packs: SectionPackV2[] = await buildSectionPacksUnderTableMeasure({
+    ctx,
+    bundleForValidation: input.bundleForValidation,
+    knownEvidenceRefs: input.knownEvidenceRefs,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
+  });
   let gptReport: GptSlideCopyReport | null = null;
   let gptEditorReport: GptDeckEditorReport | null = null;
   let gptComposition: GptDeckComposition | null = null;

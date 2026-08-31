@@ -280,17 +280,44 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
             key === "FRONT_MATTER_MAIN"
             ? extras.personaDecision ?? null
             : null;
+  const slots = slotsForFragment(key);
   // Visual asset bindings are fragment inputs: adding/removing an asset for a
   // slot the fragment owns must regenerate it (layout templates are NOT here —
   // template-only changes never invalidate packs).
   const slotAssets = Object.fromEntries(
-    slotsForFragment(key).map((s) => [s.slotId, extras.visualAssets?.[s.slotId] ?? []])
+    slots.map((s) => [s.slotId, extras.visualAssets?.[s.slotId] ?? []])
   );
+  // Раскрой выбирает состав каждого листа таблицы, его опоры, его фразу с
+  // номерами строк и его счётчики — значит, он вход фрагмента, и его появление
+  // обязано пересобрать пакет. Не входи он в ключ, пакет, записанный сидовым
+  // (мерный прогон застал рендерер прошлой версии — службы поднимаются по
+  // отдельности), переиспользовался бы и после того, как раскрой появился: лист
+  // остался бы с тремя строками до следующего подъёма версии содержимого, без
+  // отказа и без телеметрии. Цена — промах кэша на **черновой** сборке, у
+  // которой раскроя ещё нет: процессорное время без обращения к модели, потому
+  // что клиентский текст приезжает стадией 2, а не сборкой фрагмента.
+  //
+  // Ключ симметричен, и вторая сторона стоит денег. Пересборка отчёта, у
+  // которой меры нет вовсе (рендерер прошлой версии, офлайн-сборка, пустой
+  // вердикт), обнуляет раскрой: ключ возвращается к сидовому, и **настоящая**
+  // сборка пишет `REGENERATED`. У свежего пакета поля `gptCopy` нет, а
+  // `isGptCopyCacheHit` без него отвечает «нет» — значит стадия 2 оплачивается
+  // заново для `RU_SERP` и `UAE_SERP`, и раздел выдачи в том же прогоне
+  // возвращается с четырёх листов на десять. Содержимое при этом не пропадает
+  // и отказа нет: это трата и рост документа, а не окно деплоя.
+  //
+  // Берутся только слоты этого фрагмента: раскрой выдачи ОАЭ не повод платить
+  // за пересборку российской. Порядок задан сортировкой, чтобы ключ зависел от
+  // содержимого раскроя, а не от порядка страниц, в котором его собрали.
+  const tableCut = [...(extras.tableCut ?? [])]
+    .filter(([cutKey]) => slots.some((s) => cutKey.startsWith(`${s.slotId}|`)))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return createHash("sha256")
     .update(
       JSON.stringify({
         base,
         slotAssets,
+        tableCut,
         surfaceCollectionHints: extras.surfaceCollectionHints ?? [],
         materialFreshness: extras.materialFreshness ?? null,
         reportDiff: extras.reportDiff ?? null,

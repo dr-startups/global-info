@@ -34,7 +34,6 @@ import {
   VISUAL_ASSET_UNAVAILABLE,
   assetsFor,
   buildPageEvidenceView,
-  chunk,
   claimText,
   clampClientText,
   compactRanges,
@@ -55,7 +54,6 @@ import {
   sameSerpQuery,
   serpQueryDisplayForm,
   splitClientParagraphs,
-  subjectQueries,
   subjectQueriesLine,
   enumerateRu,
   statusLine,
@@ -64,6 +62,11 @@ import {
   withContinuations,
 } from "./shared";
 import { continuationTitle } from "../continuation-slide";
+import {
+  EXTRA_QUERIES_TABLE,
+  cutTableRows,
+  tableCutKey,
+} from "../measured-table-fit";
 
 /** Сколько строк выдачи показывает таблица: глубина аудита, не больше. */
 export const SERP_TABLE_TOP_N = 20;
@@ -157,8 +160,17 @@ function serpRegionTitle(regionLabel: string): string {
  * Молчание о номерах здесь опаснее, чем на первой таблице: читатель уже увидел
  * нумерованную двадцатку и по привычке ищет места и тут.
  */
+/**
+ * Подпись второй таблицы называет **оба** происхождения её строк.
+ *
+ * После работы 9 сюда приходят не только материалы других запросов, но и
+ * материалы второго замера той же выдачи, вытесненные из первой таблицы
+ * занятым номером (на главном RU-запросе прогона 91 таких шесть). Без второй
+ * половины фразы таблица врала бы о происхождении этих строк.
+ */
 const SERP_EXTRA_LEAD =
-  "Здесь материалы, которых нет в таблице по имени: их нашли другие запросы прогона. " +
+  "Здесь материалы, которых нет в таблице по имени: их нашли другие запросы прогона " +
+  "или другой замер той же выдачи. " +
   "Мест в выдаче у этих строк не показано — у каждого запроса своя нумерация, и сравнивать её с первой таблицей нельзя.";
 
 /**
@@ -410,10 +422,82 @@ const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
 };
 
 /**
- * Номера, которых в собранной двадцатке нет, — компактным перечнем: «1–3, 5».
+ * Пропуск номера в таблице объясняется данными, а не общей оговоркой.
  *
- * Пустая строка означает полную таблицу: подпись о потерях появляется только
- * там, где потери есть.
+ * Прежде страница объявляла недостающие номера утраченными при сборе — на
+ * прогоне 91 неправда трижды: собственный API Яндекса вернул 16 строк и
+ * двадцати не обещал, позиции 18–20 лежали в бандле, а не доехали они по вине
+ * деки. Клиенту сообщили об утрате двадцати шести собранных и оплаченных
+ * позиций.
+ *
+ * Общее правило («пропуск номера не означает, что там было пусто») отвергнуто
+ * замером: на таблице GOOGLE/UAE «Umar Kremlev» прогона 91 оно встало бы над
+ * пропусками 1, 4 и 9, где именно это и означает — ни один источник их не
+ * вернул. Дисклеймер, отговаривающий от вывода, который в трёх случаях из семи
+ * верен, — вторая ложь на месте первой.
+ *
+ * Поэтому веток две, и обе прослеживаются до наблюдения:
+ *
+ * - номер, который второе чтение намерило на материале, показанном выше под
+ *   другим номером (`ranksByProvider`);
+ * - номер, которого нет ни у одного чтения.
+ *
+ * Третья ветка — набор, снятый до проводки второго чтения: назвать причину ему
+ * нечем, и он говорит только измеренную глубину. Признак берётся у **набора**,
+ * иначе недоехавшее поле превратит «занято» в «никто не вернул».
+ */
+export function serpRankGapSentences(input: {
+  printed: readonly number[];
+  collected: readonly number[];
+  occupied: readonly number[];
+  datasetKnowsSecondReading: boolean;
+  positional: boolean;
+  topN?: number;
+}): string[] {
+  const topN = input.topN ?? SERP_TABLE_TOP_N;
+  if (!input.positional || input.printed.length === 0) return [];
+  const printed = new Set(input.printed);
+  const gaps: number[] = [];
+  for (let rank = 1; rank <= topN; rank += 1) if (!printed.has(rank)) gaps.push(rank);
+  if (gaps.length === 0) return [];
+  if (!input.datasetKnowsSecondReading) {
+    // Набор о втором чтении не знает: причину назвать нечем, и остаётся
+    // измеренное — сколько позиций этой пары есть в собранных данных.
+    const depth = new Set(input.collected.filter((r) => r >= 1 && r <= topN)).size;
+    if (depth === 0 || depth >= topN) return [];
+    return [
+      `Поисковик вернул по этому запросу ${depth} ${pluralRu(depth, "позицию", "позиции", "позиций")} ` +
+        `из ${topN}; остальных в выдаче на дату сбора не было.`,
+    ];
+  }
+  const occupied = gaps.filter((rank) => input.occupied.includes(rank));
+  const unreturned = gaps.filter((rank) => !input.occupied.includes(rank));
+  const out: string[] = [];
+  if (occupied.length > 0) {
+    // Две формы целиком, а не согласование по частям: «под другими номером»
+    // получалось ровно из попытки собрать предложение из склоняемых кусков.
+    out.push(
+      occupied.length === 1
+        ? `Позиция ${occupied[0]} занята материалом, показанным выше под другим номером.`
+        : `Позиции ${compactRanges(occupied)} заняты материалами, показанными выше под другими номерами.`
+    );
+  }
+  if (unreturned.length > 0) {
+    out.push(
+      unreturned.length === 1
+        ? `Позицию ${unreturned[0]} не вернул ни один источник выдачи в этом прогоне.`
+        : `Позиции ${compactRanges(unreturned)} не вернул ни один источник выдачи в этом прогоне.`
+    );
+  }
+  return out;
+}
+
+/**
+ * Номера, которых среди напечатанных нет, — компактным перечнем: «1–3, 5».
+ *
+ * Единственный читатель — заголовок страницы: по пустоте этой строки он
+ * решает, назвать таблицу полной («ТОП-20») или диапазоном напечатанных
+ * номеров. Клиентской фразы о причинах пропуска из неё больше не строится.
  */
 export function missingSerpRanks(printed: readonly number[], topN = SERP_TABLE_TOP_N): string {
   const present = new Set(printed);
@@ -591,8 +675,29 @@ export function serpTablePageProse(input: {
    * друга: они отвечают на один вопрос «почему здесь этот запрос».
    */
   regionMainQuery?: string | null;
-  /** Перечень несобранных номеров; пусто — таблица полная. */
-  missing: string;
+  /**
+   * Позиции, собранные по этому движку и запросу.
+   *
+   * Абзац говорит о данных, а не о напечатанном: пока фраза считалась по
+   * напечатанному, страница объявляла «потерянными при сборе» и позиции,
+   * которых поисковик не возвращал вовсе, и позиции, которые дека собрала, но
+   * не показала.
+   */
+  collectedRanks?: number[];
+  /** Номера, напечатанные в этой таблице. */
+  printedRanks?: number[];
+  /**
+   * Пропущенные номера, которые второе чтение намерило на материале, уже
+   * показанном выше под другим номером.
+   */
+  occupiedRanks?: number[];
+  /**
+   * Знает ли набор о втором чтении (`ranksByProvider`).
+   *
+   * Признак набора, а не строки: без него причину пропуска назвать нечем, и
+   * лист о ней молчит, а не выбирает вторую ветку наугад.
+   */
+  datasetKnowsSecondReading?: boolean;
   /**
    * Номера строк — позиции выдачи или порядок нашей сводки. Ответ известен
    * всегда, поэтому и печатается всегда, но фразы **разные**: одна общая
@@ -601,10 +706,7 @@ export function serpTablePageProse(input: {
   positional: boolean;
   /** Даты съёмки материалов; единственный источник — `report-material-freshness`. */
   freshness?: MaterialFreshness | null;
-  /** Справка о наборе запросов прогона и сам набор, по которому она решается. */
-  queriesLine?: string;
-  subjectQueries?: string[];
-}): { head: string; tail?: string } {
+}): { head: string } {
   const parts: string[] = [];
   if (input.query) {
     const engine = input.engineLabel ? `выдача ${input.engineLabel}` : "выдача";
@@ -631,16 +733,17 @@ export function serpTablePageProse(input: {
    */
   const collected = input.freshness ? freshnessFootnote(input.freshness) : undefined;
   if (collected) parts.push(`${collected[0]!.toUpperCase()}${collected.slice(1)}.`);
-  if (input.missing) {
-    parts.push(
-      `Позиции ${input.missing} в собранных данных отсутствуют: эти строки потеряны при сборе, а не пусты в выдаче.`
-    );
-  }
+  parts.push(
+    ...serpRankGapSentences({
+      printed: input.printedRanks ?? [],
+      collected: input.collectedRanks ?? [],
+      occupied: input.occupiedRanks ?? [],
+      datasetKnowsSecondReading: input.datasetKnowsSecondReading ?? false,
+      positional: input.positional,
+    })
+  );
   parts.push(input.positional ? SERP_RANKS_ARE_POSITIONS : SERP_RANKS_ARE_COLLECTION_ORDER);
-  const queries = input.subjectQueries ?? [];
-  const repeatsTableQuery = queries.length === 1 && sameSerpQuery(queries[0], input.query);
-  const tail = input.queriesLine && !repeatsTableQuery ? input.queriesLine : undefined;
-  return { head: parts.join(" "), ...(tail ? { tail } : {}) };
+  return { head: parts.join(" ") };
 }
 
 /**
@@ -699,7 +802,7 @@ export function buildSerpFragment(
    * объект значило бы менять их ради подписи. Живой путь передаёт `extras`
    * всегда (`section-builders.ts`).
    */
-  extras?: Pick<FragmentExtras, "materialFreshness">
+  extras?: Pick<FragmentExtras, "materialFreshness" | "tableCut">
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment(key);
   const organic = scoped.surfaceUnits.filter((u) => u.surface === "organic");
@@ -805,6 +908,56 @@ export function buildSerpFragment(
    * и в таблице появлялись две первых позиции и четыре вторых. В выдаче по
    * одному запросу позиция уникальна, и таблица обязана это сохранять.
    */
+  /**
+   * Позиция материала по любому чтению этой пары «движок + запрос».
+   *
+   * Отличается от `rankInQuery` одним: не спрашивает, **чей** это измеритель.
+   * Ею добирается хвост таблицы — номера, которых собственное чтение
+   * поисковика не дало, а второй замер той же выдачи дал.
+   *
+   * Но измеритель обязан быть **назван**. Решение владельца от 31.08.2026
+   * говорит о втором чтении — обогатителе; про строки, чьей нумерации не
+   * поручился никто, оно не говорит. Прежняя защита («источник не назван —
+   * значит, свой») была той лазейкой, через которую жила потеря признака, и
+   * снимать её за пределами решения владельца нельзя. Наборы, где источник не
+   * назван **ни у кого**, этой ветки не исполняют вовсе — у них таблица
+   * позвоночная, и `rankFromOwnEngine` пропускает такие строки сам.
+   */
+  const rankOfAnyReading = (groupRefs: string[], query: string | null): number => {
+    const named = groupRefs.filter((ref) => {
+      const source = String(scoped.evidenceIndex[ref]?.rankSource ?? "").trim();
+      return source !== "" && source !== "unknown";
+    });
+    const refs = query
+      ? named.filter((ref) => sameSerpQuery(scoped.evidenceIndex[ref]?.query, query))
+      : named;
+    const ranks = refs
+      .map((ref) => scoped.evidenceIndex[ref]?.rank)
+      .filter((r): r is number => typeof r === "number" && r > 0);
+    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+  };
+
+  /**
+   * Материалы второго чтения, вытесненные из таблицы А занятым номером.
+   *
+   * Ключ материала → чем он был вытеснен. Таблица Б читает эту карту: строки
+   * собраны и оплачены, и потерять их нельзя, а номер им дать нельзя — он уже
+   * занят другим материалом в единственной шкале столбца «№».
+   */
+  const displacedToExtra = new Map<string, { engine: string; query: string | null; rank: number }>();
+
+  /**
+   * Знает ли **набор** о втором чтении.
+   *
+   * Признак берётся у набора, а не у пустоты поля отдельной строки: недоехавшее
+   * поле превратило бы «номер занят материалом, показанным выше» в «номер не
+   * вернул ни один источник» — новую ложь на месте старой, притом
+   * правдоподобную. Тот же приём, что у `datasetNamesRankSource`.
+   */
+  const datasetKnowsSecondReading = Object.values(scoped.evidenceIndex).some(
+    (e) => e?.ranksByProvider && Object.keys(e.ranksByProvider).length > 0
+  );
+
   const rankInQuery = (groupRefs: string[], query: string | null, engine: string): number => {
     const rankOf = (ref: string): number | undefined => {
       if (!rankFromOwnEngine(ref, engine)) return undefined;
@@ -906,7 +1059,33 @@ export function buildSerpFragment(
       const queryChosenByUs = Boolean(query) && !regionIsMarked && !markedByData;
       const regionMainQuery = regionIsMarked && showsOtherQuery ? regionMain.query : null;
       const scopedGroups = groups.filter((g) => groupInQuery(g.engineRefs, query));
-      const ranked = dropDuplicateRanks(
+      /*
+       * Сколько позиций пары «движок + запрос» есть в собранных данных.
+       *
+       * Считается по **наблюдениям**, а не по материалам, и без фильтра «чьё
+       * это чтение»: иначе число отвечает не на тот вопрос, который задаёт
+       * фраза. Обе ошибки были измерены на этой самой правке — сведённый дубль
+       * одной статьи отнимал номер у глубины («позиции 1–20 из ТОП-20» в
+       * заголовке и «19 позиций из 20» в лиде на одной странице), а фильтр
+       * источника прятал позиции второго чтения, которые решением владельца
+       * принадлежат той же выдаче.
+       */
+      const collectedRanks = scopedGroups
+        .flatMap((group) => group.engineRefs)
+        .filter((ref) => !query || sameSerpQuery(scoped.evidenceIndex[ref]?.query, query))
+        .map((ref) => scoped.evidenceIndex[ref]?.rank)
+        .filter((rank): rank is number => typeof rank === "number" && rank >= 1 && rank <= SERP_TABLE_TOP_N);
+      /*
+       * Позвоночник — чтение поисковика, хвост — второй замер той же выдачи.
+       *
+       * Решение владельца от 31.08.2026. Позиции берутся у собственного чтения
+       * (на главном RU-запросе прогона 91 это 1–16 Яндекса), недостающие номера
+       * добираются вторым чтением (18, 19, 20 обогатителя), а материалы второго
+       * чтения, чей номер занят **другим** материалом позвоночника, в таблицу А
+       * не идут: столбец «№» остаётся одной шкалой. Они уезжают в таблицу Б —
+       * потерять их нельзя, они собраны и оплачены.
+       */
+      const spine = dropDuplicateRanks(
         scopedGroups
           .map((group, index) => ({
             group,
@@ -916,12 +1095,38 @@ export function buildSerpFragment(
           .filter((x) => x.rank <= SERP_TABLE_TOP_N)
           .sort((a, b) => a.rank - b.rank || a.index - b.index)
       ).slice(0, SERP_TABLE_TOP_N);
+      const takenRanks = new Set(spine.map((x) => x.rank));
+      const printedKeys = new Set(spine.map((x) => x.group.key));
+      const tail: typeof spine = [];
+      const displaced: Array<{ group: (typeof spine)[number]["group"]; rank: number }> = [];
+      const secondReading = scopedGroups
+        .filter((group) => !printedKeys.has(group.key))
+        .map((group, index) => ({
+          group,
+          index,
+          rank: rankOfAnyReading(group.engineRefs, query),
+        }))
+        .filter((x) => x.rank <= SERP_TABLE_TOP_N)
+        .sort((a, b) => a.rank - b.rank || a.index - b.index);
+      for (const candidate of secondReading) {
+        if (takenRanks.has(candidate.rank)) {
+          displaced.push({ group: candidate.group, rank: candidate.rank });
+          continue;
+        }
+        takenRanks.add(candidate.rank);
+        tail.push(candidate);
+      }
+      for (const row of displaced) displacedToExtra.set(row.group.key, { engine, query, rank: row.rank });
+      const ranked = [...spine, ...tail]
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, SERP_TABLE_TOP_N);
       if (ranked.length > 0) {
         return {
           engine,
           query,
           queryChosenByUs,
           regionMainQuery,
+          collectedRanks,
           displayed: ranked,
           positional: true,
         };
@@ -932,7 +1137,15 @@ export function buildSerpFragment(
       const unranked = scopedGroups
         .map((group, index) => ({ group, index, rank: index + 1 }))
         .slice(0, SERP_TABLE_TOP_N);
-      return { engine, query, queryChosenByUs, regionMainQuery, displayed: unranked, positional: false };
+      return {
+        engine,
+        query,
+        queryChosenByUs,
+        regionMainQuery,
+        collectedRanks,
+        displayed: unranked,
+        positional: false,
+      };
     })
     .filter((t) => t.displayed.length > 0);
 
@@ -1024,14 +1237,21 @@ export function buildSerpFragment(
   };
   // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
   // strip of the first page's finding blocks).
-  // Ёмкость листа объявлена реестром, и второго числа здесь нет: прежние
-  // запасные «12» пережили вывод ёмкости и стали бы тихим вторым ответом.
-  // Ноль в реестре значит «не разбивать» — тот же смысл, что у общего
-  // пагинатора `withContinuations`.
+  /*
+   * Сколько строк на листе — спрашивается у меры рендерера, а реестровое число
+   * остаётся сидом первого, чернового построения.
+   *
+   * Сид выведен из худшей законной строки и даёт три строки; настоящая строка
+   * прогона 91 втрое ниже (медиана 350 520 EMU против 1 036 320), и лист
+   * оставался пустым больше чем наполовину. Раскроя нет — держим сид: это
+   * офлайн-сборка или рендерер прошлой версии, и сегодняшний документ честнее
+   * листа, нарисованного мимо поля. Ноль в реестре значит «не разбивать» — тот
+   * же смысл, что у общего пагинатора `withContinuations`.
+   */
   const maxRows = DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide;
-  const cut = <T,>(list: T[]): T[][] => (maxRows > 0 ? chunk(list, maxRows) : [list]);
+  const cut = <T,>(list: T[], engine: string): T[][] =>
+    cutTableRows(list, extras?.tableCut?.get(tableCutKey(slot.slotId, engine)), maxRows);
   const queriesLine = subjectQueriesLine(scoped);
-  const queryList = subjectQueries(scoped);
   // Страницы не смешивают поисковики: каждая таблица листается отдельно и
   // подписана своим поисковиком и запросом.
   const pages: Array<{
@@ -1044,10 +1264,8 @@ export function buildSerpFragment(
      * номер строки — теме, которая на этом листе называет свою опору.
      */
     printedRows: PrintedPageRow[];
-    /** Первые предложения страницы: чья это выдача и чего в ней не хватает. */
+    /** Первые предложения страницы: чья это выдача и что о ней известно. */
     lead: string;
-    /** Справка после вывода страницы; печатается не всегда. */
-    note?: string;
     engine: string;
     query: string | null;
     /** Запрос выбран нами запасным правилом, а не назван пометкой данных. */
@@ -1069,22 +1287,60 @@ export function buildSerpFragment(
     const printed = table.displayed.map((x) => rowOf(x.group, x.rank));
     // Строки и их опоры режутся одним разрезом: соответствие «строка → ссылки»
     // держится индексом, и разъехавшиеся куски остановили бы сборку.
-    const rowChunks = cut(printed);
+    const rowChunks = cut(printed, table.engine);
     const printedRowChunks = cut(
-      table.displayed.map((x) => ({ rank: x.rank, refs: x.group.refs }))
+      table.displayed.map((x) => ({ rank: x.rank, refs: x.group.refs })),
+      table.engine
     );
     const printedRanks = table.positional ? table.displayed.map((x) => x.rank) : [];
-    const missing = table.positional ? missingSerpRanks(printedRanks) : "";
+    /*
+     * Чем занят пропущенный номер — по данным напечатанных материалов.
+     *
+     * У материала, показанного выше под своим номером, второе чтение могло
+     * намерить другой: `rutube.ru` стоит у Яндекса пятнадцатым, а обогатитель
+     * дал ему семнадцатый — и номер 17 в таблице не появляется не потому, что
+     * его никто не вернул.
+     */
+    const occupiedRanks = table.positional
+      ? [
+          ...new Set(
+            table.displayed.flatMap((x) =>
+              x.group.engineRefs
+                /*
+                 * Только наблюдения **этого** запроса.
+                 *
+                 * Материал, найденный несколькими запросами, здесь норма, а не
+                 * исключение — ради него живут `queriesOfRefs` и колонка
+                 * «Найдено по запросу». Без фильтра номер, намеренный по
+                 * второму запросу, приезжал на страницу первого: лист говорил
+                 * «позиция 3 занята» там, где по этому запросу третьей позиции
+                 * не мерил никто, то есть верна была вторая ветка. Утверждение
+                 * о выдаче по запросу обязано выводиться из наблюдений по нему
+                 * же — той самой линейкой, что у `rankOfAnyReading`.
+                 */
+                .filter(
+                  (ref) =>
+                    !table.query ||
+                    sameSerpQuery(scoped.evidenceIndex[ref]?.query, table.query)
+                )
+                .flatMap((ref) =>
+                  Object.values(scoped.evidenceIndex[ref]?.ranksByProvider ?? {})
+                )
+            )
+          ),
+        ].filter((rank) => rank >= 1 && rank <= SERP_TABLE_TOP_N)
+      : [];
     const prose = serpTablePageProse({
       engineLabel: serpEngineLabelGenitive(table.engine),
       query: table.query,
       queryChosenByUs: table.queryChosenByUs,
       regionMainQuery: table.regionMainQuery,
-      missing,
+      collectedRanks: table.collectedRanks,
+      printedRanks,
+      occupiedRanks,
+      datasetKnowsSecondReading,
       positional: table.positional,
       freshness: extras?.materialFreshness ?? null,
-      queriesLine,
-      subjectQueries: queryList,
     });
     for (let i = 0; i < rowChunks.length; i += 1) {
       const suffix = rowChunks.length > 1 ? ` (${i + 1}/${rowChunks.length})` : "";
@@ -1096,7 +1352,6 @@ export function buildSerpFragment(
         rows: rowChunks[i] ?? [],
         printedRows: printedRowChunks[i] ?? [],
         lead: prose.head,
-        ...(prose.tail ? { note: prose.tail } : {}),
         engine: table.engine,
         query: table.query,
         queryChosenByUs: table.queryChosenByUs,
@@ -1171,7 +1426,7 @@ export function buildSerpFragment(
         // Клиент должен видеть, чью выдачу смотрит: без запроса позиция в
         // таблице — число без знаменателя, а противоречие со снимком соседней
         // страницы необъяснимо (см. `docs/etalon-orion-razbor.md`).
-        narrative: [pages[i]!.lead, pageBlocks.whatWasFound, pages[i]!.note]
+        narrative: [pages[i]!.lead, pageBlocks.whatWasFound]
           .filter(Boolean)
           .join(" "),
       },
@@ -1311,7 +1566,29 @@ export function buildSerpFragment(
         const extraQueries = queriesOfRefs(group.refs).filter(
           (q) => !mainQueryKeys.has(normalizeSerpQuery(q.query))
         );
-        if (extraQueries.length === 0) return null;
+        /*
+         * Материал второго чтения, вытесненный из таблицы А занятым номером,
+         * приходит сюда со **своим** запросом — тем же, что у таблицы А.
+         *
+         * Без этой ветки он не попадал никуда: у него нет «другого запроса», а
+         * номер ему дать нельзя — столбец «№» одна шкала. Строка собрана и
+         * оплачена, и терять её значит вернуть тот самый дефект, ради которого
+         * партия и затевалась.
+         */
+        const displaced = displacedToExtra.get(group.key);
+        if (extraQueries.length === 0 && !displaced) return null;
+        if (extraQueries.length === 0 && displaced) {
+          const rating = ratingOf(group.refs);
+          return {
+            key: group.key,
+            refs: group.refs,
+            foundBy: displaced.query ?? "",
+            rank: displaced.rank,
+            rating,
+            riskClass: riskClass(rating),
+            displaced: true,
+          };
+        }
         /*
          * «Найдено по запросу» называет один запрос, и правило выбора живёт
          * здесь, а не в голове: материал, найденный двумя формулировками,
@@ -1335,6 +1612,14 @@ export function buildSerpFragment(
           rank: best.rank,
           rating,
           riskClass: riskClass(rating),
+          /*
+           * Признак ставится и здесь: материал, вытесненный из таблицы А, часто
+           * найден **и** другими запросами прогона, и тогда кандидат строится
+           * обычной веткой. Под общим потолком «всего остального» он терялся
+           * ровно так же — замерено на прогоне 91, где до этой правки шесть
+           * таких материалов не печатались нигде.
+           */
+          displaced: displacedToExtra.has(group.key),
         };
       })
       .filter((row): row is NonNullable<typeof row> => row !== null)
@@ -1351,8 +1636,18 @@ export function buildSerpFragment(
      * дополняет. Своего числа здесь не заводится — второй ответ на «какая у нас
      * глубина» разошёлся бы с первым в ближайший же месяц.
      */
-    const always = candidates.filter((row) => row.riskClass < 2);
-    const capped = candidates.filter((row) => row.riskClass === 2);
+    /*
+     * Вытесненные из таблицы А потолку не подчиняются.
+     *
+     * Потолок держит хвост «всего остального», а материал, чью позицию прогон
+     * намерил внутри ТОП-20 главного запроса, — не «остальное»: он часть
+     * обещанной двадцатки, просто его номер занят другим материалом. На живом
+     * прогоне 91 их шестеро на регион, и под общим потолком (75 кандидатов,
+     * остаток 46) они не печатались нигде — ровно та потеря, ради которой
+     * партия и делается.
+     */
+    const always = candidates.filter((row) => row.riskClass < 2 || row.displaced);
+    const capped = candidates.filter((row) => row.riskClass === 2 && !row.displaced);
     const printedExtra = [...always, ...capped.slice(0, SERP_TABLE_TOP_N)];
     const remainder = Math.max(0, capped.length - SERP_TABLE_TOP_N);
     const extraCells = (row: (typeof candidates)[number]): string[] => {
@@ -1365,13 +1660,17 @@ export function buildSerpFragment(
         row.rating,
       ];
     };
+    // Ёмкость второй таблицы приходит той же мерой и по тому же правилу: своё
+    // реестровое число — сид, раскроя нет — держим его.
     const extraMax = DECK_TEMPLATE_REGISTRY["serp-extra-queries"].maxTableRowsPerSlide;
     const extraChunks =
       printedExtra.length === 0
         ? []
-        : extraMax > 0
-          ? chunk(printedExtra, extraMax)
-          : [printedExtra];
+        : cutTableRows(
+            printedExtra,
+            extras?.tableCut?.get(tableCutKey(slot.slotId, EXTRA_QUERIES_TABLE)),
+            extraMax
+          );
     const pushExtra = (index: number, count: number, content: SlideBody): void => {
       slides.push({
         ...makeSlotSlide({
@@ -1410,9 +1709,21 @@ export function buildSerpFragment(
         queriesOfRefs(group.refs).some((q) => !mainQueryKeys.has(normalizeSerpQuery(q.query)))
       );
       pushExtra(0, 1, {
-        narrative: hadExtraQueries
-          ? serpExtraNothingNew(serpRegionTitle(regionLabel))
-          : serpExtraNoQueries(serpRegionTitle(regionLabel)),
+        narrative: [
+          hadExtraQueries
+            ? serpExtraNothingNew(serpRegionTitle(regionLabel))
+            : serpExtraNoQueries(serpRegionTitle(regionLabel)),
+          /*
+           * Знаменатель называется и здесь. Справка о наборе запросов уехала
+           * со страниц таблицы А, и печаталась она только там, где у таблицы Б
+           * есть строки: прогон тремя запросами, ничего нового не нашедшими,
+           * оставлял отчёт без единого места, где сказано, сколько запросов
+           * было. Без него доля негатива и объём аудита — числа без основания.
+           */
+          queriesLine ?? "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       });
     } else {
       extraChunks.forEach((page, i) => {
@@ -1430,6 +1741,16 @@ export function buildSerpFragment(
           table: { headers: [...SERP_EXTRA_TABLE_HEADERS], rows: page.map(extraCells) },
           narrative: [
             i === 0 ? SERP_EXTRA_LEAD : serpExtraContinuationLine(i + 1, extraChunks.length),
+            /*
+             * Справка о наборе запросов стоит здесь, а не на странице таблицы А.
+             *
+             * У этой таблицы есть колонка «Найдено по запросу», и знаменатель
+             * «сколько всего запросов было» объясняет именно её. На странице
+             * одного запроса та же фраза отвечала на вопрос, которого страница
+             * не задавала: «Показана выдача по запросу «X»» и «Выдача проверена
+             * по 5 запросам» стояли рядом на трёх листах прогона 91.
+             */
+            i === 0 ? queriesLine ?? "" : "",
             last && remainder > 0 ? serpExtraRemainderLine(remainder) : "",
           ]
             .filter(Boolean)

@@ -221,9 +221,13 @@ describe("цитата не переезжает на чужой адрес", ()
     );
   });
 
-  it("адрес с трекинг-параметром — другой материал: ни вердикта, ни цитаты", () => {
-    // Решение владельца 3A: метки отслеживания остаются частью ключа, второй
-    // список меток в дереве не заводится. Цена записана в опись пунктом EL.
+  it("адрес с меткой отслеживания — тот же материал: вердикт и цитата общие", () => {
+    /*
+     * Прежнее решение («метки остаются частью ключа») отменено партией 0042:
+     * список меток в дереве один, и читают его оба слоя. Страница прочитана
+     * один раз, оплачена один раз — и вердикт принадлежит ей, а не тому, с
+     * каким рекламным токеном её нашли.
+     */
     const index = {
       "inventory:read": { url: `${URL}?srsltid=abc`, domain: "opensanctions.org", title: TITLE },
       "inventory:same": { url: URL, domain: "opensanctions.org", title: TITLE },
@@ -236,8 +240,23 @@ describe("цитата не переезжает на чужой адрес", ()
         quotes: [{ text: "Запись значится в санкционном реестре с 2023 года." }],
       },
     ]);
+    expect(index["inventory:same"]!.readVerdictTone).toBe("adverse");
+    expect(index["inventory:same"]!.pageQuote).toBe(
+      "Запись значится в санкционном реестре с 2023 года."
+    );
+  });
+
+  it("другой параметр адреса материал по-прежнему различает", () => {
+    // Метка не адресует страницу, а `?v=` — адресует: два ролика остаются
+    // двумя материалами, и вердикт одного на другой не переезжает.
+    const index = {
+      "inventory:read": { url: "https://youtube.com/watch?v=aaa", domain: "youtube.com", title: TITLE },
+      "inventory:same": { url: "https://youtube.com/watch?v=bbb", domain: "youtube.com", title: TITLE },
+    } as unknown as Index;
+    applyLinkVerdictsToEvidence(index, [
+      { evidenceRef: "inventory:read", tone: "adverse", subjectMatch: "subject", quotes: [] },
+    ]);
     expect(index["inventory:same"]!.readVerdictTone).toBeUndefined();
-    expect(index["inventory:same"]!.pageQuote).toBeUndefined();
   });
 
   it("в заголовочной группе цитата остаётся у своего наблюдения", () => {

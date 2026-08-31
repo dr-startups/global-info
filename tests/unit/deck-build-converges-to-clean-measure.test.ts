@@ -255,6 +255,17 @@ async function report72DeckBuild(
   });
 }
 
+/*
+ * Мер на одну больше, чем итераций цикла.
+ *
+ * Первая мера снимается **до** цикла и до стадий GPT — это черновая дека, у
+ * которой спрашивают раскрой таблиц (`buildSectionPacksUnderTableMeasure`).
+ * Дальше счёт прежний: одна мера на каждую сборку, и последняя мера судит
+ * последнюю сборку. Равенство записано отношением, а не числом, чтобы
+ * проверялось само правило, а не сумма.
+ */
+const DRAFT_TABLE_MEASURE = 1;
+
 describe("сборка деки по мере рендерера", () => {
   it("без адаптера меры собирается по сид-разбивке и меру не спрашивает", async () => {
     const res = await tinyDeckBuild({ measure: null });
@@ -273,7 +284,7 @@ describe("сборка деки по мере рендерера", () => {
         return cleanMeasure(payload);
       },
     });
-    expect(calls).toBe(1);
+    expect(calls).toBe(res.bulletFit.iterations.length + DRAFT_TABLE_MEASURE);
     expect(res.bulletFit.outcome).toBe("CONVERGED");
     expect(res.bulletFit.iterations).toHaveLength(1);
   });
@@ -286,7 +297,10 @@ describe("сборка деки по мере рендерера", () => {
     const res = await tinyDeckBuild({
       measure: async (payload) => {
         calls += 1;
-        if (calls > 1) return cleanMeasure(payload);
+        // Потерю объявляет **первая мера цикла**, а не первая вообще: до цикла
+        // черновую деку меряют на раскрой таблиц, и та мера пути буллетов не
+        // касается.
+        if (calls !== DRAFT_TABLE_MEASURE + 1) return cleanMeasure(payload);
         const clean = cleanMeasure(payload);
         const first = clean.pages.find((p) => p.itemHeights.length > 1);
         if (!first) return clean;
@@ -305,7 +319,7 @@ describe("сборка деки по мере рендерера", () => {
         };
       },
     });
-    expect(calls).toBe(2);
+    expect(calls).toBe(res.bulletFit.iterations.length + DRAFT_TABLE_MEASURE);
     expect(res.bulletFit.outcome).toBe("CONVERGED");
     expect(res.bulletFit.iterations).toHaveLength(2);
     expect(res.bulletFit.iterations[0]!.movedSlots.length).toBeGreaterThan(0);
@@ -355,7 +369,10 @@ describe("сборка деки по мере рендерера", () => {
     };
     const failure = await tinyDeckBuild({ measure: stubborn }).catch((err: unknown) => err);
     expect(failure).toBeInstanceOf(BulletFitNotConvergedError);
-    expect(calls).toBe(4);
+    expect(calls).toBe(
+      (failure as BulletFitNotConvergedError).bulletFit.iterations.length + DRAFT_TABLE_MEASURE
+    );
+    expect((failure as BulletFitNotConvergedError).bulletFit.iterations).toHaveLength(4);
     expect((failure as BulletFitNotConvergedError).bulletFit.builds).toBe(
       (failure as BulletFitNotConvergedError).bulletFit.iterations.length
     );
@@ -416,7 +433,7 @@ describe("сборка деки по мере рендерера", () => {
     await expect(tinyDeckBuild({ measure: stubborn })).rejects.toThrow(
       BulletFitNotConvergedError
     );
-    expect(calls).toBe(4);
+    expect(calls).toBe(4 + DRAFT_TABLE_MEASURE);
     await expect(tinyDeckBuild({ measure: stubborn })).rejects.toThrow(
       /CONTENT_DROPPED_BY_RENDERER/u
     );

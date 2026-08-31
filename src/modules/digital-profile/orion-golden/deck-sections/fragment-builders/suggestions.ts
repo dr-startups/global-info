@@ -30,6 +30,48 @@ function engineLabel(engine: string | null): string {
   return "";
 }
 
+/**
+ * Заголовок листа панели — вывод о **собранном наборе**, а не о картинке.
+ *
+ * Панель показывает десять самых коротких строк, и негативная в них может не
+ * попасть: прогон 91 напечатал «Россия — подсказки Яндекса: негативных
+ * формулировок нет», пока в собранных 50 подсказках стояли «судимости»,
+ * «биография криминал» и «казино», а лист метрик того же отчёта считал их
+ * правильно — «негативных: 1». Два листа одного отчёта отвечали на один вопрос
+ * по-разному.
+ *
+ * Решение владельца от 31.08.2026: лист называется выводом, а вывод о
+ * подсказках делается о том, что показывает поисковик. Что среди показанных
+ * строк негатива нет, говорит текст под панелью — иначе читатель ищет на
+ * картинке то, чего там нет.
+ */
+export function panelAdverseCount(input: {
+  shownAdverse: number;
+  collectedAdverse: number;
+}): number {
+  return Math.max(input.collectedAdverse, input.shownAdverse);
+}
+
+export function panelVerdictTitle(input: {
+  title: string;
+  shownCount: number;
+  shownAdverse: number;
+  collectedAdverse: number;
+}): string | undefined {
+  if (input.shownCount <= 0) return undefined;
+  const adverse = panelAdverseCount(input);
+  const verdict =
+    adverse > 0
+      ? `${adverse} ${pluralRu(
+          adverse,
+          "негативная формулировка",
+          "негативные формулировки",
+          "негативных формулировок"
+        )}`
+      : "негативных формулировок нет";
+  return `${input.title}: ${verdict}`;
+}
+
 export function buildSuggestionsFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -93,6 +135,7 @@ export function buildSuggestionsFragment(
               panelCompositionLine({
                 composition: panelStats,
                 collected: refs.length,
+                collectedAdverse,
                 nounOne: "подсказка",
                 nounFew: "подсказки",
                 nounMany: "подсказок",
@@ -100,7 +143,7 @@ export function buildSuggestionsFragment(
               400
             ),
             whyItMatters: clampClientText(
-              panelStats.adverse > 0
+              panelStats.adverse > 0 || collectedAdverse > 0
                 ? "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов."
                 : panelStats.adverseOther > 0
                   ? // Рядом напечатана негативная строка о другом лице: голое
@@ -115,27 +158,14 @@ export function buildSuggestionsFragment(
               : {}),
           }
         : {};
-    // Заголовок называет вывод страницы: сколько подсказок и есть ли среди них
-    // негативные. Прежде стояло название раздела, и читателю приходилось
-    // искать этот же вывод в тексте под картинкой.
-    // Заголовок считает по тем же строкам, что и текст под ним: панель после
-    // склейки одинаковых строк, а не сырой перечень видимых элементов. Иначе
-    // «4 негативные формулировки» в заголовке спорят с «3» в описании.
     const shownCount = shown.length || sidebar.visibleRows.length || suggestionLines.length;
-    const adverseCount = shown.length > 0 ? panelStats.adverse : sidebar.adverseRows.length;
-    const verdictTitle =
-      shownCount > 0
-        ? `${slot.title}: ${
-            adverseCount > 0
-              ? `${adverseCount} ${pluralRu(
-                  adverseCount,
-                  "негативная формулировка",
-                  "негативные формулировки",
-                  "негативных формулировок"
-                )}`
-              : "негативных формулировок нет"
-          }`
-        : undefined;
+    const shownAdverse = shown.length > 0 ? panelStats.adverse : sidebar.adverseRows.length;
+    const verdictTitle = panelVerdictTitle({
+      title: slot.title,
+      shownCount,
+      shownAdverse,
+      collectedAdverse,
+    });
     slides.push(
       visualSlide({
         slot,
@@ -160,7 +190,10 @@ export function buildSuggestionsFragment(
         ],
         // Метрика считает то же, что заголовок: два ответа на «сколько
         // негативных подсказок» разошлись бы при первой правке.
-        metrics: { items: refs.length, adverseSuggestions: adverseCount },
+        metrics: {
+          items: refs.length,
+          adverseSuggestions: panelAdverseCount({ shownAdverse, collectedAdverse }),
+        },
         noUnderlyingData: refs.length === 0,
         noDataReason: "no-suggestions",
         // Шаг 13, C11 — страница отвечает за одну поисковую систему в одном

@@ -26,11 +26,17 @@ import {
 } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
-/** Самый длинный адрес корпуса эталона-72: 163 знака после разбора. */
+/**
+ * Самый длинный адрес корпуса эталона-72: 125 знаков после разбора.
+ *
+ * Прежде им был адрес картинок Яндекса с процентной последовательностью в
+ * параметрах (163 знака); печать стала её раскодировать, и тот же адрес занял
+ * 53 знака. Максимум органики корпуса пересчитан печатной формой заново.
+ */
 const LONGEST_CORPUS_URL =
-  "https://yandex.ru/images/search?text=%D0%A1%D0%B5%D1%80%D0%B3%D0%B5%D0%B9+%D0%9C%D0%B8%D1%85%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2%D0%B8%D1%87+%D0%93%D0%BB%D0%B8%D0%BD%D0%BA%D0%B0";
+  "https://runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta";
 const LONGEST_CORPUS_ADDRESS =
-  "yandex.ru/images/search?text=%D0%A1%D0%B5%D1%80%D0%B3%D0%B5%D0%B9+%D0%9C%D0%B8%D1%85%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2%D0%B8%D1%87+%D0%93%D0%BB%D0%B8%D0%BD%D0%BA%D0%B0";
+  "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta";
 
 /** Адрес, который в предел не влезает: 150 знаков пути плюс строка параметров. */
 const OVERLONG_PATH = `example.ru/${"a".repeat(139)}`;
@@ -114,7 +120,7 @@ describe("таблица выдачи: пять колонок, адрес — �
     const { table } = firstTable([
       { rank: 1, url: LONGEST_CORPUS_URL, title: "Картинки Яндекса" },
     ]);
-    expect(LONGEST_CORPUS_ADDRESS).toHaveLength(163);
+    expect(LONGEST_CORPUS_ADDRESS).toHaveLength(125);
     expect(table.rows[0]![1]).toBe(LONGEST_CORPUS_ADDRESS);
     expect(table.rows[0]![1]).not.toMatch(/…/u);
   });

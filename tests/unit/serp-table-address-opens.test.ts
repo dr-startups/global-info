@@ -127,6 +127,30 @@ describe("адрес доезжает до пакета целиком", () => {
     expect(clientLink("arsenkin://suggestion/17", "vk.com")).toBe("vk.com");
     expect(clientLink("", undefined)).toBe("—");
   });
+
+  /*
+   * Процентная последовательность в строке параметров раскодируется так же,
+   * как в пути.
+   *
+   * Третья строка стр. 22 прогона 91 напечатана как
+   * `yandex.ru/images/search?text=%D0%9A%D1%80%D0%B5%D0%BC%D0%BB%D0%B5%D0%B2+…`
+   * — 154 знака и шесть нарисованных строк, самая высокая строка листа. Тот же
+   * адрес кириллицей — около полусотни знаков и одна строка. Адрес при этом
+   * остаётся тем же: раскодирование ничего не удлиняет, поэтому предел колонки
+   * от него не страдает.
+   */
+  it("процентная последовательность в параметрах печатается буквами", () => {
+    const url =
+      "https://yandex.ru/images/search?text=%D0%9A%D1%80%D0%B5%D0%BC%D0%BB%D0%B5%D0%B2+%D0%A3%D0%BC%D0%B0%D1%80";
+    expect(clientLink(url, "yandex.ru")).toBe("yandex.ru/images/search?text=Кремлев+Умар");
+    expect(clientLink(url, "yandex.ru").length).toBeLessThanOrEqual(165);
+  });
+
+  it("битая последовательность в параметрах печатается как есть и ничего не роняет", () => {
+    expect(clientLink("https://example.ru/a?q=%E0%A4%A", "example.ru")).toBe(
+      "example.ru/a?q=%E0%A4%A"
+    );
+  });
 });
 
 describe("адрес режется по своей границе, а не по ширине колонки", () => {
