@@ -59,6 +59,7 @@ import type { ComposedClientSummary } from "../src/modules/digital-profile/orion
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
 import { findPythonInterpreter } from "./lib/python";
 import { pagesDirectoryMismatch } from "./lib/deck-pages";
+import { serpEngineLabelGenitive } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 
 const inputs = loadReport72DeckInputs();
 
@@ -1354,11 +1355,16 @@ describe("REMEDIATION §7.1 page row composition sidebar", () => {
       //
       // Равенство точное, а не «начинается/кончается»: пара предикатов держала
       // бы концы абзаца и пропускала лишнее предложение между ними, а прежнее
-      // `assert.equal` середину держало. Лид стоит перед выводом: оговорка о
-      // том, что означают номера строк, печатается на каждом листе выдачи.
+      // `assert.equal` середину держало. Лид стоит перед выводом: сначала чья
+      // это выдача (у набора без запросов — с объяснением, почему запроса нет),
+      // потом оговорка о том, что означают номера строк.
+      // Поисковик берётся у самой страницы: фикстура несёт и Яндекс, и Google,
+      // и зашитое имя проверяло бы половину листов на чужом.
+      const engine = serpEngineLabelGenitive(String(s.metrics?.serpEngine ?? ""));
       assert.equal(
         s.content.narrative,
-        `Номера строк — порядок в собранной сводке, а не места в выдаче. ${s.content.whatWasFound}`
+        `Показана выдача ${engine}; запрос, по которому она собрана, в наборе не записан. ` +
+          `Номера строк — порядок в собранной сводке, а не места в выдаче. ${s.content.whatWasFound}`
       );
       // Continuations must keep a filled sidebar (§7.1).
       if (s.isContinuation) {

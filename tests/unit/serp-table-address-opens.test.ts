@@ -1,15 +1,15 @@
 /**
  * Ссылка в таблице выдачи открывается.
  *
- * Колонка «Ссылка» печатала адрес, обрезанный по ширине колонки (62 знака), и
- * такой адрес не открывается: на эталоне 72 обрезаны 17 адресов из 50, в
- * золотом кейсе — 60 из 60. Адрес уходит из колонки в полосу во всю ширину под
- * своей строкой результата: в полосу входит весь адрес корпуса, а строка
- * результата остаётся читаемой.
+ * Колонка «Ссылка» когда-то печатала адрес, обрезанный по ширине колонки (62
+ * знака), и такой адрес не открывается: на эталоне 72 обрезаны 17 адресов из
+ * 50, в золотом кейсе — 60 из 60. Адрес уходил из колонки в полосу под своей
+ * строкой; теперь он вернулся в колонку — но с шириной, которую померили:
+ * 0.34 листа, 328 px полезных, предел 165 знаков.
  *
  * Здесь закрепляется то, что видит клиент: адрес доезжает до пакета целиком,
- * заголовок строки режется видимо (в паке, а не молча в рендерере), а страницы
- * режут строки и адреса одним и тем же разрезом.
+ * заголовок строки режется видимо (в паке, а не молча в рендерере), а строки
+ * листаются по объявленной ёмкости.
  */
 
 import { describe, expect, it } from "vitest";
@@ -31,6 +31,10 @@ const QUERY = "anders holmström nordkap";
 
 /** Ёмкость листа выдачи объявлена реестром — второго ответа здесь нет. */
 const CAP = DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide;
+
+/** Номера колонок — из заголовков построителя, а не числами здесь. */
+const ADDRESS = SERP_TABLE_HEADERS.indexOf("Ссылка");
+const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 type Row = { rank: number; title: string; url: string };
 
@@ -103,10 +107,10 @@ describe("адрес доезжает до пакета целиком", () => {
     const table = tableOf(
       pages([{ rank: 1, title: "Материал о деле", url: LONG_URL }])[0]!
     );
-    expect(table.rowAddresses).toEqual([
+    expect(table.rows.map((r) => r[ADDRESS])).toEqual([
       "kompromat1.online/articles/364300-byvshij_partner_oligarhov_usmanova_i_ananeva_stal_figurantom_dela_o_moshennichestve_v_osobo_krupnom_razmere_podrobnosti",
     ]);
-    expect(table.rowAddresses![0]).not.toMatch(/…/u);
+    expect(table.rows[0]![ADDRESS]).not.toMatch(/…/u);
   });
 
   it("адрес без пути — это домен, а не пустая полоса", () => {
@@ -125,27 +129,30 @@ describe("адрес доезжает до пакета целиком", () => {
   });
 });
 
-describe("полоса адреса режется по своей границе, а не по ширине колонки", () => {
+describe("адрес режется по своей границе, а не по ширине колонки", () => {
   /*
-   * Предел полосы — 240 знаков: столько любым письмом гарантированно ложится в
-   * три нарисованные строки полосы. На корпусе прогона ветка срабатывает один
-   * раз из 213 — на 283-знаковом адресе с иероглифами в строке параметров.
+   * Предел колонки — 165 знаков: столько любым письмом ложится в семь
+   * нарисованных строк узкой из двух колонок адреса, и из этой же семёрки
+   * выведена ёмкость листа. На органике корпуса прогона 72 (28 уникальных
+   * печатных адресов) режущей ветки не касается ни один: самый длинный — 163
+   * знака.
    */
-  it("адрес в 300 знаков режется по 240 и говорит об этом многоточием", () => {
+  it("адрес в 300 знаков режется по 165 и говорит об этом многоточием", () => {
     const text = clientLink(`https://example.org/${"a".repeat(300)}`, "example.org");
-    expect(text.length).toBe(240);
+    expect(text.length).toBe(165);
     expect(text.endsWith("…")).toBe(true);
   });
 
-  it("адрес ровно в 240 знаков печатается целиком", () => {
-    const path = "b".repeat(240 - "example.org/".length);
+  it("адрес ровно в 165 знаков печатается целиком", () => {
+    const path = "b".repeat(165 - "example.org/".length);
     const text = clientLink(`https://example.org/${path}`, "example.org");
     expect(text).toBe(`example.org/${path}`);
-    expect(text.length).toBe(240);
+    expect(text.length).toBe(165);
   });
 
-  it("186 знаков — самый длинный адрес корпуса — режущей ветки не касаются", () => {
-    const url = `https://kompromat1.online/${"c".repeat(160)}`;
+  it("163 знака — самый длинный печатаемый адрес корпуса — режущей ветки не касаются", () => {
+    const url = `https://kompromat1.online/${"c".repeat(145)}`;
+    expect(clientLink(url, "kompromat1.online")).toHaveLength(163);
     expect(clientLink(url, "kompromat1.online")).not.toMatch(/…$/u);
   });
 });
@@ -158,7 +165,7 @@ describe("заголовок строки режется видимо, по гр
   it("заголовок длиннее 95 знаков подрезан в паке, а не молча в рендерере", () => {
     const title = tableOf(
       pages([{ rank: 1, title: LONG_TITLE, url: "https://a.example.org/1" }])[0]!
-    ).rows[0]![1]!;
+    ).rows[0]![TITLE]!;
     expect(LONG_TITLE.length).toBeGreaterThan(95);
     expect(title.length).toBeLessThanOrEqual(95);
     expect(title.endsWith("…")).toBe(true);
@@ -174,12 +181,12 @@ describe("заголовок строки режется видимо, по гр
     const padded = exact.padEnd(95, "!").slice(0, 95);
     const title = tableOf(
       pages([{ rank: 1, title: padded, url: "https://a.example.org/1" }])[0]!
-    ).rows[0]![1]!;
+    ).rows[0]![TITLE]!;
     expect(title).toBe(padded);
   });
 });
 
-describe("страницы режут строки и адреса одним разрезом", () => {
+describe("страницы листаются по объявленной ёмкости", () => {
   it("двадцать строк ложатся на страницы по ёмкости листа", () => {
     expect(CAP).toBeGreaterThan(0);
     expect(CAP).toBeLessThan(20);
@@ -206,13 +213,13 @@ describe("страницы режут строки и адреса одним р
     });
   });
 
-  it("у каждой страницы столько адресов, сколько строк, и в том же порядке", () => {
+  it("адрес стоит в своей колонке у каждой строки, а полосы у слайда нет", () => {
     for (const slide of pages(twenty())) {
       const table = tableOf(slide);
-      expect(table.rowAddresses).toHaveLength(table.rows.length);
-      expect(table.rowAddresses).toEqual(
+      expect(table.rows.map((r) => r[ADDRESS])).toEqual(
         table.rows.map((r) => `site${r[0]}.example.org/materials/${r[0]}`)
       );
+      expect(JSON.stringify(slide)).not.toContain("rowAddresses");
     }
   });
 
@@ -229,11 +236,11 @@ describe("страницы режут строки и адреса одним р
     });
   });
 
-  it("колонок четыре: адрес больше не колонка", () => {
-    expect(SERP_TABLE_HEADERS).toEqual(["№", "Заголовок", "Тип источника", "Оценка"]);
+  it("колонок пять, и адрес среди них", () => {
+    expect(SERP_TABLE_HEADERS).toEqual(["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"]);
     for (const slide of pages(twenty())) {
       expect(tableOf(slide).headers).toEqual(SERP_TABLE_HEADERS);
-      for (const row of tableOf(slide).rows) expect(row).toHaveLength(4);
+      for (const row of tableOf(slide).rows) expect(row).toHaveLength(5);
     }
   });
 });

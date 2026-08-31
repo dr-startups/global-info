@@ -17,6 +17,7 @@ import {
   validateAssembly,
 } from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
 import type { RendererSlide } from "@/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
+import { SERP_TABLE_HEADERS } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import type { SerpObservationRow } from "../fixtures/run76-serp-slice";
 import { run76SerperRows, run76ArsenkinRows, UAE_QUERY } from "../fixtures/run76-serp-slice";
 
@@ -41,16 +42,17 @@ function serpSlide(input: {
     baseSlotId: "p09_uae_serp",
     isContinuation: false,
     table: {
-      // Адрес строки — полоса под ней, а не колонка: ворота читают домен
-      // оттуда же, откуда его читает клиент.
-      headers: ["№", "Заголовок", "Тип источника", "Оценка"],
+      // Адрес строки — её колонка «Ссылка»: ворота читают домен оттуда же,
+      // откуда его читает клиент. Позицию они берут из колонки «№», и обе
+      // находятся по именам, а не по местам.
+      headers: [...SERP_TABLE_HEADERS],
       rows: input.ranks.map((rank) => [
         String(rank),
+        input.links?.[rank] ?? `example.org/${rank}`,
         `Материал ${rank}`,
         "СМИ",
         "Нейтральный",
       ]),
-      rowAddresses: input.ranks.map((rank) => input.links?.[rank] ?? `example.org/${rank}`),
     },
     evidenceRefs: [],
     findingIds: [],
@@ -131,7 +133,9 @@ describe("печать сверяется с наблюдениями", () => {
       ranks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       links: linksOf(run76SerperRows()),
     });
-    delete (slide.table as unknown as { rowAddresses?: string[] }).rowAddresses;
+    // Колонка адреса пуста: печать перестала называть источник.
+    const addressColumn = SERP_TABLE_HEADERS.indexOf("Ссылка");
+    for (const row of slide.table!.rows) row[addressColumn] = "";
     const result = serpPrintMatchesObservations({
       rendererSlides: [slide],
       observations: run76SerperRows(),

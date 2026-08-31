@@ -268,8 +268,8 @@ export function validateSectionPack(input: {
       const budget = slide.templateId === "ai-overview" ? Number.MAX_SAFE_INTEGER : TEXT_BUDGETS.bullet;
       checkText(issues, slide.slideId, "bullet", b, budget);
     }
-    // Полоса адреса — такой же напечатанный текст, как ячейка: пока адрес был
-    // колонкой, он проверялся вместе со строками.
+    // Адрес печатается ячейкой и проверяется вместе со строками. Поле полосы
+    // читается только ради старых артефактов: живого входа у него нет.
     for (const cell of [
       ...(slide.content.table?.rows ?? []).flat(),
       ...(slide.content.table?.rowAddresses ?? []),

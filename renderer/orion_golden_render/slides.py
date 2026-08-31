@@ -699,7 +699,6 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         headers = list((table or {}).get("headers") or [])
         rows = list((table or {}).get("rows") or [])
         groups = list((table or {}).get("groups") or [])
-        row_addresses = list((table or {}).get("rowAddresses") or [])
         if not rows and bullets:
             # Fallback: parse bullet lines into a compact table
             headers = ["Поз.", "Домен", "Заголовок", "Риск"]
@@ -726,7 +725,6 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 headers[:5],
                 rows,
                 groups,
-                row_addresses=row_addresses,
                 bottom=table_bottom_budget,
             )
         elif bullets:

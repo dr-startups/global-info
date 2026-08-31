@@ -191,6 +191,9 @@ function toRow(
     ...(Number.isFinite(rawRank) && rawRank > 0 && rankSource ? { rankSource } : {}),
     ...(queryText ? { query: queryText } : {}),
     ...(queryPurpose ? { queryPurpose } : {}),
+    // Пометка живёт при своём запросе: без текста запроса она не значит
+    // ничего, а таблица строится по разрезу «запрос × поисковик».
+    ...(queryText && meta.subjectNameQuery === true ? { subjectNameQuery: true } : {}),
     provider: String(item.provider ?? "unknown").toLowerCase(),
     providers: [String(item.provider ?? "unknown").toLowerCase()],
     engine: mapEngineBucket(String(meta.engine ?? item.provider ?? "")),

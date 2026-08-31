@@ -16,7 +16,13 @@ import { resolveRowAdverse } from "@/modules/digital-profile/serp-observation/re
 import {
   evidenceRowAdverse,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
-import { buildSerpFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import {
+  SERP_TABLE_HEADERS,
+  buildSerpFragment,
+} from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+
+/** Номер колонки оценки — из заголовков построителя, а не числом здесь. */
+const RATING_COLUMN = SERP_TABLE_HEADERS.indexOf("Оценка");
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
 const CLEAN_TITLE = "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile";
@@ -146,7 +152,7 @@ describe("оценка строки выдачи следует решению �
         analystDecision: "ADVERSE",
       },
     });
-    expect(rows[0]![3]).toBe("Нежелательный");
+    expect(rows[0]![RATING_COLUMN]).toBe("Нежелательный");
   });
 
   it("снятая аналитиком метка даёт «Не проверено», а не «Нейтральный»", () => {
@@ -161,6 +167,6 @@ describe("оценка строки выдачи следует решению �
         analystDecision: "NEUTRAL",
       },
     });
-    expect(rows[0]![3]).toBe("Не проверено");
+    expect(rows[0]![RATING_COLUMN]).toBe("Не проверено");
   });
 });

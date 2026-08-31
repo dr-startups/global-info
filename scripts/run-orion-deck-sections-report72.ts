@@ -741,12 +741,12 @@ async function main(): Promise<void> {
           result.assembly.rendererSlides,
           ANALYTICS_DIR
         ),
-        // Один адрес — одна строка таблицы своего движка. Деку без единой
-        // полосы адреса ворота считают непроверенной: пропуск громче прохода.
+        // Один адрес — одна строка своей таблицы: у первой единица счёта
+        // «движок × регион», у второй — регион. Деку без единого напечатанного
+        // адреса ворота считают непроверенной: пропуск громче прохода.
         serpTableAddressesPrintedOnce:
-          result.assembly.rendererSlides.some((s) =>
-            (s.table?.rowAddresses ?? []).some((a) => String(a ?? "").trim())
-          ) && repeatedAddresses.length === 0,
+          printedSerpAddressCount(result.assembly.rendererSlides) > 0 &&
+          repeatedAddresses.length === 0,
         // Строка о другом лице печатается с пометкой на всех поверхностях,
         // кроме приложения: без неё запрос про композитора-однофамильца
         // читается как запрос о субъекте.
@@ -842,26 +842,67 @@ async function main(): Promise<void> {
  * сама таблица (`serpMaterialKey`): два написания одного адреса — одна строка,
  * как бы их ни напечатали.
  */
+type SerpAddressSlide = {
+  slideKey?: string;
+  sectionKey?: string;
+  metrics?: Record<string, unknown>;
+  table?: { headers?: string[]; rows: string[][] } | null;
+};
+
+/**
+ * Напечатанные адреса листа и единица счёта, которой они принадлежат.
+ *
+ * Адрес читается **из колонки «Ссылка»** — оттуда же, откуда его читает
+ * клиент; полосы под строкой больше нет. Номер колонки берётся из заголовков
+ * самого листа, а не числом: у двух таблиц выдачи он разный (у первой вторая
+ * колонка, у второй первая), и записанное число указывало бы на чужую.
+ *
+ * Единица счёта у таблиц разная. Первая — таблица одного движка одного региона:
+ * между движками один адрес законен, у каждого своя выдача. Вторая одна на
+ * регион и движком не разделена вовсе, поэтому её единица — регион; поделив её
+ * по движку, ворот пропустил бы повтор внутри одной напечатанной таблицы.
+ */
+function serpTableAddresses(slide: SerpAddressSlide): { tableId: string; printed: string[] } | null {
+  const headers = slide.table?.headers ?? [];
+  const column = headers.indexOf("Ссылка");
+  if (column < 0 || !slide.table) return null;
+  const isExtraTable = Number(slide.metrics?.serpExtraQueries ?? 0) === 1;
+  const tableId = isExtraTable
+    ? `${String(slide.sectionKey ?? "")}|дополнительные запросы`
+    : `${String(slide.sectionKey ?? "")}|${String(slide.metrics?.serpEngine ?? "")}`;
+  return {
+    tableId,
+    printed: slide.table.rows.map((row) => String(row[column] ?? "").trim()),
+  };
+}
+
+/**
+ * Сколько адресов дека напечатала в таблицах выдачи.
+ *
+ * Ноль — отказ, а не пропуск: ворот без входа выглядит точно так же, как
+ * пройденный, и дека без единого адреса однажды прошла бы приёмку молча.
+ */
+export function printedSerpAddressCount(rendererSlides: ReadonlyArray<SerpAddressSlide>): number {
+  let count = 0;
+  for (const slide of rendererSlides) {
+    for (const printed of serpTableAddresses(slide)?.printed ?? []) if (printed) count += 1;
+  }
+  return count;
+}
+
 export function repeatedSerpTableAddresses(
-  rendererSlides: ReadonlyArray<{
-    slideKey?: string;
-    sectionKey?: string;
-    metrics?: Record<string, unknown>;
-    table?: { rows: string[][]; rowAddresses?: string[] } | null;
-  }>
+  rendererSlides: ReadonlyArray<SerpAddressSlide>
 ): string[] {
   const repeats: string[] = [];
   const firstPrinted = new Map<string, string>();
   for (const slide of rendererSlides) {
-    const addresses = slide.table?.rowAddresses ?? [];
-    if (addresses.length === 0) continue;
-    const tableId = `${String(slide.sectionKey ?? "")}|${String(slide.metrics?.serpEngine ?? "")}`;
-    for (const raw of addresses) {
-      const printed = String(raw ?? "").trim();
-      // Пустая полоса адреса — отдельная беда (её ловит сверка печати с
+    const table = serpTableAddresses(slide);
+    if (!table) continue;
+    for (const printed of table.printed) {
+      // Пустая ячейка адреса — отдельная беда (её ловит сверка печати с
       // наблюдениями), но не повтор: две строки без адреса не «одна страница».
       if (!printed) continue;
-      const key = `${tableId}|${serpMaterialKey({ url: printed })}`;
+      const key = `${table.tableId}|${serpMaterialKey({ url: printed })}`;
       const first = firstPrinted.get(key);
       if (first === undefined) {
         firstPrinted.set(key, printed);

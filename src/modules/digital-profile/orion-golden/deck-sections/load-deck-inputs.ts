@@ -62,6 +62,8 @@ export type CompositeObservationRow = {
   /** Запрос, по которому материал показался, и его назначение из плана. */
   query?: string;
   queryPurpose?: string;
+  /** Запрос наблюдения — само имя субъекта, а не производное написание. */
+  subjectNameQuery?: boolean;
   evidenceRefs: string[];
 };
 
@@ -768,6 +770,16 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     const allRefs = [...new Set([...(obs.evidenceRefs ?? []), ...linkedRefs])];
     for (const ref of allRefs) {
       knownEvidenceRefs.add(ref);
+      /*
+       * Запрос и его пометка «это основной» берутся у одного владельца.
+       *
+       * Запрос запоминается первый: материал мог показаться по нескольким, и
+       * подпись колонки берётся у того, где он виден выше (строки идут в
+       * порядке лучшей позиции). Пометка обязана ехать с ним вместе —
+       * разъехавшись, они назвали бы основным то написание, которого в строке
+       * нет.
+       */
+      const queryOwner = evidenceIndex[ref]?.query ? evidenceIndex[ref]! : obs;
       evidenceIndex[ref] = {
         ...(evidenceIndex[ref] ?? {}),
         url: obs.url,
@@ -805,10 +817,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           obs.rank <= (evidenceIndex[ref]?.rank ?? Number.MAX_SAFE_INTEGER)
             ? obs.rankSource ?? evidenceIndex[ref]?.rankSource
             : evidenceIndex[ref]?.rankSource,
-        // Запрос запоминается первый: материал мог показаться по нескольким,
-        // и подпись колонки берётся у того, где он виден выше (строки идут в
-        // порядке лучшей позиции).
-        query: evidenceIndex[ref]?.query ?? obs.query,
+        query: queryOwner.query,
+        subjectNameQuery: queryOwner.subjectNameQuery,
+        // Назначение запроса живёт отдельно: его пишут и наблюдения без
+        // текста запроса, поэтому владельца текста оно не спрашивает.
         queryPurpose: evidenceIndex[ref]?.queryPurpose ?? obs.queryPurpose,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
       };

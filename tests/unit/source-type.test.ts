@@ -64,10 +64,12 @@ describe("ссылка для клиента", () => {
     );
   });
 
-  it("длинный адрес печатается целиком: полоса идёт во всю ширину листа", () => {
-    const long = `https://example.org/${"a".repeat(200)}`;
+  it("длинный адрес печатается целиком: колонке отдана треть листа", () => {
+    // 140 знаков — вдвое больше прежней колонки в 62 знака и в пределах
+    // нынешних 165.
+    const long = `https://example.org/${"a".repeat(140)}`;
     const text = clientLink(long, "example.org");
-    expect(text).toBe(`example.org/${"a".repeat(200)}`);
+    expect(text).toBe(`example.org/${"a".repeat(140)}`);
     expect(text.endsWith("…")).toBe(false);
   });
 

@@ -476,6 +476,11 @@ export function compositeObservationsToInventory(input: {
         // «только свои позиции» становится истинной вакуумно.
         rankSource: obs.rankSource,
         queryPurpose: obs.queryPurpose,
+        // Какой из запросов основной, знает слой сбора. Без этой пометки слой
+        // деки выбирал бы его сам — по числу материалов, а на равных по
+        // алфавиту, — и обещание «ТОП-20 по запросу ФИО» становилось бы
+        // неисполнимым: другой набор написаний дал бы другую двадцатку.
+        subjectNameQuery: obs.subjectNameQuery,
         // Source lineage for §1.3 override matching. Do NOT put searchResult:*
         // into evidenceRefs — composite builder would drop the inventory: fallback
         // and break deck evidenceIndex / assembly validation.

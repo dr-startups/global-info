@@ -32,6 +32,7 @@ from pptx import Presentation  # noqa: E402
 from pptx.util import Emu  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
+from smoke_ts_constants import ts_int  # noqa: E402
 from orion_golden_render.common import (  # noqa: E402
     CONTENT_W,
     EMU_PER_INCH,
@@ -59,7 +60,8 @@ from orion_golden_render.slides import (  # noqa: E402
 )
 
 # Наборы заголовков, которые сегодня посылают построители секций.
-HDR_SERP = ["№", "Заголовок", "Тип источника", "Оценка"]
+HDR_SERP = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"]
+HDR_SERP_EXTRA = ["Ссылка", "Заголовок", "Найдено по запросу", "Тип источника", "Оценка"]
 HDR_THEMES = ["Тема", "Публикаций", "Из них нежелательных"]
 HDR_METRICS = ["Система", "Показатель", "Объём", "Комментарий"]
 HDR_COMPLIANCE = ["База данных", "Тип совпадения", "Совпадение по имени", "Статус проверки"]
@@ -141,12 +143,25 @@ INTRO_FONT_BY_THEME = {
     "Деловой профиль": [11.0, 11.0, 11.0],
 }
 
-# Пределы строителя, повторённые здесь числами: смок питоновский и до TS не
-# дотягивается. Заголовок строки — `SERP_TITLE_MAX_CHARS` (`serp.ts`), полоса
-# адреса — `ADDRESS_BAND_MAX_CHARS` (`shared.ts`); меняются вместе с этими
-# строками. Ёмкость листа читается из самого реестра (см. `serp_capacity`).
-SERP_TITLE_MAX_CHARS = 95
-ADDRESS_BAND_MAX_CHARS = 240
+#: Пределы ячеек — **из самих построителей**, а не копией чисел здесь.
+#:
+#: Пока смок держал свою копию, он мерил худшую строку по одному числу, а
+#: построитель резал по другому: подъём предела запроса с 80 до 100 не краснил
+#: ни одной проверки, хотя лист при этом выходит за поле на 752 120 EMU. Из
+#: расхождения двух копий и растёт ёмкость, выведенная из строки, которой не
+#: бывает, — история числа 12 в третий раз. Ёмкость листа читается из реестра
+#: тем же приёмом (см. `serp_capacity`).
+_BUILDERS = (
+    Path(__file__).resolve().parent.parent
+    / "src/modules/digital-profile/orion-golden/deck-sections/fragment-builders"
+)
+SERP_TITLE_MAX_CHARS = ts_int(_BUILDERS / "serp.ts", r"const SERP_TITLE_MAX_CHARS = (\d+);")
+SERP_FOUND_BY_MAX_CHARS = ts_int(
+    _BUILDERS / "serp.ts", r"export const SERP_FOUND_BY_MAX_CHARS = (\d+);"
+)
+SERP_ADDRESS_MAX_CHARS = ts_int(
+    _BUILDERS / "shared.ts", r"const SERP_ADDRESS_MAX_CHARS = (\d+);"
+)
 
 #: Самый широкий знак 9 pt среди тех, что встречаются в адресах корпуса и в
 #: русском тексте («W» 12,10 px, «Ю» 12,15 px). Из него и выведен предел полосы.
@@ -166,8 +181,8 @@ ADDRESS_BAND_PLAIN = (
     "figurantom-dela-o-moshennichestve-v-osobo-krupnom-razmere-podrobnosti-materiala-"
     "prodolzhenie-chast-vtoraya-i-tretya-arhivnaya-kopiya-stranicy-2026-goda-dopolnenie"
 )
-ADDRESS_BAND_PLAIN = ADDRESS_BAND_PLAIN.ljust(ADDRESS_BAND_MAX_CHARS, "x")[
-    :ADDRESS_BAND_MAX_CHARS
+ADDRESS_BAND_PLAIN = ADDRESS_BAND_PLAIN.ljust(SERP_ADDRESS_MAX_CHARS, "x")[
+    :SERP_ADDRESS_MAX_CHARS
 ]
 
 #: Худший законный адрес полосы — **из корпуса прогона**, а не придуманный:
@@ -180,7 +195,7 @@ ADDRESS_BAND_WORST = (
     "%E5%8F%B7%E7%A4%BE%E4%BF%9D%E5%8D%A1%E5%8F%B7%E6%9F%A5%E8%AF%A2%E5%A7%93%E5%90%8D%E6%9F%A5"
     "%E8%AF%A2%E8%BA%AB%E4%BB%BD%E8%AF%81%E5%8F%B7%E7%A0%81%E6%9F%A5%E8%AF%A2%E4%B8%AA%E4%BA%BA"
 )
-ADDRESS_BAND_WORST = ADDRESS_BAND_WORST[: ADDRESS_BAND_MAX_CHARS - 1] + "…"
+ADDRESS_BAND_WORST = ADDRESS_BAND_WORST[: SERP_ADDRESS_MAX_CHARS - 1] + "…"
 #: Самый длинный полный адрес корпуса прогона 72 — 153 знака после разбора.
 ADDRESS_CORPUS_MAX = (
     "kompromat1.online/articles/364300-byvshij_partner_oligarhov_usmanova_i_ananeva_stal_"
@@ -355,25 +370,24 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         failures.append(name)
 
 
-def build_table(
-    headers: list[str], rows: list[list[str]], addresses: list[str] | None = None
-) -> Any:
-    """Отрисовать таблицу так, как её рисует рендерер, и отдать её геометрию."""
+def build_table(headers: list[str], rows: list[list[str]]) -> Any:
+    """Отрисовать таблицу так, как её рисует рендерер, и отдать её геометрию.
+
+    Полос адреса у отрисовщика больше нет: адрес печатается колонкой «Ссылка».
+    """
     prs = Presentation()
     prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
     ctx = _Ctx(prs, 1, 1)
-    _add_search_table(ctx, 1_500_000, headers, rows, row_addresses=addresses)
+    _add_search_table(ctx, 1_500_000, headers, rows)
     tables = [sh.table for sh in ctx.slide.shapes if getattr(sh, "has_table", False)]
     if len(tables) != 1:
         raise RuntimeError(f"ожидалась одна таблица, получено {len(tables)}")
     return tables[0]
 
 
-def widths_of(
-    headers: list[str], rows: list[list[str]], addresses: list[str] | None = None
-) -> list[int]:
-    return [int(c.width) for c in build_table(headers, rows, addresses).columns]
+def widths_of(headers: list[str], rows: list[list[str]]) -> list[int]:
+    return [int(c.width) for c in build_table(headers, rows).columns]
 
 
 def serp_capacity() -> int:
@@ -391,10 +405,40 @@ def serp_capacity() -> int:
     block = re.search(r'"serp-table":\s*\{(.*?)\n  \},', src, re.S)
     if not block:
         raise RuntimeError(f"в {registry.name} не найден блок шаблона serp-table")
-    found = re.search(r"maxTableRowsPerSlide:\s*(\d+)", block.group(1))
-    if not found:
-        raise RuntimeError("в блоке serp-table не найдена maxTableRowsPerSlide")
-    return int(found.group(1))
+    # Ёмкость в реестре не записана числом, а поделена: бюджет строк на высоту
+    # худшей законной строки. Читаются оба слагаемых — иначе смок знал бы
+    # ёмкость, но не знал бы, из чего она получена, и подмена любого из чисел
+    # прошла бы мимо него.
+    if not re.search(
+        r"maxTableRowsPerSlide:\s*Math\.floor\(\s*SERP_TABLE_ROW_BUDGET_EMU\s*/\s*SERP_TABLE_WORST_ROW_EMU\s*\)",
+        block.group(1),
+    ):
+        raise RuntimeError(
+            "в блоке serp-table ёмкость больше не выводится делением бюджета строк "
+            "на худшую законную строку — замер ниже проверял бы не то число"
+        )
+    terms = serp_capacity_terms()
+    return terms["SERP_TABLE_ROW_BUDGET_EMU"] // terms["SERP_TABLE_WORST_ROW_EMU"]
+
+
+def serp_capacity_terms() -> dict[str, int]:
+    """Слагаемые вывода ёмкости — из самого реестра, а не числами здесь."""
+    registry = (
+        Path(__file__).resolve().parent.parent
+        / "src/modules/digital-profile/orion-golden/deck-sections/template-registry.ts"
+    )
+    src = registry.read_text(encoding="utf-8")
+    terms: dict[str, int] = {}
+    for name in (
+        "SERP_TABLE_ROW_BUDGET_EMU",
+        "SERP_TABLE_WORST_ROW_EMU",
+        "SERP_EXTRA_TABLE_WORST_ROW_EMU",
+    ):
+        found = re.search(rf"export const {name} = ([0-9_]+);", src)
+        if not found:
+            raise RuntimeError(f"в {registry.name} не найдено слагаемое вывода ёмкости {name}")
+        terms[name] = int(found.group(1).replace("_", ""))
+    return terms
 
 
 def render_page(payload: dict[str, Any]) -> Any:
@@ -420,29 +464,32 @@ def page_shapes(ctx: Any, where: str) -> tuple[Any, Any]:
     return table, stage
 
 
-def render_search_table_page(rows: list[list[str]], addresses: list[str], intro: str) -> Any:
-    """Отрисовать страницу шаблона `orion_golden_search_table` и отдать её ctx."""
+def render_search_table_page(rows: list[list[str]], intro: str) -> Any:
+    """Отрисовать страницу шаблона `orion_golden_search_table` и отдать её ctx.
+
+    Полосы адреса под строкой у страницы больше нет: адрес стоит колонкой, а
+    поле `rowAddresses` сборка деки теперь отвергает. Подавать его сюда значило
+    бы рисовать страницу, которой не бывает.
+    """
     return render_page(
         {
             "slideKey": "p09_ru_serp_table",
             "template": "orion_golden_search_table",
             "title": "Россия — Яндекс: собранная выдача (1/4)",
             "narrative": intro,
-            "table": {"headers": HDR_SERP, "rows": rows, "rowAddresses": addresses},
+            "table": {"headers": HDR_SERP, "rows": rows},
         }
     )
 
 
-def search_table_page(
-    rows: list[list[str]], addresses: list[str], intro: str
-) -> tuple[Any, Any]:
+def search_table_page(rows: list[list[str]], intro: str) -> tuple[Any, Any]:
     """Страница шаблона `orion_golden_search_table` целиком.
 
     Возвращает фигуру таблицы и фигуру белой сцены: бюджет листа — низ сцены,
     а не низ слайда, и проверяется он на настоящей странице, а не арифметикой
     по константам.
     """
-    return page_shapes(render_search_table_page(rows, addresses, intro), "страница выдачи")
+    return page_shapes(render_search_table_page(rows, intro), "страница выдачи")
 
 
 def compliance_summary_page(rows: list[list[str]]) -> tuple[Any, Any]:
@@ -626,17 +673,19 @@ def main() -> int:
         f"«Публикаций» {s_themes[1]:.3f}, «Из них нежелательных» {s_themes[2]:.3f}",
     )
 
-    # --- Т2. Таблица выдачи: ветка по данным, а не по словам заголовков ------
+    # --- Т2. Таблица выдачи: пять колонок, адрес своей колонкой --------------
     #
-    # Признак ветки — полосы адреса в самих данных. Разбирать заголовки по
-    # именам значит снова угадывать: у запасного разбора первый заголовок тоже
-    # номерной («Поз.»), а слово «Заголовок» стоит и там.
-    serp_rows = [["1", TITLE_95, "Официальный сайт / госресурс", "Нежелательный"]]
-    w_serp = widths_of(HDR_SERP, serp_rows, [ADDRESS_BAND_PLAIN])
+    # Полос адреса больше нет: адрес вернулся в колонку «Ссылка», и ветка
+    # рендерера узнаётся по колонке «№» — у второй таблицы выдачи её нет вовсе
+    # по решению владельца, и это самый устойчивый признак разворота.
+    serp_rows = [
+        ["1", ADDRESS_BAND_PLAIN, TITLE_95, "Официальный сайт / госресурс", "Нежелательный"]
+    ]
+    w_serp = widths_of(HDR_SERP, serp_rows)
     s_serp = shares_of(w_serp)
     check(
-        "Т2а: «Заголовок» занимает не меньше 55 % ширины",
-        s_serp[1] >= 0.55,
+        "Т2а: колонка «Ссылка» занимает не меньше трети ширины",
+        s_serp[1] >= 0.33,
         f"доли: {fmt(w_serp)}",
     )
     check(
@@ -644,69 +693,68 @@ def main() -> int:
         s_serp[0] <= 0.06,
         f"«№» {w_serp[0]} ({s_serp[0]:.3f})",
     )
-    # Ветка выбирается наличием полос: те же самые заголовки без адресов
-    # обязаны получить общие доли, иначе признаком снова стало имя колонки.
-    s_no_band = shares_of(widths_of(HDR_SERP, serp_rows))
+    # Вторая таблица выдачи — тоже пять колонок, но без «№»: она обязана
+    # получить свои доли, иначе адрес молча уедет на 5 % ширины первой колонки.
+    extra_rows = [[ADDRESS_BAND_PLAIN, TITLE_95, "запрос", "Официальный сайт / госресурс", "Нежелательный"]]
+    s_extra = shares_of(widths_of(HDR_SERP_EXTRA, extra_rows))
     check(
-        "Т2в: те же заголовки без полос адреса идут общей номерной веткой",
-        abs(s_no_band[0] - 0.07) <= 0.005 and abs(s_no_band[1] - 0.22) <= 0.005,
-        f"без полос: {fmt(widths_of(HDR_SERP, serp_rows))}",
+        "Т2в: у второй таблицы выдачи свои доли, а не доли первой",
+        abs(s_extra[0] - 0.30) <= 0.005 and abs(s_extra[2] - 0.16) <= 0.005,
+        f"вторая таблица: {fmt(widths_of(HDR_SERP_EXTRA, extra_rows))}",
     )
-    # --- Т2г. Границы полосы: обычное письмо и худший законный случай --------
+    # --- Т2г. Границы колонки адреса: обычное письмо и худший законный случай -
     #
-    # Предел полосы выведен из ширины: 3 × 998 px / 12,15 px (самый широкий знак
-    # 9 pt в письме адресов) = 246 знаков гарантируют три строки; взято 240.
-    # WIDEST_GLYPH_PX меряется по шрифту, а не вписан числом, но берётся по
-    # письму адресов: `№` (13,1 px) шире, и 240 таких знаков дали бы четыре
-    # строки. Ниже закреплены обе границы — иначе вывод ёмкости стоял бы на
-    # слове.
-    usable_band_px = usable_px(CONTENT_W)
+    # Предел выведен от **узкой** из двух колонок адреса (0.30 листа, 287 px):
+    # 7 × 287 / 12,15 = 165 знаков. Семь строк, а не меньше, потому что из
+    # семистрочной строки и выведена ёмкость листа. Ниже закреплены обе
+    # границы — иначе вывод ёмкости стоял бы на слове.
+    usable_band_px = usable_px(widths_of(HDR_SERP_EXTRA, extra_rows)[0])
     band_px = text_width_px(ADDRESS_BAND_PLAIN, 9)
     check(
-        "Т2г: адрес обычным письмом на пределе полосы — две строки",
-        band_px <= 2 * usable_band_px,
-        f"{band_px}px при полезной ширине полосы {usable_band_px:.0f}px",
+        "Т2г: адрес обычным письмом на пределе колонки — не больше пяти строк",
+        band_px <= 5 * usable_band_px,
+        f"{band_px}px при полезной ширине колонки {usable_band_px:.0f}px",
     )
     worst_band_px = text_width_px(ADDRESS_BAND_WORST, 9)
     check(
-        "Т2г2: худший законный адрес полосы — не больше трёх строк",
-        worst_band_px <= 3 * usable_band_px,
-        f"{worst_band_px}px при полезной ширине полосы {usable_band_px:.0f}px",
+        "Т2г2: худший законный адрес колонки — не больше семи строк",
+        worst_band_px <= 7 * usable_band_px,
+        f"{worst_band_px}px при полезной ширине колонки {usable_band_px:.0f}px",
     )
     check(
-        "Т2г3: предел полосы гарантирует три строки письмом адресов",
-        ADDRESS_BAND_MAX_CHARS * WIDEST_GLYPH_PX <= 3 * usable_band_px,
-        f"{ADDRESS_BAND_MAX_CHARS} × {WIDEST_GLYPH_PX:.2f}px = "
-        f"{ADDRESS_BAND_MAX_CHARS * WIDEST_GLYPH_PX:.0f}px при трёх строках "
-        f"{3 * usable_band_px:.0f}px",
+        "Т2г3: предел адреса гарантирует семь строк самым широким знаком",
+        SERP_ADDRESS_MAX_CHARS * WIDEST_GLYPH_PX <= 7 * usable_band_px,
+        f"{SERP_ADDRESS_MAX_CHARS} × {WIDEST_GLYPH_PX:.2f}px = "
+        f"{SERP_ADDRESS_MAX_CHARS * WIDEST_GLYPH_PX:.0f}px при семи строках "
+        f"{7 * usable_band_px:.0f}px",
     )
     title_px = text_width_px(TITLE_95, 9)
-    usable_title_px = usable_px(w_serp[1])
+    usable_title_px = usable_px(w_serp[2])
     check(
-        "Т2д: худший правдоподобный заголовок укладывается в две строки",
-        title_px <= 2 * usable_title_px,
+        "Т2д: худший правдоподобный заголовок укладывается в три строки",
+        title_px <= 3 * usable_title_px,
         f"{title_px}px при полезной ширине колонки {usable_title_px:.0f}px",
     )
     widest_source_type = "Официальный сайт / госресурс"
     source_px = text_width_px(widest_source_type, 9)
-    usable_source_px = usable_px(w_serp[2])
+    usable_source_px = usable_px(w_serp[3])
     check(
         "Т2е: самое длинное значение «Тип источника» — одна строка",
         source_px <= usable_source_px,
         f"{source_px}px при полезной ширине {usable_source_px:.0f}px",
     )
-    # --- Т2ж. Полоса печатается целиком ---------------------------------------
-    serp_table = build_table(HDR_SERP, serp_rows, [ADDRESS_BAND_PLAIN])
-    band_cell = serp_table.cell(2, 0)
+    # --- Т2ж. Адрес печатается целиком в своей ячейке -------------------------
+    serp_table = build_table(HDR_SERP, serp_rows)
+    address_cell = serp_table.cell(1, HDR_SERP.index("Ссылка"))
     check(
         "Т2ж: адрес доезжает до ячейки без реза",
-        band_cell.text == ADDRESS_BAND_PLAIN,
-        f"в ячейке {len(band_cell.text)} знаков из {len(ADDRESS_BAND_PLAIN)}",
+        address_cell.text == ADDRESS_BAND_PLAIN,
+        f"в ячейке {len(address_cell.text)} знаков из {len(ADDRESS_BAND_PLAIN)}",
     )
     check(
-        "Т2з: полоса адреса идёт во всю ширину контента",
-        band_cell.is_merge_origin and band_cell.span_width == len(HDR_SERP),
-        f"полоса объединяет {band_cell.span_width} из {len(HDR_SERP)} колонок",
+        "Т2з: адрес стоит колонкой, а не объединённой полосой под строкой",
+        not address_cell.is_merge_origin,
+        f"ячейка объединяет {getattr(address_cell, 'span_width', 1)} колонок",
     )
     # --- Т2и. Высота строки без потолка «две строки» ---------------------------
     #
@@ -715,8 +763,7 @@ def main() -> int:
     # содержимому, и таблица уезжала ниже поля при «чистой» геометрии.
     worst_wrap = build_table(
         HDR_SERP,
-        [["1", TITLE_95_WORST_WRAP, "СМИ", "Нейтральный"]],
-        [ADDRESS_CORPUS_MAX],
+        [["1", ADDRESS_CORPUS_MAX, TITLE_95_WORST_WRAP, "СМИ", "Нейтральный"]],
     )
     worst_row_h = int(worst_wrap.rows[1].height)
     check(
@@ -1033,7 +1080,7 @@ def main() -> int:
         f"фоны строк: {sorted(card_fills)}",
     )
     serp = build_table(
-        HDR_SERP, [["1", TITLE_SERP, "СМИ", "Нежелательный"]], [ADDRESS_CORPUS_MAX]
+        HDR_SERP, [["1", ADDRESS_CORPUS_MAX, TITLE_SERP, "СМИ", "Нежелательный"]]
     )
     check(
         "Т10б: нежелательная строка выдачи подсветку сохраняет",
@@ -1054,36 +1101,70 @@ def main() -> int:
     # низ заголовка — верх таблицы на странице без абзаца; высота шапки и пары
     # — строки настоящей таблицы; низ бюджета — низ белой сцены.
     capacity = serp_capacity()
-    worst_row = [str(1), TITLE_95, "Официальный сайт / госресурс", "Нежелательный"]
-    bare_table, stage_shape = search_table_page([worst_row], [ADDRESS_BAND_WORST], "")
+    terms = serp_capacity_terms()
+    # Худшая законная строка — не правдоподобная, а предельная: адрес на своём
+    # пределе, написанный самым широким знаком 9 pt. Полосы под строкой больше
+    # нет, поэтому и пары больше нет: высоту строки задаёт её самая высокая
+    # ячейка, и это колонка адреса.
+    worst_row = [
+        str(1),
+        "Ю" * SERP_ADDRESS_MAX_CHARS,
+        TITLE_95,
+        "Официальный сайт / госресурс",
+        "Нежелательный",
+    ]
+    bare_table, stage_shape = search_table_page([worst_row], "")
     stage_bottom = int(stage_shape.top) + int(stage_shape.height)
     title_bottom = int(bare_table.top)
     declared_top = title_bottom + INTRO_MAX_H + INTRO_GAP
     header_h = int(bare_table.table.rows[0].height)
     row_h = int(bare_table.table.rows[1].height)
-    band_h = int(bare_table.table.rows[2].height)
-    pair_h = row_h + band_h
     budget = stage_bottom - declared_top - header_h
-    # Пара берётся **корпусная**: заголовок предельной длины — две строки,
-    # полоса предельной длины — три. Двухстрочная полоса была бы правдоподобной,
-    # но не законной: гарантия двух строк требует предела 164 знака, а в корпусе
-    # прогона 16 адресов длиннее 163, и шесть из них обычные адреса статей.
+    # Главная сверка: нарисованная худшая строка равна **объявленной** в
+    # реестре. Разойдясь, эти два числа дали бы ёмкость, выведенную из высоты,
+    # которой не бывает, — ровно историю числа 12.
     check(
-        "Т11а: худшая законная пара — две строки заголовка и три полосы",
-        row_h == 2 * SERP_LINE_H + PAD and band_h == 3 * SERP_LINE_H + PAD,
-        f"строка {row_h} (ожидалось {2 * SERP_LINE_H + PAD}), "
-        f"полоса {band_h} (ожидалось {3 * SERP_LINE_H + PAD})",
+        "Т11а: нарисованная худшая законная строка равна объявленной в реестре",
+        row_h == terms["SERP_TABLE_WORST_ROW_EMU"],
+        f"нарисовано {row_h}, объявлено {terms['SERP_TABLE_WORST_ROW_EMU']}",
     )
     check(
-        f"Т11б: {capacity} худших пар влезают в бюджет объявленного листа",
-        capacity * pair_h <= budget,
-        f"нужно {capacity * pair_h}, бюджет {budget} (низ сцены {stage_bottom}, "
+        f"Т11б: {capacity} худших строк влезают в бюджет объявленного листа",
+        capacity * row_h <= budget,
+        f"нужно {capacity * row_h}, бюджет {budget} (низ сцены {stage_bottom}, "
         f"объявленный верх таблицы {declared_top}, шапка {header_h})",
     )
     check(
-        f"Т11в: контрольный дефект — {capacity + 1} пар в бюджет не влезают",
-        (capacity + 1) * pair_h > budget,
-        f"нужно {(capacity + 1) * pair_h}, бюджет {budget}",
+        f"Т11в: контрольный дефект — {capacity + 1} строк в бюджет не влезают",
+        (capacity + 1) * row_h > budget,
+        f"нужно {(capacity + 1) * row_h}, бюджет {budget}",
+    )
+    # Вторая таблица выдачи выводит свою ёмкость тем же делением и из своей
+    # худшей строки. Без этой сверки её число не держало **ничто**: юнит вывода
+    # читал только первую таблицу, а `serp_capacity()` искал её блок регуляркой.
+    extra_worst = build_table(
+        HDR_SERP_EXTRA,
+        [
+            [
+                "Ю" * SERP_ADDRESS_MAX_CHARS,
+                "Ю" * SERP_TITLE_MAX_CHARS,
+                "Ю" * SERP_FOUND_BY_MAX_CHARS,
+                "Официальный сайт / госресурс",
+                "Нежелательный",
+            ]
+        ],
+    )
+    extra_row_h = int(extra_worst.rows[1].height)
+    extra_capacity = terms["SERP_TABLE_ROW_BUDGET_EMU"] // terms["SERP_EXTRA_TABLE_WORST_ROW_EMU"]
+    check(
+        "Т11в2: нарисованная худшая строка второй таблицы равна объявленной",
+        extra_row_h == terms["SERP_EXTRA_TABLE_WORST_ROW_EMU"],
+        f"нарисовано {extra_row_h}, объявлено {terms['SERP_EXTRA_TABLE_WORST_ROW_EMU']}",
+    )
+    check(
+        f"Т11в3: {extra_capacity} худших строк второй таблицы влезают, {extra_capacity + 1} — нет",
+        extra_capacity * extra_row_h <= budget and (extra_capacity + 1) * extra_row_h > budget,
+        f"нужно {extra_capacity * extra_row_h} и {(extra_capacity + 1) * extra_row_h}, бюджет {budget}",
     )
     # Второй свидетель: настоящая страница с заведомо переполняющим абзацем.
     # Её верх обязан быть не ниже объявленного потолка — иначе это не потолок,
@@ -1098,9 +1179,7 @@ def main() -> int:
             for n in range(1, 13)
         ]
     )
-    real_table, real_stage = search_table_page(
-        [worst_row] * capacity, [ADDRESS_BAND_WORST] * capacity, intro
-    )
+    real_table, real_stage = search_table_page([worst_row] * capacity, intro)
     check(
         "Т11г: фактический верх таблицы не ниже объявленного потолка",
         int(real_table.top) <= declared_top,
@@ -1166,7 +1245,7 @@ def main() -> int:
         for name, want in zip(INTRO_NAMES, expected):
             text = live_intro_for(name, theme, ROW_ANCHOR_WORST)
             drawn = intro_box(
-                render_search_table_page([worst_row] * 2, [ADDRESS_BAND_WORST] * 2, text)
+                render_search_table_page([worst_row] * 2, text)
             )
             got = intro_font_pt(drawn)
             cell = f"«{theme[:24]}…» + «{name}»"
@@ -1199,7 +1278,7 @@ def main() -> int:
         text = live_intro_for(WORST_CELL_NAME, WORST_CELL_THEME, anchor)
         return intro_font_pt(
             intro_box(
-                render_search_table_page([worst_row] * 2, [ADDRESS_BAND_WORST] * 2, text)
+                render_search_table_page([worst_row] * 2, text)
             )
         )
 
@@ -1225,7 +1304,7 @@ def main() -> int:
         ),
     )
     worst_text = intro_box(
-        render_search_table_page([worst_row] * 2, [ADDRESS_BAND_WORST] * 2, worst_intro)
+        render_search_table_page([worst_row] * 2, worst_intro)
     ).text_frame.text
     check(
         "Т11ж: состав по схемным пределам нарисован целиком",
@@ -1233,28 +1312,13 @@ def main() -> int:
         f"нарисовано {len(worst_text)} из {len(worst_intro)} знаков: {worst_text[-100:]!r}",
     )
 
-    # --- Т12. Полоса наследует фон своей строки ------------------------------
+    # --- Т12 снята вместе с полосой адреса ------------------------------------
     #
-    # Подсветка строки — знак для проверяющего: он сканирует страницу по
-    # красному. Белая полоса разрезает красную плашку пополам, и адрес того
-    # самого нежелательного материала оказывается вне красного, зрительно
-    # примыкая к следующей, нейтральной строке.
-    tinted = build_table(
-        HDR_SERP,
-        [
-            ["1", TITLE_SERP, "СМИ", "Нежелательный"],
-            ["2", TITLE_SERP, "СМИ", "Вероятно"],
-            ["3", TITLE_SERP, "СМИ", "Нейтральный"],
-        ],
-        [ADDRESS_CORPUS_MAX] * 3,
-    )
-    band_fills = [str(tinted.cell(r, 0).fill.fore_color.rgb) for r in (2, 4, 6)]
-    row_fills = [str(tinted.cell(r, 1).fill.fore_color.rgb) for r in (1, 3, 5)]
-    check(
-        "Т12: фон полосы адреса совпадает с фоном своей строки",
-        band_fills == row_fills,
-        f"полосы {band_fills}, строки {row_fills}",
-    )
+    # Проверяла, что полоса под строкой наследует её фон: белая полоса
+    # разрезала красную плашку пополам, и адрес нежелательного материала
+    # оказывался вне красного. Полосы больше нет — адрес стоит ячейкой той же
+    # строки и её фон получает сам, — поэтому у проверки не осталось предмета.
+    # Подсветку самой строки держит Т10б.
 
     # --- Т13. Мера ячейки совпадает с тем, что в ней нарисовано --------------
     #
@@ -1266,7 +1330,7 @@ def main() -> int:
     # остальное на странице заведомо ниже, чтобы высоту решал именно бейдж.
     BOUNDARY_STATUS = "проверки аналитика"
     badge_table = build_table(
-        HDR_SERP, [["1", "Кратко", "СМИ", BOUNDARY_STATUS]], ["a.example.org/1"]
+        HDR_SERP, [["1", "a.example.org/1", "Кратко", "СМИ", BOUNDARY_STATUS]]
     )
     badge_cell = badge_table.cell(1, 3)
     # Меряем **нарисованное**: тем же переносом, которым рендерер объявляет
@@ -1281,23 +1345,24 @@ def main() -> int:
         f"{badge_lines} строк(и) по {int(BADGE_PT * EMU_PER_PT * 1.2)}",
     )
 
-    # --- Т14. Пятиколоночная таблица с полосами не роняет рендерер -----------
+    # --- Т14. Обе пятиколоночные таблицы рисуются без отказа -----------------
     #
-    # Ветка долей выбирается наличием полос, а `slides.py` пропускает до пяти
-    # заголовков: пока условия были разъединены, пятая колонка получала долю из
-    # четырёхэлементного списка и `IndexError` ронял всю страницу.
-    try:
-        five = build_table(
-            ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"],
-            [["1", "example.org/1", TITLE_SERP, "СМИ", "Нейтральный"]],
-            [ADDRESS_CORPUS_MAX],
-        )
-        five_ok = len(list(five.columns)) == 5
-        five_detail = f"долей {len(list(five.columns))}"
-    except Exception as exc:  # noqa: BLE001
-        five_ok = False
-        five_detail = f"{type(exc).__name__}: {exc}"
-    check("Т14: пять колонок с полосами адреса рисуются без отказа", five_ok, five_detail)
+    # `slides.py` пропускает до пяти заголовков, и у обеих таблиц выдачи их
+    # ровно пять, но составы разные. Ветка первой узнаётся по «№», ветка второй
+    # — общая на пять колонок; пока список долей был четырёхэлементным, пятая
+    # колонка роняла страницу `IndexError`ом при подсчёте высот.
+    for label, headers, row in (
+        ("первая", HDR_SERP, ["1", "example.org/1", TITLE_SERP, "СМИ", "Нейтральный"]),
+        ("вторая", HDR_SERP_EXTRA, ["example.org/1", TITLE_SERP, "запрос", "СМИ", "Нейтральный"]),
+    ):
+        try:
+            five = build_table(headers, [row])
+            five_ok = len(list(five.columns)) == 5
+            five_detail = f"долей {len(list(five.columns))}"
+        except Exception as exc:  # noqa: BLE001
+            five_ok = False
+            five_detail = f"{type(exc).__name__}: {exc}"
+        check(f"Т14 [{label} таблица]: пять колонок рисуются без отказа", five_ok, five_detail)
 
     # --- Т15. Бюджет листа объявляется только тогда, когда он известен -------
     #
@@ -1305,7 +1370,7 @@ def main() -> int:
     # Одно значение на два вопроса: поданное как бюджет, сентинельное значение
     # даёт ложный CRITICAL с нулевым запасом.
     reset_layout_telemetry()
-    build_table(HDR_SERP, [worst_row], [ADDRESS_BAND_PLAIN])
+    build_table(HDR_SERP, [worst_row])
     check(
         "Т15а: без объявленного бюджета таблица о переполнении не заявляет",
         get_layout_telemetry() == [],
@@ -1316,10 +1381,7 @@ def main() -> int:
     prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
     ctx = _Ctx(prs, 1, 1)
-    _add_search_table(
-        ctx, 1_500_000, HDR_SERP, [worst_row] * 20, row_addresses=[ADDRESS_BAND_PLAIN] * 20,
-        bottom=2_000_000,
-    )
+    _add_search_table(ctx, 1_500_000, HDR_SERP, [worst_row] * 20, bottom=2_000_000)
     entries = get_layout_telemetry()
     check(
         "Т15б: превышение объявленного бюджета слышно записью разметки",

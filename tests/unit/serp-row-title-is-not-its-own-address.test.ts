@@ -25,6 +25,7 @@ import {
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import { blockingIssues } from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
 import { rowsPrintingTheirOwnAddress } from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
+import { SERP_TABLE_HEADERS } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 
 describe("ячейка «Заголовок» не повторяет адрес строки", () => {
   it.each([
@@ -67,41 +68,61 @@ describe("ячейка «Заголовок» не повторяет адрес
 });
 
 describe("ворот «строка не печатает свой адрес дважды»", () => {
-  const table = (rows: string[][], addresses: string[]) => ({
+  /**
+   * Лист таблицы выдачи после переезда адреса в колонку: сравниваются ячейки
+   * одной строки, а не ячейка с полосой под ней. Вопрос тот же — печатает ли
+   * строка свой адрес вторым способом, — и ответ на него по-прежнему один.
+   */
+  const table = (rows: Array<{ address: string; title: string }>) => ({
     slideKey: "p09_ru_serp_table__cont6",
-    table: { headers: ["№", "Заголовок", "Тип источника", "Оценка"], rows, rowAddresses: addresses },
+    table: {
+      headers: [...SERP_TABLE_HEADERS],
+      rows: rows.map((r, i) => [String(i + 9), r.address, r.title, "—", "Не проверено"]),
+    },
   });
 
-  it("строка с адресом в ячейке названа слайдом и номером", () => {
+  it("строка с адресом в ячейке заголовка названа слайдом и номером", () => {
     const found = rowsPrintingTheirOwnAddress([
-      table(
-        [
-          ["9", "https://www.techcult.ru/promo/15800", "—", "Не проверено"],
-          ["10", "ГЛИНКА Сергей Михайлович - Биография", "—", "Не проверено"],
-        ],
-        ["techcult.ru/promo/15800", "labyrinth.ru/content/card.asp?cardid=92628"]
-      ),
+      table([
+        { address: "techcult.ru/promo/15800", title: "https://www.techcult.ru/promo/15800" },
+        {
+          address: "labyrinth.ru/content/card.asp?cardid=92628",
+          title: "ГЛИНКА Сергей Михайлович - Биография",
+        },
+      ]),
     ]);
     expect(found).toEqual([{ slideKey: "p09_ru_serp_table__cont6", row: 1 }]);
   });
 
   it("обрезанный нашим резом адрес ворот тоже видит", () => {
-    // Ровно первая из шести строк эталона: сверху обрезанный адрес, снизу полный.
+    // Ровно первая из шести строк эталона: в заголовке обрезанный адрес, в
+    // колонке «Ссылка» — полный.
     const found = rowsPrintingTheirOwnAddress([
-      table(
-        [["9", "https://www.techcult.ru/promo/15800-biografiya-biznesmena…", "—", "Не проверено"]],
-        ["techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-i-novye-proekty"]
-      ),
+      table([
+        {
+          address: "techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-i-novye-proekty",
+          title: "https://www.techcult.ru/promo/15800-biografiya-biznesmena…",
+        },
+      ]),
     ]);
     expect(found).toHaveLength(1);
   });
 
   it("чужой адрес в ячейке ворот не роняет", () => {
     const found = rowsPrintingTheirOwnAddress([
-      table(
-        [["9", "https://t.me/rucriminalinfo 18 февраля", "—", "Не проверено"]],
-        ["x.com/rucriminalinfo/status/2008361452998914141"]
-      ),
+      table([
+        {
+          address: "x.com/rucriminalinfo/status/2008361452998914141",
+          title: "https://t.me/rucriminalinfo 18 февраля",
+        },
+      ]),
+    ]);
+    expect(found).toEqual([]);
+  });
+
+  it("сама колонка «Ссылка» повтором себя не считает", () => {
+    const found = rowsPrintingTheirOwnAddress([
+      table([{ address: "forbes.ru/a", title: "Материал о субъекте" }]),
     ]);
     expect(found).toEqual([]);
   });

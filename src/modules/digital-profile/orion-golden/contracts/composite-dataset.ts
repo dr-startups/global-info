@@ -46,6 +46,15 @@ export const CompositeObservationRowSchema = z.object({
   query: z.string().optional(),
   /** Назначение запроса из плана — отличает выдачу по имени от целевой пробы. */
   queryPurpose: z.string().optional(),
+  /**
+   * Запрос строки — само имя субъекта.
+   *
+   * Все написания ФИО несут один `queryPurpose`, поэтому по назначению они
+   * неразличимы; какое из них человек набирает первым, знает только набор
+   * запросов. Необязательное: наборы, снятые до появления пометки, её не несут
+   * — тогда таблица выбирает запрос запасным правилом и говорит об этом.
+   */
+  subjectNameQuery: z.boolean().optional(),
   evidenceRefs: z.array(z.string()),
   provenanceOwner: z.enum(["base", "enrichment", "legacy"]),
 });

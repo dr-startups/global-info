@@ -3,7 +3,7 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
-import type { FragmentKey, SectionType, SlideContentContract } from "../contracts";
+import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import {
   DECK_TEMPLATE_REGISTRY,
@@ -21,6 +21,7 @@ import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import { clientAddress } from "../../client/client-address";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import {
   freshnessFootnote,
   type MaterialFreshness,
@@ -68,26 +69,156 @@ import { continuationTitle } from "../continuation-slide";
 export const SERP_TABLE_TOP_N = 20;
 
 /**
- * Колонки таблицы выдачи.
+ * Колонки таблицы выдачи — состав заказан владельцем.
  *
- * Адреса среди них нет: он печатается полосой во всю ширину листа под своей
- * строкой результата (`rowAddresses`). Колонкой он быть не может — в её 22 %
- * ширины входят 62 знака, а половина адресов корпуса длиннее, и проверяющий
- * получал ссылку, которая не открывается. Тип источника отвечает на вопрос,
- * ради которого читатель и открывает адрес: запись в санкционном реестре,
- * статья в СМИ и пост в блоге требуют разной реакции, а в таблице выглядят
- * одинаково.
+ * Адрес стоит **своей колонкой и печатается целиком**: печатать ссылку и тему
+ * заголовка в одной ячейке запрещено прямо. Полосы под строкой больше нет —
+ * вместе с колонкой она печатала бы один факт дважды.
+ *
+ * Прежние пять колонок в отчёте уже были и от них ушли не по вкусу: колонка
+ * адреса получала 22 % ширины, туда входило 62 знака, и обрезанная ссылка не
+ * открывалась — 17 строк из 50 на эталоне-72 и 60 из 60 в золотом кейсе. Ушли
+ * не потому, что колонка плоха, а потому, что её ширину никто не мерил.
+ * Теперь мерена: 0.34 листа — 328 px полезных по мере переноса рендерера, и на
+ * корпусе адрес ложится в 1…3 строки у 45 строк из 46.
+ *
+ * Тип источника отвечает на вопрос, ради которого читатель и открывает адрес:
+ * запись в санкционном реестре, статья в СМИ и пост в блоге требуют разной
+ * реакции, а в таблице выглядят одинаково.
  */
-export const SERP_TABLE_HEADERS = ["№", "Заголовок", "Тип источника", "Оценка"];
+export const SERP_TABLE_HEADERS = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"];
 
 /**
- * Предел заголовка строки — по ширине его колонки (0.59 листа).
+ * Колонки второй таблицы выдачи — «Найдено по дополнительным запросам».
  *
- * 95 знаков — столько влезает в две нарисованные строки при 9 pt, и это же
- * половина худшей законной пары, из которой выведена ёмкость листа
- * (`template-registry.ts`, `serp-table`). Рез стоит здесь, а не в рендерере:
- * `_clip_words(text, 200)` резал молча и невидимо для текстового эталона, а
- * подрезанный заголовок — это то, что читает клиент.
+ * **Колонки позиции здесь нет вовсе** — ни настоящей, ни порядковой. Порядковый
+ * номер в колонке «№» читается как место в выдаче, и это корень всей истории:
+ * сводку по трём запросам владелец прочитал как ТОП-20. У второго запроса своя
+ * нумерация, сопоставлять её с нумерацией первого нельзя, а показывать номер,
+ * который ничего не значит, — значит повторить ту же ошибку под другим именем.
+ *
+ * Вместо номера — «Найдено по запросу»: единственный вопрос, ради которого
+ * строка здесь и стоит.
+ */
+export const SERP_EXTRA_TABLE_HEADERS = [
+  "Ссылка",
+  "Заголовок",
+  "Найдено по запросу",
+  "Тип источника",
+  "Оценка",
+];
+
+/**
+ * Предел ячейки «Найдено по запросу» — по ширине её колонки (0.16 листа, 145 px).
+ *
+ * 80 знаков ложатся ровно в семь нарисованных строк 9 pt самым широким знаком,
+ * а из семистрочной строки и выведена ёмкость листа — то есть запас нулевой, и
+ * 85 знаков уже выводят лист за поле на 340 440 EMU.
+ *
+ * Рез стоит **здесь**, а не подразумевается пределом набора запросов аудита
+ * (`MAX_QUERY_CHARS`): тот ограничивает состав аудита, а в деку текст запроса
+ * едет другим путём — план сбора строит в том числе «запрос плюс региональная
+ * подсказка», и там 80 знаков уже превышены. У адреса и заголовка рез в
+ * построителе есть, у запроса его не было.
+ */
+export const SERP_FOUND_BY_MAX_CHARS = 80;
+
+/** Ячейка «Найдено по запросу»: запрос целиком либо видимый рез многоточием. */
+function serpFoundByCell(query: string): string {
+  const text = query.trim();
+  if (text.length <= SERP_FOUND_BY_MAX_CHARS) return text;
+  return `${text.slice(0, SERP_FOUND_BY_MAX_CHARS - 1)}…`;
+}
+
+/**
+ * Заголовок второй таблицы: она одна на регион, а не на движок.
+ *
+ * Вопрос «по какой формулировке нашлось» к движку не привязан. Движок при этом
+ * не теряется — он остаётся в наблюдении и в провенансе, просто не является
+ * осью таблицы.
+ */
+function serpExtraTableTitle(regionLabel: string, suffix: string): string {
+  return `${serpRegionTitle(regionLabel)} — найдено по дополнительным запросам${suffix}`;
+}
+
+/**
+ * Метка контура с заглавной — так, как её печатают заголовки страниц.
+ *
+ * «ОАЭ» приходит меткой раздела, «международный» — строчным, и оба вида стоят в
+ * начале предложения.
+ */
+function serpRegionTitle(regionLabel: string): string {
+  return regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
+}
+
+/**
+ * Лид второй таблицы: что это за список и почему у него нет номеров.
+ *
+ * Молчание о номерах здесь опаснее, чем на первой таблице: читатель уже увидел
+ * нумерованную двадцатку и по привычке ищет места и тут.
+ */
+const SERP_EXTRA_LEAD =
+  "Здесь материалы, которых нет в таблице по имени: их нашли другие запросы прогона. " +
+  "Мест в выдаче у этих строк не показано — у каждого запроса своя нумерация, и сравнивать её с первой таблицей нельзя.";
+
+/**
+ * Честное пустое состояние второй таблицы — **с названием контура**.
+ *
+ * Утверждение здесь региональное, а не про прогон: лист ОАЭ говорил
+ * «дополнительных запросов в этом прогоне не было» при том, что семью
+ * страницами выше двадцать одна строка России помечена найденной именно
+ * дополнительными. Клиент читал утверждение, которое опровергается его же
+ * отчётом.
+ *
+ * Метка контура заодно различает два таких листа: без неё оба региона печатали
+ * дословно одно тело, и страница повторялась в отчёте целиком.
+ */
+function serpExtraNoQueries(regionLabel: string): string {
+  return `${regionLabel} — дополнительных запросов в этом контуре не было: вся собранная выдача пришла по основному запросу.`;
+}
+
+/** Дополнительные запросы были, но нового не принесли. */
+function serpExtraNothingNew(regionLabel: string): string {
+  return `${regionLabel} — дополнительные запросы не нашли ничего, чего нет в таблице по имени.`;
+}
+
+/**
+ * Сколько строк осталось за пределом — словами и с указанием рода.
+ *
+ * Молчаливое усечение здесь — та же тихая потеря содержимого, ради которой
+ * заведён весь этот контур. Род назван, потому что без него читатель вправе
+ * заподозрить, что срезали негатив, — а его как раз не срезают никогда.
+ */
+function serpExtraRemainderLine(count: number): string {
+  // Существительное согласуется с числом, сказуемое — нет: при количественном
+  // обороте нормой остаётся средний род («ещё 5 материалов осталось»).
+  const word = pluralRu(count, "материал", "материала", "материалов");
+  return (
+    `Ещё ${count} ${word} осталось за пределом таблицы: это нейтральные, непроверенные и материалы ` +
+    "о другом лице — нежелательные и вероятные показаны все."
+  );
+}
+
+/**
+ * Продолжение таблицы: лист называет себя номером.
+ *
+ * Различитель нужен по делу: семь листов второй таблицы печатали дословно один
+ * абзац, и у неё, в отличие от первой, нет вывода страницы, который различал бы
+ * их сам. Номер листа — единственный факт, который у каждого свой при любых
+ * данных: запросы на листах могут совпадать все до одного.
+ */
+function serpExtraContinuationLine(index: number, count: number): string {
+  return `Продолжение таблицы, лист ${index} из ${count}.`;
+}
+
+/**
+ * Предел заголовка строки — по ширине его колонки (0.27 листа, 257 px полезных).
+ *
+ * 95 знаков ложатся в пять нарисованных строк при 9 pt даже одним словом, то
+ * есть ниже худшей законной строки таблицы, из которой выведена ёмкость листа
+ * (её задаёт адрес — `template-registry.ts`, `serp-table`). Рез стоит здесь, а
+ * не в рендерере: `_clip_words(text, 200)` резал молча и невидимо для
+ * текстового эталона, а подрезанный заголовок — это то, что читает клиент.
  */
 const SERP_TITLE_MAX_CHARS = 95;
 
@@ -109,7 +240,7 @@ export const SERP_TITLE_NOT_GIVEN = "Заголовок не отдан поис
  * obs.url || obs.key`. Печатник поэтому видит непустой заголовок, и прежнее
  * запасное «(без заголовка)» не срабатывало — оно ждало `undefined`. Замер
  * эталона-72: шесть строк из 46 печатали свой адрес в колонке «Заголовок», и
- * он же стоял полосой под строкой.
+ * он же стоял под строкой полосой — а теперь стоит в соседней ячейке.
  *
  * Сравнение идёт **существующим** `clientAddress` — единственным ответом
  * проекта на «как выглядит адрес для клиента»; новой нормализации здесь не
@@ -188,13 +319,19 @@ export function normalizeSerpEngine(raw: string | undefined): string | null {
 }
 
 /**
- * Запрос, выдачу по которому показывает таблица поисковика.
+ * Запасное правило выбора запроса: работает там, где пометки «это само имя» в
+ * данных нет вовсе (наборы, собранные до её появления).
  *
  * Таблица — это одна страница выдачи, а не сводка по всем запросам сразу.
  * Смешав запросы, мы получили бы две строки с позицией 1 и номер, который
  * ничего не значит. Поэтому на каждый поисковик берётся один запрос: сначала
  * тот, что искал субъекта по имени, при равенстве — давший больше материала,
  * а на совсем равных — первый по алфавиту, чтобы отчёт был воспроизводим.
+ *
+ * **Правило именно запасное.** На пяти равных написаниях ФИО все несут один
+ * `subject_lookup`, а счёт материалов у них почти одинаков — то есть решает
+ * алфавит. Основной запрос выбирает `mainSerpTableQuery`, и он же говорит,
+ * чьё это было решение.
  */
 export function pickSerpTableQuery(
   rows: Array<{ query?: string; queryPurpose?: string }>
@@ -219,6 +356,31 @@ export function pickSerpTableQuery(
     return a[0].localeCompare(b[0], "ru");
   })[0]!;
   return serpQueryDisplayForm(best[1].spellings);
+}
+
+/**
+ * Основной запрос таблицы и **чьё это решение**.
+ *
+ * Вопрос один, поэтому и ответ один: пометка данных первым признаком, запасное
+ * правило — только когда пометки в наборе нет вовсе. Пока пометка не доезжала
+ * до деки, выбор делало запасное правило всегда, а оно на пяти равных
+ * написаниях ФИО решает счётом материалов и алфавитом — то есть при другом
+ * наборе написаний та же дека показала бы другую двадцатку.
+ *
+ * `markedByData: false` — это не ошибка, а старый набор: страница обязана
+ * сказать, что запрос выбрали мы, вместо того чтобы выдать наше решение за
+ * факт данных.
+ */
+export function mainSerpTableQuery(
+  rows: Array<{ query?: string; queryPurpose?: string; subjectNameQuery?: boolean }>
+): { query: string | null; markedByData: boolean } {
+  const marked = rows.filter((r) => r.subjectNameQuery === true && String(r.query ?? "").trim());
+  if (marked.length > 0) {
+    // Написаний у помеченного запроса может быть несколько (регистр —
+    // свойство написания), и запасное правило сводит их тем же счётом.
+    return { query: pickSerpTableQuery(marked), markedByData: true };
+  }
+  return { query: pickSerpTableQuery(rows), markedByData: false };
 }
 
 /**
@@ -368,10 +530,67 @@ const SERP_RANKS_ARE_POSITIONS =
 const SERP_RANKS_ARE_COLLECTION_ORDER =
   "Номера строк — порядок в собранной сводке, а не места в выдаче.";
 
+/**
+ * Кто выбрал запрос этой таблицы.
+ *
+ * Наборы, собранные до появления пометки «это само имя», не говорят, какой из
+ * запросов основной, — и тогда его выбираем мы, по числу материалов, а на
+ * равных по алфавиту. Промолчать об этом значит выдать наше решение за факт
+ * данных: читатель поймёт заголовок «ТОП-20 по запросу ФИО» как обещание, что
+ * именно это написание и есть главное.
+ */
+const SERP_QUERY_CHOSEN_BY_US =
+  "Запрос для этой таблицы выбран нами: в собранных данных не отмечено, какой из запросов основной.";
+
+/**
+ * Таблица движка построена не на основном запросе региона.
+ *
+ * Так бывает, когда поисковик не вернул по основному написанию ничего: пустая
+ * выдача, отказ провайдера, квота. Прежде такая страница печатала оговорку
+ * «в собранных данных не отмечено, какой из запросов основной» — и это была
+ * ложь: отмечено, просто не у строк этого движка. Утверждение здесь
+ * прослеживается до наблюдений: у этого поисковика в наборе нет ни одной
+ * строки по названному запросу.
+ */
+function serpQueryIsNotRegionMain(mainQuery: string): string {
+  return (
+    `Основной запрос этого раздела — «${mainQuery}»; у этого поисковика по нему в наборе ` +
+    "нет ни одной строки, поэтому таблица показывает другой запрос."
+  );
+}
+
+/**
+ * Чья это выдача, когда запрос в наборе не записан.
+ *
+ * Без этой фразы тело страницы не называет поисковик вовсе — его знает только
+ * заголовок, — и два листа разных поисковиков с одинаковой темой печатали
+ * дословно один текст (эталон-72, страницы 16 и 22). Фраза заодно объясняет,
+ * почему запроса нет: молчание об этом читается как «спрашивали неизвестно
+ * что».
+ */
+function serpCollectedWithoutQuery(engineLabel: string): string {
+  return `Показана выдача ${engineLabel}; запрос, по которому она собрана, в наборе не записан.`;
+}
+
 export function serpTablePageProse(input: {
   /** Название поисковика в родительном падеже: «Яндекса», «Google». */
   engineLabel: string | null;
   query: string | null;
+  /**
+   * Запрос выбран нами запасным правилом, а не назван пометкой данных.
+   *
+   * Признак приходит оттуда же, где сделан выбор (`mainSerpTableQuery`):
+   * второй ответ на «чьё это решение» разошёлся бы с первым.
+   */
+  queryChosenByUs?: boolean;
+  /**
+   * Основной запрос раздела, если таблица построена **не** на нём.
+   *
+   * Пусто — таблица показывает основной запрос либо основного в данных нет
+   * вовсе; тогда об этом говорит `queryChosenByUs`. Две оговорки исключают друг
+   * друга: они отвечают на один вопрос «почему здесь этот запрос».
+   */
+  regionMainQuery?: string | null;
   /** Перечень несобранных номеров; пусто — таблица полная. */
   missing: string;
   /**
@@ -390,6 +609,15 @@ export function serpTablePageProse(input: {
   if (input.query) {
     const engine = input.engineLabel ? `выдача ${input.engineLabel}` : "выдача";
     parts.push(`Показана ${engine} по запросу «${input.query}».`);
+    // Оговорка стоит сразу за названием запроса: она о нём и без него не
+    // значит ничего. Оговорок две, и они взаимоисключающие.
+    if (input.regionMainQuery) {
+      parts.push(serpQueryIsNotRegionMain(input.regionMainQuery));
+    } else if (input.queryChosenByUs) {
+      parts.push(SERP_QUERY_CHOSEN_BY_US);
+    }
+  } else if (input.engineLabel) {
+    parts.push(serpCollectedWithoutQuery(input.engineLabel));
   }
   /*
    * Дата съёмки — только у `report-material-freshness`, и второго ответа о
@@ -538,14 +766,23 @@ export function buildSerpFragment(
    */
   const queriesOfRefs = (
     groupRefs: string[]
-  ): Array<{ query: string; queryPurpose?: string }> => {
-    const out = new Map<string, { query: string; queryPurpose?: string }>();
+  ): Array<{ query: string; queryPurpose?: string; subjectNameQuery?: boolean }> => {
+    const out = new Map<
+      string,
+      { query: string; queryPurpose?: string; subjectNameQuery?: boolean }
+    >();
     for (const ref of groupRefs) {
       const e = scoped.evidenceIndex[ref];
       const q = String(e?.query ?? "").trim();
       if (!q) continue;
       const key = normalizeSerpQuery(q);
-      if (!out.has(key)) out.set(key, { query: q, queryPurpose: e?.queryPurpose });
+      if (!out.has(key)) {
+        out.set(key, {
+          query: q,
+          queryPurpose: e?.queryPurpose,
+          ...(e?.subjectNameQuery ? { subjectNameQuery: true } : {}),
+        });
+      }
     }
     return [...out.values()];
   };
@@ -611,7 +848,7 @@ export function buildSerpFragment(
   // найденная обоими поисковиками, стоит в обеих таблицах со своими номерами.
   // Пока группа уезжала к движку первого наблюдения, второй поисковик получал
   // на её месте дыру.
-  const byEngine = new Map<string, Array<{ refs: string[]; engineRefs: string[] }>>();
+  const byEngine = new Map<string, Array<{ key: string; refs: string[]; engineRefs: string[] }>>();
   for (const group of merged) {
     const refsByEngine = new Map<string, string[]>();
     for (const ref of group.refs) {
@@ -622,19 +859,52 @@ export function buildSerpFragment(
     }
     for (const [engine, engineRefs] of refsByEngine) {
       const list = byEngine.get(engine) ?? [];
-      list.push({ refs: group.refs, engineRefs });
+      // Ключ материала едет с группой: по нему вторая таблица и узнаёт, что
+      // материал уже показан первой.
+      list.push({ key: group.key, refs: group.refs, engineRefs });
       byEngine.set(engine, list);
     }
   }
+  /*
+   * Основной запрос — свойство **раздела**, а не движка.
+   *
+   * Пометка «это само имя» ставится на строки сбора, и один поисковик может не
+   * иметь по основному написанию ни одной: пустая выдача, отказ провайдера,
+   * квота. Пока признак считался по строкам одного движка, такая таблица
+   * строилась на дополнительном запросе и печатала «в собранных данных не
+   * отмечено, какой из запросов основной» — при том, что отмечено. Соседняя
+   * страница добавляла второе ложное утверждение: «дополнительных запросов не
+   * было», хотя на одном из них и построена таблица.
+   */
+  const regionMain = mainSerpTableQuery(merged.flatMap((g) => queriesOfRefs(g.refs)));
+
   const engineTables = [...byEngine.entries()]
     .sort(
       (a, b) =>
         (SERP_ENGINE_ORDER.indexOf(a[0]) + 1 || 99) - (SERP_ENGINE_ORDER.indexOf(b[0]) + 1 || 99)
     )
     .map(([engine, groups]) => {
-      // Запрос выбирается по числу материалов, которые он показал, поэтому в
-      // счёт идёт каждая пара «материал — запрос», а не один запрос на материал.
-      const query = pickSerpTableQuery(groups.flatMap((g) => queriesOfRefs(g.engineRefs)));
+      // В счёт идёт каждая пара «материал — запрос», а не один запрос на
+      // материал: запасное правило считает, сколько материала показал запрос.
+      const { query, markedByData } = mainSerpTableQuery(
+        groups.flatMap((g) => queriesOfRefs(g.engineRefs))
+      );
+      /*
+       * Почему в этой таблице такой запрос — вопрос один, и ответов на него
+       * ровно два, взаимоисключающих: либо в разделе пометки нет вовсе и выбор
+       * сделали мы, либо пометка есть, но таблица показывает **не тот** запрос.
+       *
+       * Второе условие сравнивает сами запросы, а не наличие пометки у строк
+       * движка. Пометка сводится по ИЛИ на уровне материала, а не запроса, и
+       * набор, где часть строк собрана до её появления, даёт движок с тем же
+       * основным запросом и без пометки. Печатать там «у этого поисковика по
+       * основному запросу нет ни одной строки» — ложь, которую опровергает
+       * предыдущее предложение того же абзаца.
+       */
+      const regionIsMarked = regionMain.markedByData;
+      const showsOtherQuery = Boolean(query) && !sameSerpQuery(query, regionMain.query);
+      const queryChosenByUs = Boolean(query) && !regionIsMarked && !markedByData;
+      const regionMainQuery = regionIsMarked && showsOtherQuery ? regionMain.query : null;
       const scopedGroups = groups.filter((g) => groupInQuery(g.engineRefs, query));
       const ranked = dropDuplicateRanks(
         scopedGroups
@@ -646,14 +916,23 @@ export function buildSerpFragment(
           .filter((x) => x.rank <= SERP_TABLE_TOP_N)
           .sort((a, b) => a.rank - b.rank || a.index - b.index)
       ).slice(0, SERP_TABLE_TOP_N);
-      if (ranked.length > 0) return { engine, query, displayed: ranked, positional: true };
+      if (ranked.length > 0) {
+        return {
+          engine,
+          query,
+          queryChosenByUs,
+          regionMainQuery,
+          displayed: ranked,
+          positional: true,
+        };
+      }
       // Прогоны, собранные до того, как позиция стала сохраняться, позиций не
       // несут вовсе. Показать такую выдачу можно, назвать её ТОП-20 — нет:
       // строки нумеруются порядком сбора, и заголовок это признаёт.
       const unranked = scopedGroups
         .map((group, index) => ({ group, index, rank: index + 1 }))
         .slice(0, SERP_TABLE_TOP_N);
-      return { engine, query, displayed: unranked, positional: false };
+      return { engine, query, queryChosenByUs, regionMainQuery, displayed: unranked, positional: false };
     })
     .filter((t) => t.displayed.length > 0);
 
@@ -663,12 +942,14 @@ export function buildSerpFragment(
   const namedTables = engineTables.filter((t) => t.engine);
   const tables = namedTables.length > 0 ? namedTables : engineTables;
 
-  /** Строка результата и её адрес: адрес печатается полосой, а не ячейкой. */
-  const rowOf = (
-    group: { refs: string[] },
-    rank: number
-  ): { cells: string[]; address: string } => {
-    const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
+  /**
+   * Оценка материала — одна на обе таблицы выдачи.
+   *
+   * Строка «Нежелательный» во второй таблице обязана считаться тем же
+   * предикатом, что и в первой: два ответа на «негативен ли материал»
+   * разошлись бы, и потолок второй таблицы срезал бы то, что первая красит.
+   */
+  const ratingOf = (refs: string[]): string => {
     /*
      * Оценка — собственный сигнал материала, и считает его общий предикат.
      *
@@ -684,7 +965,7 @@ export function buildSerpFragment(
      * смотрит каждое наблюдение — сниппеты у них разные, и сигнал в любом из
      * них принадлежит материалу.
      */
-    const adverse = evidenceRowsAdverse(scoped, group.refs);
+    const adverse = evidenceRowsAdverse(scoped, refs);
     /*
      * «Нейтральный» — это результат проверки, а не её отсутствие.
      *
@@ -692,8 +973,8 @@ export function buildSerpFragment(
      * открыли и оценили. Отказ чтения тона не оставляет, и такая строка
      * называется «Не проверено» вместе с той, которую не запрашивали вовсе.
      */
-    const verified = group.refs.some((ref) => evidenceRowWasRead(scoped.evidenceIndex[ref]));
-    const likely = group.refs.some(
+    const verified = refs.some((ref) => evidenceRowWasRead(scoped.evidenceIndex[ref]));
+    const likely = refs.some(
       (ref) => scoped.evidenceIndex[ref]?.subjectDecision === "LIKELY_SUBJECT"
     );
     /*
@@ -704,7 +985,7 @@ export function buildSerpFragment(
      * данных. Однофамилец при этом не должен выглядеть материалом о субъекте —
      * поэтому у него своя оценка, а не «Нейтральный».
      */
-    const other = evidenceRowsAreOtherSubject(scoped, group.refs);
+    const other = evidenceRowsAreOtherSubject(scoped, refs);
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
     //
@@ -712,7 +993,7 @@ export function buildSerpFragment(
     // более сильная оговорка, чем неоткрытая страница. И ниже «Нежелательного»:
     // непрочитанная строка с негативным сигналом остаётся негативной, глушить
     // сигнал из-за того, что страницу не открыли, — потеря.
-    const rating = other
+    return other
       ? OTHER_SUBJECT_LABEL
       : adverse
         ? RED_MARKER_LABEL
@@ -721,18 +1002,25 @@ export function buildSerpFragment(
           : verified
             ? "Нейтральный"
             : UNVERIFIED_LABEL;
+  };
+
+  /** Тип источника материала — тем же разрешителем, что и у второй таблицы. */
+  const sourceTypeOf = (e: { sourceType?: string; domain?: string; url?: string }): string =>
+    resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—";
+
+  /** Строка результата: адрес стоит в ней ячейкой, а не полосой под ней. */
+  const rowOf = (group: { refs: string[] }, rank: number): string[] => {
+    const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
     // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
     // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
     // по другому запросу.
-    return {
-      cells: [
-        String(rank),
-        serpRowTitleCell(e.title, e.url),
-        resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—",
-        rating,
-      ],
-      address: clientLink(e.url, e.domain),
-    };
+    return [
+      String(rank),
+      clientLink(e.url, e.domain),
+      serpRowTitleCell(e.title, e.url),
+      sourceTypeOf(e),
+      ratingOf(group.refs),
+    ];
   };
   // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
   // strip of the first page's finding blocks).
@@ -749,8 +1037,6 @@ export function buildSerpFragment(
   const pages: Array<{
     title: string;
     rows: string[][];
-    /** Адрес каждой строки этой страницы — полосой под ней. */
-    addresses: string[];
     /**
      * Напечатанные строки листа со своими номерами.
      *
@@ -764,6 +1050,10 @@ export function buildSerpFragment(
     note?: string;
     engine: string;
     query: string | null;
+    /** Запрос выбран нами запасным правилом, а не назван пометкой данных. */
+    queryChosenByUs: boolean;
+    /** Основной запрос раздела, если таблица построена не на нём. */
+    regionMainQuery: string | null;
     /**
      * Номера строк — позиции выдачи, а не порядок сбора.
      *
@@ -777,10 +1067,9 @@ export function buildSerpFragment(
   for (const table of tables) {
     const label = serpEngineLabel(table.engine);
     const printed = table.displayed.map((x) => rowOf(x.group, x.rank));
-    // Строки, адреса и ссылки режутся одним разрезом: соответствие «строка →
-    // адрес» держится индексом, и разъехавшиеся куски остановили бы сборку.
-    const rowChunks = cut(printed.map((p) => p.cells));
-    const addressChunks = cut(printed.map((p) => p.address));
+    // Строки и их опоры режутся одним разрезом: соответствие «строка → ссылки»
+    // держится индексом, и разъехавшиеся куски остановили бы сборку.
+    const rowChunks = cut(printed);
     const printedRowChunks = cut(
       table.displayed.map((x) => ({ rank: x.rank, refs: x.group.refs }))
     );
@@ -789,6 +1078,8 @@ export function buildSerpFragment(
     const prose = serpTablePageProse({
       engineLabel: serpEngineLabelGenitive(table.engine),
       query: table.query,
+      queryChosenByUs: table.queryChosenByUs,
+      regionMainQuery: table.regionMainQuery,
       missing,
       positional: table.positional,
       freshness: extras?.materialFreshness ?? null,
@@ -803,12 +1094,13 @@ export function buildSerpFragment(
       pages.push({
         title: serpTablePageTitle({ region, engineLabel: label, printedRanks, suffix }),
         rows: rowChunks[i] ?? [],
-        addresses: addressChunks[i] ?? [],
         printedRows: printedRowChunks[i] ?? [],
         lead: prose.head,
         ...(prose.tail ? { note: prose.tail } : {}),
         engine: table.engine,
         query: table.query,
+        queryChosenByUs: table.queryChosenByUs,
+        regionMainQuery: table.regionMainQuery,
         positional: table.positional,
       });
     }
@@ -862,9 +1154,9 @@ export function buildSerpFragment(
     // table (not whatWasFound/bullets when rows exist) — put the §7.1 sidebar
     // conclusion there so the page composition is visible in PDF/PPTX.
     //
-    // Домены абзац не называет, и это единственное место, где так: полосы
-    // адресов под строками печатают их целиком и все, а перечень в абзаце
-    // режется тремя элементами — страница противоречила бы своему же листу.
+    // Домены абзац не называет, и это единственное место, где так: колонка
+    // «Ссылка» печатает адреса целиком и все, а перечень в абзаце режется
+    // тремя элементами — страница противоречила бы своей же таблице.
     const pageBlocks = pageFindingBlocks(scoped, view, { namePageDomains: false });
     const slide = makeSlotSlide({
       slot,
@@ -874,7 +1166,6 @@ export function buildSerpFragment(
         table: {
           headers: [...SERP_TABLE_HEADERS],
           rows: pageRows,
-          rowAddresses: pages[i]!.addresses,
         },
         ...pageBlocks,
         // Клиент должен видеть, чью выдачу смотрит: без запроса позиция в
@@ -955,6 +1246,197 @@ export function buildSerpFragment(
       continuationOf: baseSlideId,
       continuationIndex: slides.length,
     });
+  }
+
+  /*
+   * Вторая таблица выдачи — «Найдено по дополнительным запросам».
+   *
+   * Вопроса два, поэтому и таблицы две. Первая отвечает «что видно по имени и
+   * на каком месте», вторая — «что вообще есть про человека, чего по имени не
+   * видно». Смешивать их запрещено и владельцем, и смыслом: у объединённой
+   * таблицы номер строки не значит ничего, и именно так его однажды и
+   * прочитали.
+   *
+   * Она **одна на регион**, а не на движок: вопрос «по какой формулировке
+   * нашлось» к движку не привязан. Движок при этом не теряется — он остаётся в
+   * наблюдении и в провенансе, просто не является осью таблицы.
+   */
+  const datasetHasQueries = refs.some((ref) =>
+    String(scoped.evidenceIndex[ref]?.query ?? "").trim()
+  );
+  if (datasetHasQueries) {
+    /*
+     * «Дополнительный» — значит «не основной запрос **раздела**».
+     *
+     * Пока список основных собирался из запросов получившихся таблиц, движок,
+     * построивший свою таблицу на дополнительном запросе, объявлял его
+     * основным — и вторая таблица отрицала существование дополнительных
+     * запросов на том же развороте, где они и работали.
+     */
+    const mainQueryKeys = new Set(
+      regionMain.query ? [normalizeSerpQuery(regionMain.query)] : []
+    );
+    // Единица сравнения — ключ материала, тот же, каким таблица сводит строки.
+    // А региона это **объединение** таблиц обоих движков: материал, стоящий в
+    // двадцатке Google, во второй таблице ничего не сообщает, даже если по
+    // Яндексу его нашли другим запросом.
+    const shownInMainTables = new Set(tables.flatMap((t) => t.displayed.map((x) => x.group.key)));
+    /**
+     * Лучшая позиция материала по названному запросу — на любом движке.
+     *
+     * Позиции здесь не печатаются вовсе, поэтому фильтр «своя нумерация» не
+     * нужен: число участвует только в выборе запроса и в порядке строк.
+     */
+    const bestRankForQuery = (groupRefs: string[], query: string): number => {
+      const ranks = groupRefs
+        .filter((ref) => sameSerpQuery(scoped.evidenceIndex[ref]?.query, query))
+        .map((ref) => scoped.evidenceIndex[ref]?.rank)
+        .filter((r): r is number => typeof r === "number" && r > 0);
+      return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+    };
+    /**
+     * Класс строки для потолка и порядка.
+     *
+     * 0 — «Нежелательный», 1 — «Вероятно»: продукт существует ради того, чтобы
+     * негатив находился, значит режем не его. 2 — «Нейтральный», «Не проверено»
+     * и «О другом лице»: все три, а не «нейтральное», потому что «Не проверено»
+     * это не «Нейтральный» — на корпусе именно оно составляет почти всю вторую
+     * таблицу.
+     */
+    const riskClass = (rating: string): number =>
+      rating === RED_MARKER_LABEL ? 0 : rating === "Вероятно" ? 1 : 2;
+    const candidates = merged
+      .filter((group) => !shownInMainTables.has(group.key))
+      .map((group) => {
+        const extraQueries = queriesOfRefs(group.refs).filter(
+          (q) => !mainQueryKeys.has(normalizeSerpQuery(q.query))
+        );
+        if (extraQueries.length === 0) return null;
+        /*
+         * «Найдено по запросу» называет один запрос, и правило выбора живёт
+         * здесь, а не в голове: материал, найденный двумя формулировками,
+         * подписывается той, по которой он стоял **выше**, а на равных — первой
+         * по алфавиту. Без названного правила два прогона дали бы разный текст,
+         * и детерминизм эталона покраснел бы.
+         */
+        const ranked = extraQueries
+          .map((q) => ({ query: q.query, rank: bestRankForQuery(group.refs, q.query) }))
+          .sort(
+            (a, b) =>
+              a.rank - b.rank ||
+              normalizeSerpQuery(a.query).localeCompare(normalizeSerpQuery(b.query), "ru")
+          );
+        const best = ranked[0]!;
+        const rating = ratingOf(group.refs);
+        return {
+          key: group.key,
+          refs: group.refs,
+          foundBy: best.query,
+          rank: best.rank,
+          rating,
+          riskClass: riskClass(rating),
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      // Порядок назван: сначала риск, потом позиция по своему запросу, потом
+      // ключ материала. Все три — данные, поэтому два прогона дают один текст.
+      .sort(
+        (a, b) => a.riskClass - b.riskClass || a.rank - b.rank || a.key.localeCompare(b.key, "ru")
+      );
+    /*
+     * Потолок — по риску, а не по числу.
+     *
+     * Предел берётся у глубины, которую обещает первая таблица
+     * (`SERP_TABLE_TOP_N`): дополнение не должно быть больше того, что
+     * дополняет. Своего числа здесь не заводится — второй ответ на «какая у нас
+     * глубина» разошёлся бы с первым в ближайший же месяц.
+     */
+    const always = candidates.filter((row) => row.riskClass < 2);
+    const capped = candidates.filter((row) => row.riskClass === 2);
+    const printedExtra = [...always, ...capped.slice(0, SERP_TABLE_TOP_N)];
+    const remainder = Math.max(0, capped.length - SERP_TABLE_TOP_N);
+    const extraCells = (row: (typeof candidates)[number]): string[] => {
+      const e = scoped.evidenceIndex[row.refs[0]!] ?? {};
+      return [
+        clientLink(e.url, e.domain),
+        serpRowTitleCell(e.title, e.url),
+        serpFoundByCell(row.foundBy),
+        sourceTypeOf(e),
+        row.rating,
+      ];
+    };
+    const extraMax = DECK_TEMPLATE_REGISTRY["serp-extra-queries"].maxTableRowsPerSlide;
+    const extraChunks =
+      printedExtra.length === 0
+        ? []
+        : extraMax > 0
+          ? chunk(printedExtra, extraMax)
+          : [printedExtra];
+    const pushExtra = (index: number, count: number, content: SlideBody): void => {
+      slides.push({
+        ...makeSlotSlide({
+          slot,
+          sectionId,
+          templateId: "serp-extra-queries",
+          title: serpExtraTableTitle(regionLabel, count > 1 ? ` (${index + 1}/${count})` : ""),
+          content,
+          evidenceRefs: extraChunks[index]?.flatMap((row) => row.refs) ?? [],
+          findingIds: [],
+          metrics: {
+            // Машинный признак второй таблицы: по нему её страницы находят и
+            // ворота приёмки, и проверки. Разбирать заголовок словами значило бы
+            // завести второй ответ на «какая это таблица».
+            serpExtraQueries: 1,
+            displayedCount: extraChunks[index]?.length ?? 0,
+            extraCandidates: candidates.length,
+            extraRemainder: remainder,
+            pageIndex: index + 1,
+            pageCount: Math.max(1, count),
+          },
+        }),
+        slideId: `${baseSlideId}__extra${index + 1}`,
+        isContinuation: true,
+        continuationOf: baseSlideId,
+        continuationIndex: slides.length,
+      });
+    };
+    if (printedExtra.length === 0) {
+      /*
+       * Пустая таблица не рисуется: страница честного пустого состояния
+       * говорит словами, чего не было. Различаются два разных факта —
+       * дополнительных запросов не было вовсе и они были, но нового не нашли.
+       */
+      const hadExtraQueries = merged.some((group) =>
+        queriesOfRefs(group.refs).some((q) => !mainQueryKeys.has(normalizeSerpQuery(q.query)))
+      );
+      pushExtra(0, 1, {
+        narrative: hadExtraQueries
+          ? serpExtraNothingNew(serpRegionTitle(regionLabel))
+          : serpExtraNoQueries(serpRegionTitle(regionLabel)),
+      });
+    } else {
+      extraChunks.forEach((page, i) => {
+        /*
+         * Абзац листа: объяснение — один раз, остаток — один раз.
+         *
+         * Семь листов печатали дословно один и тот же абзац, а фраза «Ещё 2
+         * материала осталось» на каждом читалась как накопление: клиент
+         * складывает семь двоек. Объяснение таблицы принадлежит её первому
+         * листу, остаток — последнему, потому что он про то, чего за ним уже
+         * нет.
+         */
+        const last = i === extraChunks.length - 1;
+        pushExtra(i, extraChunks.length, {
+          table: { headers: [...SERP_EXTRA_TABLE_HEADERS], rows: page.map(extraCells) },
+          narrative: [
+            i === 0 ? SERP_EXTRA_LEAD : serpExtraContinuationLine(i + 1, extraChunks.length),
+            last && remainder > 0 ? serpExtraRemainderLine(remainder) : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        });
+      });
+    }
   }
   return { slides, status: "READY" };
 }

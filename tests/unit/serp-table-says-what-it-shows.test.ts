@@ -20,6 +20,13 @@ import { DECK_TEMPLATE_REGISTRY } from "@/modules/digital-profile/orion-golden/d
 
 const POSITIONAL = "Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят.";
 const COLLECTED = "Номера строк — порядок в собранной сводке, а не места в выдаче.";
+/**
+ * Первая фраза непозиционной таблицы: чья это выдача и почему у неё нет
+ * запроса. Без неё тело страницы не называет поисковик вовсе, и два листа
+ * разных поисковиков печатали дословно один текст.
+ */
+const WITHOUT_QUERY =
+  "Показана выдача Google; запрос, по которому она собрана, в наборе не записан.";
 
 describe("лид позиционной таблицы", () => {
   it("называет выдачу, запрос и оговорку про спецблоки", () => {
@@ -36,14 +43,14 @@ describe("лид позиционной таблицы", () => {
 });
 
 describe("лид непозиционной таблицы", () => {
-  it("без запроса и без даты печатает только оговорку про порядок сводки", () => {
+  it("без запроса и без даты называет поисковик и порядок сводки", () => {
     const prose = serpTablePageProse({
       engineLabel: "Google",
       query: null,
       missing: "",
       positional: false,
     });
-    expect(prose.head).toBe(COLLECTED);
+    expect(prose.head).toBe(`${WITHOUT_QUERY} ${COLLECTED}`);
   });
 
   it("ни одна ветка не обещает позиций там, где их нет", () => {
@@ -83,7 +90,7 @@ describe("дата съёмки", () => {
       positional: false,
       freshness: { earliestAt: "1970-01-01T00:00:00.000Z", latestAt: "1970-01-01T00:00:00.000Z" },
     });
-    expect(prose.head).toBe(COLLECTED);
+    expect(prose.head).toBe(`${WITHOUT_QUERY} ${COLLECTED}`);
     expect(prose.head).not.toContain("1970");
   });
 });

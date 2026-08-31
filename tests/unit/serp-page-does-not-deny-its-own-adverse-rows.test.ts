@@ -13,13 +13,19 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { buildSerpFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import {
+  SERP_TABLE_HEADERS,
+  buildSerpFragment,
+} from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
 const QUERY = "Anders Holmström";
 const THEME = "Офшоры / корпоративное владение";
 const ADVERSE_TITLE = "Уголовное дело против Anders Holmström";
-const RATING_COLUMN = 3;
+// Номер колонки — из заголовков построителя. Числом он пережил бы сдвиг
+// колонок и молча считал бы «Тип источника»: негативных значений там не бывает,
+// и проверка осталась бы зелёной на чужой колонке.
+const RATING_COLUMN = SERP_TABLE_HEADERS.indexOf("Оценка");
 
 /**
  * Страница выдачи: строки `titles`, тема уровня `riskLevel` на второй строке.

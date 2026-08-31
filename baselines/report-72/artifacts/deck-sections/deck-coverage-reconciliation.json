@@ -2,11 +2,11 @@
   "version": "deck-coverage-reconciliation-v1",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-08-30T12:46:03.015Z",
+  "generatedAt": "2026-08-30T23:59:41.554Z",
   "baseSlotCoverage": 37,
   "requiredBaseSlotCount": 37,
-  "physicalPageCount": 56,
-  "continuationCount": 19,
+  "physicalPageCount": 61,
+  "continuationCount": 24,
   "slots": [
     {
       "baseSlotId": "p01_cover",
@@ -103,7 +103,10 @@
         20,
         21,
         22,
-        23
+        23,
+        24,
+        25,
+        26
       ]
     },
     {
@@ -111,7 +114,7 @@
       "canonicalPage": 11,
       "title": "Россия — снимок выдачи",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 24,
+      "newPageNumber": 27,
       "continuationPages": []
     },
     {
@@ -119,7 +122,7 @@
       "canonicalPage": 12,
       "title": "Россия — подсказки Яндекса",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 25,
+      "newPageNumber": 28,
       "continuationPages": []
     },
     {
@@ -127,7 +130,7 @@
       "canonicalPage": 13,
       "title": "Россия — подсказки Google",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 26,
+      "newPageNumber": 29,
       "continuationPages": []
     },
     {
@@ -135,7 +138,7 @@
       "canonicalPage": 14,
       "title": "Россия — Википедия",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 31,
+      "newPageNumber": 34,
       "continuationPages": []
     },
     {
@@ -143,7 +146,7 @@
       "canonicalPage": 15,
       "title": "Россия — изображения (1)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 27,
+      "newPageNumber": 30,
       "continuationPages": []
     },
     {
@@ -151,7 +154,7 @@
       "canonicalPage": 16,
       "title": "Россия — изображения (2)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 28,
+      "newPageNumber": 31,
       "continuationPages": []
     },
     {
@@ -159,7 +162,7 @@
       "canonicalPage": 17,
       "title": "Россия — изображения (3)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 29,
+      "newPageNumber": 32,
       "continuationPages": []
     },
     {
@@ -167,7 +170,7 @@
       "canonicalPage": 18,
       "title": "Россия — изображения (4)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 30,
+      "newPageNumber": 33,
       "continuationPages": []
     },
     {
@@ -175,7 +178,7 @@
       "canonicalPage": 19,
       "title": "Россия — панель знаний",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 32,
+      "newPageNumber": 35,
       "continuationPages": []
     },
     {
@@ -183,7 +186,7 @@
       "canonicalPage": 20,
       "title": "Россия — AI-ответы поисковых систем",
       "status": "PRESERVED",
-      "newPageNumber": 33,
+      "newPageNumber": 36,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE",
       "continuationPages": []
     },
@@ -192,7 +195,7 @@
       "canonicalPage": 21,
       "title": "Россия — связанные запросы (1)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 34,
+      "newPageNumber": 37,
       "continuationPages": []
     },
     {
@@ -200,7 +203,7 @@
       "canonicalPage": 22,
       "title": "Россия — связанные запросы (2)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 35,
+      "newPageNumber": 38,
       "continuationPages": []
     },
     {
@@ -208,7 +211,7 @@
       "canonicalPage": 23,
       "title": "Россия — связанные запросы (3)",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 36,
+      "newPageNumber": 39,
       "continuationPages": []
     },
     {
@@ -216,7 +219,7 @@
       "canonicalPage": 24,
       "title": "ОАЭ: Цифровой профиль",
       "status": "PRESERVED",
-      "newPageNumber": 37,
+      "newPageNumber": 40,
       "continuationPages": []
     },
     {
@@ -224,10 +227,10 @@
       "canonicalPage": 25,
       "title": "ОАЭ — резюме аудита",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 38,
+      "newPageNumber": 41,
       "continuationPages": [
-        39,
-        40
+        42,
+        43
       ]
     },
     {
@@ -235,7 +238,7 @@
       "canonicalPage": 26,
       "title": "ОАЭ — метрики покрытия",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 41,
+      "newPageNumber": 44,
       "continuationPages": []
     },
     {
@@ -243,11 +246,13 @@
       "canonicalPage": 27,
       "title": "ОАЭ — позиции в поисковой выдаче",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 42,
+      "newPageNumber": 45,
       "continuationPages": [
-        43,
-        44,
-        45
+        46,
+        47,
+        48,
+        49,
+        50
       ]
     },
     {
@@ -255,7 +260,7 @@
       "canonicalPage": 28,
       "title": "ОАЭ — снимок выдачи",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 46,
+      "newPageNumber": 51,
       "continuationPages": []
     },
     {
@@ -263,7 +268,7 @@
       "canonicalPage": 29,
       "title": "ОАЭ — подсказки поиска",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 47,
+      "newPageNumber": 52,
       "continuationPages": []
     },
     {
@@ -271,7 +276,7 @@
       "canonicalPage": 30,
       "title": "ОАЭ — Википедия",
       "status": "PRESERVED",
-      "newPageNumber": 49,
+      "newPageNumber": 54,
       "emptyEvidence": "explicit state: no-identity-data",
       "continuationPages": []
     },
@@ -280,7 +285,7 @@
       "canonicalPage": 31,
       "title": "ОАЭ — изображения в поиске",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 48,
+      "newPageNumber": 53,
       "continuationPages": []
     },
     {
@@ -288,7 +293,7 @@
       "canonicalPage": 32,
       "title": "ОАЭ — панель знаний и AI Overview",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 50,
+      "newPageNumber": 55,
       "continuationPages": []
     },
     {
@@ -296,7 +301,7 @@
       "canonicalPage": 33,
       "title": "ОАЭ — связанные запросы",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 51,
+      "newPageNumber": 56,
       "continuationPages": []
     },
     {
@@ -304,7 +309,7 @@
       "canonicalPage": 34,
       "title": "Комплаенс — сводка баз данных",
       "status": "PRESERVED",
-      "newPageNumber": 52,
+      "newPageNumber": 57,
       "continuationPages": []
     },
     {
@@ -312,7 +317,7 @@
       "canonicalPage": 35,
       "title": "Dow Jones — профиль",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 53,
+      "newPageNumber": 58,
       "continuationPages": []
     },
     {
@@ -320,7 +325,7 @@
       "canonicalPage": 36,
       "title": "LexisNexis — страница профиля",
       "status": "PRESERVED",
-      "newPageNumber": 54,
+      "newPageNumber": 59,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE",
       "continuationPages": []
     },
@@ -329,7 +334,7 @@
       "canonicalPage": 37,
       "title": "LexisNexis — страница профиля (2)",
       "status": "MERGED_INTO",
-      "newPageNumber": 54,
+      "newPageNumber": 59,
       "mergedInto": "p35_lexis_visual",
       "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом.",
       "continuationPages": []
@@ -414,7 +419,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p10_ru_serp_visual",
-      "newPageNumber": 24
+      "newPageNumber": 27
     },
     {
       "v72Page": 11,
@@ -422,7 +427,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p11_ru_suggestions_yandex",
-      "newPageNumber": 25
+      "newPageNumber": 28
     },
     {
       "v72Page": 12,
@@ -430,7 +435,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p12_ru_suggestions_google",
-      "newPageNumber": 26
+      "newPageNumber": 29
     },
     {
       "v72Page": 13,
@@ -438,7 +443,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p13_ru_wikipedia",
-      "newPageNumber": 31
+      "newPageNumber": 34
     },
     {
       "v72Page": 14,
@@ -446,7 +451,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p14_ru_images_1",
-      "newPageNumber": 27
+      "newPageNumber": 30
     },
     {
       "v72Page": 15,
@@ -454,7 +459,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p15_ru_images_2",
-      "newPageNumber": 28
+      "newPageNumber": 31
     },
     {
       "v72Page": 16,
@@ -462,7 +467,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p16_ru_images_3",
-      "newPageNumber": 29
+      "newPageNumber": 32
     },
     {
       "v72Page": 17,
@@ -470,7 +475,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p17_ru_images_4",
-      "newPageNumber": 30
+      "newPageNumber": 33
     },
     {
       "v72Page": 18,
@@ -478,7 +483,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p18_ru_knowledge_1",
-      "newPageNumber": 32
+      "newPageNumber": 35
     },
     {
       "v72Page": 19,
@@ -486,7 +491,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p19_ru_knowledge_2",
-      "newPageNumber": 33,
+      "newPageNumber": 36,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE"
     },
     {
@@ -495,7 +500,7 @@
       "v72Role": "dynamic_insert",
       "status": "MERGED_INTO",
       "mappedTo": "p19_ru_knowledge_2",
-      "newPageNumber": 33
+      "newPageNumber": 36
     },
     {
       "v72Page": 21,
@@ -503,7 +508,7 @@
       "v72Role": "dynamic_insert",
       "status": "MERGED_INTO",
       "mappedTo": "p19_ru_knowledge_2",
-      "newPageNumber": 33
+      "newPageNumber": 36
     },
     {
       "v72Page": 22,
@@ -511,7 +516,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p20_ru_related_1",
-      "newPageNumber": 34
+      "newPageNumber": 37
     },
     {
       "v72Page": 23,
@@ -519,7 +524,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p21_ru_related_2",
-      "newPageNumber": 35
+      "newPageNumber": 38
     },
     {
       "v72Page": 24,
@@ -527,7 +532,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p22_ru_related_3",
-      "newPageNumber": 36
+      "newPageNumber": 39
     },
     {
       "v72Page": 25,
@@ -535,7 +540,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p23_uae_toc",
-      "newPageNumber": 37
+      "newPageNumber": 40
     },
     {
       "v72Page": 26,
@@ -543,7 +548,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p24_uae_summary",
-      "newPageNumber": 38
+      "newPageNumber": 41
     },
     {
       "v72Page": 27,
@@ -551,7 +556,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p25_uae_metrics",
-      "newPageNumber": 41
+      "newPageNumber": 44
     },
     {
       "v72Page": 28,
@@ -559,7 +564,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p26_uae_serp_table",
-      "newPageNumber": 42
+      "newPageNumber": 45
     },
     {
       "v72Page": 29,
@@ -567,7 +572,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p27_uae_serp_visual",
-      "newPageNumber": 46
+      "newPageNumber": 51
     },
     {
       "v72Page": 30,
@@ -575,7 +580,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p28_uae_suggestions",
-      "newPageNumber": 47
+      "newPageNumber": 52
     },
     {
       "v72Page": 31,
@@ -583,7 +588,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p29_uae_wikipedia",
-      "newPageNumber": 49,
+      "newPageNumber": 54,
       "emptyEvidence": "explicit state: no-identity-data"
     },
     {
@@ -592,7 +597,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p30_uae_images",
-      "newPageNumber": 48
+      "newPageNumber": 53
     },
     {
       "v72Page": 33,
@@ -600,7 +605,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p31_uae_knowledge",
-      "newPageNumber": 50
+      "newPageNumber": 55
     },
     {
       "v72Page": 34,
@@ -608,7 +613,7 @@
       "v72Role": "dynamic_insert",
       "status": "MERGED_INTO",
       "mappedTo": "p31_uae_knowledge",
-      "newPageNumber": 50
+      "newPageNumber": 55
     },
     {
       "v72Page": 35,
@@ -652,7 +657,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p32_uae_related",
-      "newPageNumber": 51
+      "newPageNumber": 56
     },
     {
       "v72Page": 40,
@@ -660,7 +665,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p33_compliance_toc",
-      "newPageNumber": 52
+      "newPageNumber": 57
     },
     {
       "v72Page": 41,
@@ -668,7 +673,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p34_dow_jones",
-      "newPageNumber": 53
+      "newPageNumber": 58
     },
     {
       "v72Page": 42,
@@ -676,7 +681,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p35_lexis_visual",
-      "newPageNumber": 54,
+      "newPageNumber": 59,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE"
     },
     {
@@ -685,7 +690,7 @@
       "v72Role": "base",
       "status": "MERGED_INTO",
       "mappedTo": "p36_lexis_visual_2",
-      "newPageNumber": 54,
+      "newPageNumber": 59,
       "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом."
     }
   ],

@@ -9,7 +9,10 @@ import {
   buildOrionQueryPlanDetailed,
   queriesForRegionPurpose,
 } from "@/modules/digital-profile/search-surfaces/orion-query-plan";
-import { buildSubjectQuerySet } from "@/modules/digital-profile/search-surfaces/subject-query-set";
+import {
+  buildSubjectQuerySet,
+  plannedPrimaryQueries,
+} from "@/modules/digital-profile/search-surfaces/subject-query-set";
 import { surfaceDedupHash } from "@/modules/digital-profile/services/search-surface-service";
 import { parseSubjectName } from "@/modules/digital-profile/risk-classifier/entity-disambiguation";
 
@@ -99,7 +102,7 @@ describe("запрос пробы — тот же, что первым идёт 
         targetRegions: SUBJECT.targetRegions,
         location: SUBJECT.location,
       },
-      { primaryQueriesByRegion: { RU: set.queries.map((q) => q.query) }, regions: ["RU"] }
+      { primaryQueriesByRegion: { RU: plannedPrimaryQueries(set) }, regions: ["RU"] }
     );
     const planned = queriesForRegionPurpose(plan, "RU", ["subject_lookup"])[0]!.query;
     expect(yandexGenAnswerQuery(SUBJECT)).toBe(planned);

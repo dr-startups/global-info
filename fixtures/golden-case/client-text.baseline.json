@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
-  "slideCount": 64,
-  "totalChars": 55938,
+  "slideCount": 78,
+  "totalChars": 65998,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,10 +21,10 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 4–10",
-        "Цифровой профиль — Россия — стр. 11–43",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 44–60",
-        "Комплаенс-проверка — стр. 61–63",
-        "Приложение — стр. 64–64"
+        "Цифровой профиль — Россия — стр. 11–54",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 55–74",
+        "Комплаенс-проверка — стр. 75–77",
+        "Приложение — стр. 78–78"
       ]
     },
     {
@@ -70,8 +70,8 @@
         }
       ],
       "metrics": [
-        "Материалов собрано: 318",
-        "О субъекте: 301",
+        "Материалов собрано: 341",
+        "О субъекте: 324",
         "Вероятно о субъекте: 3",
         "Тем риска: 3",
         "Ключевых тем: 5"
@@ -201,7 +201,7 @@
       "slideKey": "p05_profile_dashboard",
       "text": {
         "title": "Цифровой профиль: 3 темы повышенного внимания",
-        "narrative": "Предмет аудита — результаты поиска ТОП-20 в Яндексе и Google (Россия, ОАЭ) и международные базы: 71 материал. По собранным источникам: 318 материалов из 2 региональных контуров (Россия: 232, ОАЭ: 86). Принадлежность каждого материала к проверяемому лицу проверена. Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
+        "narrative": "Предмет аудита — результаты поиска ТОП-20 в Яндексе и Google (Россия, ОАЭ) и международные базы: 71 материал. По собранным источникам: 341 материал из 2 региональных контуров (Россия: 255, ОАЭ: 86). Принадлежность каждого материала к проверяемому лицу проверена. Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       },
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
@@ -212,8 +212,8 @@
         "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       ],
       "metrics": [
-        "Материалов собрано: 318",
-        "Связаны с проверяемым лицом: 301",
+        "Материалов собрано: 341",
+        "Связаны с проверяемым лицом: 324",
         "Вероятно о субъекте: 3",
         "Требуют идентификации: 9",
         "Относятся к другим лицам: 5",
@@ -245,7 +245,7 @@
       "slideKey": "p07_ru_summary",
       "text": {
         "title": "Россия: в выдаче есть материалы повышенного внимания",
-        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 232. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшорные структуры. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "narrative": "Предмет аудита по региону «Россия» — ТОП-20 выдачи: 41 материал; всего по региону собрано 255. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшорные структуры. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались."
       },
       "baseSlotId": "p07_ru_summary",
@@ -259,7 +259,7 @@
       ],
       "metrics": [
         "В аудите (ТОП-20): 41",
-        "Собрано по региону: 232",
+        "Собрано по региону: 255",
         "Тем повышенного внимания: 3",
         "Тем подтверждено: 4",
         "Вероятно о субъекте: 3"
@@ -307,14 +307,14 @@
           [
             "Google",
             "Результаты поиска",
-            "66",
-            "негативных: 23; подтверждена связь с лицом: 58"
+            "77",
+            "негативных: 23; подтверждена связь с лицом: 69"
           ],
           [
             "Яндекс",
             "Результаты поиска",
-            "68",
-            "негативных: 14; подтверждена связь с лицом: 67"
+            "80",
+            "негативных: 15; подтверждена связь с лицом: 79"
           ],
           [
             "Яндекс",
@@ -349,7 +349,7 @@
           [
             "Все системы",
             "Материалы региона",
-            "232",
+            "255",
             "по составному набору данных"
           ],
           [
@@ -364,14 +364,15 @@
     {
       "slideKey": "p09_ru_serp_table",
       "text": {
-        "title": "Россия — Яндекс, ТОП-20 (1/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 4). На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "title": "Россия — Яндекс, ТОП-20 (1/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 1). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -379,146 +380,163 @@
         "rows": [
           [
             "1",
+            "stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1",
             "Anders Holmström flagged during sanctions screening watchlist review",
             "—",
             "Нежелательный"
           ],
           [
             "2",
+            "nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2",
             "Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
             "—",
             "Нежелательный"
           ],
           [
             "3",
+            "granskaren.se/nordkap-capital-raises-series-b-anders-holmstr-m-4",
             "Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
             "—",
             "О другом лице"
-          ],
-          [
-            "4",
-            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
-            "—",
-            "Нежелательный"
           ]
-        ],
-        "rowAddresses": [
-          "stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1",
-          "nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2",
-          "granskaren.se/nordkap-capital-raises-series-b-anders-holmstr-m-4",
-          "kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5"
         ]
       }
     },
     {
       "slideKey": "p09_ru_serp_table__cont1",
       "text": {
-        "title": "Россия — Яндекс, ТОП-20 (2/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 7). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+        "title": "Россия — Яндекс, ТОП-20 (2/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 4). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
+            "4",
+            "kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5",
+            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "—",
+            "Нежелательный"
+          ],
+          [
             "5",
+            "rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7",
             "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "6",
+            "pravo-obzor.ru/anders-holmstr-m-expands-nordkap-capital-into-pr-8",
             "Anders Holmström expands Nordkap Capital into private credit markets",
             "—",
             "Не проверено"
-          ],
-          [
-            "7",
-            "Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "8",
-            "Registry extract: Anders Holmström listed as director of Nordkap Capital",
-            "—",
-            "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "rynok-segodnya.ru/beneficial-ownership-disclosure-lists-anders-hol-7",
-          "pravo-obzor.ru/anders-holmstr-m-expands-nordkap-capital-into-pr-8",
-          "reestr-novosti.ru/nordkap-capital-board-appoints-independent-compl-10",
-          "svenskt-naringsliv-nytt.se/registry-extract-anders-holmstr-m-listed-as-dire-11"
         ]
       }
     },
     {
       "slideKey": "p09_ru_serp_table__cont2",
       "text": {
-        "title": "Россия — Яндекс, ТОП-20 (3/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 1. На странице есть негативные заголовки (1) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+        "title": "Россия — Яндекс, ТОП-20 (3/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 7). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
+            "7",
+            "reestr-novosti.ru/nordkap-capital-board-appoints-independent-compl-10",
+            "Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "8",
+            "svenskt-naringsliv-nytt.se/registry-extract-anders-holmstr-m-listed-as-dire-11",
+            "Registry extract: Anders Holmström listed as director of Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
             "9",
+            "stockholm-kuriren.se/analyst-note-reputation-risk-around-anders-holms-13",
             "Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
             "—",
             "Не проверено"
-          ],
-          [
-            "10",
-            "Anders Holmström speaks at fintech summit about AML controls",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "11",
-            "Nordkap Capital annual report signed by Anders Holmström",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "12",
-            "Prosecutors request documents from Anders Holmström regarding Malta SPV",
-            "—",
-            "Нежелательный"
           ]
-        ],
-        "rowAddresses": [
-          "stockholm-kuriren.se/analyst-note-reputation-risk-around-anders-holms-13",
-          "nordmarket-watch.se/anders-holmstr-m-speaks-at-fintech-summit-about--14",
-          "granskaren.se/nordkap-capital-annual-report-signed-by-anders-h-16",
-          "kapitalnytt.se/prosecutors-request-documents-from-anders-holmst-17"
         ]
       }
     },
     {
       "slideKey": "p09_ru_serp_table__cont3",
       "text": {
-        "title": "Россия — Яндекс, ТОП-20 (4/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Офшорные структуры» — средний уровень внимания (строка 15). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Подготовить документальное подтверждение структуры владения и источников средств по офшорным юрисдикциям — именно его запрашивают при KYC; неточные публикации оспаривать у площадок."
+        "title": "Россия — Яндекс, ТОП-20 (4/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 3 результата; из них о субъекте — 3, вероятно о субъекте — 0, негативных заголовков — 1. Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице есть негативные заголовки (1) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "10",
+            "nordmarket-watch.se/anders-holmstr-m-speaks-at-fintech-summit-about--14",
+            "Anders Holmström speaks at fintech summit about AML controls",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "11",
+            "granskaren.se/nordkap-capital-annual-report-signed-by-anders-h-16",
+            "Nordkap Capital annual report signed by Anders Holmström",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "12",
+            "kapitalnytt.se/prosecutors-request-documents-from-anders-holmst-17",
+            "Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "—",
+            "Нежелательный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont4",
+      "text": {
+        "title": "Россия — Яндекс, ТОП-20 (5/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Офшорные структуры» — средний уровень внимания (строка 15). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Подготовить документальное подтверждение структуры владения и источников средств по офшорным юрисдикциям — именно его запрашивают при KYC; неточные публикации оспаривать у площадок."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -526,97 +544,115 @@
         "rows": [
           [
             "13",
+            "rynok-segodnya.ru/credit-bureau-soft-hit-references-anders-holmstr-19",
             "Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "14",
+            "pravo-obzor.ru/anders-holmstr-m-founder-of-nordkap-capital-face-20",
             "Подробности: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
             "—",
             "Нежелательный"
           ],
           [
             "15",
+            "reestr-novosti.ru/anders-holmstr-m-linked-to-malta-holding-structu-22",
             "Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
             "—",
             "Нежелательный"
-          ],
-          [
-            "16",
-            "Обзор: Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
-            "—",
-            "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "rynok-segodnya.ru/credit-bureau-soft-hit-references-anders-holmstr-19",
-          "pravo-obzor.ru/anders-holmstr-m-founder-of-nordkap-capital-face-20",
-          "reestr-novosti.ru/anders-holmstr-m-linked-to-malta-holding-structu-22",
-          "affarsposten.se/nordkap-capital-raises-series-b-anders-holmstr-m-24"
-        ]
-      }
-    },
-    {
-      "slideKey": "p09_ru_serp_table__cont4",
-      "text": {
-        "title": "Россия — Яндекс, ТОП-20 (5/5)",
-        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строки 17, 19). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
-      },
-      "baseSlotId": "p09_ru_serp_table",
-      "template": "orion_golden_search_table",
-      "table": {
-        "headers": [
-          "№",
-          "Заголовок",
-          "Тип источника",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "17",
-            "Подробности: Anders Holmström interviewed on Nordic fintech regulation and compliance",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "18",
-            "Разбор: Anders Holmström expands Nordkap Capital into private credit markets",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "19",
-            "Обзор: Nordkap Capital board appoints independent compliance advisor after Anders Holmström…",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "20",
-            "Подробности: Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital…",
-            "—",
-            "Не проверено"
-          ]
-        ],
-        "rowAddresses": [
-          "nordmarket-watch.se/anders-holmstr-m-interviewed-on-nordic-fintech-r-26",
-          "granskaren.se/anders-holmstr-m-expands-nordkap-capital-into-pr-28",
-          "delovoy-vestnik.ru/nordkap-capital-board-appoints-independent-compl-30",
-          "pravo-obzor.ru/anders-holmstr-m-real-estate-purchases-in-stockh-32"
         ]
       }
     },
     {
       "slideKey": "p09_ru_serp_table__cont5",
       "text": {
-        "title": "Россия — Google, ТОП-20 (1/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 3). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+        "title": "Россия — Яндекс, ТОП-20 (6/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 17). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "16",
+            "affarsposten.se/nordkap-capital-raises-series-b-anders-holmstr-m-24",
+            "Обзор: Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "17",
+            "nordmarket-watch.se/anders-holmstr-m-interviewed-on-nordic-fintech-r-26",
+            "Подробности: Anders Holmström interviewed on Nordic fintech regulation and compliance",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "18",
+            "granskaren.se/anders-holmstr-m-expands-nordkap-capital-into-pr-28",
+            "Разбор: Anders Holmström expands Nordkap Capital into private credit markets",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont6",
+      "text": {
+        "title": "Россия — Яндекс, ТОП-20 (7/7)",
+        "narrative": "Показана выдача Яндекса по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 19). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "19",
+            "delovoy-vestnik.ru/nordkap-capital-board-appoints-independent-compl-30",
+            "Обзор: Nordkap Capital board appoints independent compliance advisor after Anders Holmström…",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "20",
+            "pravo-obzor.ru/anders-holmstr-m-real-estate-purchases-in-stockh-32",
+            "Подробности: Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital…",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont7",
+      "text": {
+        "title": "Россия — Google, ТОП-20 (1/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 3). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -624,146 +660,163 @@
         "rows": [
           [
             "1",
+            "affarsposten.se/anders-holmstr-m-founder-of-nordkap-capital-face-0",
             "Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
             "—",
             "Не проверено"
           ],
           [
             "2",
+            "finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3",
             "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
             "—",
             "Нежелательный"
           ],
           [
             "3",
+            "delovoy-vestnik.ru/anders-holmstr-m-interviewed-on-nordic-fintech-r-6",
             "Anders Holmström interviewed on Nordic fintech regulation and compliance",
             "—",
             "Не проверено"
-          ],
-          [
-            "4",
-            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
-            "—",
-            "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "affarsposten.se/anders-holmstr-m-founder-of-nordkap-capital-face-0",
-          "finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-3",
-          "delovoy-vestnik.ru/anders-holmstr-m-interviewed-on-nordic-fintech-r-6",
-          "bizdaily-nordic.se/swedish-media-anders-holmstr-m-denies-wrongdoing-9"
-        ]
-      }
-    },
-    {
-      "slideKey": "p09_ru_serp_table__cont6",
-      "text": {
-        "title": "Россия — Google, ТОП-20 (2/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 8). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
-      },
-      "baseSlotId": "p09_ru_serp_table",
-      "template": "orion_golden_search_table",
-      "table": {
-        "headers": [
-          "№",
-          "Заголовок",
-          "Тип источника",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "5",
-            "Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "6",
-            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
-            "—",
-            "Нежелательный"
-          ],
-          [
-            "7",
-            "Anders Holmström philanthropy foundation tied to Nordkap Capital dividends",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "8",
-            "Хроника: Anders Holmström flagged during sanctions screening watchlist review",
-            "—",
-            "Нежелательный"
-          ]
-        ],
-        "rowAddresses": [
-          "affarsposten.se/anders-holmstr-m-real-estate-purchases-in-stockh-12",
-          "finansbladet.se/whistleblower-portal-mentions-anders-holmstr-m-i-15",
-          "delovoy-vestnik.ru/anders-holmstr-m-philanthropy-foundation-tied-to-18",
-          "bizdaily-nordic.se/anders-holmstr-m-flagged-during-sanctions-screen-21"
-        ]
-      }
-    },
-    {
-      "slideKey": "p09_ru_serp_table__cont7",
-      "text": {
-        "title": "Россия — Google, ТОП-20 (3/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 10). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
-      },
-      "baseSlotId": "p09_ru_serp_table",
-      "template": "orion_golden_search_table",
-      "table": {
-        "headers": [
-          "№",
-          "Заголовок",
-          "Тип источника",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "9",
-            "Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "10",
-            "Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
-            "—",
-            "Нежелательный"
-          ],
-          [
-            "11",
-            "Хроника: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "12",
-            "Контекст: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
-            "—",
-            "Не проверено"
-          ]
-        ],
-        "rowAddresses": [
-          "svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23",
-          "stockholm-kuriren.se/stockholm-court-schedules-hearing-involving-ande-25",
-          "finansbladet.se/beneficial-ownership-disclosure-lists-anders-hol-27",
-          "kapitalnytt.se/swedish-media-anders-holmstr-m-denies-wrongdoing-29"
         ]
       }
     },
     {
       "slideKey": "p09_ru_serp_table__cont8",
       "text": {
-        "title": "Россия — Google, ТОП-20 (4/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 2. На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+        "title": "Россия — Google, ТОП-20 (2/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 3 результата; из них о субъекте — 3, вероятно о субъекте — 0, негативных заголовков — 1. Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице есть негативные заголовки (1) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "4",
+            "bizdaily-nordic.se/swedish-media-anders-holmstr-m-denies-wrongdoing-9",
+            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "5",
+            "affarsposten.se/anders-holmstr-m-real-estate-purchases-in-stockh-12",
+            "Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "6",
+            "finansbladet.se/whistleblower-portal-mentions-anders-holmstr-m-i-15",
+            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
+            "—",
+            "Нежелательный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont9",
+      "text": {
+        "title": "Россия — Google, ТОП-20 (3/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 8). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "7",
+            "delovoy-vestnik.ru/anders-holmstr-m-philanthropy-foundation-tied-to-18",
+            "Anders Holmström philanthropy foundation tied to Nordkap Capital dividends",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "8",
+            "bizdaily-nordic.se/anders-holmstr-m-flagged-during-sanctions-screen-21",
+            "Хроника: Anders Holmström flagged during sanctions screening watchlist review",
+            "—",
+            "Нежелательный"
+          ],
+          [
+            "9",
+            "svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-23",
+            "Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont10",
+      "text": {
+        "title": "Россия — Google, ТОП-20 (4/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 10). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "10",
+            "stockholm-kuriren.se/stockholm-court-schedules-hearing-involving-ande-25",
+            "Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "—",
+            "Нежелательный"
+          ],
+          [
+            "11",
+            "finansbladet.se/beneficial-ownership-disclosure-lists-anders-hol-27",
+            "Хроника: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "12",
+            "kapitalnytt.se/swedish-media-anders-holmstr-m-denies-wrongdoing-29",
+            "Контекст: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont11",
+      "text": {
+        "title": "Россия — Google, ТОП-20 (5/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 3 результата; из них о субъекте — 3, вероятно о субъекте — 0, негативных заголовков — 1. Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице есть негативные заголовки (1) — они влияют на первое впечатление при проверке, даже если отдельная тема повышенного внимания на ней не выделена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -771,83 +824,387 @@
         "rows": [
           [
             "13",
+            "rynok-segodnya.ru/registry-extract-anders-holmstr-m-listed-as-dire-31",
             "Комментарий: Registry extract: Anders Holmström listed as director of Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "14",
+            "bizdaily-nordic.se/analyst-note-reputation-risk-around-anders-holms-33",
             "Хроника: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "15",
+            "svenskt-naringsliv-nytt.se/whistleblower-portal-mentions-anders-holmstr-m-i-35",
             "Контекст: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
             "—",
             "Нежелательный"
-          ],
-          [
-            "16",
-            "Комментарий: Prosecutors request documents from Anders Holmström regarding Malta SPV",
-            "—",
-            "Нежелательный"
           ]
-        ],
-        "rowAddresses": [
-          "rynok-segodnya.ru/registry-extract-anders-holmstr-m-listed-as-dire-31",
-          "bizdaily-nordic.se/analyst-note-reputation-risk-around-anders-holms-33",
-          "svenskt-naringsliv-nytt.se/whistleblower-portal-mentions-anders-holmstr-m-i-35",
-          "stockholm-kuriren.se/prosecutors-request-documents-from-anders-holmst-37"
         ]
       }
     },
     {
-      "slideKey": "p09_ru_serp_table__cont9",
+      "slideKey": "p09_ru_serp_table__cont12",
       "text": {
-        "title": "Россия — Google, ТОП-20 (5/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 20). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "title": "Россия — Google, ТОП-20 (6/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 18). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
+            "16",
+            "stockholm-kuriren.se/prosecutors-request-documents-from-anders-holmst-37",
+            "Комментарий: Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "—",
+            "Нежелательный"
+          ],
+          [
             "17",
+            "finansbladet.se/credit-bureau-soft-hit-references-anders-holmstr-39",
             "Хроника: Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "18",
+            "kapitalnytt.se/anders-holmstr-m-flagged-during-sanctions-screen-41",
             "Контекст: Anders Holmström flagged during sanctions screening watchlist review",
             "—",
             "Нежелательный"
-          ],
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont13",
+      "text": {
+        "title": "Россия — Google, ТОП-20 (7/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 20). Выдача проверена по 3 запросам: «Anders Holmström», «Holmström Anders», «Anders Holmström Nordkap Capital». На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
           [
             "19",
+            "rynok-segodnya.ru/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-43",
             "Комментарий: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
             "—",
             "Не проверено"
           ],
           [
             "20",
+            "bizdaily-nordic.se/stockholm-court-schedules-hearing-involving-ande-45",
             "Хроника: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
             "—",
             "Нежелательный"
           ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra1",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (1/7)",
+        "narrative": "Здесь материалы, которых нет в таблице по имени: их нашли другие запросы прогона. Мест в выдаче у этих строк не показано — у каждого запроса своя нумерация, и сравнивать её с первой таблицей нельзя."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
         ],
-        "rowAddresses": [
-          "finansbladet.se/credit-bureau-soft-hit-references-anders-holmstr-39",
-          "kapitalnytt.se/anders-holmstr-m-flagged-during-sanctions-screen-41",
-          "rynok-segodnya.ru/anders-holmstr-m-ceo-of-nordkap-capital-ab-finte-43",
-          "bizdaily-nordic.se/stockholm-court-schedules-hearing-involving-ande-45"
+        "rows": [
+          [
+            "nordic-business-wire.se/prosecutors-open-a-probe-into-anders-holmstr-m-o-x0",
+            "Prosecutors open a probe into Anders Holmström over a Malta holding",
+            "Holmström Anders",
+            "—",
+            "Нежелательный"
+          ],
+          [
+            "baltic-market-eye.se/подробности-anders-holmstr-m-и-nordkap-capital-д-x2",
+            "Подробности: Anders Holmström и Nordkap Capital — деловой обзор 2",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "stockholm-ledger.se/комментарий-anders-holmstr-m-и-nordkap-capital-д-x1",
+            "Комментарий: Anders Holmström и Nordkap Capital — деловой обзор 1",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra2",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (2/7)",
+        "narrative": "Продолжение таблицы, лист 2 из 7."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "stockholm-ledger.se/разбор-anders-holmstr-m-и-nordkap-capital-делово-x4",
+            "Разбор: Anders Holmström и Nordkap Capital — деловой обзор 4",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/обзор-anders-holmstr-m-и-nordkap-capital-деловой-x6",
+            "Обзор: Anders Holmström и Nordkap Capital — деловой обзор 6",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/хроника-anders-holmstr-m-и-nordkap-capital-делов-x3",
+            "Хроника: Anders Holmström и Nordkap Capital — деловой обзор 3",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra3",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (3/7)",
+        "narrative": "Продолжение таблицы, лист 3 из 7."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "baltic-market-eye.se/контекст-anders-holmstr-m-и-nordkap-capital-дело-x5",
+            "Контекст: Anders Holmström и Nordkap Capital — деловой обзор 5",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "baltic-market-eye.se/подробности-anders-holmstr-m-и-nordkap-capital-д-x8",
+            "Подробности: Anders Holmström и Nordkap Capital — деловой обзор 8",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "stockholm-ledger.se/комментарий-anders-holmstr-m-и-nordkap-capital-д-x7",
+            "Комментарий: Anders Holmström и Nordkap Capital — деловой обзор 7",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra4",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (4/7)",
+        "narrative": "Продолжение таблицы, лист 4 из 7."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "stockholm-ledger.se/разбор-anders-holmstr-m-и-nordkap-capital-делово-x10",
+            "Разбор: Anders Holmström и Nordkap Capital — деловой обзор 10",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/обзор-anders-holmstr-m-и-nordkap-capital-деловой-x12",
+            "Обзор: Anders Holmström и Nordkap Capital — деловой обзор 12",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/хроника-anders-holmstr-m-и-nordkap-capital-делов-x9",
+            "Хроника: Anders Holmström и Nordkap Capital — деловой обзор 9",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra5",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (5/7)",
+        "narrative": "Продолжение таблицы, лист 5 из 7."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "baltic-market-eye.se/контекст-anders-holmstr-m-и-nordkap-capital-дело-x11",
+            "Контекст: Anders Holmström и Nordkap Capital — деловой обзор 11",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "baltic-market-eye.se/подробности-anders-holmstr-m-и-nordkap-capital-д-x14",
+            "Подробности: Anders Holmström и Nordkap Capital — деловой обзор 14",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "stockholm-ledger.se/комментарий-anders-holmstr-m-и-nordkap-capital-д-x13",
+            "Комментарий: Anders Holmström и Nordkap Capital — деловой обзор 13",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra6",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (6/7)",
+        "narrative": "Продолжение таблицы, лист 6 из 7."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "stockholm-ledger.se/разбор-anders-holmstr-m-и-nordkap-capital-делово-x16",
+            "Разбор: Anders Holmström и Nordkap Capital — деловой обзор 16",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/обзор-anders-holmstr-m-и-nordkap-capital-деловой-x18",
+            "Обзор: Anders Holmström и Nordkap Capital — деловой обзор 18",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "nordic-business-wire.se/хроника-anders-holmstr-m-и-nordkap-capital-делов-x15",
+            "Хроника: Anders Holmström и Nordkap Capital — деловой обзор 15",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__extra7",
+      "text": {
+        "title": "Россия — найдено по дополнительным запросам (7/7)",
+        "narrative": "Продолжение таблицы, лист 7 из 7. Ещё 2 материала осталось за пределом таблицы: это нейтральные, непроверенные и материалы о другом лице — нежелательные и вероятные показаны все."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Ссылка",
+          "Заголовок",
+          "Найдено по запросу",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "baltic-market-eye.se/контекст-anders-holmstr-m-и-nordkap-capital-дело-x17",
+            "Контекст: Anders Holmström и Nordkap Capital — деловой обзор 17",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "baltic-market-eye.se/подробности-anders-holmstr-m-и-nordkap-capital-д-x20",
+            "Подробности: Anders Holmström и Nordkap Capital — деловой обзор 20",
+            "Holmström Anders",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "stockholm-ledger.se/комментарий-anders-holmstr-m-и-nordkap-capital-д-x19",
+            "Комментарий: Anders Holmström и Nordkap Capital — деловой обзор 19",
+            "Anders Holmström Nordkap Capital",
+            "—",
+            "Не проверено"
+          ]
         ]
       }
     },
@@ -1231,7 +1588,7 @@
     {
       "slideKey": "p26_uae_serp_table",
       "text": {
-        "title": "ОАЭ / международный — Google, ТОП-20 (1/5)",
+        "title": "ОАЭ / международный — Google, ТОП-20 (1/7)",
         "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 2). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p26_uae_serp_table",
@@ -1239,6 +1596,7 @@
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -1246,90 +1604,114 @@
         "rows": [
           [
             "1",
+            "gulf-business-review.ae/anders-holmstr-m-expands-nordkap-capital-into-du-0",
             "Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
             "—",
             "Не проверено"
           ],
           [
             "2",
+            "emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1",
             "Anders Holmström referenced in UAE PEP/RCA compliance screening",
             "—",
             "Нежелательный"
           ],
           [
             "3",
+            "dubai-market-daily.ae/dubai-free-zone-filing-lists-anders-holmstr-m-as-2",
             "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
             "—",
             "Не проверено"
-          ],
-          [
-            "4",
-            "Nordkap Capital opens DIFC representative office under Anders Holmström",
-            "—",
-            "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "gulf-business-review.ae/anders-holmstr-m-expands-nordkap-capital-into-du-0",
-          "emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1",
-          "dubai-market-daily.ae/dubai-free-zone-filing-lists-anders-holmstr-m-as-2",
-          "khaleej-finance-post.ae/nordkap-capital-opens-difc-representative-office-3"
         ]
       }
     },
     {
       "slideKey": "p26_uae_serp_table__cont1",
       "text": {
-        "title": "ОАЭ / международный — Google, ТОП-20 (2/5)",
-        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 5). На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "title": "ОАЭ / международный — Google, ТОП-20 (2/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 5). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
+            "4",
+            "khaleej-finance-post.ae/nordkap-capital-opens-difc-representative-office-3",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström",
+            "—",
+            "Не проверено"
+          ],
+          [
             "5",
+            "difc-briefing.ae/gulf-press-anders-holmstr-m-courts-gulf-family-o-4",
             "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "6",
+            "abudhabi-capital-news.ae/uae-company-registry-anders-holmstr-m-director-o-5",
             "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
             "—",
             "Не проверено"
-          ],
-          [
-            "7",
-            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
-            "—",
-            "Не проверено"
-          ],
-          [
-            "8",
-            "Sanctions screening vendor flags Anders Holmström for secondary review",
-            "—",
-            "Нежелательный"
           ]
-        ],
-        "rowAddresses": [
-          "difc-briefing.ae/gulf-press-anders-holmstr-m-courts-gulf-family-o-4",
-          "abudhabi-capital-news.ae/uae-company-registry-anders-holmstr-m-director-o-5",
-          "gulf-business-review.ae/anders-holmstr-m-attends-abu-dhabi-finance-forum-6",
-          "emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7"
         ]
       }
     },
     {
       "slideKey": "p26_uae_serp_table__cont2",
       "text": {
-        "title": "ОАЭ / международный — Google, ТОП-20 (3/5)",
+        "title": "ОАЭ / международный — Google, ТОП-20 (3/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 8). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "7",
+            "gulf-business-review.ae/anders-holmstr-m-attends-abu-dhabi-finance-forum-6",
+            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
+            "—",
+            "Не проверено"
+          ],
+          [
+            "8",
+            "emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7",
+            "Sanctions screening vendor flags Anders Holmström for secondary review",
+            "—",
+            "Нежелательный"
+          ],
+          [
+            "9",
+            "dubai-market-daily.ae/nordkap-capital-dubai-entity-leases-office-in-di-8",
+            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "—",
+            "Не проверено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p26_uae_serp_table__cont3",
+      "text": {
+        "title": "ОАЭ / международный — Google, ТОП-20 (4/7)",
         "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 12). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p26_uae_serp_table",
@@ -1337,48 +1719,40 @@
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
-            "9",
-            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
-            "—",
-            "Не проверено"
-          ],
-          [
             "10",
+            "khaleej-finance-post.ae/arabic-language-profile-of-anders-holmstr-m-foun-9",
             "Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "11",
+            "difc-briefing.ae/anders-holmstr-m-expands-nordkap-capital-into-du-10",
             "Разбор: Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
             "—",
             "Не проверено"
           ],
           [
             "12",
+            "abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11",
             "Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening",
             "—",
             "Нежелательный"
           ]
-        ],
-        "rowAddresses": [
-          "dubai-market-daily.ae/nordkap-capital-dubai-entity-leases-office-in-di-8",
-          "khaleej-finance-post.ae/arabic-language-profile-of-anders-holmstr-m-foun-9",
-          "difc-briefing.ae/anders-holmstr-m-expands-nordkap-capital-into-du-10",
-          "abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11"
         ]
       }
     },
     {
-      "slideKey": "p26_uae_serp_table__cont3",
+      "slideKey": "p26_uae_serp_table__cont4",
       "text": {
-        "title": "ОАЭ / международный — Google, ТОП-20 (4/5)",
+        "title": "ОАЭ / международный — Google, ТОП-20 (5/7)",
         "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «Криминальные / судебные материалы» — высокий уровень внимания (строка 15). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p26_uae_serp_table",
@@ -1386,6 +1760,7 @@
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
@@ -1393,41 +1768,32 @@
         "rows": [
           [
             "13",
+            "gulf-business-review.ae/dubai-free-zone-filing-lists-anders-holmstr-m-as-12",
             "Обзор: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
             "—",
             "Не проверено"
           ],
           [
             "14",
+            "emirates-ledger.ae/nordkap-capital-opens-difc-representative-office-13",
             "Комментарий: Nordkap Capital opens DIFC representative office under Anders Holmström",
             "—",
             "Не проверено"
           ],
           [
             "15",
+            "dubai-market-daily.ae/gulf-press-anders-holmstr-m-courts-gulf-family-o-14",
             "Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
             "—",
             "Не проверено"
-          ],
-          [
-            "16",
-            "Хроника: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
-            "—",
-            "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "gulf-business-review.ae/dubai-free-zone-filing-lists-anders-holmstr-m-as-12",
-          "emirates-ledger.ae/nordkap-capital-opens-difc-representative-office-13",
-          "dubai-market-daily.ae/gulf-press-anders-holmstr-m-courts-gulf-family-o-14",
-          "khaleej-finance-post.ae/uae-company-registry-anders-holmstr-m-director-o-15"
         ]
       }
     },
     {
-      "slideKey": "p26_uae_serp_table__cont4",
+      "slideKey": "p26_uae_serp_table__cont5",
       "text": {
-        "title": "ОАЭ / международный — Google, ТОП-20 (5/5)",
+        "title": "ОАЭ / международный — Google, ТОП-20 (6/7)",
         "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. «PEP / RCA / watchlist-сигналы» — высокий уровень внимания (строка 18). На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта. Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы."
       },
       "baseSlotId": "p26_uae_serp_table",
@@ -1435,43 +1801,78 @@
       "table": {
         "headers": [
           "№",
+          "Ссылка",
           "Заголовок",
           "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
+            "16",
+            "khaleej-finance-post.ae/uae-company-registry-anders-holmstr-m-director-o-15",
+            "Хроника: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
+            "—",
+            "Не проверено"
+          ],
+          [
             "17",
+            "difc-briefing.ae/anders-holmstr-m-attends-abu-dhabi-finance-forum-16",
             "Разбор: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
             "—",
             "Не проверено"
           ],
           [
             "18",
+            "abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17",
             "Контекст: Sanctions screening vendor flags Anders Holmström for secondary review",
             "—",
             "Нежелательный"
-          ],
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p26_uae_serp_table__cont6",
+      "text": {
+        "title": "ОАЭ / международный — Google, ТОП-20 (7/7)",
+        "narrative": "Показана выдача Google по запросу «Anders Holmström». Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят. Показано 2 результата; из них о субъекте — 2, вероятно о субъекте — 0, негативных заголовков — 0. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Ссылка",
+          "Заголовок",
+          "Тип источника",
+          "Оценка"
+        ],
+        "rows": [
           [
             "19",
+            "gulf-business-review.ae/nordkap-capital-dubai-entity-leases-office-in-di-18",
             "Обзор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
             "—",
             "Не проверено"
           ],
           [
             "20",
+            "emirates-ledger.ae/arabic-language-profile-of-anders-holmstr-m-foun-19",
             "Комментарий: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
             "—",
             "Не проверено"
           ]
-        ],
-        "rowAddresses": [
-          "difc-briefing.ae/anders-holmstr-m-attends-abu-dhabi-finance-forum-16",
-          "abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17",
-          "gulf-business-review.ae/nordkap-capital-dubai-entity-leases-office-in-di-18",
-          "emirates-ledger.ae/arabic-language-profile-of-anders-holmstr-m-foun-19"
         ]
       }
+    },
+    {
+      "slideKey": "p26_uae_serp_table__extra1",
+      "text": {
+        "title": "ОАЭ / международный — найдено по дополнительным запросам",
+        "narrative": "ОАЭ / международный — дополнительных запросов в этом контуре не было: вся собранная выдача пришла по основному запросу."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table"
     },
     {
       "slideKey": "p27_uae_serp_visual",

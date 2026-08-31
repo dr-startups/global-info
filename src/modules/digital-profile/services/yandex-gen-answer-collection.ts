@@ -25,7 +25,7 @@ import {
   buildOrionQueryPlanDetailed,
   queriesForRegionPurpose,
 } from "../search-surfaces/orion-query-plan";
-import { buildSubjectQuerySet } from "../search-surfaces/subject-query-set";
+import { buildSubjectQuerySet, plannedPrimaryQueries } from "../search-surfaces/subject-query-set";
 import type { SearchSurfaceInput } from "../search-surfaces/types";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import type { YandexGenAnswerProbe } from "./unified-collection-types";
@@ -88,7 +88,7 @@ export function yandexGenAnswerQuery(
       location: subject.location,
     },
     {
-      primaryQueriesByRegion: { RU: set.queries.map((q) => q.query) },
+      primaryQueriesByRegion: { RU: plannedPrimaryQueries(set) },
       maxPrimaryPerRegion: providerConfig.orion.maxPrimaryQueriesPerRegion,
       regions: ["RU"],
     }

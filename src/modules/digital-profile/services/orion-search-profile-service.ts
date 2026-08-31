@@ -23,6 +23,7 @@ export const SERP_AUDIT_DEPTH = 20;
 import {
   SUBJECT_QUERY_LIMIT,
   buildSubjectQuerySet,
+  plannedPrimaryQueries,
   type SubjectQuerySet,
 } from "../search-surfaces/subject-query-set";
 import { serperAutocomplete } from "../providers/serper-surfaces";
@@ -43,6 +44,7 @@ import {
   transliterateRuToEn,
   type OrionQuerySpec,
   type OrionRegionCode,
+  type PlannedPrimaryQuery,
 } from "../search-surfaces/orion-query-plan";
 import { resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import { regionProfile, type RegionCollectionStatus } from "../search-surfaces/region-profiles";
@@ -229,6 +231,10 @@ export function organicRowMetadata(input: {
     queryId: querySpec.queryId,
     queryPlanId: querySpec.queryPlanId,
     queryPurpose: querySpec.purpose,
+    // Какое из написаний ФИО — само имя. Пометка приходит из набора запросов
+    // и едет дальше данными: слой деки иначе вычислял бы её заново, сравнивая
+    // запрос с именем профиля, а в латинском контуре запрос транслитерирован.
+    ...(querySpec.subjectNameQuery ? { subjectNameQuery: true } : {}),
     providerPreference: querySpec.providerPreference,
     identityStrictness: querySpec.identityStrictness,
     orionRegion,
@@ -601,8 +607,8 @@ export async function runOrionSearchProfile(
     querySets.push(await buildRegionQuerySet(subject, region, capturedAt));
   }
   const primaryQueriesByRegion = Object.fromEntries(
-    querySets.map((set) => [set.region, set.queries.map((q) => q.query)])
-  ) as Partial<Record<OrionRegionCode, string[]>>;
+    querySets.map((set) => [set.region, plannedPrimaryQueries(set)])
+  ) as Partial<Record<OrionRegionCode, PlannedPrimaryQuery[]>>;
 
   const detailedPlan = buildOrionQueryPlanDetailed(
     {

@@ -55,7 +55,9 @@ function scopedFrom(rows: Row[]): ScopedFragmentInput {
 
 function tableRows(scoped: ScopedFragmentInput): string[][] {
   const { slides } = buildSerpFragment("RU_SERP", "RU_PROFILE", "Россия", scoped);
-  return slides.flatMap((s) => s.content.table?.rows ?? []);
+  // Только листы первой таблицы: вторая («Найдено по дополнительным запросам»)
+  // живёт на тех же слайдах-продолжениях и называет себя метрикой.
+  return slides.filter((s) => s.metrics?.serpExtraQueries !== 1).flatMap((s) => s.content.table?.rows ?? []);
 }
 
 /** Колонка заголовка — по имени: адрес уехал из таблицы в полосу под строкой. */

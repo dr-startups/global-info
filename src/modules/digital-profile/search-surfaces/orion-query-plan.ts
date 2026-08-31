@@ -65,7 +65,31 @@ export interface OrionQuerySpec {
   internalReason: string;
   /** Stable order within the plan (1-based). */
   planRank: number;
+  /**
+   * Это само имя субъекта, а не производное написание.
+   *
+   * Все написания ФИО уходят в план с одним `purpose: "subject_lookup"`, то
+   * есть по назначению неразличимы. Какое из них человек набирает первым,
+   * знает только набор запросов (`search-surfaces/subject-query-set.ts`), и
+   * пометка едет отсюда до деки данными: таблица «ТОП-20 по запросу ФИО»
+   * обязана строиться по названному запросу, а не по тому, что оказался первым
+   * по алфавиту.
+   */
+  subjectNameQuery?: boolean;
 }
+
+/**
+ * Запрос набора аудита в том виде, в каком его принимает построитель плана.
+ *
+ * Строкой обойтись нельзя: вместе с текстом едет пометка «это само имя»,
+ * которую иначе пришлось бы вычислять здесь заново — сравнением с именем
+ * профиля. Такое сравнение ломается в латинском контуре, где запрос
+ * транслитерирован, а имя в профиле кириллическое.
+ */
+export type PlannedPrimaryQuery = {
+  query: string;
+  subjectNameQuery?: boolean;
+};
 
 export interface OrionQueryPlanOptions {
   /**
@@ -82,7 +106,7 @@ export interface OrionQueryPlanOptions {
    * подсказок поисковика (`search-surfaces/subject-query-set.ts`), плановые
    * строки строятся по нему, а перестановки не используются.
    */
-  primaryQueriesByRegion?: Partial<Record<OrionRegionCode, string[]>>;
+  primaryQueriesByRegion?: Partial<Record<OrionRegionCode, PlannedPrimaryQuery[]>>;
   includeRiskProbes?: boolean;
   regions?: OrionRegionCode[];
 }
@@ -266,6 +290,7 @@ function mkRow(input: {
   maxResultsHint: number;
   internalReason: string;
   profile: OrionQuerySubjectProfile;
+  subjectNameQuery?: boolean;
 }): OrionQuerySpec | null {
   const queryText = input.queryText.trim();
   if (!queryText) return null;
@@ -290,6 +315,7 @@ function mkRow(input: {
       clientVisible: false,
       internalReason: input.internalReason,
       planRank: 0,
+      ...(input.subjectNameQuery ? { subjectNameQuery: true } : {}),
     };
   }
   const queryId = `qp-${stableHash(
@@ -312,6 +338,7 @@ function mkRow(input: {
     clientVisible: false,
     internalReason: input.internalReason,
     planRank: 0,
+    ...(input.subjectNameQuery ? { subjectNameQuery: true } : {}),
   };
 }
 
@@ -328,13 +355,19 @@ function dedupeSpecs(specs: OrionQuerySpec[]): OrionQuerySpec[] {
   return out.map((row, idx) => ({ ...row, planRank: idx + 1 }));
 }
 
-function ruBaseVariants(profile: OrionQuerySubjectProfile): string[] {
+/**
+ * Механические перестановки ФИО — страховка на случай, когда набора запросов
+ * нет. Пометки «это само имя» они не несут: перестановка не знает, какую
+ * строку человек набирает первой, и выдать одну из них за основную значило бы
+ * назначить признак вместо того, чтобы его знать.
+ */
+function ruBaseVariants(profile: OrionQuerySubjectProfile): PlannedPrimaryQuery[] {
   const out: string[] = [];
   const { firstName, lastName, patronymic, fullName } = profile;
   if (lastName && firstName && patronymic) out.push(`${lastName} ${firstName} ${patronymic}`);
   if (firstName && patronymic && lastName) out.push(`${firstName} ${patronymic} ${lastName}`);
   if (fullName) out.push(fullName);
-  return Array.from(new Set(out.filter(Boolean)));
+  return Array.from(new Set(out.filter(Boolean))).map((query) => ({ query }));
 }
 
 /**
@@ -348,13 +381,13 @@ function ruBaseVariants(profile: OrionQuerySubjectProfile): string[] {
  * русскоязычной среды не используют вовсе. Остаются два написания: полное и
  * привычное западному читателю «Имя Фамилия».
  */
-function enBaseVariants(profile: OrionQuerySubjectProfile): string[] {
+function enBaseVariants(profile: OrionQuerySubjectProfile): PlannedPrimaryQuery[] {
   const out = new Set<string>();
   for (const v of profile.latinVariants) out.add(v);
   const first = latinOf(profile.firstName);
   const last = latinOf(profile.lastName);
   if (first && last) out.add(`${first} ${last}`);
-  return [...out];
+  return [...out].map((query) => ({ query }));
 }
 
 /**
@@ -379,7 +412,8 @@ export function buildOrionQueryPlanDetailed(
       for (const b of base) {
         const subjectRow = mkRow({
           queryPlanId,
-          queryText: b,
+          queryText: b.query,
+          subjectNameQuery: b.subjectNameQuery,
           language: "ru",
           region,
           priority: "primary",
@@ -475,7 +509,7 @@ export function buildOrionQueryPlanDetailed(
      * интернет независимо от того, кто её принёс.
      */
     const requested = options.primaryQueriesByRegion?.[region] ?? enBaseVariants(profile);
-    const latinOnly = requested.filter((q) => !hasCyrillic(q));
+    const latinOnly = requested.filter((q) => !hasCyrillic(q.query));
     if (latinOnly.length < requested.length) {
       cyrillicInLatinContour += requested.length - latinOnly.length;
     }
@@ -486,7 +520,8 @@ export function buildOrionQueryPlanDetailed(
     for (const b of base) {
       const row = mkRow({
         queryPlanId,
-        queryText: b,
+        queryText: b.query,
+        subjectNameQuery: b.subjectNameQuery,
         language: "en",
         region,
         priority: "primary",
@@ -494,16 +529,18 @@ export function buildOrionQueryPlanDetailed(
         providerPreference: ["google", "serper"],
         requiredTokens: [profile.lastName].filter(Boolean),
         optionalTokens: [profile.firstName, profile.patronymic].filter(Boolean),
-        identityStrictness: b.split(/\s+/).length >= 3 ? "strict" : "balanced",
+        identityStrictness: b.query.split(/\s+/).length >= 3 ? "strict" : "balanced",
         maxResultsHint: 20,
         internalReason: "intl_transliteration_variant",
         profile,
       });
       if (row) rows.push(row);
       for (const hint of context) {
+        // Имя с региональной подсказкой — уже не само имя, а уточнение:
+        // пометка сюда не едет.
         const hinted = mkRow({
           queryPlanId,
-          queryText: `${b} ${hint}`.trim(),
+          queryText: `${b.query} ${hint}`.trim(),
           language: "en",
           region,
           priority: "primary",

@@ -14,12 +14,15 @@ function queriesOf(plan: ReturnType<typeof buildOrionQueryPlanDetailed>, region:
 
 const CYRILLIC = /[Ѐ-ӿ]/u;
 
+/** Набор запросов аудита в том виде, в каком его принимает построитель плана. */
+const planned = (...queries: string[]) => queries.map((query) => ({ query }));
+
 describe("зарубежный контур ищет латиницей", () => {
   it("кириллический набор запросов в контур ОАЭ не уходит", () => {
     const plan = buildOrionQueryPlanDetailed(SUBJECT, {
       primaryQueriesByRegion: {
-        RU: ["Киркоров Филипп Бедросович", "киркоров филипп бедросович дети"],
-        UAE: ["киркоров филипп бедросович дети", "Kirkorov Filipp songs"],
+        RU: planned("Киркоров Филипп Бедросович", "киркоров филипп бедросович дети"),
+        UAE: planned("киркоров филипп бедросович дети", "Kirkorov Filipp songs"),
       },
     });
     const uae = queriesOf(plan, "UAE");
@@ -31,8 +34,8 @@ describe("зарубежный контур ищет латиницей", () => 
   it("российский контур свои кириллические запросы сохраняет", () => {
     const plan = buildOrionQueryPlanDetailed(SUBJECT, {
       primaryQueriesByRegion: {
-        RU: ["Киркоров Филипп Бедросович", "киркоров филипп бедросович дети"],
-        UAE: ["Kirkorov Filipp Bedrosovich"],
+        RU: planned("Киркоров Филипп Бедросович", "киркоров филипп бедросович дети"),
+        UAE: planned("Kirkorov Filipp Bedrosovich"),
       },
     });
     expect(queriesOf(plan, "RU")).toContain("киркоров филипп бедросович дети");
@@ -40,7 +43,7 @@ describe("зарубежный контур ищет латиницей", () => 
 
   it("если латинских запросов не осталось, берутся написания имени, а не пустота", () => {
     const plan = buildOrionQueryPlanDetailed(SUBJECT, {
-      primaryQueriesByRegion: { UAE: ["киркоров дети", "киркоров суд"] },
+      primaryQueriesByRegion: { UAE: planned("киркоров дети", "киркоров суд") },
     });
     const uae = queriesOf(plan, "UAE");
     expect(uae.length).toBeGreaterThan(0);
@@ -63,7 +66,7 @@ describe("зарубежный контур ищет латиницей", () => 
 
   it("географическая подсказка на кириллице в латинский запрос не подставляется", () => {
     const plan = buildOrionQueryPlanDetailed(SUBJECT, {
-      primaryQueriesByRegion: { UAE: ["Kirkorov Filipp Bedrosovich"] },
+      primaryQueriesByRegion: { UAE: planned("Kirkorov Filipp Bedrosovich") },
     });
     expect(queriesOf(plan, "UAE").some((q) => q.includes("Москва"))).toBe(false);
   });

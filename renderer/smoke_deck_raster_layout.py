@@ -31,6 +31,17 @@ from PIL import Image, ImageDraw  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
 from smoke_ts_constants import ts_int  # noqa: E402
+# Пределы ячеек и слагаемые ёмкости второй таблицы выдачи берутся у смока
+# ширин, а не объявляются здесь заново: вопрос «какая строка худшая законная»
+# обязан иметь один ответ на оба прибора, иначе один из них однажды нарисует
+# бывшую худшую строку и промолчит.
+from smoke_search_table_layout import (  # noqa: E402
+    SERP_ADDRESS_MAX_CHARS,
+    HDR_SERP_EXTRA,
+    SERP_FOUND_BY_MAX_CHARS,
+    SERP_TITLE_MAX_CHARS,
+    serp_capacity_terms,
+)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from orion_golden_render.common import FONT, TYPE_SCALE_PT  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
@@ -237,6 +248,111 @@ def render_surface_panel_page() -> tuple[bytes, bytes] | None:
     if not pages or out.get("pdfExportMode") != "libreoffice" or not out.get("pdfBase64"):
         return None
     return base64.b64decode(pages[0]["contentBase64"]), base64.b64decode(out["pdfBase64"])
+
+
+#: Вводный абзац листа второй таблицы, заведомо длиннее своего потолка.
+#: Ёмкость листа выведена от **объявленного** верха таблицы (заголовок плюс
+#: потолок абзаца), поэтому лист с коротким абзацем начинался бы выше — и
+#: проверялся бы не худший лист, а удобный.
+SERP_EXTRA_INTRO_OVERFLOW = " ".join(
+    f"Предложение номер {n} этого абзаца написано нарочно длинным, чтобы вводный "
+    "текст страницы упёрся в объявленный потолок мерой, а не поместился в него."
+    for n in range(1, 13)
+)
+
+
+def render_serp_extra_table_page(row_count: int) -> tuple[bytes, bytes] | None:
+    """Лист второй таблицы выдачи; None — растр не от LibreOffice.
+
+    Страниц второй таблицы выдачи («Найдено по дополнительным запросам») не
+    рисовал **ни один эталон**: у корпуса отчёта 72 дополнительных запросов нет
+    вовсе, а золотой кейс до рендерера не доходит. Её ёмкость выведена
+    арифметикой — бюджет листа, поделённый на худшую законную строку, — и с
+    нарисованной страницей эту арифметику до сих пор не сверял никто. Первым
+    зрителем геометрии оказался бы клиент первого же прогона с дополнительным
+    запросом, а прогон этот платный.
+
+    Строка берётся предельная, а не правдоподобная: адрес, заголовок и запрос
+    на своих пределах, написанные самым широким знаком 9 pt. Именно из такой
+    строки ёмкость и выведена — правдоподобная строка проверяла бы не то.
+    """
+    from orion_golden_render import render_orion_golden  # noqa: PLC0415
+
+    worst_row = [
+        "Ю" * SERP_ADDRESS_MAX_CHARS,
+        "Ю" * SERP_TITLE_MAX_CHARS,
+        "Ю" * SERP_FOUND_BY_MAX_CHARS,
+        "Официальный сайт / госресурс",
+        "Нежелательный",
+    ]
+    payload = {
+        "subjectName": "Тест",
+        "deckManifest": {
+            "toc": [],
+            "sectionPageRanges": [],
+            "finalSlides": [
+                {
+                    "slideKey": "p12_ru_serp_extra_queries",
+                    "sectionKey": "RU_PROFILE",
+                    "template": "orion_golden_search_table",
+                    "title": "Россия — найдено по дополнительным запросам",
+                    "pageNumber": 1,
+                    "totalPageCount": 1,
+                    "narrative": SERP_EXTRA_INTRO_OVERFLOW,
+                    "table": {
+                        "headers": list(HDR_SERP_EXTRA),
+                        "rows": [list(worst_row) for _ in range(row_count)],
+                    },
+                }
+            ],
+        },
+    }
+    out = render_orion_golden(payload)
+    pages = out.get("pages") or []
+    if not pages or out.get("pdfExportMode") != "libreoffice" or not out.get("pdfBase64"):
+        return None
+    return base64.b64decode(pages[0]["contentBase64"]), base64.b64decode(out["pdfBase64"])
+
+
+def stage_edge_ink(png: bytes) -> tuple[int, int, tuple[int, int]]:
+    """Чернила в полосе нижней кромки сцены, самый низкий ряд чернил и размер растра.
+
+    Полоса кромки задана в пикселях модуля, то есть привязана к размеру
+    эталонной страницы; размер возвращается, чтобы проверка могла его назвать,
+    а не считать совпадение само собой разумеющимся.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "page-01.png"
+        path.write_bytes(png)
+        rows, w, h = _ink_row_counts(path)
+    return (
+        max(rows[STAGE_EDGE_FROM_PX : STAGE_EDGE_TO_PX + 1], default=0),
+        max((y for y, n in enumerate(rows) if n > 0), default=0),
+        (w, h),
+    )
+
+
+def header_left_edges(pdf: bytes, headers: list[str]) -> dict[str, float]:
+    """Левые края нарисованных заголовков таблицы — из текстового слоя PDF.
+
+    Ширина колонки меряется по тому, что нарисовано, а не по долям, которые мы
+    сами и объявили: разница левых краёв соседних заголовков и есть ширина
+    колонки — отступ ячейки у обоих одинаков и сокращается.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "page.pdf"
+        path.write_bytes(pdf)
+        import fitz  # noqa: PLC0415
+
+        words = fitz.open(str(path))[0].get_text("words")
+    edges: dict[str, float] = {}
+    for header in headers:
+        # Заголовок из двух слов ищется по первому: слова в текстовом слое
+        # лежат по одному, а левый край строки задаёт именно первое.
+        hits = [w[0] for w in words if w[4] == header.split()[0]]
+        if hits:
+            edges[header] = min(hits)
+    return edges
 
 
 def scan_badges(png: bytes) -> dict:
@@ -556,6 +672,89 @@ def main() -> int:
             "остаток сигналов назван числом",
             f"Ещё {PANEL_MORE_SIGNALS} похожих сигнала" in drawn,
         )
+
+    # --- Лист второй таблицы выдачи нарисован впервые ---------------------
+    #
+    # Растровая проверка выше смотрит на страницы эталона 72, а листов второй
+    # таблицы выдачи там нет ни одного: в её корпусе нет дополнительных
+    # запросов. Значит, про эту страницу растр не говорил ничего — её вёрстку
+    # держала одна арифметика.
+    #
+    # Главный вопрос — тот же, что у первой таблицы: не уехал ли лист за низ
+    # белой сцены. Общая растровая проверка на него **не отвечает**: замер
+    # ниже показывает, что `check_pages` проходит и на листе, который сцену
+    # собой закрыл, — она считает переполнением выход за край слайда, а лист
+    # уезжает за край сцены, оставаясь внутри слайда.
+    #
+    # Число строк берётся не литералом, а ёмкостью из реестра: занизив худшую
+    # строку, разработчик поднимет ёмкость, и проверка нарисует лист, которого
+    # не бывает, — то есть увидит подмену числа рисованием.
+    terms = serp_capacity_terms()
+    extra_capacity = (
+        terms["SERP_TABLE_ROW_BUDGET_EMU"] // terms["SERP_EXTRA_TABLE_WORST_ROW_EMU"]
+    )
+    extra = render_serp_extra_table_page(extra_capacity)
+    if extra is None:
+        print("# SKIP лист второй таблицы выдачи — растр не получен от LibreOffice")
+    else:
+        extra_png, extra_pdf = extra
+        with tempfile.TemporaryDirectory() as tmp:
+            extra_path = Path(tmp) / "page-01.png"
+            extra_path.write_bytes(extra_png)
+            extra_report = check_pages([extra_path])
+        check(
+            "лист второй таблицы выдачи не выходит за края листа",
+            extra_report.passed and not extra_report.findings,
+            "; ".join(f"{f.code} — {f.detail}" for f in extra_report.findings)
+            or f"строк на листе: {extra_capacity}",
+        )
+        edge_ink, lowest, size = stage_edge_ink(extra_png)
+        check(
+            f"нижняя кромка сцены видна под листом из {extra_capacity} худших строк",
+            edge_ink >= STAGE_EDGE_INK and size == (W, H),
+            f"чернил в полосе кромки {edge_ink} при пороге {STAGE_EDGE_INK}, "
+            f"самый низкий ряд чернил y={lowest}, растр {size[0]}×{size[1]}",
+        )
+
+        # Контрольный дефект: лист на одну строку длиннее ёмкости обязан кромку
+        # закрыть. Без него проверка выше умеет только зелёный — а такая
+        # проверка не гейт.
+        over = render_serp_extra_table_page(extra_capacity + 1)
+        if over is None:
+            print("# SKIP контрольный дефект второй таблицы — растр не от LibreOffice")
+        else:
+            over_ink, over_lowest, _size = stage_edge_ink(over[0])
+            check(
+                f"контрольный дефект: лист из {extra_capacity + 1} строк кромку закрывает",
+                over_ink < STAGE_EDGE_INK,
+                f"чернил в полосе кромки {over_ink} при пороге {STAGE_EDGE_INK}, "
+                f"самый низкий ряд чернил y={over_lowest}",
+            )
+
+        # Лист попал в свою ветку рендерера, а не в ветку первой таблицы.
+        # Ветку выбирает **отсутствие** колонки «№», и ошибка здесь не
+        # громкая: доли первой таблицы отдали бы адресу 5 % листа вместо 30 %,
+        # страница нарисовалась бы без отказа, а телеметрия молчала бы.
+        # Меряется по нарисованному: левые края заголовков в текстовом слое.
+        edges = header_left_edges(extra_pdf, list(HDR_SERP_EXTRA))
+        missing = [h for h in HDR_SERP_EXTRA if h not in edges]
+        check(
+            "все пять заголовков второй таблицы нарисованы",
+            not missing,
+            f"не нарисованы: {missing}" if missing else ", ".join(HDR_SERP_EXTRA),
+        )
+        if not missing:
+            span = edges["Оценка"] - edges["Ссылка"]
+            share = (edges["Заголовок"] - edges["Ссылка"]) / span if span else 0.0
+            # Полоса, а не точное число: этот прибор отвечает на вопрос «та ли
+            # ветка», а доли колонок по отдельности держит Т2в смока ширин.
+            # 0.349 — своя ветка (0.30 из 0.86), 0.058 — ветка первой таблицы.
+            check(
+                "лист нарисован долями своей ветки, а не долями первой таблицы",
+                0.30 <= share <= 0.40,
+                f"колонка «Ссылка» — {share:.3f} ширины первых четырёх колонок "
+                f"(своя ветка 0.30/0.86 = 0.349, ветка первой таблицы 0.05/0.86 = 0.058)",
+            )
 
     # --- ADR-0008: типографическая шкала закрыта -------------------------
     #

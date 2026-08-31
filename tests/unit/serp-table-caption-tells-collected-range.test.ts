@@ -23,6 +23,14 @@ import type { SlideContentContract } from "@/modules/digital-profile/orion-golde
 
 const QUERY = "Рашников Виктор Филиппович";
 
+/**
+ * Оговорка о выборе запроса: наблюдения этих фикстур пометки «это само имя» не
+ * несут, то есть запрос выбрали мы. Она печатается сразу за названием запроса
+ * и до всего остального — потому что относится к нему.
+ */
+const CHOSEN_BY_US =
+  "Запрос для этой таблицы выбран нами: в собранных данных не отмечено, какой из запросов основной.";
+
 function scopedWithRanks(ranks: number[], engine: "GOOGLE" | "YANDEX" = "GOOGLE"): ScopedFragmentInput {
   const evidenceIndex: Record<string, unknown> = {};
   for (const rank of ranks) {
@@ -190,12 +198,14 @@ describe("страница называет запрос своей таблиц
     expect(String(slide.content.narrative ?? "")).not.toContain("Выдача проверена по");
     const printed = pageSentences(slide);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
-    // Второе предложение — оговорка про нумерацию (она печатается всегда),
-    // третье — вывод страницы. Повтор запроса не появляется ни там, ни там.
-    expect(printed[1]).toBe(
+    // Второе предложение — чей это выбор запроса, третье — оговорка про
+    // нумерацию (она печатается всегда), четвёртое — вывод страницы. Повтор
+    // запроса не появляется ни в одном из них.
+    expect(printed[1]).toBe(CHOSEN_BY_US);
+    expect(printed[2]).toBe(
       "Позиции — как их вернул поисковик; спецблоки (картинки, видео, новости) в нумерацию не входят."
     );
-    expect(printed[2]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
+    expect(printed[3]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
   });
 
   it("при нескольких запросах перечень есть, но вывод он не съедает", () => {
@@ -216,15 +226,17 @@ describe("страница называет запрос своей таблиц
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
     expect(printed[1]).not.toContain("Выдача проверена по");
     expect(printed[2]).not.toContain("Выдача проверена по");
+    expect(printed[3]).not.toContain("Выдача проверена по");
     // Вывод страницы стоит после оговорки про нумерацию, а справка — после него.
-    expect(printed[2]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
+    expect(printed[3]).toBe(String(slide.content.whatWasFound ?? "").split(/(?<=[.!?…])\s+/u)[0]);
   });
 
   it("на неполной таблице второе предложение — причина пропусков", () => {
     // Порядок владельца: честность о потере важнее и вывода, и справки.
     const printed = pageSentences(slidesOf([4, 6, 7, 8, 9, 10])[0]!);
     expect(printed[0]).toBe(`Показана выдача Google по запросу «${QUERY}».`);
-    expect(printed[1]).toBe(
+    expect(printed[1]).toBe(CHOSEN_BY_US);
+    expect(printed[2]).toBe(
       "Позиции 1–3, 5, 11–20 в собранных данных отсутствуют: эти строки потеряны при сборе, а не пусты в выдаче."
     );
   });

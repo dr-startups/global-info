@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:e2b7823cde82043659b70985e46c44b3757920e2f701c7a12f7bc043b462ee58",
-  "contentVersion": "deck-sections-v149",
+  "contentHash": "sha256:0b7f343a41c29a77de8053bf7e1e54cb4d3685f7e5a165a4020f3f12d774a55b",
+  "contentVersion": "deck-sections-v150",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,7 +149,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP",
-  "generatedAt": "2026-08-30T12:44:45.690Z",
+  "generatedAt": "2026-08-30T23:57:54.695Z",
   "inputHash": "sha256:c1c2280b667e7c4aa3e5ec389a3cdf630ff144550560309842da8a21c53c8533:a24473095f588937",
   "inputs": {
     "evidenceRefs": [
@@ -386,51 +386,43 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru и tadviser.ru.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–3).",
+        "sourceNote": "Источники — runews24.ru, forbes.ru и osnmedia.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta",
-            "forbes.ru/profile/sergei-glinka",
-            "osnmedia.ru/news-of-companies/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-foto-i-sovremennye-vyzovy-transporta",
-            "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович?shem=rimspwouoe,"
-          ],
           "rows": [
             [
               "1",
+              "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta",
               "Интервью с бизнесменом Сергеем Глинкой: биография, фото...",
               "—",
               "Не проверено"
             ],
             [
               "2",
+              "forbes.ru/profile/sergei-glinka",
               "Сергей Глинка | Forbes.ru",
               "Новостное СМИ",
               "Не проверено"
             ],
             [
               "3",
+              "osnmedia.ru/news-of-companies/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-foto-i-sovremennye-vyzovy-transporta",
               "Бизнесмен Сергей Глинка: биография, личная жизнь, фото...",
               "—",
-              "Не проверено"
-            ],
-            [
-              "4",
-              "Глинка Сергей Михайлович",
-              "Энциклопедия / справочник",
               "Не проверено"
             ]
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–4).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–3).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
       "continuationIndex": null,
@@ -448,9 +440,7 @@
         "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
         "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
         "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
-        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
-        "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
-        "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p"
+        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y"
       ],
       "findingIds": [
         "finding-business_profile-subject_match-a59d6fee",
@@ -460,88 +450,76 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
+        "pageCount": 11,
         "pageIndex": 1,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
       "slideId": "p09_ru_serp_table",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (1/4)",
+      "title": "Россия — Яндекс: собранная выдача (1/6)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 6–8).",
-        "sourceNote": "Источники — yandex.ru, klerk.ru, piter.tv и argumenti.ru.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 4, 6).",
+        "sourceNote": "Источники — tadviser.ru, yandex.ru и klerk.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "yandex.ru/images/search?text=%D0%A1%D0%B5%D1%80%D0%B3%D0%B5%D0%B9+%D0%9C%D0%B8%D1%85%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2%D0%B8%D1%87+%D0%93%D0%BB%D0%B8%D0%BD%D0%BA%D0%B0",
-            "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-i-mnenie-o-razvitii-transportnoy-oblasti",
-            "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_put_i_investicii_v_innovacii",
-            "argumenti.ru/society/2025/05/951674"
-          ],
           "rows": [
             [
+              "4",
+              "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович?shem=rimspwouoe,",
+              "Глинка Сергей Михайлович",
+              "Энциклопедия / справочник",
+              "Не проверено"
+            ],
+            [
               "5",
+              "yandex.ru/images/search?text=%D0%A1%D0%B5%D1%80%D0%B3%D0%B5%D0%B9+%D0%9C%D0%B8%D1%85%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2%D0%B8%D1%87+%D0%93%D0%BB%D0%B8%D0%BD%D0%BA%D0%B0",
               "Картинки по запросу \"Сергей Михайлович Глинка\"",
               "Агрегатор / каталог",
               "Не проверено"
             ],
             [
               "6",
+              "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-i-mnenie-o-razvitii-transportnoy-oblasti",
               "Бизнесмен Сергей Глинка - биография, личная жизнь и мнение...",
-              "—",
-              "Не проверено"
-            ],
-            [
-              "7",
-              "Глинка Сергей Михайлович: биография, карьерный путь...",
-              "—",
-              "Не проверено"
-            ],
-            [
-              "8",
-              "Бизнесмен Сергей Глинка - биография, личная жизнь и взгляд на...",
               "—",
               "Не проверено"
             ]
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 6–8).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 4, 6).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
       "continuationIndex": 1,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
+        "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
+        "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p",
         "inventory:serp-obs-cmrjsdc6d00chvd9gcbkvorwo",
         "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
         "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
         "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
         "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
-        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
-        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
-        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
-        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
-        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
-        "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
-        "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6"
+        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6"
       ],
       "findingIds": [
         "finding-business_profile-subject_match-a59d6fee"
@@ -550,63 +528,133 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
+        "pageCount": 11,
         "pageIndex": 2,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
       "slideId": "p09_ru_serp_table__cont1",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (2/4)",
+      "title": "Россия — Яндекс: собранная выдача (2/6)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 9–12).",
-        "sourceNote": "Источники — kulturologia.ru, nakanune.ru, shkolazhizni.ru и tadviser.ru.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 7–9).",
+        "sourceNote": "Источники — piter.tv, argumenti.ru и kulturologia.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "kulturologia.ru/news/9070",
-            "nakanune.ru/preview/024d26a998052bf8",
-            "shkolazhizni.ru/job/articles/112308",
-            "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович"
-          ],
           "rows": [
             [
-              "9",
-              "Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband",
+              "7",
+              "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_put_i_investicii_v_innovacii",
+              "Глинка Сергей Михайлович: биография, карьерный путь...",
               "—",
               "Не проверено"
             ],
             [
+              "8",
+              "argumenti.ru/society/2025/05/951674",
+              "Бизнесмен Сергей Глинка - биография, личная жизнь и взгляд на...",
+              "—",
+              "Не проверено"
+            ],
+            [
+              "9",
+              "kulturologia.ru/news/9070",
+              "Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband",
+              "—",
+              "Не проверено"
+            ]
+          ]
+        },
+        "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 7–9).",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
+      },
+      "continuationIndex": 2,
+      "continuationOf": "p09_ru_serp_table",
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
+        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
+        "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
+        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12"
+      ],
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 3,
+        "likelyDisplayed": 0,
+        "otherSubjectDisplayed": 0,
+        "pageCount": 11,
+        "pageIndex": 3,
+        "serpEngine": "YANDEX",
+        "serpPositional": 0,
+        "uniqueMaterials": 22,
+        "unverifiedDisplayed": 3
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont2",
+      "templateId": "serp-table",
+      "title": "Россия — Яндекс: собранная выдача (3/6)",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p09_ru_serp_table",
+      "content": {
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 10–12).",
+        "sourceNote": "Источники — nakanune.ru, shkolazhizni.ru и tadviser.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
+        "table": {
+          "headers": [
+            "№",
+            "Ссылка",
+            "Заголовок",
+            "Тип источника",
+            "Оценка"
+          ],
+          "rows": [
+            [
               "10",
+              "nakanune.ru/preview/024d26a998052bf8",
               "Бизнесмен Сергей Глинка: личная жизнь, фото и мнение об...",
               "—",
               "Не проверено"
             ],
             [
               "11",
+              "shkolazhizni.ru/job/articles/112308",
               "Российские предприниматели всё чаще инвестируют...",
               "—",
               "Не проверено"
             ],
             [
               "12",
+              "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович",
               "Глинка Сергей Михайлович",
               "Энциклопедия / справочник",
               "Не проверено"
@@ -614,14 +662,12 @@
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 9–12).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 10–12).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
-      "continuationIndex": 2,
+      "continuationIndex": 3,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
-        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
         "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
         "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
         "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
@@ -636,65 +682,57 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 3,
+        "pageCount": 11,
+        "pageIndex": 4,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont2",
+      "slideId": "p09_ru_serp_table__cont3",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (3/4)",
+      "title": "Россия — Яндекс: собранная выдача (4/6)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
-        "sourceNote": "Источники — audit-it.ru, ru.wikipedia.org, zachestnyibiznes.ru и dzen.ru.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
+        "sourceNote": "Источники — audit-it.ru, ru.wikipedia.org и zachestnyibiznes.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
-            "ru.wikipedia.org/wiki/Список_богатейших_бизнесменов_России_(2012)",
-            "zachestnyibiznes.ru/fl/773800015809",
-            "dzen.ru/a/aRECdBu1vRzmbVsF"
-          ],
           "rows": [
             [
               "13",
+              "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
               "Глинка Сергей (ИНН 773800015809) в реестре...",
               "База данных / реестр",
               "Не проверено"
             ],
             [
               "14",
+              "ru.wikipedia.org/wiki/Список_богатейших_бизнесменов_России_(2012)",
               "Список богатейших бизнесменов России...",
               "Энциклопедия / справочник",
               "Не проверено"
             ],
             [
               "15",
+              "zachestnyibiznes.ru/fl/773800015809",
               "Глинка Сергей ИНН 773800015809, Москва",
               "База данных / реестр",
-              "Не проверено"
-            ],
-            [
-              "16",
-              "Российские предприниматели всё чаще инвестируют...",
-              "Блог / личный сайт",
               "Не проверено"
             ]
           ]
@@ -703,7 +741,7 @@
         "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
-      "continuationIndex": 3,
+      "continuationIndex": 4,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
@@ -711,8 +749,7 @@
         "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
         "inventory:serp-obs-cmrjsczas001tvd9g7erp79qd",
         "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
-        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76",
-        "inventory:serp-obs-cmrjsczbc0025vd9gob9ld7u8"
+        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76"
       ],
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175"
@@ -721,74 +758,121 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 4,
+        "pageCount": 11,
+        "pageIndex": 5,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont3",
+      "slideId": "p09_ru_serp_table__cont4",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (4/4)",
+      "title": "Россия — Яндекс: собранная выдача (5/6)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru и klerk.ru.",
-        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "sourceNote": "Источники — dzen.ru.",
+        "statusNote": "Негативных заголовков на этой странице нет.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta",
-            "forbes.ru/profile/sergei-glinka",
-            "osnmedia.ru/news-of-companies/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-foto-i-sovremennye-vyzovy-transporta",
-            "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-i-mnenie-o-razvitii-transportnoy-oblasti"
+          "rows": [
+            [
+              "16",
+              "dzen.ru/a/aRECdBu1vRzmbVsF",
+              "Российские предприниматели всё чаще инвестируют...",
+              "Блог / личный сайт",
+              "Не проверено"
+            ]
+          ]
+        },
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено."
+      },
+      "continuationIndex": 5,
+      "continuationOf": "p09_ru_serp_table",
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczbc0025vd9gob9ld7u8"
+      ],
+      "findingIds": [],
+      "isContinuation": true,
+      "metrics": {
+        "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 1,
+        "likelyDisplayed": 0,
+        "otherSubjectDisplayed": 0,
+        "pageCount": 11,
+        "pageIndex": 6,
+        "serpEngine": "YANDEX",
+        "serpPositional": 0,
+        "uniqueMaterials": 22,
+        "unverifiedDisplayed": 1
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont5",
+      "templateId": "serp-table",
+      "title": "Россия — Яндекс: собранная выдача (6/6)",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p09_ru_serp_table",
+      "content": {
+        "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–3).",
+        "sourceNote": "Источники — runews24.ru, forbes.ru и osnmedia.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
+        "table": {
+          "headers": [
+            "№",
+            "Ссылка",
+            "Заголовок",
+            "Тип источника",
+            "Оценка"
           ],
           "rows": [
             [
               "1",
+              "runews24.ru/interview/01/08/2025/intervyu-s-biznesmenom-sergeem-glinkoj-biografiya-foto-lichnaya-zhizn-i-budushhee-transporta",
               "Интервью с бизнесменом Сергеем Глинкой: биография, фото...",
               "—",
               "Не проверено"
             ],
             [
               "2",
+              "forbes.ru/profile/sergei-glinka",
               "Сергей Глинка | Forbes.ru",
               "Новостное СМИ",
               "Не проверено"
             ],
             [
               "3",
+              "osnmedia.ru/news-of-companies/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-foto-i-sovremennye-vyzovy-transporta",
               "Бизнесмен Сергей Глинка: биография, личная жизнь, фото...",
-              "—",
-              "Не проверено"
-            ],
-            [
-              "4",
-              "Бизнесмен Сергей Глинка - биография, личная жизнь и мнение...",
               "—",
               "Не проверено"
             ]
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–4).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–3).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
-      "continuationIndex": 4,
+      "continuationIndex": 6,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
@@ -803,12 +887,7 @@
         "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
         "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
         "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
-        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
-        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
-        "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
-        "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
-        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
-        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6"
+        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y"
       ],
       "findingIds": [
         "finding-business_profile-subject_match-a59d6fee",
@@ -818,65 +897,138 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 5,
+        "pageCount": 11,
+        "pageIndex": 7,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont4",
+      "slideId": "p09_ru_serp_table__cont6",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (1/4)",
+      "title": "Россия — Google: собранная выдача (1/5)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
-        "sourceNote": "Источники — piter.tv, tadviser.ru, audit-it.ru и zachestnyibiznes.ru.",
-        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 4–6).",
+        "sourceNote": "Источники — klerk.ru, piter.tv и tadviser.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_put_i_investicii_v_innovacii",
-            "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович",
-            "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
-            "zachestnyibiznes.ru/fl/773800015809"
-          ],
           "rows": [
             [
+              "4",
+              "klerk.ru/materials/2025-04-24/biznesmen-sergey-glinka-biografiya-lichnaya-zhizn-i-mnenie-o-razvitii-transportnoy-oblasti",
+              "Бизнесмен Сергей Глинка - биография, личная жизнь и мнение...",
+              "—",
+              "Не проверено"
+            ],
+            [
               "5",
+              "piter.tv/event/Glinka_Sergej_Mihajlovich_biografiya_karernij_put_i_investicii_v_innovacii",
               "Глинка Сергей Михайлович: биография, карьерный путь...",
               "—",
               "Не проверено"
             ],
             [
               "6",
+              "tadviser.ru/index.php/Персона:Глинка_Сергей_Михайлович",
               "Глинка Сергей Михайлович",
               "Энциклопедия / справочник",
               "Не проверено"
-            ],
+            ]
+          ]
+        },
+        "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 4–6).",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
+      },
+      "continuationIndex": 7,
+      "continuationOf": "p09_ru_serp_table",
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
+        "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
+        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
+        "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n"
+      ],
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseDisplayed": 0,
+        "datasetCount": 50,
+        "displayedCount": 3,
+        "likelyDisplayed": 0,
+        "otherSubjectDisplayed": 0,
+        "pageCount": 11,
+        "pageIndex": 8,
+        "serpEngine": "GOOGLE",
+        "serpPositional": 0,
+        "uniqueMaterials": 22,
+        "unverifiedDisplayed": 3
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p09_ru_serp_table__cont7",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (2/5)",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p09_ru_serp_table",
+      "content": {
+        "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
+        "sourceNote": "Источники — audit-it.ru, zachestnyibiznes.ru и techcult.ru.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "table": {
+          "headers": [
+            "№",
+            "Ссылка",
+            "Заголовок",
+            "Тип источника",
+            "Оценка"
+          ],
+          "rows": [
             [
               "7",
+              "audit-it.ru/contragent/fl/773800015809_glinka-sergei",
               "Глинка Сергей (ИНН 773800015809) в реестре...",
               "База данных / реестр",
               "Не проверено"
             ],
             [
               "8",
+              "zachestnyibiznes.ru/fl/773800015809",
               "Глинка Сергей ИНН 773800015809, Москва",
               "База данных / реестр",
+              "Не проверено"
+            ],
+            [
+              "9",
+              "techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-foto-istoriya-uspeha-i-novye-proekty",
+              "Биография бизнесмена Сергея Глинки: фото, история ...",
+              "—",
               "Не проверено"
             ]
           ]
@@ -885,20 +1037,16 @@
         "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
         "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
-      "continuationIndex": 5,
+      "continuationIndex": 8,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
-        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
-        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
-        "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
-        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
-        "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n",
         "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
         "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
         "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
-        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76"
+        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76",
+        "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
+        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746"
       ],
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175",
@@ -908,63 +1056,55 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 6,
+        "pageCount": 11,
+        "pageIndex": 9,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont5",
+      "slideId": "p09_ru_serp_table__cont8",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (2/4)",
+      "title": "Россия — Google: собранная выдача (3/5)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 9, 11).",
-        "sourceNote": "Источники — techcult.ru, moskva.bezformata.com, labyrinth.ru и utro.ru.",
+        "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строка 11).",
+        "sourceNote": "Источники — moskva.bezformata.com, labyrinth.ru и utro.ru.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "techcult.ru/promo/15800-biografiya-biznesmena-sergeya-glinki-foto-istoriya-uspeha-i-novye-proekty",
-            "moskva.bezformata.com/listnews/sergey-glinka/148682615",
-            "labyrinth.ru/content/card.asp?cardid=92628",
-            "utro.ru/release/2025/08/01/1563439.shtml"
-          ],
           "rows": [
             [
-              "9",
-              "Биография бизнесмена Сергея Глинки: фото, история ...",
-              "—",
-              "Не проверено"
-            ],
-            [
               "10",
+              "moskva.bezformata.com/listnews/sergey-glinka/148682615",
               "Заголовок не отдан поисковой системой",
               "—",
               "Не проверено"
             ],
             [
               "11",
+              "labyrinth.ru/content/card.asp?cardid=92628",
               "ГЛИНКА Сергей Михайлович - Биография",
               "—",
               "Не проверено"
             ],
             [
               "12",
+              "utro.ru/release/2025/08/01/1563439.shtml",
               "Бизнесмен Сергей Глинка: биография, личная жизнь ...",
               "—",
               "Не проверено"
@@ -972,14 +1112,12 @@
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 9, 11).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строка 11).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
-      "continuationIndex": 6,
+      "continuationIndex": 9,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
-        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
         "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
         "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
         "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
@@ -992,49 +1130,48 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 50,
-        "displayedCount": 4,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 7,
+        "pageCount": 11,
+        "pageIndex": 10,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 22,
-        "unverifiedDisplayed": 4
+        "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont6",
+      "slideId": "p09_ru_serp_table__cont9",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (3/4)",
+      "title": "Россия — Google: собранная выдача (4/5)",
       "visualAssetRefs": []
     },
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
+        "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "sourceNote": "Источники — x.com и rupep.org.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
             "№",
+            "Ссылка",
             "Заголовок",
             "Тип источника",
             "Оценка"
           ],
-          "rowAddresses": [
-            "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
-            "rupep.org/ru/person/8095"
-          ],
           "rows": [
             [
               "13",
+              "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
               "Связанный с Россией бизнесмен Сергей Глинка ...",
               "Соцсеть",
               "Нежелательный"
             ],
             [
               "14",
+              "rupep.org/ru/person/8095",
               "Заголовок не отдан поисковой системой",
               "База данных / реестр",
               "Нежелательный"
@@ -1045,7 +1182,7 @@
         "whatWasFound": "«Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
         "whyItMatters": "На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта."
       },
-      "continuationIndex": 7,
+      "continuationIndex": 10,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
@@ -1063,8 +1200,8 @@
         "displayedCount": 2,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 8,
-        "pageIndex": 8,
+        "pageCount": 11,
+        "pageIndex": 11,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 22,
@@ -1072,9 +1209,9 @@
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
-      "slideId": "p09_ru_serp_table__cont7",
+      "slideId": "p09_ru_serp_table__cont10",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (4/4)",
+      "title": "Россия — Google: собранная выдача (5/5)",
       "visualAssetRefs": []
     }
   ],

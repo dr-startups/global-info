@@ -19,6 +19,7 @@
  */
 
 import { hasCyrillic, transliterateRuToEn } from "./orion-query-plan";
+import type { PlannedPrimaryQuery } from "./orion-query-plan";
 import { looksLikePatronymic } from "../risk-classifier/entity-disambiguation";
 
 export const SUBJECT_QUERY_SET_VERSION = "subject-query-set-v1" as const;
@@ -296,4 +297,31 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
     queries,
     rejected,
   };
+}
+
+/**
+ * Это само имя субъекта, а не производное написание.
+ *
+ * Признак — происхождение запроса, а не его место в наборе: первым имя стоит
+ * только потому, что его кладут первым, и при пустом `fullName` на первом
+ * месте оказалась бы подсказка. Обещание страницы «ТОП-20 по запросу ФИО»
+ * держится именно на происхождении.
+ */
+function isSubjectNameQuery(query: Pick<SubjectQuery, "origin">): boolean {
+  return query.origin.kind === "subject_name";
+}
+
+/**
+ * Набор запросов в том виде, в каком его принимает построитель плана сбора.
+ *
+ * Здесь пометка «это само имя» покидает модуль и дальше едет данными до деки —
+ * тем же путём, что `rank`, `rankSource` и `queryPurpose`. Пока она не
+ * покидала набора, таблица выдачи выбирала основной запрос запасным правилом,
+ * и на пяти равных написаниях фактически решал алфавит.
+ */
+export function plannedPrimaryQueries(set: SubjectQuerySet): PlannedPrimaryQuery[] {
+  return set.queries.map((q) => ({
+    query: q.query,
+    ...(isSubjectNameQuery(q) ? { subjectNameQuery: true } : {}),
+  }));
 }

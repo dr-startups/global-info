@@ -62,7 +62,7 @@ export type ClientTextSlide = {
    * было молча.
    */
   keyFindings?: Array<{ headline: string; status: string; detail: string }>;
-  /** Полоса адреса под каждой строкой — часть напечатанного клиенту текста. */
+  /** Полоса адреса под строкой — поле старых снимков; живого входа у него нет. */
   table?: { headers: string[]; rows: string[][]; rowAddresses?: string[] };
   highlights?: string[];
 };
@@ -177,8 +177,8 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       ...(s.actions ?? []),
       ...(s.keyFindings ?? []).flatMap((k) => [k.headline, k.status, k.detail]),
       ...(s.highlights ?? []),
-      // Полоса адреса — напечатанный клиенту текст: пока адрес был колонкой,
-      // он попадал в счёт вместе с `rows.flat()`.
+      // Адрес печатается ячейкой и входит в счёт вместе с `rows.flat()`.
+      // Поле полосы читается только ради старых снимков.
       ...(s.table
         ? [...s.table.headers, ...s.table.rows.flat(), ...(s.table.rowAddresses ?? [])]
         : []),

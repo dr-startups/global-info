@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 /** Таблицы деки на срезе прогона 76 — тем же путём, что и у продукта. */
-function uaeTableRows(): { rows: string[][]; rowAddresses: string[] } {
+function uaeTableRows(): { rows: string[][] } {
   const dir = mkdtempSync(join(tmpdir(), "serp-own-ranks-"));
   tempDirs.push(dir);
   writeSerpAnalyticsDir(dir, {
@@ -53,26 +53,17 @@ function uaeTableRows(): { rows: string[][]; rowAddresses: string[] } {
     evidenceIndex: inputs.evidenceIndex,
   });
   const { slides } = buildSerpFragment("UAE_SERP", "UAE_PROFILE", "ОАЭ", scoped);
-  return {
-    rows: slides.flatMap((s) => s.content.table?.rows ?? []),
-    rowAddresses: slides.flatMap((s) => s.content.table?.rowAddresses ?? []),
-  };
+  return { rows: slides.flatMap((s) => s.content.table?.rows ?? []) };
 }
 
-/** Строка таблицы: номер и адрес — то, что читает клиент.
- *
- * Адрес переехал из колонки в полосу под строкой, поэтому берётся из
- * `rowAddresses` — оттуда же, откуда его берёт рендерер. */
-function printed(
-  table: { rows: string[][]; rowAddresses?: string[] }
-): Array<{ rank: number; link: string }> {
-  return table.rows.map((r, i) => ({
-    rank: Number(r[0]),
-    link: String(table.rowAddresses?.[i] ?? ""),
-  }));
+/** Строка таблицы: номер и адрес — то, что читает клиент. */
+function printed(table: { rows: string[][] }): Array<{ rank: number; link: string }> {
+  return table.rows.map((r) => ({ rank: Number(r[RANK]), link: String(r[ADDRESS] ?? "") }));
 }
 
-/** Колонка заголовка — по имени: адрес уехал из таблицы в полосу под строкой. */
+/** Номера колонок — по именам построителя, а не числами здесь. */
+const RANK = SERP_TABLE_HEADERS.indexOf("№");
+const ADDRESS = SERP_TABLE_HEADERS.indexOf("Ссылка");
 const TITLE = SERP_TABLE_HEADERS.indexOf("Заголовок");
 
 describe("таблица ОАЭ — Google на срезе прогона 76", () => {
@@ -161,11 +152,11 @@ describe("материал, найденный обоими поисковика
     const tables = tablesOf(scoped);
     const yandex = tables.find((t) => t.title.includes("Яндекс"))!;
     const google = tables.find((t) => t.title.includes("Google"))!;
-    expect(yandex.rows.map((r) => [r[0], r[TITLE]])).toEqual([
+    expect(yandex.rows.map((r) => [r[RANK], r[TITLE]])).toEqual([
       ["1", "Forbes"],
       ["2", "РБК"],
     ]);
-    expect(google.rows.map((r) => [r[0], r[TITLE]])).toEqual([
+    expect(google.rows.map((r) => [r[RANK], r[TITLE]])).toEqual([
       ["1", "ММК"],
       ["5", "Forbes"],
     ]);
@@ -178,7 +169,7 @@ describe("датасетная политика неизвестного ист�
       { ref: "i1", rank: 1, engine: "YANDEX", query: "рашников", title: "Первый", url: "https://a.ru/1" },
       { ref: "i2", rank: 2, rankSource: "unknown", engine: "YANDEX", query: "рашников", title: "Второй", url: "https://b.ru/2" },
     ]);
-    expect(tablesOf(scoped)[0]!.rows.map((r) => r[0])).toEqual(["1", "2"]);
+    expect(tablesOf(scoped)[0]!.rows.map((r) => r[RANK])).toEqual(["1", "2"]);
   });
 
   it("в смешанном наборе безымянная позиция в таблицу не входит", () => {
@@ -228,6 +219,6 @@ describe("наблюдение без запроса не получает чу�
       { ref: "i1", rank: 1, rankSource: "serper", engine: "GOOGLE", title: "Первый", url: "https://a.ru/1" },
       { ref: "i2", rank: 2, rankSource: "serper", engine: "GOOGLE", title: "Второй", url: "https://b.ru/2" },
     ]);
-    expect(tablesOf(scoped)[0]!.rows.map((r) => r[0])).toEqual(["1", "2"]);
+    expect(tablesOf(scoped)[0]!.rows.map((r) => r[RANK])).toEqual(["1", "2"]);
   });
 });

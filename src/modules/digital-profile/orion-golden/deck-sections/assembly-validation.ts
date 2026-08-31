@@ -215,7 +215,7 @@ export function blockingIssues(input: {
   const ownAddressRows = input.ownAddressRowSlides ?? new Set<string>();
   if (ownAddressRows.size > 0) {
     out.push(
-      `строка печатает свой адрес и в ячейке, и полосой на ${ownAddressRows.size} ` +
+      `строка печатает свой адрес дважды на ${ownAddressRows.size} ` +
         `${pluralRu(ownAddressRows.size, "странице", "страницах", "страницах")}: ` +
         `${name(ownAddressRows)}`
     );
@@ -224,38 +224,48 @@ export function blockingIssues(input: {
 }
 
 /**
- * Строки таблиц, печатающие свой адрес ещё и в ячейке.
+ * Строки таблиц, печатающие свой адрес дважды.
  *
- * Единица счёта — напечатанная строка: слайд и её номер в таблице. Сравнение
- * идёт печатью адреса (`clientAddress`) против полосы адреса этой же строки,
- * которую печатает `clientLink`, — то есть двумя формами одного разбора, а не
- * новой нормализацией.
+ * Единица счёта — напечатанная строка: слайд и её номер в таблице. Сравниваются
+ * **ячейки одной строки**: адрес стоит своей колонкой, и второй его отпечаток
+ * может быть только в соседней ячейке — чаще всего в заголовке, который
+ * поисковик не отдал, а подставщик заполнил адресом. Пока адрес шёл полосой,
+ * сравнивали ячейку с полосой; вопрос от переезда не изменился, изменилось
+ * место второго отпечатка.
+ *
+ * Сравнение идёт печатью адреса (`clientAddress`) против содержимого колонки
+ * «Ссылка», которую печатает `clientLink`, — то есть двумя формами одного
+ * разбора, а не новой нормализацией. Номер колонки берётся из заголовков листа:
+ * у двух таблиц выдачи он разный.
  *
  * Хвостовое многоточие снимается перед сравнением: наш собственный рез
  * заголовка (95 знаков) укорачивал адрес сверху, оставляя полный снизу, — и
  * именно так выглядела первая из шести строк эталона-72. Поэтому совпадением
- * считается **начало** полосы, а не всё её содержимое.
+ * считается **начало** напечатанного адреса, а не всё его содержимое.
  */
 export function rowsPrintingTheirOwnAddress(
   slides: ReadonlyArray<{
     slideKey: string;
-    table?: { rows: string[][]; rowAddresses?: string[] } | undefined;
+    table?: { headers?: string[]; rows: string[][] } | undefined;
   }>
 ): Array<{ slideKey: string; row: number }> {
   const found: Array<{ slideKey: string; row: number }> = [];
   for (const slide of slides) {
-    const addresses = slide.table?.rowAddresses ?? [];
-    if (addresses.length === 0) continue;
-    slide.table!.rows.forEach((cells, i) => {
-      const band = String(addresses[i] ?? "").trim().toLowerCase();
-      if (!band) return;
-      for (const cell of cells) {
+    const column = (slide.table?.headers ?? []).indexOf("Ссылка");
+    if (column < 0 || !slide.table) continue;
+    slide.table.rows.forEach((cells, i) => {
+      const address = String(cells[column] ?? "").trim().toLowerCase();
+      if (!address) return;
+      cells.forEach((cell, index) => {
+        // Сама колонка адреса себя не повторяет.
+        if (index === column) return;
         const printed = clientAddress(String(cell ?? "").replace(/…+$/u, "").trim());
-        if (printed && band.startsWith(printed.toLowerCase())) {
-          found.push({ slideKey: slide.slideKey, row: i + 1 });
-          return;
+        if (printed && address.startsWith(printed.toLowerCase())) {
+          if (found.at(-1)?.row !== i + 1 || found.at(-1)?.slideKey !== slide.slideKey) {
+            found.push({ slideKey: slide.slideKey, row: i + 1 });
+          }
         }
-      }
+      });
     });
   }
   return found;
@@ -333,18 +343,25 @@ export function serpPrintMatchesObservations(input: {
     const key = `${slide.sectionKey}|${engine}|${query.trim().toLowerCase()}`;
     const table = tables.get(key) ?? { engine, query, region, rows: [] };
     /*
-     * Домен строки берётся из её полосы адреса — оттуда же, откуда его читает
-     * клиент. Полосы нет — сверять нечем, и строка попадает в сверку с пустым
-     * доменом: молчаливый пропуск сделал бы ворота вакуумно зелёными ровно
-     * там, где печать перестала называть источник.
+     * Домен строки берётся из её колонки «Ссылка» — оттуда же, откуда его
+     * читает клиент. Колонки нет — сверять нечем, и строка попадает в сверку с
+     * пустым доменом: молчаливый пропуск сделал бы ворота вакуумно зелёными
+     * ровно там, где печать перестала называть источник.
      */
-    const addresses = slide.table.rowAddresses ?? [];
-    slide.table.rows.forEach((row, index) => {
-      const rank = Number(row[0]);
+    const headers = slide.table.headers ?? [];
+    const addressColumn = headers.indexOf("Ссылка");
+    // Номер позиции — из колонки «№», а не из первой попавшейся. Записанный
+    // числом индекс пережил бы перестановку колонок молча: `Number("forbes.ru")`
+    // это NaN, строка тихо выпала бы из сверки, и ворота позеленели бы вакуумно
+    // ровно там, где печать разъехалась с наблюдениями.
+    const rankColumn = headers.indexOf("№");
+    if (rankColumn < 0) continue;
+    slide.table.rows.forEach((row) => {
+      const rank = Number(row[rankColumn]);
       if (!Number.isFinite(rank) || rank <= 0) return;
       table.rows.push({
         rank,
-        domain: printedDomain(String(addresses[index] ?? "")),
+        domain: printedDomain(addressColumn >= 0 ? String(row[addressColumn] ?? "") : ""),
         slideKey: slide.slideKey,
       });
     });
@@ -817,12 +834,12 @@ export function validateAssembly(input: {
     ownAddressRowSlides.add(row.slideKey);
     issues.push(`row prints its own address twice: ${row.slideKey} row ${row.row}`);
   }
-  if (rendererSlides.every((s) => (s.table?.rowAddresses ?? []).length === 0)) {
+  if (rendererSlides.every((s) => ((s.table?.headers ?? []).indexOf("Ссылка") < 0))) {
     // Ворот без входа выглядит точно так же, как пройденный: в деке без единой
-    // строки с полосой адреса проверять нечего, и ключа в `checks` не будет.
+    // таблицы с колонкой адреса проверять нечего, и ключа в `checks` не будет.
     skipped.push(
       "проверка «строка не печатает свой адрес дважды» пропущена: " +
-        "в деке нет ни одной строки таблицы с полосой адреса"
+        "в деке нет ни одной таблицы с колонкой адреса"
     );
   } else {
     checks.serpRowTitleIsNotItsAddress = ownAddressRowSlides.size === 0;

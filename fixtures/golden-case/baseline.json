@@ -1,9 +1,9 @@
 {
   "version": "golden-case-baseline-v1",
-  "observationCount": 318,
+  "observationCount": 341,
   "observationStats": {
-    "total": 318,
-    "organic:organic:RU": 129,
+    "total": 341,
+    "organic:organic:RU": 152,
     "organic:organic:UAE": 41,
     "suggestion:autocomplete:RU": 36,
     "suggestion:autocomplete:UAE": 18,
@@ -25,11 +25,11 @@
     "counts": {
       "dbSearchResults": null,
       "dbSurfaceItems": null,
-      "manifestIds": 306,
-      "manifestDeltaCount": 306,
+      "manifestIds": 329,
+      "manifestDeltaCount": 329,
       "manifestCorpusCount": 0,
-      "compositeObservations": 318,
-      "subjectMatch": 301,
+      "compositeObservations": 341,
+      "subjectMatch": 324,
       "likelySubject": 3,
       "ambiguous": 3,
       "otherSubject": 5,
@@ -75,8 +75,8 @@
       }
     },
     "slides": {
-      "total": 64,
-      "withContent": 59,
+      "total": 78,
+      "withContent": 73,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",

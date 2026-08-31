@@ -3,12 +3,12 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v149",
-  "generatedAt": "2026-08-30T12:45:57.942Z",
-  "pageCount": 56,
+  "contentVersion": "deck-sections-v150",
+  "generatedAt": "2026-08-30T23:59:36.490Z",
+  "pageCount": 61,
   "baseSlotCount": 37,
   "baseSlotCoverage": 37,
-  "continuationCount": 19,
+  "continuationCount": 24,
   "sectionPageRanges": [
     {
       "sectionType": "FRONT_MATTER",
@@ -26,25 +26,25 @@
       "sectionType": "RU_PROFILE",
       "title": "Цифровой профиль — Россия",
       "firstPage": 11,
-      "lastPage": 36
+      "lastPage": 39
     },
     {
       "sectionType": "UAE_PROFILE",
       "title": "Цифровой профиль — ОАЭ и международный контур",
-      "firstPage": 37,
-      "lastPage": 51
+      "firstPage": 40,
+      "lastPage": 56
     },
     {
       "sectionType": "COMPLIANCE",
       "title": "Комплаенс-проверка",
-      "firstPage": 52,
-      "lastPage": 54
+      "firstPage": 57,
+      "lastPage": 59
     },
     {
       "sectionType": "APPENDIX",
       "title": "Приложение",
-      "firstPage": 55,
-      "lastPage": 56
+      "firstPage": 60,
+      "lastPage": 61
     }
   ],
   "toc": [
@@ -53,20 +53,20 @@
       "pageNumber": 4
     },
     {
-      "title": "Цифровой профиль — Россия — стр. 11–36",
+      "title": "Цифровой профиль — Россия — стр. 11–39",
       "pageNumber": 11
     },
     {
-      "title": "Цифровой профиль — ОАЭ и международный контур — стр. 37–51",
-      "pageNumber": 37
+      "title": "Цифровой профиль — ОАЭ и международный контур — стр. 40–56",
+      "pageNumber": 40
     },
     {
-      "title": "Комплаенс-проверка — стр. 52–54",
-      "pageNumber": 52
+      "title": "Комплаенс-проверка — стр. 57–59",
+      "pageNumber": 57
     },
     {
-      "title": "Приложение — стр. 55–56",
-      "pageNumber": 55
+      "title": "Приложение — стр. 60–61",
+      "pageNumber": 60
     }
   ],
   "slides": [
@@ -256,7 +256,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (1/4)",
+      "title": "Россия — Яндекс: собранная выдача (1/6)",
       "pageNumber": 16,
       "isContinuation": false,
       "continuationOf": null,
@@ -268,7 +268,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (2/4)",
+      "title": "Россия — Яндекс: собранная выдача (2/6)",
       "pageNumber": 17,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -280,7 +280,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (3/4)",
+      "title": "Россия — Яндекс: собранная выдача (3/6)",
       "pageNumber": 18,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -292,7 +292,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Яндекс: собранная выдача (4/4)",
+      "title": "Россия — Яндекс: собранная выдача (4/6)",
       "pageNumber": 19,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -304,7 +304,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (1/4)",
+      "title": "Россия — Яндекс: собранная выдача (5/6)",
       "pageNumber": 20,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -316,7 +316,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (2/4)",
+      "title": "Россия — Яндекс: собранная выдача (6/6)",
       "pageNumber": 21,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -328,7 +328,7 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (3/4)",
+      "title": "Россия — Google: собранная выдача (1/5)",
       "pageNumber": 22,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
@@ -340,8 +340,44 @@
       "sectionId": "RU_PROFILE",
       "sectionType": "RU_PROFILE",
       "templateId": "serp-table",
-      "title": "Россия — Google: собранная выдача (4/4)",
+      "title": "Россия — Google: собранная выдача (2/5)",
       "pageNumber": 23,
+      "isContinuation": true,
+      "continuationOf": "p09_ru_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p09_ru_serp_table__cont8",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (3/5)",
+      "pageNumber": 24,
+      "isContinuation": true,
+      "continuationOf": "p09_ru_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p09_ru_serp_table__cont9",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (4/5)",
+      "pageNumber": 25,
+      "isContinuation": true,
+      "continuationOf": "p09_ru_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p09_ru_serp_table__cont10",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — Google: собранная выдача (5/5)",
+      "pageNumber": 26,
       "isContinuation": true,
       "continuationOf": "p09_ru_serp_table",
       "pageKind": "continuation"
@@ -353,7 +389,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "serp-screenshot-analysis",
       "title": "Россия — снимок выдачи",
-      "pageNumber": 24,
+      "pageNumber": 27,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -365,7 +401,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "suggestions",
       "title": "Россия — подсказки Яндекса: негативных формулировок нет",
-      "pageNumber": 25,
+      "pageNumber": 28,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -377,7 +413,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "suggestions",
       "title": "Россия — подсказки Google: негативных формулировок нет",
-      "pageNumber": 26,
+      "pageNumber": 29,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -389,7 +425,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "image-grid",
       "title": "Россия — изображения (1): негативных источников нет",
-      "pageNumber": 27,
+      "pageNumber": 30,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -401,7 +437,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "image-grid",
       "title": "Россия — изображения (2): негативных источников нет",
-      "pageNumber": 28,
+      "pageNumber": 31,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -413,7 +449,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "image-grid",
       "title": "Россия — изображения (3): негативных источников нет",
-      "pageNumber": 29,
+      "pageNumber": 32,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -425,7 +461,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "image-grid",
       "title": "Россия — изображения (4): 1 изображение ведёт на негативный источник",
-      "pageNumber": 30,
+      "pageNumber": 33,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -437,7 +473,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "wikipedia-check",
       "title": "Россия — Википедия",
-      "pageNumber": 31,
+      "pageNumber": 34,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -449,7 +485,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "wikipedia-knowledge",
       "title": "Россия — панель знаний",
-      "pageNumber": 32,
+      "pageNumber": 35,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -461,7 +497,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "ai-overview",
       "title": "Россия — AI-ответы поисковых систем",
-      "pageNumber": 33,
+      "pageNumber": 36,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -473,7 +509,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "related-queries",
       "title": "Россия — связанные запросы (1)",
-      "pageNumber": 34,
+      "pageNumber": 37,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -485,7 +521,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "related-queries",
       "title": "Россия — связанные запросы (2)",
-      "pageNumber": 35,
+      "pageNumber": 38,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -497,7 +533,7 @@
       "sectionType": "RU_PROFILE",
       "templateId": "related-queries",
       "title": "Россия — связанные запросы (3)",
-      "pageNumber": 36,
+      "pageNumber": 39,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -509,7 +545,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "section-divider",
       "title": "ОАЭ: Цифровой профиль",
-      "pageNumber": 37,
+      "pageNumber": 40,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -521,7 +557,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "regional-summary",
       "title": "ОАЭ / международный: в выдаче есть материалы повышенного внимания",
-      "pageNumber": 38,
+      "pageNumber": 41,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -533,7 +569,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "regional-summary",
       "title": "ОАЭ / международный: в выдаче есть материалы повышенного внимания (продолжение 2/3)",
-      "pageNumber": 39,
+      "pageNumber": 42,
       "isContinuation": true,
       "continuationOf": "p24_uae_summary",
       "pageKind": "continuation"
@@ -545,7 +581,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "regional-summary",
       "title": "ОАЭ / международный: в выдаче есть материалы повышенного внимания (продолжение 3/3)",
-      "pageNumber": 40,
+      "pageNumber": 43,
       "isContinuation": true,
       "continuationOf": "p24_uae_summary",
       "pageKind": "continuation"
@@ -557,7 +593,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-table",
       "title": "ОАЭ — метрики покрытия",
-      "pageNumber": 41,
+      "pageNumber": 44,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -568,8 +604,8 @@
       "sectionId": "UAE_PROFILE",
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (1/4)",
-      "pageNumber": 42,
+      "title": "ОАЭ / международный — Google: собранная выдача (1/6)",
+      "pageNumber": 45,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -580,8 +616,8 @@
       "sectionId": "UAE_PROFILE",
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (2/4)",
-      "pageNumber": 43,
+      "title": "ОАЭ / международный — Google: собранная выдача (2/6)",
+      "pageNumber": 46,
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "pageKind": "continuation"
@@ -592,8 +628,8 @@
       "sectionId": "UAE_PROFILE",
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (3/4)",
-      "pageNumber": 44,
+      "title": "ОАЭ / международный — Google: собранная выдача (3/6)",
+      "pageNumber": 47,
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "pageKind": "continuation"
@@ -604,8 +640,32 @@
       "sectionId": "UAE_PROFILE",
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-table",
-      "title": "ОАЭ / международный — Google: собранная выдача (4/4)",
-      "pageNumber": 45,
+      "title": "ОАЭ / международный — Google: собранная выдача (4/6)",
+      "pageNumber": 48,
+      "isContinuation": true,
+      "continuationOf": "p26_uae_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p26_uae_serp_table__cont4",
+      "baseSlotId": "p26_uae_serp_table",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (5/6)",
+      "pageNumber": 49,
+      "isContinuation": true,
+      "continuationOf": "p26_uae_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p26_uae_serp_table__cont5",
+      "baseSlotId": "p26_uae_serp_table",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-table",
+      "title": "ОАЭ / международный — Google: собранная выдача (6/6)",
+      "pageNumber": 50,
       "isContinuation": true,
       "continuationOf": "p26_uae_serp_table",
       "pageKind": "continuation"
@@ -617,7 +677,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "serp-screenshot-analysis",
       "title": "ОАЭ — снимок выдачи",
-      "pageNumber": 46,
+      "pageNumber": 51,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -629,7 +689,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "suggestions",
       "title": "ОАЭ — подсказки поиска: негативных формулировок нет",
-      "pageNumber": 47,
+      "pageNumber": 52,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -641,7 +701,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "image-grid",
       "title": "ОАЭ — изображения в поиске: 5 изображений ведут на негативные источники",
-      "pageNumber": 48,
+      "pageNumber": 53,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -653,7 +713,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "coverage-empty-state",
       "title": "ОАЭ — Википедия",
-      "pageNumber": 49,
+      "pageNumber": 54,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -665,7 +725,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "ai-overview",
       "title": "ОАЭ — панель знаний и AI Overview",
-      "pageNumber": 50,
+      "pageNumber": 55,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -677,7 +737,7 @@
       "sectionType": "UAE_PROFILE",
       "templateId": "related-queries",
       "title": "ОАЭ — связанные запросы",
-      "pageNumber": 51,
+      "pageNumber": 56,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -689,7 +749,7 @@
       "sectionType": "COMPLIANCE",
       "templateId": "serp-table",
       "title": "Комплаенс — сводка баз данных",
-      "pageNumber": 52,
+      "pageNumber": 57,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -701,7 +761,7 @@
       "sectionType": "COMPLIANCE",
       "templateId": "serp-table",
       "title": "Dow Jones — профиль",
-      "pageNumber": 53,
+      "pageNumber": 58,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -713,7 +773,7 @@
       "sectionType": "COMPLIANCE",
       "templateId": "serp-table",
       "title": "LexisNexis — страница профиля",
-      "pageNumber": 54,
+      "pageNumber": 59,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "canonical_base"
@@ -725,7 +785,7 @@
       "sectionType": "APPENDIX",
       "templateId": "finding-cards",
       "title": "Приложение: материалы, требующие идентификации",
-      "pageNumber": 55,
+      "pageNumber": 60,
       "isContinuation": false,
       "continuationOf": null,
       "pageKind": "optional_extra",
@@ -738,7 +798,7 @@
       "sectionType": "APPENDIX",
       "templateId": "finding-cards",
       "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
-      "pageNumber": 56,
+      "pageNumber": 61,
       "isContinuation": true,
       "continuationOf": "appendix_main_base",
       "pageKind": "continuation"
@@ -747,7 +807,7 @@
   "nonCanonicalPages": [
     {
       "slideId": "appendix_main_base",
-      "pageNumber": 55,
+      "pageNumber": 60,
       "pageKind": "optional_extra",
       "ownerFragment": "APPENDIX_MAIN",
       "ownerSection": "APPENDIX",
@@ -755,7 +815,7 @@
     },
     {
       "slideId": "appendix_main_base__cont1",
-      "pageNumber": 56,
+      "pageNumber": 61,
       "pageKind": "continuation",
       "ownerFragment": "APPENDIX_MAIN",
       "ownerSection": "APPENDIX",
@@ -775,7 +835,7 @@
     "RISK_MATRIX": "sha256:7f9f44bfab6709f6dc6d9d32d7a10e5347b071a1982969e884c5ed37f7ae9325",
     "DIGITAL_PROFILE_OVERVIEW": "sha256:d2e079bcae53fd702b5f437843ed8f23dee19fb3e8de22a7ec5faf3ea49833bd",
     "RU_SUMMARY": "sha256:c897245ff3a87952702a24ba389e1d7d79268dd9b8d2858a2d8daba309cba8df",
-    "RU_SERP": "sha256:e2b7823cde82043659b70985e46c44b3757920e2f701c7a12f7bc043b462ee58",
+    "RU_SERP": "sha256:0b7f343a41c29a77de8053bf7e1e54cb4d3685f7e5a165a4020f3f12d774a55b",
     "RU_SERP_SCREENSHOT": "sha256:e6e3ef0b4e96046a28ff0ec4025e408e5423237d9a9cb2b79f9f2de52ddafbe9",
     "RU_SUGGESTIONS": "sha256:95d66d7964515c07992bbf85fae1b854913db9717e6ac3da2dc2465b6f96dc29",
     "RU_IMAGES": "sha256:bd9dcbb2f878ca5c7a680a8b560460975162e52fe264bd946b5e674bc4c75f4d",
@@ -783,7 +843,7 @@
     "RU_KNOWLEDGE_AI": "sha256:43e6a221425308bb86d32bb011fe4192d4b77b9a5d0614650f4d97c02a9152e3",
     "RU_RELATED": "sha256:1e56bc20651affb7a998de6672e6c18ef512b03caed3f47061ce38cc47d5fa19",
     "UAE_SUMMARY": "sha256:04e876042d7fb0b44e6bdee37a40b5e8099b2813430d59f722679618351609b2",
-    "UAE_SERP": "sha256:e24327b4acefdded71cf487e9a423d75164cbfdd86b6c67e1971823c8ed836c0",
+    "UAE_SERP": "sha256:59f16da33dacef6453aafbffe2561c8517494144ae7dfb346711d4a6f39b658d",
     "UAE_SERP_SCREENSHOT": "sha256:2871d164e511d9790873509bc062c12893f1c51a5b60b689eecf124ae061df9e",
     "UAE_SUGGESTIONS": "sha256:0d22ce37c412d21594fe70005fc69363c616a3308e0f2a27945613299fd73757",
     "UAE_IMAGES": "sha256:8f9c595d507d5180e527bab1d5d69b9084a912bcd2ba3a81cd19dea62624aeb7",
@@ -793,5 +853,5 @@
     "COMPLIANCE_MAIN": "sha256:33fb326844fe58285e592ec34c4720ee8c9c218c5e74bf2bbcc4cc164095642c",
     "APPENDIX_MAIN": "sha256:d75b5a0f27b573729a6cf19c2a23d5532cb680ff5d38057d30bb675f6eb374d5"
   },
-  "assembledDeckHash": "sha256:e531d11eb011a922df205cc9db3b6ab244049f1c8f3e5063a43daaaa54b5f771"
+  "assembledDeckHash": "sha256:171dc7ecad849816bff231c03222ab882f6aa6509784a3bc90ba9e14aee38e99"
 }

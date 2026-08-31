@@ -83,6 +83,16 @@ export type CompositeObservation = {
    * Нужно, чтобы отличать выдачу по имени субъекта от целевых проб.
    */
   queryPurpose?: string;
+  /**
+   * Запрос этой строки — само имя субъекта, а не производное написание.
+   *
+   * Пометку ставит набор запросов (`search-surfaces/subject-query-set.ts`), и
+   * дальше она едет данными: таблица «ТОП-20 по запросу ФИО» строится по
+   * названному запросу, а не по тому, что оказался первым по алфавиту. Наборы,
+   * собранные до её появления, поля не несут — тогда работает запасное правило,
+   * и страница называет, что запрос выбран нами.
+   */
+  subjectNameQuery?: boolean;
   providers: string[];
   primaryProvider: string;
   evidenceRefs: string[];
@@ -404,6 +414,7 @@ export async function mergeCompositeSerp(input: {
       existing.ranksByProvider = { ...(existing.ranksByProvider ?? {}), [provider]: row.rank };
     }
     if (!existing.queryPurpose && row.queryPurpose) existing.queryPurpose = row.queryPurpose;
+    if (!existing.subjectNameQuery && row.subjectNameQuery) existing.subjectNameQuery = true;
     // Prefer fine-grained Arsenkin surfaces (ai_answer) over generic organic.
     if (
       row.surface &&
@@ -519,6 +530,7 @@ export async function mergeCompositeSerp(input: {
           query: queryText,
           rank: typeof r.rank === "number" && r.rank > 0 ? r.rank : undefined,
           queryPurpose: String(rm.queryPurpose ?? "").trim() || undefined,
+          subjectNameQuery: rm.subjectNameQuery === true ? true : undefined,
           url: r.url ?? undefined,
           title: r.title ?? undefined,
           snippet: r.snippet ?? undefined,

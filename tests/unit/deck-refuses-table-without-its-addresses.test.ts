@@ -1,10 +1,14 @@
 /**
- * Строка таблицы выдачи без своего адреса — отказ сборки, а не тихая страница.
+ * Полоса адреса под строкой снята, и объявить её больше нельзя.
  *
- * Адрес переехал из колонки в отдельный ряд данных (`rowAddresses`), и теперь
- * соответствие «строка → адрес» держится длиной двух массивов. Разъехались —
- * страница нарисуется без части адресов, и никто об этом не скажет: рендерер
- * просто не найдёт полосу. Такая потеря обязана быть громкой и называть слайд.
+ * Адрес вернулся в колонку таблицы, а ветка рендерера, рисовавшая полосу, снята
+ * как мёртвая. Значит `rowAddresses` теперь **никто не рисует**: слайд,
+ * объявивший это поле, отдал бы клиенту страницу без части адресов и без
+ * единого слова об этом — та самая тихая потеря, ради которой заведён контур.
+ * Поэтому сборка на таком слайде останавливается и называет его.
+ *
+ * Прежняя проверка сравнивала длины двух массивов; вопрос сузился до «объявлено
+ * ли поле вообще», потому что рисовать его больше нечем.
  */
 
 import { describe, expect, it } from "vitest";
@@ -108,41 +112,35 @@ function assemble(table: SlideBody["table"]): ReturnType<typeof assembleDeck> {
   });
 }
 
-const HEADERS = ["№", "Заголовок", "Тип источника", "Оценка"];
+const HEADERS = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"];
 const ROWS = [
-  ["1", "Первый материал", "Новостное СМИ", "Нейтральный"],
-  ["2", "Второй материал", "Новостное СМИ", "Нейтральный"],
-  ["3", "Третий материал", "Новостное СМИ", "Нейтральный"],
+  ["1", "a.example.org/1", "Первый материал", "Новостное СМИ", "Нейтральный"],
+  ["2", "b.example.org/2", "Второй материал", "Новостное СМИ", "Нейтральный"],
+  ["3", "c.example.org/3", "Третий материал", "Новостное СМИ", "Нейтральный"],
 ];
 
-describe("число адресов равно числу строк", () => {
-  it("адресов меньше, чем строк, — сборка останавливается и называет слайд", () => {
+describe("объявленную полосу адреса сборка не пропускает", () => {
+  it("любое объявление `rowAddresses` останавливает сборку и называет слайд", () => {
     const result = assemble({
       headers: HEADERS,
       rows: ROWS,
-      rowAddresses: ["a.example.org/1", "b.example.org/2"],
+      rowAddresses: ["a.example.org/1", "b.example.org/2", "c.example.org/3"],
     } as unknown as SlideBody["table"]);
     expect(result.errors.join(" | ")).toContain(SLIDE_ID);
-    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.join(" | ")).toContain("полос");
     expect(result.deckManifest.pageCount).toBe(0);
   });
 
-  it("адресов столько же, сколько строк, — дека собирается и адреса доезжают", () => {
-    const addresses = ["a.example.org/1", "b.example.org/2", "c.example.org/3"];
+  it("пустой массив — тоже объявление, и он тоже отказ", () => {
     const result = assemble({
       headers: HEADERS,
       rows: ROWS,
-      rowAddresses: addresses,
+      rowAddresses: [],
     } as unknown as SlideBody["table"]);
-    expect(result.errors).toEqual([]);
-    expect(result.deckManifest.pageCount).toBe(1);
-    const table = result.rendererSlides[0]!.table as unknown as {
-      rowAddresses?: string[];
-    };
-    expect(table.rowAddresses).toEqual(addresses);
+    expect(result.errors.length).toBeGreaterThan(0);
   });
 
-  it("таблица без адресов вовсе сборку не роняет — их нет у большинства таблиц", () => {
+  it("таблица без этого поля собирается как прежде", () => {
     const result = assemble({ headers: HEADERS, rows: ROWS });
     expect(result.errors).toEqual([]);
     expect(result.deckManifest.pageCount).toBe(1);

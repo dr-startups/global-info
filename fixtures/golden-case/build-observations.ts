@@ -5,6 +5,16 @@
 
 import type { CompositeObservation } from "../../src/modules/digital-profile/services/composite-serp-merge";
 
+/**
+ * Полоса размера корпуса — проверка целости фикстуры, а не свойство продукта.
+ *
+ * Объявлена здесь и читается смоком: пока границы стояли в двух местах, правка
+ * фикстуры проходила её собственную проверку и падала на смоке. Верхняя граница
+ * поднята вместе с блоком дополнительных написаний ФИО — без него вторая
+ * таблица выдачи не собиралась ни на одном корпусе.
+ */
+export const GOLDEN_CASE_OBSERVATION_BAND = { min: 280, max: 360 } as const;
+
 const SUBJECT = "Anders Holmström";
 const COMPANY = "Nordkap Capital";
 
@@ -150,7 +160,7 @@ const NAMESAKE_TITLES = [
 function base(
   partial: Partial<CompositeObservation> & Pick<CompositeObservation, "kind" | "key">
 ): CompositeObservation {
-  return {
+  const row: CompositeObservation = {
     region: "RU",
     engine: "YANDEX",
     query: SUBJECT,
@@ -159,6 +169,17 @@ function base(
     evidenceRefs: [],
     ...partial,
   };
+  /*
+   * Пометка «это само имя субъекта» — то же, что живой сбор пишет в
+   * `rawMetadata` строки выдачи. Без неё таблица «ТОП-20 по запросу ФИО»
+   * выбирала бы основной запрос запасным правилом (по числу материалов, на
+   * равных — по алфавиту), а с несколькими написаниями в корпусе это ровно тот
+   * случай, ради которого пометку и завели.
+   *
+   * Признак берётся из данных строки, а не проставляется списком: запрос равен
+   * имени субъекта — значит это оно и есть.
+   */
+  return row.query === SUBJECT ? { ...row, subjectNameQuery: true } : row;
 }
 
 /**
@@ -680,7 +701,61 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     );
   });
 
-  if (rows.length < 280 || rows.length > 340) {
+  /*
+   * Дополнительные написания ФИО — условие проверяемости второй таблицы.
+   *
+   * До этого блока во всей фикстуре был **один** запрос (`query: SUBJECT`),
+   * поэтому таблица «Найдено по дополнительным запросам» на золотом кейсе была
+   * пуста, и первым, кто увидел бы её с данными, оказался бы клиент. Кейс
+   * синтетический по замыслу, а запрет на подмену синтетикой относится к
+   * реальным делам, — поэтому расширение законно.
+   *
+   * Расширение **минимальное**: ровно столько строк, чтобы сработали обе ветки
+   * второй таблицы — «строки есть» и «часть срезана пределом». Предел
+   * срезаемой части равен глубине первой таблицы (20), значит непроверенных
+   * материалов нужно 21 и больше; взято 22, чтобы остаток (2) печатался
+   * множественным числом и проверял согласование фразы. Плюс один
+   * нежелательный: он обязан печататься всегда, поверх предела, и это видно
+   * только на корпусе, где предел действительно сработал.
+   *
+   * Написаний два, а не пять: третье и четвёртое не добавили бы ни одной новой
+   * ветки, а корпус живёт в полосе размера.
+   */
+  const EXTRA_SPELLINGS = [`Holmström ${SUBJECT.split(" ")[0]}`, `${SUBJECT} ${COMPANY}`];
+  const EXTRA_HOSTS = ["nordic-business-wire.se", "stockholm-ledger.se", "baltic-market-eye.se"];
+  for (let i = 0; i < 23; i++) {
+    const adverse = i === 0;
+    const engine = i % 2 === 0 ? "YANDEX" : "GOOGLE";
+    const hostName = EXTRA_HOSTS[i % EXTRA_HOSTS.length]!;
+    const title = adverse
+      ? `Prosecutors open a probe into ${SUBJECT} over a Malta holding`
+      : `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${SUBJECT} и ${COMPANY} — деловой обзор ${i}`;
+    rows.push(
+      base({
+        key: `organic|ru|${engine.toLowerCase()}|q2|https://${hostName}/x-${id()}`,
+        kind: "organic",
+        surface: "organic",
+        region: "RU",
+        engine,
+        providers: engine === "GOOGLE" ? ["serper"] : ["yandex"],
+        primaryProvider: engine === "GOOGLE" ? "serper" : "yandex",
+        // Запрос — не имя субъекта: именно этим материал и попадает во вторую
+        // таблицу, а не в первую.
+        query: EXTRA_SPELLINGS[i % EXTRA_SPELLINGS.length]!,
+        url: `https://${hostName}/${slug(title)}-x${i}`,
+        title,
+        snippet: adverse
+          ? `${title}. Материал издания ${hostName}.`
+          : `${SUBJECT}, ${COMPANY} и деловая среда Стокгольма. Материал издания ${hostName}.`,
+        rank: nextRank("RU", engine),
+        evidenceRefs: [`searchResult:sr-ru-x-${i}`],
+        baseSearchResultId: `sr-ru-x-${i}`,
+        riskLabel: adverse ? "adverse" : null,
+      })
+    );
+  }
+
+  if (rows.length < GOLDEN_CASE_OBSERVATION_BAND.min || rows.length > GOLDEN_CASE_OBSERVATION_BAND.max) {
     throw new Error(`golden-case observation count out of band: ${rows.length}`);
   }
   /*

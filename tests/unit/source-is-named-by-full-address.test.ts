@@ -94,11 +94,12 @@ describe("адрес источника", () => {
     );
   });
 
-  it("за границей полосы параметры снимаются раньше, чем адрес режется", () => {
+  it("за границей колонки параметры снимаются раньше, чем адрес режется", () => {
     // Обрезанный адрес не открывается вовсе, а тот же адрес без параметров
     // ведёт на ту же страницу. Порядок: сначала снять параметры, потом резать.
-    const path = "b".repeat(220);
+    const path = "b".repeat(140);
     const long = `https://tadviser.ru/${path}?shem=rbrand_ru&utm=1`;
+    expect(long.length).toBeGreaterThan(165);
     expect(clientLink(long, "tadviser.ru")).toBe(`tadviser.ru/${path}`);
   });
 });

@@ -155,8 +155,8 @@ export function clientVisibleStrings(slide: ClientVisibleSlide): string[] {
   push(slide.staticBlocks);
   push(slide.table?.headers);
   push(slide.table?.rows);
-  // Полоса адреса — такой же напечатанный текст, как ячейка: пока адрес был
-  // колонкой, он попадал сюда вместе со строками, и слепой зоны быть не должно.
+  // Адрес печатается ячейкой и попадает сюда со строками. Поле полосы
+  // читается только ради старых артефактов: живого входа у него нет.
   push(slide.table?.rowAddresses);
   push(slide.whatWasFound);
   push(slide.whyItMatters);
