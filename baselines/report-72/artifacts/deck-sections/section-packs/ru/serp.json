@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:976565a63a86ee62cf637e92f84919dd75d82f18cae71ef3e85b252c4a853abc",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:f671f0ef608fdee4732f1a8c29567ca3f0facf4f0bbad82a1bf9bfc70a835458",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,7 +149,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP",
-  "generatedAt": "2026-09-01T08:53:09.222Z",
+  "generatedAt": "2026-09-01T14:59:44.784Z",
   "inputHash": "sha256:c1c2280b667e7c4aa3e5ec389a3cdf630ff144550560309842da8a21c53c8533:4826c8a58abdf219",
   "inputs": {
     "evidenceRefs": [
@@ -387,7 +387,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4, 6–9).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 1.",
+        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 5.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
@@ -532,7 +532,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 12).",
-        "sourceNote": "Источники — nakanune.ru, shkolazhizni.ru, audit-it.ru, ru.wikipedia.org и ещё 1.",
+        "sourceNote": "Источники — nakanune.ru, shkolazhizni.ru, audit-it.ru, ru.wikipedia.org и ещё 2.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
@@ -634,7 +634,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 1.",
+        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 5.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [

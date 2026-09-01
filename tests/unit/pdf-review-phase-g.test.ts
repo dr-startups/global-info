@@ -43,7 +43,8 @@ describe("G.1 — regional summary does not merge methodology into bullets", () 
           whyItMatters: "Тоже не должен.",
           whatToCheck: "Сверить статусы дел.",
           methodologyNote: "Метрики рассчитаны только по материалам…",
-          sourceNote: "Источники: dzen.ru.",
+          // Строки источников у дашборда метрик нет: печатать её негде, и
+          // ассемблер её на этот макет не кладёт.
           visualAssetRefs: [],
           evidenceRefs: [],
         } as never,

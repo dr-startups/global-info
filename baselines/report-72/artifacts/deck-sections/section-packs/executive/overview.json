@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:d2e079bcae53fd702b5f437843ed8f23dee19fb3e8de22a7ec5faf3ea49833bd",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:baf00d81874b749e594adebb6fb327db6a82f3b931f4f92cd53460bde56644ba",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -61,7 +61,7 @@
     "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
   ],
   "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
-  "generatedAt": "2026-09-01T08:53:09.217Z",
+  "generatedAt": "2026-09-01T14:59:44.778Z",
   "inputHash": "sha256:3c34d67171cc0486f5c706c071e253770bfd3261cae14577103d477503fef180:b5123bd3a39c0aaf",
   "inputs": {
     "evidenceRefs": [
@@ -201,7 +201,7 @@
           }
         ],
         "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (Россия: 246, ОАЭ: 97). Принадлежность каждого материала к проверяемому лицу проверена.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29.",
         "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       },
       "continuationIndex": null,
@@ -236,7 +236,7 @@
           "Внимание по линии безопасности / оборонный контур\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. [finding-security_scrutiny-subject_match-0ae970c7]",
           "PEP / RCA / watchlist-сигналы\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
         ],
-        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29."
       },
       "continuationIndex": 1,
       "continuationOf": "p05_profile_dashboard",

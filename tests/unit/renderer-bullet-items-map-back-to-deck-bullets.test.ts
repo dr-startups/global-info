@@ -120,7 +120,8 @@ describe("разрез элементов списка рендерера", () =
       template: "orion_golden_metrics_dashboard",
       narrative: "Итог по региону",
       bullets: ["Тема A", "Тема B"],
-      sourceNote: "Источники — lenta.ru.",
+      // Строки источников у дашборда метрик больше не бывает: печатать её на
+      // плитках и карточках тем негде, и ассемблер её сюда не кладёт.
       kpis: [{ label: "Материалов", value: "32" }],
     });
     expect(foldOf(s)).toEqual({ leading: 0, trailing: 0 });

@@ -32,6 +32,7 @@ import {
 } from "../orion-golden/deck-sections/scoped-input";
 import {
   BulletFitNotConvergedError,
+  ClientTextWithoutCarrierError,
   NarrativeOverBudgetError,
   NarrativeReflowLossError,
 } from "../orion-golden/deck-sections/run-deck-build";
@@ -207,6 +208,20 @@ export function prepareBlockedErrorFor(err: unknown): CanonicalPrepareBlockedErr
     return new CanonicalPrepareBlockedError(
       "ASSEMBLY_QA_FAILED",
       `NARRATIVE_REFLOW_LOSS=${err.slides.length} ${err.message}`
+    );
+  }
+  /*
+   * Клиентское поле деки, которому в нагрузке негде напечататься.
+   *
+   * Природа та же, что у соседей: те же пакеты дают ту же нагрузку и ту же
+   * потерю, поэтому второй заход по определению кончится тем же. В маркере —
+   * сколько полей, чтобы оператор по строке джобы понял масштаб, не открывая
+   * артефакты.
+   */
+  if (err instanceof ClientTextWithoutCarrierError) {
+    return new CanonicalPrepareBlockedError(
+      "ASSEMBLY_QA_FAILED",
+      `CLIENT_TEXT_WITHOUT_CARRIER=${err.fields.length} ${err.message}`
     );
   }
   /*

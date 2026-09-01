@@ -20,7 +20,13 @@ import {
 } from "./section-builders";
 import { validateSectionPack, type SectionValidationReport } from "./section-validation";
 import { buildReportSectionManifest } from "./section-manifest";
-import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./deck-assembler";
+import {
+  assembleDeck,
+  CLIENT_TEXT_FIELDS,
+  type ClientTextField,
+  type DeckAssemblyResult,
+  type RendererSlide,
+} from "./deck-assembler";
 import {
   validateAssembly,
   type AssemblyValidationReport,
@@ -30,7 +36,11 @@ import { buildLinkUsageTrace, linkUsageLogLine } from "./link-usage-trace";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
 import { toneForRiskLabel } from "../client/risk-scale";
-import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import {
+  clampClientText,
+  reflowNarrativeParagraphs,
+  reflowThemeBullet,
+} from "./fragment-builders/shared";
 import {
   CARD_STRUCTURED_TEMPLATES,
   composeFindingProse,
@@ -39,6 +49,7 @@ import {
 import { normalizeForCompare, withoutRepeatedSentences } from "./text-compare";
 import {
   DECK_TEMPLATE_REGISTRY,
+  SIDEBAR_COLUMN_CHAR_BUDGET,
   SIDEBAR_HIGHLIGHT_BUDGET,
   SIDEBAR_HIGHLIGHT_SLOTS,
   rendererTemplateHasBulletList,
@@ -432,6 +443,7 @@ function slotChainsOf(
       payloadItems: itemsByKey.get(slide.slideKey) ?? [],
       deckBullets: slide.bullets ?? [],
       sourceNote: slide.sourceNote,
+      statusNote: slide.statusNote,
     });
     // Разрез не сошёлся — из перекладки выпадает **вся цепочка**, а не одна её
     // страница: пропущенный лист сдвинул бы нумерацию страниц в плане, и блоки
@@ -675,6 +687,73 @@ export class NarrativeReflowLossError extends Error {
 }
 
 /**
+ * Клиентский текст деки, у которого в нагрузке нет носителя.
+ *
+ * Поле, построенное для слайда и не положенное ни в одно поле его же объекта
+ * нагрузки, до листа не доедет никогда — и никакой прибор ниже этого не
+ * увидит. Ворот приёмки «каждое поле оставило след на своей странице» читает
+ * **нагрузку**, поэтому поле, до неё не доехавшее, для него не существует: на
+ * эталоне-72 он был зелёным при 21 потерянной сноске «Источники» и 8
+ * потерянных статусных строках.
+ *
+ * Отказ громкий и возобновляемый: правится он в построителе (поле, которому
+ * негде напечататься, не строится) или в маппинге (поле кладётся в носитель,
+ * который макет рисует).
+ */
+export class ClientTextWithoutCarrierError extends Error {
+  readonly fields: ReadonlyArray<{ slideKey: string; field: string; text: string }>;
+
+  constructor(fields: ReadonlyArray<{ slideKey: string; field: string; text: string }>) {
+    super(
+      `client text has no carrier in the renderer payload: ${fields
+        .map((f) => `${f.slideKey} · ${f.field} · «${f.text.slice(0, 60)}»`)
+        .join("; ")}`
+    );
+    this.name = "ClientTextWithoutCarrierError";
+    this.fields = fields;
+  }
+}
+
+/**
+ * Поля, у которых носителя в нагрузке нет **сознательно**.
+ *
+ * Список короткий и обязан таким остаться: каждая строка — это решение «клиент
+ * этого текста не увидит», принятое раньше и с названной причиной. Всё, чего
+ * здесь нет, обязано найти носитель или не строиться вовсе.
+ */
+const CLIENT_TEXT_WITHOUT_CARRIER_BY_DESIGN: ReadonlyArray<{
+  field: ClientTextField;
+  /**
+   * Где решение принято. Пусто — правило поля целиком; иначе исключение
+   * действует ровно там, где предикат верен, и **только там**: исключение
+   * шире своей причины — это выключенный сторож на страницах, о которых
+   * причина ничего не говорит.
+   */
+  where?: (payloadSlide: Record<string, unknown>) => boolean;
+}> = [
+  // Методичка макета в клиентский поток не идёт: она читается как внутренний
+  // жаргон и выталкивает карточки тем в подвал (PDF-40 G.1e). Исключение —
+  // всюду, **кроме** карточных макетов: там у неё своё печатное поле, и там
+  // её пропажу ловить надо.
+  {
+    field: "methodologyNote",
+    where: (slide) => !CARD_STRUCTURED_TEMPLATES.has(String(slide.template ?? "")),
+  },
+  // Внутренний код причины (`VISUAL_ASSET_UNAVAILABLE`, `no-identity-data`), а
+  // не клиентский текст: он выбирает ветку макета и до листа не доезжает.
+  { field: "emptyStateReason" },
+  // Вводный абзац раздела рисует только вариант `hero`; у разделителя по
+  // умолчанию на листе стоит один титул, а вариант вёрстки выбирается уже
+  // после того, как построитель собрал абзац. У самого `hero` абзац в нагрузку
+  // попадает — там пропажа была бы дефектом.
+  {
+    field: "narrative",
+    where: (slide) =>
+      slide.template === "orion_golden_region_divider" && slide.layoutVariant !== "hero",
+  },
+];
+
+/**
  * Поимённых допусков у сторожа больше нет.
  *
  * Допуск существовал ради одного шаблона: абзац `p03_executive` золотого кейса
@@ -729,6 +808,114 @@ export function narrativeReflowLoss(
     }
   }
   return lost;
+}
+
+/**
+ * Поля, которые панель распределяет по своей колонке сама.
+ *
+ * У них носитель на панельном слайде есть всегда — блоки `visualAnalysis`, — а
+ * «сколько влезло» решает объявленная ёмкость колонки и объявленный порядок
+ * важности. Список короткий и живёт рядом со сторожем, потому что нужен только
+ * ему: распределитель сам ходит по полям поимённо.
+ *
+ * `sourceNote` сюда **не входит**: подпись источников бюджета колонки не
+ * занимает — рендерер печатает её в полосе, которую `write_block` держит в
+ * запасе, — и её пропажа на панели была бы такой же молчаливой потерей, как на
+ * любом другом макете.
+ */
+const SIDEBAR_DISTRIBUTED_FIELDS: ReadonlySet<ClientTextField> = new Set([
+  "narrative",
+  "whatWasFound",
+  "whyItMatters",
+  "whatToCheck",
+  "statusNote",
+]);
+
+/**
+ * Клиентские поля деки, которым в нагрузке не нашлось носителя.
+ *
+ * Сторож выводится из **данных**, а не из таблицы «что печатает этот шаблон»:
+ * таких таблиц в проекте уже две (сам рендерер и `maxBulletsPerSlide` реестра),
+ * и третья разошлась бы с ними на первой же правке макета. Поэтому вопрос
+ * задаётся объекту нагрузки: встречается ли текст поля хоть где-нибудь в нём —
+ * своим полем, элементом списка, ячейкой таблицы или блоком `visualAnalysis`.
+ *
+ * Сравнивается голова в 40 знаков и по схлопнутым пробелам: до нагрузки текст
+ * доезжает через резак абзацев и склейку с подзаголовком, которые меняют
+ * переносы и приписывают текст спереди, но не переписывают слова.
+ */
+export function clientTextWithoutCarrier(
+  pairs: ReadonlyArray<{ deck: RendererSlide; payload: Record<string, unknown> }>
+): { missing: Array<{ slideKey: string; field: string; text: string }>; checked: number } {
+  // Регистр не в счёт: подзаголовок и первое предложение абзаца — это один и
+  // тот же текст разным регистром («Итоговая оценка: Высокий риск» против
+  // «Итоговая оценка: высокий риск. …»), и склейка снимает повтор именно так.
+  const compact = (value: string): string =>
+    value.replace(/\s*\[finding-[^\]]+\]/gu, "").replace(/\s+/gu, " ").trim().toLowerCase();
+  const strings = (node: unknown, out: string[]): void => {
+    if (typeof node === "string") out.push(node);
+    else if (Array.isArray(node)) for (const v of node) strings(v, out);
+    else if (node && typeof node === "object")
+      for (const v of Object.values(node)) strings(v, out);
+  };
+  const missing: Array<{ slideKey: string; field: string; text: string }> = [];
+  let checked = 0;
+  for (const { deck, payload } of pairs) {
+    const carried: string[] = [];
+    strings(payload, carried);
+    const haystack = carried.map(compact).join(" \u0000 ");
+    const panel = payload.visualAnalysis as Record<string, unknown> | undefined;
+    for (const field of CLIENT_TEXT_FIELDS) {
+      const value = deck[field];
+      if (typeof value !== "string") continue;
+      const text = compact(value);
+      if (!text) continue;
+      if (
+        CLIENT_TEXT_WITHOUT_CARRIER_BY_DESIGN.some(
+          (rule) => rule.field === field && (!rule.where || rule.where(payload))
+        )
+      )
+        continue;
+      /*
+       * На панельном слайде носитель у этих полей есть — сама панель, — и
+       * сколько их текста в неё влезло, решает её объявленная ёмкость
+       * (`SIDEBAR_COLUMN_CHAR_BUDGET`) по объявленному порядку важности. Это
+       * другой вопрос, чем «есть ли куда положить», и на него уже отвечено:
+       * потеря там ограничена числом и слышна телеметрией панели
+       * (`_sidebar_loss`). Сторож не должен судить её вторым правилом —
+       * иначе любой бюджет колонки роняет сборку.
+       */
+      if (panel && SIDEBAR_DISTRIBUTED_FIELDS.has(field)) continue;
+      checked += 1;
+      if (!haystack.includes(text.slice(0, 40))) {
+        missing.push({ slideKey: deck.slideKey, field, text });
+      }
+    }
+    /*
+     * Но панель, не сказавшая **ничего**, — это та же молчаливая потеря:
+     * титулованный блок без текста под ним клиент читает как пустую страницу.
+     */
+    if (panel) {
+      checked += 1;
+      const blocks = [
+        panel.headlineConclusion,
+        panel.whatIsVisible,
+        panel.clientMeaning,
+        ...((panel.recommendedActions as unknown[]) ?? []),
+        ...((panel.highlightExplanations as Array<{ clientReason?: unknown }>) ?? []).map(
+          (e) => e?.clientReason
+        ),
+      ];
+      if (!blocks.some((b) => typeof b === "string" && compact(b))) {
+        missing.push({
+          slideKey: deck.slideKey,
+          field: "visualAnalysis",
+          text: "панель собрана, но не несёт ни одного блока",
+        });
+      }
+    }
+  }
+  return { missing, checked };
 }
 
 export function narrativeOverBudget(
@@ -902,7 +1089,7 @@ export function toRendererPayload(input: {
         continuationOf: s.continuationOf,
         continuationIndex: s.continuationIndex,
         narrative,
-        bullets: s.bullets?.length ? s.bullets : undefined,
+        bullets: withStatusNote(s.bullets ?? [], s),
         actions: s.whatToCheck ? [{ label: s.whatToCheck }] : undefined,
         methodologyNote: s.methodologyNote,
         sourceNote: s.sourceNote,
@@ -1028,6 +1215,23 @@ export function toRendererPayload(input: {
    */
   const reflowLoss = narrativeReflowLoss(reflowPairs);
   if (reflowLoss.length > 0) throw new NarrativeReflowLossError(reflowLoss);
+  /*
+   * Поле, построенное для слайда, обязано доехать до его же объекта нагрузки.
+   *
+   * Пустой перечень проверенных полей — тоже отказ. Ворот, которому нечего было
+   * проверять, печатает «ноль потерь» ровно так же, как ворот, проверивший всё:
+   * именно так `everyTextFieldReachesItsPage` был зелёным на деке с 29
+   * потерянными полями.
+   */
+  const carrier = clientTextWithoutCarrier(
+    input.rendererSlides.map((deck, i) => ({ deck, payload: finalSlides[i]! }))
+  );
+  if (finalSlides.length > 0 && carrier.checked === 0) {
+    throw new ClientTextWithoutCarrierError([
+      { slideKey: "<вся дека>", field: "<перечень полей>", text: "сторож не проверил ни одного поля" },
+    ]);
+  }
+  if (carrier.missing.length > 0) throw new ClientTextWithoutCarrierError(carrier.missing);
   return {
     reportSpec: {
       version: "deck-sections-report-spec-v1",
@@ -1086,18 +1290,24 @@ export function bulletItemFoldOf(input: {
   payloadItems: readonly string[];
   deckBullets: readonly string[];
   sourceNote?: string;
+  statusNote?: string;
 }): BulletItemFold | null {
-  const items = input.payloadItems;
-  const trailing =
-    input.sourceNote && items.length > 0 && items[items.length - 1] === input.sourceNote ? 1 : 0;
-  const leading = items.length - input.deckBullets.length - trailing;
+  const items = [...input.payloadItems];
+  // Вклейки хвоста снимаются в обратном порядке приклеивания: сначала
+  // статусная строка, потом ссылка на источник (см. `withStatusNote` и
+  // `buildRendererBullets`). Узнаётся каждая по совпадению с последним
+  // элементом — из данных, а не копией ветвлений склейки.
+  let trailing = 0;
+  for (const tail of [input.statusNote, input.sourceNote]) {
+    if (tail && items.length > 0 && items[items.length - 1] === tail) {
+      items.pop();
+      trailing += 1;
+    }
+  }
+  const leading = items.length - input.deckBullets.length;
   if (leading < 0 || leading > 1) return null;
   return { leading, trailing };
 }
-
-/** Dangling tails after a word-boundary cut («…относящийся к», «…и ещё»). */
-const SIDEBAR_DANGLING_RE =
-  /(?:\s+(?:и|а|но|или|же|то|что|как|при|про|для|без|под|над|из|из-за|от|до|по|к|ко|в|во|на|с|со|о|об|обо|у|за|ещё|еще|также|более|менее|чем|котор\p{L}*|относящ\p{L}*|связанн\p{L}*|требующ\p{L}*))+$/iu;
 
 /**
  * Sidebar text must be complete sentences without ellipsis (renderer QA).
@@ -1119,40 +1329,48 @@ export function sidebarSafe(text: string | undefined, budget = 240): string | un
     kept.push(s);
     used += extra;
   }
-  if (kept.length > 0) return kept.join(" ");
-  // First sentence alone is over budget: word-boundary cut + dangling trim,
-  // closed with a period so the renderer QA sees a complete sentence.
-  const slice = out.slice(0, budget);
-  let head = slice.slice(0, Math.max(slice.lastIndexOf(" "), 0)) || slice;
-  head = head.replace(/[\s;,.:—–-]+$/u, "").replace(SIDEBAR_DANGLING_RE, "").replace(/[\s;,.:—–-]+$/u, "");
-  return head ? `${head}.` : undefined;
+  /*
+   * Не влезло даже первое предложение — блок не получает ничего.
+   *
+   * Прежде здесь стоял рез по границе слова с точкой в конце, и панель
+   * печатала «…уровень внимания — высокий; оценка.» — фразу, оборванную на
+   * половине мысли. Короткое целое предложение лучше длинного сломанного, а
+   * пустой блок лучше огрызка: заголовка без текста под ним панель не рисует
+   * (`write_block` выходит на пустом теле), и место достаётся следующему по
+   * важности блоку.
+   */
+  return kept.length > 0 ? kept.join(" ") : undefined;
 }
 
 /**
  * Structured content of the analytical sidebar next to a bound visual:
  * static context (template methodology), dynamic conclusion, why relevant or
  * why adverse, confidence/status and recommended action.
+ *
+ * Блоки притязают на ёмкость колонки **по важности**, а не по порядку чтения.
+ *
+ * Ёмкость одна — `SIDEBAR_COLUMN_CHAR_BUDGET`; бюджеты полей ниже это потолки
+ * читаемости («сколько уместно дать одному блоку»), и в сумме они дают вдвое
+ * больше, чем колонка держит. Пока разницу выбирал рендерер, он выбирал её
+ * снизу, то есть последним нарисованным блоком, — и на семи страницах живого
+ * прогона 92 клиент видел риск и не видел, что с ним делать.
+ *
+ * Порядок притязания — решение продуктовое:
+ *
+ *   1. вывод — то, ради чего страницу вообще открывают;
+ *   2. рекомендация — то, ради чего клиент платит за отчёт;
+ *   3. объяснения рамок — **раньше значимости**, потому что рамка без
+ *      объяснения нарушает правило «Объяснение — на каждую рамку»: при
+ *      обратном порядке четыре страницы прогона 92 остались бы с выделенными
+ *      материалами и без единой фразы о том, почему они выделены;
+ *   4. значимость и статусная строка;
+ *   5. абзац страницы — на остатке; на страницах без рамок его текст всё равно
+ *      печатается средним блоком (`mid_body = visible or meaning`).
+ *
+ * Порядок **отрисовки** при этом прежний: вывод, средний блок, «Что это
+ * значит», «Что сделать».
  */
 function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
-  // PDF-36 D.1 — budgets mirror the measured sidebar capacity (~0.38 page
-  // width × content height ≈ 1300–1500 chars across all blocks). The old
-  // 130–200-char budgets pre-truncated GPT text the panel could easily hold;
-  // the renderer still sentence-fits each block, so overflow degrades safely.
-  const explanations = (s.highlightExplanations ?? []).map((h) => ({
-    clientReason: sidebarSafe(h.clientReason, SIDEBAR_HIGHLIGHT_BUDGET),
-    frameTone: h.frameTone,
-  }));
-  // On adverse pages the "why adverse" is carried by the highlight
-  // explanations; the meaning block keeps significance (incl. any visible
-  // coverage limitation) and the confidence/status line. The renderer trims
-  // to complete sentences and fails closed on true overflow.
-  const meaning = (
-    explanations.length
-      ? [sidebarSafe(s.whyItMatters, 300), sidebarSafe(s.statusNote, 140)]
-      : [sidebarSafe(s.whyItMatters, 260), sidebarSafe(s.statusNote, 140)]
-  )
-    .filter(Boolean)
-    .join(" ");
   /*
    * Каждый блок панели говорит своё.
    *
@@ -1164,34 +1382,91 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
    * который платит за отчёт, это самый заметный признак халтуры.
    *
    * Правило простое: предложение, уже сказанное выше, ниже не повторяется.
-   * Порядок обхода — порядок чтения, поэтому наверху остаётся вывод, а ниже —
-   * только то, что к нему добавляет.
+   * Порядок обхода — тот же порядок важности: наверху вывод, следом
+   * рекомендация. Пока обход шёл порядком чтения, `whatIsVisible` забирал себе
+   * склеенный абзац страницы, а тот последним блоком содержит сам
+   * `whatToCheck` (`composeFindingProse`) — предложение помечалось сказанным, и
+   * `recommendedActions` выходил пустым на всех 16 панелях эталона-72.
    */
   const said = new Set<string>();
-  const headlineConclusion = withoutRepeatedSentences(
-    sidebarSafe(s.whatWasFound, 300) ?? sidebarSafe(s.narrative, 300),
-    said
-  );
-  const whatIsVisible = withoutRepeatedSentences(
-    sidebarSafe(s.narrative, 420) ?? sidebarSafe(s.methodologyNote, 420),
-    said
-  );
-  const clientMeaning = withoutRepeatedSentences(meaning || undefined, said);
+  let left = SIDEBAR_COLUMN_CHAR_BUDGET;
+  /** Взять текст в свой потолок, но не больше остатка колонки. */
+  const claim = (text: string | undefined, cap: number): string | undefined => {
+    const kept = withoutRepeatedSentences(sidebarSafe(text, Math.min(cap, left)), said);
+    if (kept) left -= kept.length;
+    return kept;
+  };
+
+  const headlineConclusion = claim(s.whatWasFound, 300) ?? claim(s.narrative, 300);
+  const action = claim(s.whatToCheck, 260);
+  /*
+   * Объяснения повторов не снимают: их текст называет свой материал, и
+   * дедупликация против вывода оставила бы рамку без объяснения. Место они
+   * берут наравне со всеми — колонка одна.
+   */
+  const rawExplanations = s.highlightExplanations ?? [];
+  const explanations: Array<{ clientReason: string; frameTone: "red" | "amber" }> = [];
+  for (const h of rawExplanations) {
+    if (explanations.length >= SIDEBAR_HIGHLIGHT_SLOTS) break;
+    const reason = sidebarSafe(h.clientReason, Math.min(SIDEBAR_HIGHLIGHT_BUDGET, left));
+    if (!reason) continue;
+    left -= reason.length;
+    explanations.push({ clientReason: reason, frameTone: h.frameTone });
+  }
+  // На странице с рамками «почему адверсно» несут сами объяснения; блок
+  // значимости оставляет себе смысл для клиента (включая видимое ограничение
+  // покрытия) и статусную строку.
+  const clientMeaning =
+    [claim(s.whyItMatters, 300), claim(s.statusNote, 140)].filter(Boolean).join(" ") || undefined;
+  /*
+   * Запасное значение выбирается **до** притязания, а не после.
+   *
+   * Методичка макета — текст на случай, когда своего абзаца у страницы нет
+   * вовсе (страница-продолжение подсказок): она объясняет, что за раздел, но
+   * ничего не говорит о субъекте. Если бы она подставлялась после того, как
+   * абзац целиком ушёл в вышестоящие блоки, клиент читал бы её на **каждой**
+   * такой странице — вместо своего текста и в самом заметном месте панели.
+   *
+   * Выбор идёт по **пустоте**, а не по `null`: схема пакета объявляет абзац
+   * как `z.string().optional()` без `.min(1)`, то есть пустая строка законна,
+   * а `??` её пропускает. На слайде формы «продолжение подсказок» это давало
+   * панель без единого блока — и сторож носителя ронял всю сборку отчёта.
+   */
+  const whatIsVisible = claim(s.narrative || s.methodologyNote, 420);
   return {
     sidebarMode: explanations.length ? "adverse_explanation" : "context",
     headlineConclusion,
     whatIsVisible,
     clientMeaning,
-    highlightExplanations: explanations.slice(0, SIDEBAR_HIGHLIGHT_SLOTS),
-    moreSignalsCount: Math.max(0, explanations.length - SIDEBAR_HIGHLIGHT_SLOTS),
-    // Рекомендация тоже подчиняется правилу «каждый блок говорит своё». На
-    // странице «AI-ответы» она дословно повторяла нарратив: одна и та же
-    // фраза печаталась дважды на одном экране.
-    recommendedActions: (() => {
-      const action = withoutRepeatedSentences(sidebarSafe(s.whatToCheck, 260), said);
-      return action ? [action] : [];
-    })(),
-    provenanceLabel: sidebarSafe(s.sourceNote, 140),
+    highlightExplanations: explanations,
+    /*
+     * «Ещё N похожих сигналов» считается **после** распределения: обещание
+     * обязано называть именно тех, кому места не досталось, иначе клиент не
+     * сложит показанное с обещанным.
+     */
+    moreSignalsCount: Math.max(0, rawExplanations.length - explanations.length),
+    recommendedActions: action ? [action] : [],
+    /*
+     * Подпись источников бюджета колонки не занимает: рендерер печатает её в
+     * полосе, которую `write_block` держит в запасе (160 000 EMU) под всеми
+     * блоками, и в их укладке она не участвует.
+     *
+     * Потолок здесь снимает **вторую** фразу (у региональной сноски за
+     * перечнем площадок идёт «Данные собраны …»), а не режет первую: сноска —
+     * одно предложение по построению, и правило «целые предложения или
+     * ничего» унесло бы её целиком. Цена такой пропажи — не подрезанная
+     * строка мелким шрифтом, а отказ **всей сборки**: носителя у поля
+     * `sourceNote` не остаётся, и сторож объявляет потерю. Запас до предела
+     * маленький (самая длинная сноска корпусов — 100 знаков), а снятие срезов
+     * этим же шагом двигает длину вверх: «и ещё 1» → «и ещё 182».
+     *
+     * Если же одна фраза длиннее потолка, подпись **укорачивается**, а не
+     * исчезает и не едет целиком: полоса под панелью держит одну строку 9 pt,
+     * и вторая уходит чернилами за низ сцены. Режет общий помощник клиентского
+     * текста, а не второй резак: обрыв по слову с уборкой повисшего хвоста.
+     */
+    provenanceLabel:
+      sidebarSafe(s.sourceNote, 140) || clampClientText(s.sourceNote ?? "", 140) || undefined,
   };
 }
 
@@ -1248,7 +1523,21 @@ function buildRendererBullets(s: RendererSlide): string[] | undefined {
   // (см. composeFindingProse). Происхождение остаётся отдельной строкой —
   // это не утверждение о субъекте, а ссылка на источник.
   if (s.sourceNote) bullets.push(s.sourceNote);
-  return bullets.length ? bullets : undefined;
+  return withStatusNote(bullets, s);
+}
+
+/**
+ * Статусная строка едет потоком списка.
+ *
+ * Своего печатного поля у неё нет ни у одного макета, кроме дашборда метрик, —
+ * и до этой правки она молча пропадала на странице проверки Википедии и на
+ * прозаической странице AI-ответов. Правило одно на оба места, где список
+ * собирается: общая ветка нагрузки и карточные макеты, которые возвращаются
+ * раньше со своим набором полей.
+ */
+function withStatusNote(bullets: readonly string[], s: RendererSlide): string[] | undefined {
+  const all = s.statusNote ? [...bullets, s.statusNote] : [...bullets];
+  return all.length ? all : undefined;
 }
 
 export function hashOfFile(path: string): string {

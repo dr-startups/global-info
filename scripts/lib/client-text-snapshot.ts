@@ -13,26 +13,20 @@
  * `slideKey` и `baseSlotId` оставлены как якоря — без них diff нечитаем.
  */
 
+import { CLIENT_TEXT_FIELDS } from "../../src/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
+
 /**
  * Поля слайда, содержащие клиентский текст. Порядок — как в снимке.
  *
- * Перечень объявлен здесь один раз и на два потребителя: снимок клиентского
- * текста и приёмочный ворот «переданное поле оставило след на своей странице»
- * (`run-orion-deck-sections-report72.ts`). Второй список полей означал бы, что
- * новое поле попадает под один сторож и проходит мимо другого.
+ * Перечень объявлен **один раз** и уже на трёх потребителей: снимок
+ * клиентского текста, приёмочный ворот «переданное поле оставило след на своей
+ * странице» (`run-orion-deck-sections-report72.ts`) и сторож носителя в самой
+ * сборке нагрузки. Живёт он рядом с моделью слайда, а не здесь: сторож стоит в
+ * продакшн-коде, и тянуть в него список из `scripts/` было бы неверной
+ * зависимостью. Второй список полей означал бы, что новое поле попадает под
+ * один сторож и проходит мимо остальных.
  */
-export const CLIENT_TEXT_FIELDS = [
-  "title",
-  "subtitle",
-  "narrative",
-  "whatWasFound",
-  "whyItMatters",
-  "whatToCheck",
-  "statusNote",
-  "sourceNote",
-  "methodologyNote",
-  "emptyStateReason",
-] as const;
+export { CLIENT_TEXT_FIELDS };
 
 export type ClientTextSlide = {
   slideKey: string;

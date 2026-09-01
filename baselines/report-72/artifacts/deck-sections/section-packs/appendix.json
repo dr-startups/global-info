@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:d75b5a0f27b573729a6cf19c2a23d5532cb680ff5d38057d30bb675f6eb374d5",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:0bc64d683e27927dd094aacd84ace8d351432ab4b0f10377fa2e350c5fc3eb54",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
@@ -16,7 +16,7 @@
     "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
   ],
   "fragmentKey": "APPENDIX_MAIN",
-  "generatedAt": "2026-09-01T08:53:09.235Z",
+  "generatedAt": "2026-09-01T14:59:44.796Z",
   "inputHash": "sha256:30cf23cfc86992a82904cfcc9184826a21a4fcac3e6c399306bbc1547dbe8fb6:b3c98dd08ee15eaa",
   "inputs": {
     "evidenceRefs": [
@@ -86,7 +86,7 @@
           "Деловой профиль\n3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru.\nПримеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
           "Криминальные / судебные материалы\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]"
         ],
-        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
+        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 3."
       },
       "continuationIndex": null,
       "continuationOf": null,
@@ -132,7 +132,7 @@
           "Семья и деловые связи\n1 свидетельств (0 негативных) в источниках ru.wikipedia.org.\nПримеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
           "PEP / RCA / watchlist-сигналы\n1 свидетельств (0 негативных) в источниках kulturologia.ru.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
         ],
-        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
+        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 3."
       },
       "continuationIndex": 1,
       "continuationOf": "appendix_main_base",

@@ -129,11 +129,15 @@ PANEL_Y = 1_210_000
 #: Высота панели на странице без второго заголовка: до низа сцены.
 PANEL_H_WHOLE = CONTENT_BOTTOM - 1_150_000 - 80_000 - 60_000
 
-#: Высота, при которой на панель не помещаются два последних блока, а средний
-#: влезает одним предложением из трёх. Выведена из меры самого рендерера:
-#: свободная высота под средним блоком — 697 185 EMU при 395 630 на первое
-#: предложение и 989 076 на два.
-PANEL_H_TIGHT = 1_450_000
+#: Высота, на которой места хватает не всем блокам, и видно, **кто уступает**.
+#:
+#: Выведена из меры самого рендерера: вывод занимает 197 815 EMU, рекомендация
+#: с заголовком — 991 260, и под средний блок с «Что это значит» остаётся
+#: меньше, чем им нужно. До пола рекомендации на этой высоте печатались вывод и
+#: средний блок целиком, а «Что сделать» и «Что это значит» выбрасывались; с
+#: полом печатается рекомендация, средний блок обрезается по предложениям, а
+#: «Что это значит» уступает целиком.
+PANEL_H_TIGHT = 2_200_000
 
 #: Высота, при которой не помещается даже обязательный вывод: он заменяется
 #: запасной фразой, а подпись источников уходит за низ панели.
@@ -158,38 +162,59 @@ def sidebar_panel(height: int) -> tuple[Any, str]:
     return ctx, page_text(prs)
 
 
+def loss_kinds(ctx: Any) -> dict[str, str]:
+    """Поле панели → что с ним случилось: `dropped` или `truncated`."""
+    kinds: dict[str, str] = {}
+    for w in ctx.warnings:
+        parts = w.split(":")
+        if len(parts) >= 4 and parts[0] == "sidebar-qa" and parts[3] in {"dropped", "truncated"}:
+            kinds[parts[2]] = parts[3]
+    return kinds
+
+
 def sidebar_drop_checks() -> None:
-    """Проверки Т8д: потеря блока панели слышна, целая панель молчит."""
-    # Тесная панель: средний блок режется по предложениям, два последних не
-    # помещаются вовсе — ровно две ветки `write_block`, которые молчали.
+    """Проверки Т8д: рекомендация переживает тесную панель, потеря слышна."""
+    # Тесная панель: место уступают средние блоки, а не рекомендация — она
+    # то, ради чего клиент читает страницу.
     ctx, drawn = sidebar_panel(PANEL_H_TIGHT)
     entries = get_layout_telemetry()
+    kinds = loss_kinds(ctx)
     action = PANEL_ANALYSIS["recommendedActions"][0]
     visible_tail = "Это не снимает репутационный риск"
     check(
-        "Т8д1: тесная панель рекомендацию действительно теряет",
-        action[:40] not in drawn and visible_tail not in drawn,
-        drawn[:160],
+        "Т8д1: тесная панель печатает рекомендацию, а местом уступает средний блок",
+        action[:40] in drawn and visible_tail not in drawn,
+        drawn[:200],
     )
     check(
-        "Т8д2: выброшенный блок назван предупреждением",
-        any("sidebar-qa" in w and "recommendedActions" in w for w in ctx.warnings),
-        f"предупреждения: {ctx.warnings}",
-    )
-    check(
-        "Т8д2б: обрезанный по предложениям блок назван тоже",
+        "Т8д2: уступивший блок назван предупреждением",
         any("sidebar-qa" in w and "whatIsVisible" in w for w in ctx.warnings),
         f"предупреждения: {ctx.warnings}",
     )
     check(
-        "Т8д3: потеря записана разметкой как обрезка панели",
-        sum(1 for e in entries if e.get("role") == "sidebar" and e.get("clipped") is True) >= 3,
-        f"записей {len(entries)}: {[(e.get('name'), e.get('clipped')) for e in entries]}",
+        "Т8д2б: о рекомендации предупреждений нет — она не уступает",
+        not any("recommendedActions" in w for w in ctx.warnings),
+        f"предупреждения: {ctx.warnings}",
     )
     check(
-        "Т8д4: потеря содержимого рендерером не объявляется",
-        all(not e.get("droppedBullets") and not e.get("droppedLines") for e in entries),
-        f"записи: {[(e.get('name'), e.get('droppedBullets'), e.get('droppedLines')) for e in entries]}",
+        "Т8д3: потеря записана разметкой, и ни одна запись не о рекомендации",
+        len(entries) > 0
+        and all(e.get("role") == "sidebar" and e.get("clipped") is True for e in entries)
+        and not any("recommendedActions" in str(e.get("name") or "") for e in entries),
+        f"записей {len(entries)}: {[e.get('name') for e in entries]}",
+    )
+    dropped_names = {
+        f"orion_sidebar_{field}_p46" for field, kind in kinds.items() if kind == "dropped"
+    }
+    check(
+        "Т8д4: выброшенный блок объявлен потерей содержимого",
+        len(dropped_names) > 0
+        and all(
+            int(e.get("droppedLines") or 0) >= 1
+            for e in entries
+            if e.get("name") in dropped_names
+        ),
+        f"исходы {kinds}; записи {[(e.get('name'), e.get('droppedLines')) for e in entries]}",
     )
     check(
         "Т8д5: запись называет свою страницу",
@@ -197,16 +222,26 @@ def sidebar_drop_checks() -> None:
         f"страницы: {[e.get('page') for e in entries]}",
     )
 
-    # Мера потери: запись обязана называть то, что не напечатано, а не весь
-    # блок целиком — иначе оператор прочтёт «потеряно 700 знаков» там, где
-    # потеряно 300.
+    # Обрезка — не потеря целого блока: часть предложений напечатана, и
+    # блокером выдачи такая запись не становится.
+    check(
+        "Т8д4б: обрезанный блок остаётся клипом, а не потерей",
+        kinds.get("whatIsVisible") == "truncated"
+        and all(
+            not int(e.get("droppedLines") or 0)
+            for e in entries
+            if e.get("name") == "orion_sidebar_whatIsVisible_p46"
+        ),
+        f"исходы {kinds}; записи {[(e.get('name'), e.get('droppedLines')) for e in entries]}",
+    )
     truncated = next(
-        (e for e in entries if e.get("name", "").endswith("whatIsVisible_p46")), {}
+        (e for e in entries if str(e.get("name", "")).endswith("whatIsVisible_p46")), {}
     )
     check(
         "Т8д8: запись обрезанного блока меряет потерянное, а не весь блок",
-        0 < int(truncated.get("textLength") or 0) < len(PANEL_ANALYSIS["whatIsVisible"]),
-        f"textLength={truncated.get('textLength')} при длине блока {len(PANEL_ANALYSIS['whatIsVisible'])}",
+        0 < int(truncated.get("textLength") or 0) < len(str(PANEL_ANALYSIS["whatIsVisible"])),
+        f"textLength={truncated.get('textLength')} при длине блока "
+        f"{len(str(PANEL_ANALYSIS['whatIsVisible']))}",
     )
 
     # Подпись источников — третья молчавшая ветка. Она срабатывает только на
@@ -219,10 +254,27 @@ def sidebar_drop_checks() -> None:
         str(PANEL_ANALYSIS["provenanceLabel"])[:40] not in cramped,
         cramped[:200],
     )
+    cramped_entries = get_layout_telemetry()
+    reset_layout_telemetry()
     check(
         "Т8д10: невлезшая подпись источников объявлена",
         any("sidebar-qa" in w and "provenanceLabel" in w for w in cramped_ctx.warnings),
         f"предупреждения: {cramped_ctx.warnings}",
+    )
+    # Подпись источников — мелкая строка происхождения, а не блок, ради
+    # которого заводился блокер выдачи («клиент видит риск и не видит, что
+    # делать»). Её невлезание остаётся клипом: отчёт из-за неё не пропадает.
+    check(
+        "Т8д12: потеря подписи источников блокером выдачи не становится",
+        all(
+            not int(e.get("droppedLines") or 0)
+            for e in cramped_entries
+            if str(e.get("name") or "").endswith("provenanceLabel_p46")
+        )
+        and any(
+            str(e.get("name") or "").endswith("provenanceLabel_p46") for e in cramped_entries
+        ),
+        f"записи: {[(e.get('name'), e.get('droppedLines')) for e in cramped_entries]}",
     )
 
     # Вторая рекомендация: ворот приёмки проверяет каждый элемент

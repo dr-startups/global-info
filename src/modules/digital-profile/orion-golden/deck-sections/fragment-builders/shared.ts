@@ -1505,9 +1505,17 @@ export function sourcesSentence(domains: string[], max = 4): string {
     : "Источники — поисковая выдача; полный перечень в приложении.";
 }
 
-/** Source footer derived ONLY from the page's own evidence refs. */
+/**
+ * Source footer derived ONLY from the page's own evidence refs.
+ *
+ * Список подаётся **целиком**: `enumerateRu` называет четыре площадки и считает
+ * остаток от того, что ему дали. Пока здесь стоял `.slice(0, 5)`, сноска не
+ * могла сказать больше «и ещё 1» никогда — на листе с одиннадцатью доменами
+ * она обещала клиенту пять. Считает и печатает одна функция; резать список до
+ * печати — значит завести второй ответ на вопрос «сколько их всего».
+ */
 export function pageSourceLine(view: PageEvidenceView): string {
-  return sourcesSentence(view.domains.slice(0, 5));
+  return sourcesSentence(view.domains);
 }
 
 /** «Тема» — claim; skip the prefix when the claim already names the theme. */
@@ -2231,10 +2239,9 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
     for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
     for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
   }
-  const list = [...domains]
-    .filter((d) => d && d !== "—" && !isMockClientDomain(d))
-    .sort()
-    .slice(0, 6);
+  // Список идёт в строку целиком — см. `pageSourceLine`: остаток «и ещё N»
+  // считает сама `enumerateRu`, и срез до печати делал бы это число неверным.
+  const list = [...domains].filter((d) => d && d !== "—" && !isMockClientDomain(d)).sort();
   // Та же строка источников, что и в `pageSourceLine`: формулировка одна, иначе
   // соседние страницы отчёта начинают говорить о происхождении по-разному.
   const sources = sourcesSentence(list, 4);

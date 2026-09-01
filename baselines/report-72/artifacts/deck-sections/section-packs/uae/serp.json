@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:1594d0b5cd3468948a1a8fddee4a9641d677d882da38bd07d1efc4ef6eeabb3e",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:86c4ca1ca4fb4a56f88b13176ce912c81da3e1b839595f03cf663e0ad2b95dee",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -91,7 +91,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SERP",
-  "generatedAt": "2026-09-01T08:53:09.230Z",
+  "generatedAt": "2026-09-01T14:59:44.792Z",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:dd44336033498915",
   "inputs": {
     "evidenceRefs": [
@@ -242,7 +242,7 @@
       "baseSlotId": "p26_uae_serp_table",
       "content": {
         "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 6).",
-        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org, klerk.ru и ещё 1.",
+        "sourceNote": "Источники — highways.today, tadviser.ru, rupep.org, klerk.ru и ещё 5.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
@@ -370,7 +370,7 @@
       "baseSlotId": "p26_uae_serp_table",
       "content": {
         "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
-        "sourceNote": "Источники — bitva.wiki, forbes.ru, piter.tv, x.com и ещё 1.",
+        "sourceNote": "Источники — bitva.wiki, forbes.ru, piter.tv, x.com и ещё 3.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [

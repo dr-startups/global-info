@@ -162,14 +162,17 @@ function drawsBulletList(template: string): boolean {
 }
 
 /**
- * Мера, пускающая на лист ровно два элемента списка.
+ * Мера, пускающая на лист ровно три элемента списка.
  *
- * Два, а не один: элементом списка бывает и вклейка страницы — вводный абзац
- * или ссылка на источник, — и при ёмкости в один элемент страница со ссылкой
- * не вместила бы ни одного блока ни при какой перекладке. Это был бы законный
- * отказ цикла, а проверяется здесь сходимость.
+ * Три, а не один: элементом списка бывают вклейки страницы — вводный абзац
+ * сверху и ссылка на источник со статусной строкой снизу, — и при меньшей
+ * ёмкости страница со всеми вклейками не вместила бы ни одного блока ни при
+ * какой перекладке. Это был бы законный отказ цикла, а проверяется здесь
+ * сходимость. Число выведено из числа вклеек и меняется вместе с ним: до
+ * появления статусной строки в потоке списка вклеек было две, и здесь стояло
+ * два.
  */
-function twoPerPage(payload: Record<string, unknown>): BulletMeasureVerdict {
+function threePerPage(payload: Record<string, unknown>): BulletMeasureVerdict {
   return {
     version: "orion-bullet-measure-v1",
     pages: slidesOf(payload)
@@ -181,11 +184,11 @@ function twoPerPage(payload: Record<string, unknown>): BulletMeasureVerdict {
         return {
           slideKey: s.slideKey,
           page: i + 1,
-          availableHeight: 200_000,
+          availableHeight: 300_000,
           maxItems: 9,
           itemHeights: items.map(() => 100_000),
-          keptItems: Math.min(2, items.length),
-          droppedBullets: Math.max(0, items.length - 2),
+          keptItems: Math.min(3, items.length),
+          droppedBullets: Math.max(0, items.length - 3),
           droppedLines: 0,
         };
       })
@@ -338,7 +341,7 @@ describe("сборка деки по мере рендерера", () => {
      * буллетов, и сходятся они за разное число итераций.
      */
     const seed = await report72DeckBuild(null);
-    const recut = await report72DeckBuild(twoPerPage);
+    const recut = await report72DeckBuild(threePerPage);
     expect(recut.bulletFit.outcome).toBe("CONVERGED");
     // Перекладка действительно работала: листов стало больше.
     expect(recut.assembly.deckManifest.pageCount).toBeGreaterThan(

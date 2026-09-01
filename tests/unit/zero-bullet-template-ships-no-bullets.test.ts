@@ -69,23 +69,22 @@ function payloadSlides(slides: RendererSlide[]): Array<Record<string, unknown>> 
 }
 
 describe("шаблон без списка не везёт список", () => {
-  it("страница выдачи с непустой таблицей поля bullets не получает даже при ссылке на источник", () => {
-    const [out] = payloadSlides([
-      slide({ template: "orion_golden_search_table", table: TABLE, sourceNote: SOURCE_NOTE }),
-    ]);
+  it("страница выдачи с непустой таблицей поля bullets не получает", () => {
+    const [out] = payloadSlides([slide({ template: "orion_golden_search_table", table: TABLE })]);
     // Пустой список вместо отсутствия поля — не то же самое: «списка нет»
     // выражается отсутствием ключа.
     expect("bullets" in out!).toBe(false);
   });
 
-  it("ссылка на источник не уезжает в нагрузку страницы выдачи ни одним другим полем", () => {
-    const [out] = payloadSlides([
-      slide({ template: "orion_golden_search_table", table: TABLE, sourceNote: SOURCE_NOTE }),
-    ]);
-    // По присказке, а не по домену: домен материала законно стоит в полосе
-    // адреса под своей строкой, и искать его — значит краснеть на здоровой
-    // странице.
-    expect(JSON.stringify(out)).not.toContain("Источники —");
+  it("ссылка на источник на такую страницу вообще не попадает — а попадёт, сборка откажет", () => {
+    // Строку источников для листа без списка ассемблер больше не кладёт: её
+    // некуда напечатать. Слайд деки, всё-таки принёсший её сюда, — дефект
+    // построителя, и сборка называет его вслух, а не роняет поле молча.
+    expect(() =>
+      payloadSlides([
+        slide({ template: "orion_golden_search_table", table: TABLE, sourceNote: SOURCE_NOTE }),
+      ])
+    ).toThrow(/p09_ru_serp_table · sourceNote/u);
   });
 
   it("у шаблона с положительной ёмкостью списка буллеты и ссылка на месте", () => {
@@ -133,7 +132,6 @@ describe("шаблон без списка не везёт список", () => 
         template: t.rendererTemplate,
         bullets: ["Строка списка, которую этот шаблон не рисует"],
         table: TABLE,
-        sourceNote: SOURCE_NOTE,
       })
     );
     const withBullets = payloadSlides(slides)

@@ -356,7 +356,7 @@
       "fontSizePt": 9,
       "boxWidth": 10744320,
       "boxHeight": 363697,
-      "availableHeight": 1649546,
+      "availableHeight": 1285557,
       "requiredHeight": 323697,
       "measuredLines": 2,
       "textLength": 196,
@@ -539,7 +539,7 @@
       "availableHeight": 300000,
       "requiredHeight": 161848,
       "measuredLines": 1,
-      "textLength": 74,
+      "textLength": 75,
       "clipped": false,
       "measurementUncertain": false
     },

@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:04e876042d7fb0b44e6bdee37a40b5e8099b2813430d59f722679618351609b2",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:998b11373d57519da41d28cc2ba2c1fff07ed9fe1ca0b44fd2bdc9b0fd1c8e9c",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -136,7 +136,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SUMMARY",
-  "generatedAt": "2026-09-01T08:53:09.229Z",
+  "generatedAt": "2026-09-01T14:59:44.791Z",
   "inputHash": "sha256:ea0caa501e8dd331b17326684529f48eefcf8422b5905c4fc40322936ab950ea:0d968ee845dc2535",
   "inputs": {
     "evidenceRefs": [
@@ -432,7 +432,7 @@
           }
         ],
         "narrative": "По региону «ОАЭ / международный» собрано 97 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 40.",
         "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений."
       },
@@ -546,7 +546,7 @@
           "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io\n«PEP: Glinka Sergey Mikhaylovich» — источник rupep.org.\nГде видно: vlasti.io, rupep.org. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
           "«Деловой профиль»\nНайдены публикации по теме:\n«Businessman Sergei Glinka: biography, family, photos, and his view on the future of transport» — источник bmmagazine.co.uk\n«Businessman Sergey Glinka: Biography, Family, Photos, and Today's Transport Challenges · BUSINESSFIRST» — источник businessfirstonline.co.uk.\nГде видно: bmmagazine.co.uk, businessfirstonline.co.uk. [finding-business_profile-subject_match-a59d6fee]"
         ],
-        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2."
+        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 40."
       },
       "continuationIndex": 1,
       "continuationOf": "p24_uae_summary",
@@ -658,7 +658,7 @@
           "«Семья и деловые связи»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io.\nГде видно: vlasti.io. [finding-family_associates-subject_match-a4427a53]",
           "Офшоры / корпоративное владение\n1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
         ],
-        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2."
+        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 40."
       },
       "continuationIndex": 2,
       "continuationOf": "p24_uae_summary",
@@ -766,7 +766,7 @@
     {
       "baseSlotId": "p25_uae_metrics",
       "content": {
-        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 40.",
         "table": {
           "headers": [
             "Система",

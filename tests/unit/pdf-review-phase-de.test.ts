@@ -22,13 +22,14 @@ describe("D.1/D.2 — sidebarSafe keeps whole sentences", () => {
     expect(out).toBe("Первое предложение о субъекте. Второе предложение с деталями анализа.");
   });
 
-  it("never leaves a dangling participle/preposition when the first sentence is over budget", () => {
+  it("returns nothing when not even the first sentence fits", () => {
+    // Обрубок по границе слова панель больше не печатает вовсе: блок берёт
+    // целые предложения или не берёт ничего. Прежняя редакция обрезала фразу
+    // и закрывала её точкой — «…зафиксирован 1 результат, относящийся к.», —
+    // и клиент читал предложение, оборванное на предлоге.
     const text =
       "По этому блоку нет подтверждённых риск-сигналов: в панели знаний зафиксирован один результат, относящийся к проверяемому лицу и его окружению без негативного контекста.";
-    const out = sidebarSafe(text, 110);
-    expect(out).toBeDefined();
-    expect(out!).toMatch(/[.!?]$/u);
-    expect(out!).not.toMatch(/\s(?:к|относящийся|и|с|в|о)\.$/iu);
+    expect(sidebarSafe(text, 110)).toBeUndefined();
   });
 
   it("returns short text unchanged", () => {

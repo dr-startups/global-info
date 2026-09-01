@@ -297,6 +297,13 @@ export function buildImagesFragment(
       shownOnGrid,
       Math.max(80, SIDEBAR_FOUND_BUDGET - (counted?.length ?? 0) - 1)
     );
+    const notShownLinkedDomains = [
+      ...new Set(
+        clientSafeDomains(
+          notShownOnPage.rows.filter((r) => Boolean(r.item.url)).map((r) => r.item.domain)
+        )
+      ),
+    ];
     const foundText = [note, counted].filter(Boolean).join(" ");
     const whatWasFound = foundText ? clampClientText(foundText, SIDEBAR_FOUND_BUDGET) : undefined;
     const verdictTitle =
@@ -322,13 +329,17 @@ export function buildImagesFragment(
         bullets: pageClaims.map((c) => clampClientText(claimText(c), 400)),
         ...pageBlocks,
         ...(whatWasFound ? { whatWasFound } : {}),
-        // Подпись источников не спорит с абзацем над ней: страница говорит и о
-        // не нарисованных строках, значит, называет и их площадки.
-        ...(notShownOnPage.domains.length
+        /*
+         * Подпись источников не спорит с абзацем над ней: страница говорит и о
+         * не нарисованных строках, значит, называет и их площадки.
+         *
+         * Но только те, куда клиент может сойти. «Источники — …» обещает
+         * место, а наблюдение без адреса такого места не даёт: в счёте «нашли,
+         * но не показали» оно остаётся, в сноске — нет.
+         */
+        ...(notShownLinkedDomains.length
           ? {
-              sourceNote: sourcesSentence([
-                ...new Set([...view.domains, ...notShownOnPage.domains]),
-              ]),
+              sourceNote: sourcesSentence([...new Set([...view.domains, ...notShownLinkedDomains])]),
             }
           : {}),
         // Статус страницы считает весь её негатив, а не только выделенный

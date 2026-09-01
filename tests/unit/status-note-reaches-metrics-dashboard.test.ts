@@ -75,15 +75,20 @@ describe("statusNote страницы региона в полезной наг�
     expect(snapshot.slides[0]!.text.statusNote).toBe(READ_SHARE);
   });
 
-  it("на шаблоне, который её не рисует, поле не передаётся", () => {
-    const [out] = payloadSlides([
-      slide({
-        slideKey: "p09_ru_serp_table",
-        template: "orion_golden_search_table",
-        statusNote: READ_SHARE,
-        table: { headers: ["№", "Ссылка"], rows: [["1", "news.example"]] },
-      }),
-    ]);
-    expect("statusNote" in out!).toBe(false);
+  it("на шаблоне, который её не рисует, слайд деки её и не несёт", () => {
+    // Ответ переехал на уровень выше: строку снимает ассемблер, там же, где
+    // разрешается макет рендерера. Слайд деки, всё-таки принёсший её на лист
+    // без списка, — это дефект построителя, и сборка о нём говорит вслух:
+    // «переданное, но не нарисованное» больше не проходит молча.
+    expect(() =>
+      payloadSlides([
+        slide({
+          slideKey: "p09_ru_serp_table",
+          template: "orion_golden_search_table",
+          statusNote: READ_SHARE,
+          table: { headers: ["№", "Ссылка"], rows: [["1", "news.example"]] },
+        }),
+      ])
+    ).toThrow(/p09_ru_serp_table · statusNote/u);
   });
 });

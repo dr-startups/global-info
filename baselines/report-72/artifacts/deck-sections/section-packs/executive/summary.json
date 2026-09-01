@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:7c56f14c0537809a64d65047aea7fef097b67a1800e577633e369efb4f6a9a02",
-  "contentVersion": "deck-sections-v152",
+  "contentHash": "sha256:5109cdb15f8286e4b385a860f53cb59dcc67017aa06e8b327ee55d873ad708a5",
+  "contentVersion": "deck-sections-v153",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -61,7 +61,7 @@
     "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
   ],
   "fragmentKey": "EXECUTIVE_SUMMARY",
-  "generatedAt": "2026-09-01T08:53:09.236Z",
+  "generatedAt": "2026-09-01T14:59:44.797Z",
   "inputHash": "sha256:3c34d67171cc0486f5c706c071e253770bfd3261cae14577103d477503fef180:b1ae35b611f88c8c",
   "inputs": {
     "evidenceRefs": [
@@ -248,7 +248,7 @@
           }
         ],
         "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 6 ключевых наблюдений: подтверждённых фактов — 3, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений."
       },
       "continuationIndex": null,
@@ -339,7 +339,7 @@
           "«PEP / RCA / watchlist-сигналы»\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nПримеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительство [finding-pep_rca_watchlist-subject_match-dfa7da39]",
           "«Деловой профиль»\n43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]"
         ],
-        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29."
       },
       "continuationIndex": 1,
       "continuationOf": "p03_executive",

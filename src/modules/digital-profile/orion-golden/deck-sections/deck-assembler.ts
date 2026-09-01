@@ -27,6 +27,8 @@ import {
 import {
   DECK_TEMPLATE_REGISTRY,
   isAllowedLayoutVariant,
+  rendererTemplateCarriesSourceNote,
+  rendererTemplateCarriesStatusNote,
   type DeckTemplateId,
 } from "./template-registry";
 import {
@@ -96,6 +98,33 @@ export type AssemblyRejection = {
 
 /** Снятое предложение с указанием страницы — для разбора сборки. */
 export type DedupRemoval = { slideId: string; sentence: string };
+
+/**
+ * Поля слайда, содержащие клиентский текст.
+ *
+ * Перечень один на всех, кто спрашивает «что здесь читает клиент»: снимок
+ * клиентского текста (`scripts/lib/client-text-snapshot.ts`), приёмочный ворот
+ * «переданное поле оставило след на своей странице» и сторож носителя в сборке
+ * нагрузки. Второй список означал бы, что новое поле попадает под один сторож
+ * и проходит мимо остальных.
+ *
+ * Порядок — тот, в котором поля печатаются в снимке; менять его — значит
+ * двигать эталон клиентского текста.
+ */
+export const CLIENT_TEXT_FIELDS = [
+  "title",
+  "subtitle",
+  "narrative",
+  "whatWasFound",
+  "whyItMatters",
+  "whatToCheck",
+  "statusNote",
+  "sourceNote",
+  "methodologyNote",
+  "emptyStateReason",
+] as const;
+
+export type ClientTextField = (typeof CLIENT_TEXT_FIELDS)[number];
 
 /** Unified slide model in the existing renderer's slide shape. */
 export type RendererSlide = {
@@ -441,6 +470,7 @@ export function assembleDeck(input: {
   // 12/13/14. Renderer slide model with global footer counters + manifest.
   const rendererSlides: RendererSlide[] = finalSlides.map(({ slide }, i) => {
     const tpl = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId];
+    const rendererTemplate = tpl?.rendererTemplate ?? "orion_golden_surface_panel";
     const isToc = slide.templateId === "toc";
     const pickedVariant = input.layoutVariants?.get(slide.slideId);
     const layoutVariant =
@@ -450,7 +480,7 @@ export function assembleDeck(input: {
     return {
       slideKey: slide.slideId,
       sectionKey: slide.sectionId,
-      template: tpl?.rendererTemplate ?? "orion_golden_surface_panel",
+      template: rendererTemplate,
       templateId: slide.templateId,
       ...(layoutVariant ? { layoutVariant } : {}),
       title: slide.title,
@@ -475,8 +505,26 @@ export function assembleDeck(input: {
       whatWasFound: slide.content.whatWasFound,
       whyItMatters: slide.content.whyItMatters,
       whatToCheck: slide.content.whatToCheck,
-      sourceNote: slide.content.sourceNote,
-      statusNote: slide.content.statusNote,
+      /*
+       * Поле, которому на этом макете негде напечататься, дальше не едет.
+       *
+       * До этой правки построитель клал строку «Источники» на все страницы, а
+       * маппинг нагрузки молча ронял её у макетов без списка (таблица выдачи,
+       * матрица рисков) и у дашбордов, чей «список» рисуется плитками и
+       * карточками тем: 21 сноска из 42 на эталоне-72 и 8 статусных строк.
+       * Прибора у этой потери не было ни одного — ворот «поле оставило след на
+       * своей странице» читает нагрузку, а туда поле не доезжало.
+       *
+       * Носитель — вопрос макета, и отвечает на него реестр, там же, где
+       * объявлена ёмкость списка. Здесь ответ применяется: это единственное
+       * место, где содержимое пакета становится слайдом рендерера.
+       */
+      sourceNote: rendererTemplateCarriesSourceNote(rendererTemplate)
+        ? slide.content.sourceNote
+        : undefined,
+      statusNote: rendererTemplateCarriesStatusNote(rendererTemplate)
+        ? slide.content.statusNote
+        : undefined,
       highlightExplanations: slide.content.highlightExplanations,
       kpis: slide.content.kpis,
       emptyStateReason: slide.emptyStateReason,
