@@ -72,7 +72,24 @@ export const BENCHMARK_THEMES: BenchmarkThemeDef[] = [
   {
     benchmarkId: "bm-defense-natsec",
     label: "Оборона / национальная безопасность",
-    keywords: /оборон|defen[cs]e|national security|спецслужб|фсб|security service/iu,
+    /*
+     * Сокращение закрыто справа своей записью, а не общей константой из
+     * `config/finding-themes.ts`: эталонная трасса — второе мнение о том же
+     * корпусе, и смысл второго мнения в том, что оно не пользуется прибором
+     * проверяемого.
+     *
+     * Без границы «ФСБР» (Федерация спортивной борьбы России) считалась здесь
+     * оборонным контуром — то же слово, тот же дефект, четвёртое место.
+     *
+     * **Состав словарей автоматически не сверяется ни с чем**, и разъехались
+     * они уже: у темы `security_scrutiny` стоит и латинское `FSB(?!\p{L})`, а
+     * здесь только кириллица, поэтому «FSB general commented on the case» даёт
+     * тему в бандле и не даёт совпадения в трассе. Расхождение старше этой
+     * записи. Проверяется здесь **форма** — что сокращение закрыто справа
+     * (`abbreviation-is-closed-on-the-right.test.ts` гоняет то же правило и по
+     * словарям этого файла); за состав отвечает чтение диффа, а не автоматика.
+     */
+    keywords: /оборон|defen[cs]e|national security|спецслужб|ФСБ(?!\p{L})|security service/iu,
     findingThemeIds: ["security_scrutiny"],
   },
 ];
@@ -99,7 +116,8 @@ export type BenchmarkTrace = {
   rows: BenchmarkTraceRow[];
 };
 
-const NOISE_PATTERNS = /aliexpress|ozon|wildberries|market\.yandex|ebay|amazon\.|купить|цена|лампа/iu;
+/** Экспортируется, чтобы правило «сокращение закрыто справа» видело и этот словарь. */
+export const NOISE_PATTERNS = /aliexpress|ozon|wildberries|market\.yandex|ebay|amazon\.|купить|цена|лампа/iu;
 
 function itemText(item: RawInventoryItem): string {
   return [item.title, item.snippet, item.classification, item.sourceUrl]

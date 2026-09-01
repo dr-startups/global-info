@@ -183,6 +183,153 @@ function topLevelAlternatives(source: string): string[] {
   return out.filter((alt) => alt.length > 0);
 }
 
+/** Гласные обеих письменностей: по ним слово отличается от сокращения. */
+const VOWEL_LETTERS = /[аеёиоуыэюяaeiou]/iu;
+
+/**
+ * Буквы, которые альтернатива **сопоставляет**, и закрыта ли она справа.
+ *
+ * Просмотры (вперёд и назад) в буквы не идут: они ограничивают совпадение, а не
+ * образуют его, — иначе `владел(?!\p{L}{0,5}-бенефициар)` читалось бы как слово
+ * с гласными из своей же оговорки. Закрытием считается только просмотр вперёд и
+ * только последним знаком альтернативы.
+ *
+ * **`\b` закрытием не считается намеренно.** Граница слова в JavaScript
+ * определена на ASCII: после «У», «Н», «Б» она не срабатывает никогда, поэтому
+ * `ГРУ\b` не совпадает даже с самим «ГРУ» — словарь молча умирает целиком. У
+ * латиницы дыра обратная: в «FSBа» с кириллической «а» граница есть, и `FSB\b`
+ * совпадает ровно с тем словом, ради которого правило заведено. Пока `\b`
+ * считался закрытием, правило выдавало зелёный свет обеим записям — то есть
+ * лицензию на дефект того же класса, от которого оно защищает.
+ */
+function readAlternative(alt: string): { letters: string; closedOnTheRight: boolean } {
+  let letters = "";
+  let closed = false;
+  let i = 0;
+  while (i < alt.length) {
+    const ch = alt[i]!;
+    if (ch === "\\") {
+      const next = alt[i + 1] ?? "";
+      // `\p{…}` и `\P{…}` съедают фигурные скобки целиком, иначе `p` и `L`
+      // попали бы в буквы слова.
+      if (next === "p" || next === "P") {
+        const end = alt.indexOf("}", i);
+        i = end === -1 ? alt.length : end + 1;
+      } else {
+        i += 2;
+      }
+      closed = false;
+      continue;
+    }
+    if (ch === "[") {
+      const end = classEnd(alt, i);
+      letters += readAlternative(alt.slice(i + 1, end)).letters;
+      closed = false;
+      i = end + 1;
+      continue;
+    }
+    if (ch === "(") {
+      const end = groupEnd(alt, i);
+      const lookahead = alt.startsWith("(?!", i) || alt.startsWith("(?=", i);
+      const lookbehind = alt.startsWith("(?<", i);
+      if (!lookahead && !lookbehind) {
+        letters += readAlternative(alt.slice(i + 1, end)).letters;
+      }
+      closed = lookahead;
+      i = end + 1;
+      continue;
+    }
+    // Квантификаторы прозрачны в обеих записях: ни `(?:а|е)?`, ни `оф{1,2}шор`
+    // не отменяют того, чем кончилась альтернатива.
+    if (ch === "?" || ch === "*" || ch === "+") {
+      i += 1;
+      continue;
+    }
+    if (ch === "{") {
+      const end = alt.indexOf("}", i);
+      i = end === -1 ? alt.length : end + 1;
+      continue;
+    }
+    if (/\p{L}/u.test(ch)) letters += ch;
+    closed = false;
+    i += 1;
+  }
+  return { letters, closedOnTheRight: closed };
+}
+
+function classEnd(source: string, start: number): number {
+  for (let i = start + 1; i < source.length; i += 1) {
+    if (source[i] === "\\") i += 1;
+    else if (source[i] === "]") return i;
+  }
+  return source.length;
+}
+
+function groupEnd(source: string, start: number): number {
+  let depth = 0;
+  let inClass = false;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === "\\") i += 1;
+    else if (inClass) {
+      if (ch === "]") inClass = false;
+    } else if (ch === "[") inClass = true;
+    else if (ch === "(") depth += 1;
+    else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return source.length;
+}
+
+/**
+ * Сокращение опознаётся по тому, что видно в самом исходнике: **запись
+ * прописными** (`ФСБ`, `ФСИН`, `IBA`, `ЦУПИС`) или **отсутствие гласных**
+ * (`ФСБ`, `МЧС`, `fsb`, `bvi`).
+ */
+function looksLikeAbbreviation(letters: string): boolean {
+  if (letters.length < 2) return false;
+  const allUpperCase = letters === letters.toUpperCase() && letters !== letters.toLowerCase();
+  return allUpperCase || !VOWEL_LETTERS.test(letters);
+}
+
+/**
+ * Слова словаря, которые выглядят сокращением и не закрыты справа.
+ *
+ * «Закрыта справа» определено **синтаксически**, и цена этого названа: правило
+ * не разбирает, что именно стоит в просмотре вперёд, поэтому `ФСБ(?=\p{L})`
+ * оно считает закрытым — а совпадает такая запись ровно с «ФСБР». Разбирать
+ * содержимое просмотра значило бы писать второй движок регулярных выражений;
+ * от очевидной ошибки («забыл границу») правило защищает, от вывернутой
+ * наизнанку — нет, и в ревью это читается глазами.
+ *
+ * Цена вопроса названа прямо: «ФСБР» — Федерация спортивной борьбы России —
+ * два отчёта подряд печаталась клиенту темой «Внимание по линии безопасности /
+ * оборонный контур» высокого уровня и красилась негативом, потому что основа
+ * `фсб` стояла без правой границы. Расшифровку сокращения печатал тот же
+ * документ страницей ниже.
+ *
+ * Правило узкое намеренно. Универсальная правая граница у всех слов отвергнута
+ * замером: `сын(?!\p{L})` теряет «сына», `fraud(?!\p{L})` — «fraudulent»,
+ * `биограф(?!\p{L})` — «биографию» на 106 материалах живого прогона. Русская
+ * основа обязана расти, сокращение — нет, и здесь берётся ровно тот подкласс,
+ * где закрытие ничего не стоит.
+ *
+ * Чего правило не умеет, сказано вслух: «фсин», записанное строчными, оно не
+ * поймает — гласная в нём есть. Держится это тем, что аббревиатуры пишут
+ * прописными, и в диффе это видно.
+ *
+ * Возвращается **список слов**, а не «да/нет»: отказ конфигурации обязан
+ * называть слова, иначе его нечем чинить.
+ */
+export function unclosedAbbreviations(source: string): string[] {
+  return topLevelAlternatives(source).filter((alt) => {
+    const { letters, closedOnTheRight } = readAlternative(alt);
+    return looksLikeAbbreviation(letters) && !closedOnTheRight;
+  });
+}
+
 /**
  * Сильный словарь как подмножество общего — вычисленное, а не обещанное.
  *
@@ -259,6 +406,25 @@ const COURT_WORD_FORMS =
   "суд(?:а|е|у|ы|ов|ом|ам|ах|ами|ей)?(?!\\p{L})|судебн|судь[яеиюё]|судим(?:ост|[аоые])|" +
   "судопроизводств|суд(?:и|я)(?:тся|ться|л[аи]?с[ья])";
 
+/**
+ * Сокращение спецслужбы — прописными и с правой границей.
+ *
+ * Прописные несут смысл и для читателя, и для проверки: так пишут сокращение, а
+ * не основу, и `unclosedAbbreviations` опознаёт его по этой записи. Флаг `i` у
+ * всех словарей стоит, поэтому на совпадение регистр не влияет.
+ *
+ * Правая граница обязательна: без неё «ФСБР» — Федерация спортивной борьбы
+ * России — становилась оборонным контуром высокого уровня, а её материалы ещё и
+ * краснели негативом. У латинской формы граница пишется просмотром по букве, а
+ * **не** `\b`: в JavaScript граница слова определена на ASCII, и в «FSBа» с
+ * кириллической «а» она срабатывает — совпадение прошло бы.
+ *
+ * Слово стоит в двух словарях сразу (тема и метка негатива) и вынесено сюда по
+ * той же причине, что и `COURT_WORD_FORMS`: словари отвечают на разные вопросы,
+ * но ловят одно семейство слов, и разойтись им нельзя.
+ */
+const FSB_ABBREVIATION = "ФСБ(?!\\p{L})|FSB(?!\\p{L})";
+
 /** Universal default theme set — no case-specific «транспортный контур» tuning. */
 export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
   return {
@@ -269,7 +435,9 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         accusing: true,
         label: "Внимание по линии безопасности / оборонный контур",
         keywords:
-          "оборон|defen[cs]e|national security|спецслужб|фсб|fsb|безопасн\\w* служб|security service",
+          "оборон|defen[cs]e|national security|спецслужб|" +
+          FSB_ABBREVIATION +
+          "|безопасн\\w* служб|security service",
         flags: "iu",
         baseRisk: "high",
         recommendedAction:
@@ -316,7 +484,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         themeId: "offshore_structures",
         accusing: true,
         label: "Офшорные структуры",
-        keywords: "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama|бенефициар|beneficia",
+        keywords: "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama",
         domains: "opencorporates",
         flags: "iu",
         baseRisk: "medium",
@@ -331,25 +499,19 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         // обещающим офшор, — при том что ни один источник об офшоре не говорил.
         accusing: false,
         label: "Корпоративное владение",
-        // «Бенефициарный владелец» и `beneficial ownership` — устойчивый термин
-        // предметной области, и в нём сходятся слова двух тем: раскрытие
-        // бенефициара это офшорный сюжет, а не покупка компании. Без оговорки
-        // один материал получал два ярлыка сразу — две карточки матрицы с одним
-        // составом доказательств и одну цитату дважды, что читается как два
-        // разных сюжета. Оговорка ставится там, где термин состоит из слов двух
-        // тем, и от языка заголовка не зависит: русский корпус основной.
+        // «Бенефициар» и `beneficial ownership` — сведения о владении, а не о
+        // юрисдикции: раскрытие бенефициара это подача документов, офшор — это
+        // где зарегистрирована структура. Пока слово стояло у офшорной темы,
+        // карточка государственного реестра застройщиков («ИНН. Гражданство.
+        // Российская Федерация. Бенефициар. …») выходила клиенту «Офшорными
+        // структурами» среднего уровня с советом подтвердить экономическую цель
+        // структур — при том что об офшоре не говорил ни один источник.
         //
-        // Хвост в четыре буквы покрывает и склонение прилагательного
-        // («бенефициарный … бенефициарными»), и парное написание через дефис
-        // («бенефициара-владельца»). Просмотр вперёд закрывает **обратный**
-        // порядок того же парного написания («владелец-бенефициар»): оговорка
-        // симметрична, иначе дефис учтён в одну сторону из двух. Просмотр вперёд
-        // требует дефиса намеренно — через пробел парного слова не бывает, а вот
-        // перечисление есть, и соседство слов оговорка не снимает: «Бенефициар
-        // раскрыт, а владелец актива назван отдельно» — два сюжета и две темы.
-        keywords:
-          "(?<!бенефициар\\p{L}{0,4}[\\s-])владел(?!\\p{L}{0,5}-бенефициар)|" +
-          "(?<!beneficial[\\s-])ownership",
+        // Тот же ответ дают два других каталога проекта: `canonical-themes.ts`
+        // относит термин к деловым связям и владению, `benchmark-trace.ts` — к
+        // корпоративному владению. Оговорка вокруг `владел`, разводившая две
+        // темы на одном термине, снята вместе с причиной: тем больше не две.
+        keywords: "владел|ownership|бенефициар|beneficia",
         flags: "iu",
         baseRisk: "low",
         recommendedAction:
@@ -402,7 +564,9 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       // наращиваются («прокур» → «прокуратура»), английские — нет. Правая
       // граница у семейства «суд» всё-таки есть, и почему — в
       // `COURT_WORD_FORMS`.
-      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb|" +
+      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|" +
+      FSB_ABBREVIATION +
+      "|" +
       COURT_WORD_FORMS +
       "|" +
       /*
@@ -446,13 +610,16 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
        * границей нельзя, различает только смысл: снимают прочитанная страница
        * и правка аналитика.
        *
-       * `beneficia` в словарь не добавлен намеренно, хотя `бенефициар` добавлен:
-       * по замеру на золотом кейсе он красит «Beneficial ownership disclosure
-       * lists …» — раскрытие бенефициара это подача документов, а не сигнал, и
-       * субъекту предлагалось бы убирать собственное раскрытие. Английская форма
-       * остаётся ключевым словом темы, где вопрос другой — классификация.
+       * Раскрытия бенефициара здесь нет ни в одной из двух форм: это подача
+       * документов, а не сигнал, и субъекту предлагалось бы убирать собственное
+       * раскрытие. Английская форма не добавлялась никогда — её красноту было на
+       * чём померить (золотой кейс англоязычный). Русская прожила дольше ровно
+       * потому, что мерить её было негде; замер по реестру наблюдений живого
+       * прогона дал восемь материалов, включая карточку государственного реестра
+       * застройщиков. Обе формы остаются ключевыми словами темы владения, где
+       * вопрос другой — классификация.
        */
-      "ofac(?!\\p{L})|pep(?!\\p{L})|rca(?!\\p{L})|lawsuit|offshore|оф{1,2}шор|бенефициар|нежелат|негативн|undesirable",
+      "ofac(?!\\p{L})|pep(?!\\p{L})|rca(?!\\p{L})|lawsuit|offshore|оф{1,2}шор|нежелат|негативн|undesirable",
     adverseFlags: "iu",
     /*
      * Слова, которые краснят строку даже на мягкой площадке.
@@ -515,6 +682,50 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
   };
 }
 
+/**
+ * Все словари каталога с именами — перечислением самого каталога, а не списком
+ * рядом с кодом.
+ *
+ * Словарь, добавленный завтра (полем схемы или новой темой), попадает сюда сам,
+ * и оба читателя — отказ компиляции и проверка правил в тестах — видят его без
+ * правки. Своё перечисление у каждого читателя было бы вторым ответом на вопрос
+ * «какие в каталоге словари», и разъехались бы они молча.
+ */
+export function findingThemesDictionaries(
+  cfg: FindingThemesConfigJson
+): Array<{ label: string; source: string }> {
+  const dictionaries: Array<{ label: string; source: string }> = [];
+  for (const [key, value] of Object.entries(cfg)) {
+    if (key === "version" || key === "themes" || key.endsWith("Flags")) continue;
+    if (typeof value === "string") dictionaries.push({ label: key, source: value });
+  }
+  for (const theme of cfg.themes) {
+    dictionaries.push({ label: `themes[${theme.themeId}].keywords`, source: theme.keywords });
+    if (theme.domains) {
+      dictionaries.push({ label: `themes[${theme.themeId}].domains`, source: theme.domains });
+    }
+  }
+  return dictionaries;
+}
+
+/**
+ * Каталог с незакрытым сокращением не компилируется — тем же способом, что и
+ * сильный словарь вне общего: конфигурация падает на загрузке, а не печатает
+ * клиенту неверный ярлык. Файл переопределения с диска проходит через ту же
+ * компиляцию и закрыт ею же.
+ */
+function assertAbbreviationsClosed(cfg: FindingThemesConfigJson): void {
+  const broken = findingThemesDictionaries(cfg).flatMap((d) =>
+    unclosedAbbreviations(d.source).map((alt) => `${d.label}: ${alt}`)
+  );
+  if (broken.length > 0) {
+    throw new FindingThemesConfigError(
+      "сокращение в словаре не закрыто справа — оно совпадёт с любым словом, которое с него " +
+        `начинается: ${broken.join("; ")}`
+    );
+  }
+}
+
 export function compileFindingThemesConfig(
   json: FindingThemesConfigJson,
   meta: { source: "default" | "override"; overridePath: string | null }
@@ -529,6 +740,7 @@ export function compileFindingThemesConfig(
     );
   }
   const cfg = parsed.data;
+  assertAbbreviationsClosed(cfg);
   const themes: ThemeDef[] = cfg.themes.map((t) => ({
     themeId: t.themeId,
     label: t.label,

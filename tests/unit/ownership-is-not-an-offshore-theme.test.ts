@@ -22,11 +22,14 @@ import {
 } from "@/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 import {
   compileFindingThemesConfig,
+  getAdversePatterns,
   getFindingThemes,
   isAccusingTheme,
   type FindingThemesConfigJson,
   type ThemeDef,
 } from "@/modules/digital-profile/config/finding-themes";
+import { classifyCanonicalThemes } from "@/modules/digital-profile/orion-golden/analytics/canonical-themes";
+import { BENCHMARK_THEMES } from "@/modules/digital-profile/orion-golden/analytics/benchmark-trace";
 import type { ObservationVerdictByRef } from "@/modules/digital-profile/serp-observation/resolve-observation-highlights";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
 import type { SubjectResolutionItem } from "@/modules/digital-profile/orion-golden/contracts/subject-resolution";
@@ -115,15 +118,18 @@ describe("покупка компании — не офшор", () => {
   });
 });
 
-describe("«beneficial ownership» — один сюжет, а не два", () => {
+describe("«бенефициар» — тема владения, а не офшора", () => {
   /*
-   * «Beneficial ownership» — устойчивый термин предметной области, и слова двух
-   * тем сходятся в нём: `beneficia` тянет материал в офшорную тему, `ownership`
-   * — в корпоративное владение. Клиент получал два ярлыка на один сюжет: две
-   * карточки матрицы с одним и тем же составом доказательств и одну цитату
-   * дважды под разными именами. Замечание владельца было «ярлык не должен
-   * обещать офшор там, где речь о покупке компании»; обратная сторона того же —
-   * ярлык не должен обещать обе темы сразу.
+   * Раскрытие бенефициара — сведения о владении; офшор — юрисдикция. Пока
+   * `бенефициар|beneficia` стояли в офшорной теме, карточка государственного
+   * реестра застройщиков («ИНН. Гражданство. Российская Федерация.
+   * Бенефициар. Кремлёв Умар Назарович.») выходила клиенту «Офшорными
+   * структурами» среднего уровня с советом подготовить схему владения по
+   * офшорным юрисдикциям — при том что ни один источник об офшоре не говорил.
+   *
+   * Тот же ответ уже дают два других каталога проекта: `canonical-themes.ts`
+   * относит термин к деловым связям и владению, `benchmark-trace.ts` — к
+   * корпоративному владению. Разъехаться им теперь не даёт проверка ниже.
    */
   /*
    * Формы термина перебираются целиком и на обоих языках сразу: правило одно
@@ -133,7 +139,6 @@ describe("«beneficial ownership» — один сюжет, а не два", () 
    * написание через дефис («бенефициар-владелец»).
    */
   it.each([
-    ["Anders Holmström linked to Malta holding structure and offshore beneficial ownership"],
     ["Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital"],
     ["Beneficial-ownership registry updated by the regulator"],
     ["Бенефициарный владелец компании раскрыт в реестре"],
@@ -147,9 +152,26 @@ describe("«beneficial ownership» — один сюжет, а не два", () 
     ["Владелец-бенефициар назван в реестре"],
     ["Сведения о владельце-бенефициаре внесены в реестр"],
     ["Документ подписан владельцами-бенефициарами компании"],
-  ])("«%s» — только офшорная тема", (title) => {
+    // Карточка государственного реестра застройщиков — опора ложной офшорной
+    // темы в живом отчёте.
+    ["ИНН. 231213588320. Гражданство. Российская Федерация. Бенефициар. Кремлёв Умар Назарович."],
+  ])("«%s» — только корпоративное владение", (title) => {
     expect(themeIdsFor(item({ title, sourceUrl: "https://www.example-news.ru/beneficial" })))
-      .toEqual(["offshore_structures"]);
+      .toEqual(["corporate_ownership"]);
+  });
+
+  /*
+   * Слово «офшор» в самом заголовке — законная опора офшорной темы, и переезд
+   * термина её не отменяет: две темы здесь стоят на двух разных словах, а не на
+   * одном. Ровно этим случай отличается от карточки реестра застройщиков, где
+   * офшорного слова нет вовсе.
+   */
+  it("офшорное слово рядом с термином оставляет обе темы", () => {
+    const both = item({
+      title: "Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
+      sourceUrl: "https://www.example-news.ru/malta",
+    });
+    expect(themeIdsFor(both).sort()).toEqual(["corporate_ownership", "offshore_structures"]);
   });
 
   it.each([
@@ -162,13 +184,71 @@ describe("«beneficial ownership» — один сюжет, а не два", () 
   });
 
   it.each([
-    ["Бенефициар раскрыт, а владелец актива назван отдельно"],
-    ["Бенефициарный собственник и владелец актива названы в отчёте"],
-  ])("«%s» — два разных предмета, значит две темы", (title) => {
-    // Оговорка снимает **термин**, а не соседство слов: здесь источник говорит и
-    // о бенефициаре, и о владельце актива — это два сюжета.
-    const two = item({ title, sourceUrl: "https://www.example-news.ru/two-subjects" });
-    expect(themeIdsFor(two).sort()).toEqual(["corporate_ownership", "offshore_structures"]);
+    ["Кремлев связан с офшором на Кипре"],
+    ["Акции принадлежат кипрскому офшору «Деланс лимитед»"],
+    ["Malta offshore vehicle registered for the group"],
+  ])("«%s» — офшор остаётся офшором", (title) => {
+    const offshore = item({ title, sourceUrl: "https://www.example-news.ru/offshore" });
+    expect(themeIdsFor(offshore)).toEqual(["offshore_structures"]);
+    expect(themeOf("offshore_structures").baseRisk).toBe("medium");
+    expect(isAccusingTheme(themeOf("offshore_structures"))).toBe(true);
+  });
+
+  /*
+   * Раскрытие бенефициара — подача документов, а не сигнал: субъекту
+   * предлагалось бы убирать собственное раскрытие. Аргумент был записан в
+   * словаре про английскую форму, а русская прожила дольше только потому, что
+   * мерить её было негде — золотой кейс англо-шведский.
+   */
+  it("раскрытие бенефициара строку не красит, а настоящий негатив красит", () => {
+    const adverse = getAdversePatterns();
+    expect(
+      adverse.test("ИНН. 231213588320. Гражданство. Российская Федерация. Бенефициар. Кремлёв Умар Назарович.")
+    ).toBe(false);
+    expect(adverse.test("Кремлёв также стал бенефициаром трёх букмекерских контор")).toBe(false);
+    expect(adverse.test("введены санкции против компании")).toBe(true);
+    expect(adverse.test("возбуждено уголовное дело")).toBe(true);
+    expect(adverse.test("арест имущества по требованию кредитора")).toBe(true);
+  });
+
+  /*
+   * Одно слово живёт в трёх каталогах, и разъехаться им нельзя: ровно так тема
+   * переехала на новую опору после первой починки. `finding-themes.ts` — тот
+   * единственный каталог, из которого собирается матрица рисков, и он один
+   * говорил «офшор» там, где два других уже говорили «владение».
+   */
+  it("тему бенефициара одинаково называют все три каталога", () => {
+    // Строка держит **само слово**, а не соседнее «владел»: у «бенефициарного
+    // владельца» тема нашлась бы и без него, и проверка «в трёх каталогах»
+    // проверяла бы два из трёх (замерено ревью).
+    const текст = "Бенефициар раскрыт в реестре";
+    expect(themeIdsFor(item({ title: текст, sourceUrl: "https://www.example-news.ru/b" }))).toEqual([
+      "corporate_ownership",
+    ]);
+
+    const canonical = classifyCanonicalThemes(текст);
+    expect(canonical).toContain("business_ownership_associates");
+    expect(canonical).not.toContain("offshore_financial_transparency");
+
+    const benchmark = BENCHMARK_THEMES.filter((b) => b.keywords.test(текст)).map(
+      (b) => b.benchmarkId
+    );
+    expect(benchmark).toContain("bm-corporate-ownership");
+    expect(benchmark).not.toContain("bm-offshore");
+  });
+
+  /*
+   * Тема строится из материалов: при нуле материалов бакета нет и находки нет.
+   * Никакого «снятия темы» заводить не нужно — это был бы второй ответ на
+   * вопрос «есть ли тема».
+   */
+  it("тема без материалов не печатается пустой плиткой", () => {
+    const corpus = [
+      item({ title: "Бенефициар. Кремлёв Умар Назарович. Доля. 50 %", sourceUrl: "https://nash.dom.rf/z/1" }),
+      item({ title: "Умар Кремлев стал владельцем актива", sourceUrl: "https://www.example-news.ru/a" }),
+    ];
+    const findings = synthesize(corpus).bundle.findings;
+    expect(findings.map((f) => f.findingId.split("-")[1])).toEqual(["corporate_ownership"]);
   });
 });
 
