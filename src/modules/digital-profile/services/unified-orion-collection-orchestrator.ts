@@ -102,6 +102,10 @@ import {
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
 import { isDeterministicPrepareGate, prepareGateFailureMessage } from "./prepare-gate-advice";
+import {
+  PREPARE_REPEATED_FAILURE_MARK,
+  repeatsPreviousFailure,
+} from "./prepare-repeat";
 import { recordParkedDeckVersion } from "./parked-deck-version";
 import {
   deriveEnrichmentProgress,
@@ -1760,7 +1764,21 @@ async function stepPrepare(
      * здесь ни при чём: `ASSEMBLY_QA_FAILED` выдают и ворота сборки, часть
      * которых читает текст модели, и им повтор оставлен.
      */
-    const retryWouldRepeatItself = isDeterministicPrepareGate(message);
+    /*
+     * Второй источник данных у того же вопроса, а не второй ответ.
+     *
+     * Список имён гейтов ведёт человек, и он отстаёт: отказ обязательных секций
+     * («required sections failed: …»), на котором встал прогон Борисова, в нём
+     * не назван — и повторился десять раз, оплатив четыре стадии модели каждый
+     * раз. Дословно одинаковый отказ доказывает детерминизм сам, без списка.
+     *
+     * Признак ограничен веткой сборки намеренно: сетевые отказы и подводка дают
+     * одинаковые строки («ECONNRESET») и обязаны повторяться до бюджета —
+     * «ожидание — не попытка».
+     */
+    const repeatsItself =
+      isAssemblyFailure && !linkageIncomplete && repeatsPreviousFailure(job, code, message);
+    const retryWouldRepeatItself = isDeterministicPrepareGate(message) || repeatsItself;
 
     if (code === "RENDER_FAILED") {
       return await failRetryable(job, "RENDER_FAILED", message, [
@@ -1803,7 +1821,12 @@ async function stepPrepare(
      * возврат после неудавшейся пересборки и терминальный патч — уносят её с
      * собой.
      */
-    const parked = { ...job, warnings: recordParkedDeckVersion(job.warnings) };
+    const parked = {
+      ...job,
+      warnings: recordParkedDeckVersion(
+        repeatsItself ? [...job.warnings, PREPARE_REPEATED_FAILURE_MARK] : job.warnings
+      ),
+    };
 
     const restored = await restoreAfterFailedRebuild(parked, code, message);
     if (restored) return restored;
@@ -1815,7 +1838,7 @@ async function stepPrepare(
         // Гейт называет себя кодом («MATERIAL_THEME_COVERAGE=87.5»), по которому
         // оператор не может действовать. Сообщение объясняет, что произошло и
         // что делать, а код сохраняется для диагностики (шаг 15, E1).
-        lastError: prepareGateFailureMessage(message),
+        lastError: prepareGateFailureMessage(message, { repeated: repeatsItself }),
         lastErrorCode: code,
         completedAt: new Date().toISOString(),
         warnings: [...parked.warnings, "CANONICAL_PREPARE_BLOCKED"],

@@ -137,13 +137,35 @@ export function prepareGateAdvice(message: string | null | undefined): string | 
 }
 
 /**
+ * Совет оператору, когда отказ повторился дословно.
+ *
+ * Гейта в таком отказе нет — детерминизм доказан не именем, а вторым
+ * одинаковым ответом, — поэтому объяснение строится отдельно. Говорит оно то
+ * же самое: повтор бессмысленен, данные целы, ждать нужно исправления.
+ */
+export function repeatedFailureAdvice(): string {
+  return (
+    "Сборка отчёта дважды подряд отказала одинаково — повтор без изменения кода " +
+    `или данных даст то же. ${DATA_INTACT_TAIL}`
+  );
+}
+
+/**
  * Сообщение об отказе для оператора: что произошло и что делать.
  *
  * Технический код гейта сохраняется — по нему ищут в диагностике, — но идёт
  * после человеческого объяснения, а не вместо него.
+ *
+ * Совет по гейту имеет приоритет над советом про повтор: гейт называет
+ * конкретное действие («уточните профиль субъекта»), а повтор — только факт.
+ * Столкнуться они не могут — гейт паркует с первой попытки, — но порядок
+ * записан здесь, а не оставлен случаю.
  */
-export function prepareGateFailureMessage(message: string | null | undefined): string {
-  const advice = prepareGateAdvice(message);
+export function prepareGateFailureMessage(
+  message: string | null | undefined,
+  options: { repeated?: boolean } = {}
+): string {
+  const advice = prepareGateAdvice(message) ?? (options.repeated ? repeatedFailureAdvice() : null);
   const raw = String(message ?? "").trim();
   return advice ? `${advice} (${raw})` : raw;
 }

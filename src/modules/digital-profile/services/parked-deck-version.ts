@@ -29,6 +29,7 @@
 
 import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-version";
 import { isDeterministicPrepareGate } from "./prepare-gate-advice";
+import { parkedOnRepeatedFailure } from "./prepare-repeat";
 
 /** Запись в предупреждениях прогона: на какой версии деки он встал. */
 export const PARKED_DECK_VERSION_PREFIX = "deck-content-version:";
@@ -54,8 +55,12 @@ export function parkedOnCurrentDeckVersion(
 }
 
 /**
- * Повтор подготовки этому прогону не поможет: он встал на детерминированном
- * гейте, и версия деки с тех пор не менялась.
+ * Повтор подготовки этому прогону не поможет, и версия деки с тех пор не
+ * менялась.
+ *
+ * «Не поможет» — один вопрос с двумя источниками данных: гейт, назвавший себя в
+ * тексте отказа (детерминизм известен заранее), и пометка `prepare-repeat`
+ * (детерминизм доказан вторым дословно одинаковым отказом).
  *
  * Прогонам без конвейера шагов (`unified-recovery-legacy-heuristic`) тот же
  * вопрос задаётся без версии, и намеренно: отпущенный замок не открывает им
@@ -66,5 +71,8 @@ export function prepareRetryIsPointless(job: {
   lastError?: string | null;
   warnings?: readonly string[] | null;
 }): boolean {
-  return isDeterministicPrepareGate(job.lastError) && parkedOnCurrentDeckVersion(job.warnings);
+  return (
+    (isDeterministicPrepareGate(job.lastError) || parkedOnRepeatedFailure(job.warnings)) &&
+    parkedOnCurrentDeckVersion(job.warnings)
+  );
 }
