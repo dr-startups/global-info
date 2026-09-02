@@ -7,6 +7,7 @@
  * deterministic DeckAssembler concatenates validated packs into one deck.
  */
 
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 /** Current self-contained pack schema (carries explicit caseId/datasetId). */
@@ -73,6 +74,17 @@ export const SlideBodySchema = z.object({
     .object({
       headers: z.array(z.string()),
       rows: z.array(z.array(z.string())),
+      /**
+       * Адрес материала под своей строкой — полосой во всю ширину листа.
+       *
+       * Колонкой адрес быть не может: в 22 % ширины входит 62 знака, а в
+       * корпусе прогона половина адресов длиннее, самый длинный — 186. Полоса
+       * даёт 1109 px вместо 229, и обрезка становится не «отложенной», а
+       * невозможной. Соответствие строке — по индексу; расхождение длин
+       * останавливает сборку (`assembleDeck`), потому что тихо потерянный
+       * адрес не отличим от материала, у которого его нет.
+       */
+      rowAddresses: z.array(z.string()).optional(),
       /** C.4 — optional row grouping (record bands in compliance tables). */
       groups: z
         .array(
@@ -248,6 +260,88 @@ export const SectionPackV2Schema = z
 export type SectionPackV2 = z.infer<typeof SectionPackV2Schema>;
 
 /**
+ * Рекурсивная сортировка ключей — та самая единственная форма, в которой пакет
+ * лежит в файле и попадает под хэш.
+ *
+ * Примитив намеренно не экспортируется, и это часть решения, а не стиль:
+ * доступный снаружи, он рано или поздно окажется в `inputHash`
+ * (`scopedInputHash` + `extrasHash`), а там смена формулы — это промах мимо
+ * ключа кэша **всех** готовых пакетов, то есть повторная оплата стадий GPT, в
+ * том числе прогону, который идёт прямо сейчас.
+ *
+ * Ключи сортируются по кодовым единицам, без `localeCompare`: тот зависит от
+ * локали процесса, и байты файла вместе с `contentHash` стали бы
+ * машинно-зависимыми.
+ */
+function withSortedKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withSortedKeys);
+  if (value === null || typeof value !== "object") return value;
+  const source = value as Record<string, unknown>;
+  // Object.create(null), а не литерал: присваивание по ключу `__proto__` на
+  // обычном объекте не создаёт собственного свойства, и поле исчезло бы и из
+  // байтов файла, и из хэша — при том что `JSON.stringify` его печатает.
+  const sorted = Object.create(null) as Record<string, unknown>;
+  for (const key of Object.keys(source).sort()) sorted[key] = withSortedKeys(source[key]);
+  return sorted;
+}
+
+/**
+ * Какие байты лежат в файле пакета — единственный ответ, для всех, кто пишет.
+ *
+ * Пакет попадает в память двумя путями: свежесобранным от построителя (ключи
+ * `content` — в порядке автора фрагмента) и разобранным схемой из кэша (порядок
+ * объявления полей). Пока форм на диске было две, прогон на тёплом кэше
+ * переписывал файл второй формой, сохранив хэш, посчитанный над первой, — и
+ * файл переставал сходиться сам с собой, молча: внутри прогона хэш не с чем
+ * сравнить. Отступ в два пробела и отсутствие завершающего перевода строки —
+ * часть формы: их видно в `git diff` эталона.
+ */
+export function sectionPackJson(pack: SectionPackV2): string {
+  return JSON.stringify(withSortedKeys(pack), null, 2);
+}
+
+/**
+ * Пакет в канонической форме — значение то же, порядок ключей тот же, что в
+ * файле.
+ *
+ * Нужен там, где из пакета что-то **выносят**: сборщик деки переносит в неё
+ * таблицу (вместе с полосами записей `groups`), метрики, KPI и объяснения
+ * рамок, а порядок ключей у них — от происхождения пакета: у прочитанного с
+ * диска схемный (`z.object`) или канонический (`z.record` хранит порядок
+ * файла), у свежесобранного — авторский. Разойдясь, байты `assembled-deck.json`
+ * перестают совпадать между прогоном, собравшим секции заново, и следующим,
+ * взявшим их из кэша, — а эти байты штампует приёмка сборки, и «Повторить
+ * рендер» начинает рендерить принятую деку заново.
+ *
+ * Считается разбором собственных канонических байтов, а не сортировкой на
+ * месте, и это две вещи разом. Первая: дека видит ровно то, что лежит в файле —
+ * никакой третьей формы завести уже нельзя. Вторая: наружу уходит обычный
+ * объект. Сортирующий примитив строит `Object.create(null)` (иначе теряется
+ * ключ `__proto__`), а беспрототипное значение в приложении — ловушка: тип
+ * обещает `SectionPackV2`, а `pack.hasOwnProperty(...)` на нём бросает.
+ * `JSON.parse` возвращает прототип на место и при этом кладёт `__proto__`
+ * собственным свойством.
+ *
+ * Тип аргумента и результата — пакет, а не `unknown`: сортирующий примитив
+ * остаётся закрытым, и применить его к входу `inputHash` (промах мимо ключа
+ * кэша всех готовых пакетов, повторная оплата стадий GPT) через эту функцию
+ * нельзя.
+ */
+export function canonicalSectionPack(pack: SectionPackV2): SectionPackV2 {
+  return JSON.parse(sectionPackJson(pack)) as SectionPackV2;
+}
+
+/**
+ * Чем пакет опознаётся — единственный ответ. Хэш считается над той же
+ * канонической формой, поэтому зависит от значения слайдов и не зависит от
+ * пути, которым они попали в память.
+ */
+export function contentHashOf(slides: SlideContentContract[]): string {
+  const canonical = JSON.stringify(withSortedKeys(slides));
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
+/**
  * Legacy pack (v2, no caseId/datasetId/sourceFindingIds/evidenceRefs).
  * Recognized ONLY by the offline migration script — never accepted by
  * production build/assembly, which require v3 self-contained packs.
@@ -341,6 +435,15 @@ export const ReportDeckManifestSchema = z.object({
   caseId: z.string().min(1),
   reportRunId: z.string().min(1),
   sourceDatasetId: z.string().min(1),
+  /**
+   * Версия построителей, собравших эту деку (`DECK_CONTENT_VERSION`).
+   *
+   * Годность деки для повторного рендера зависит и от неё: дека, собранная
+   * прежней версией, содержит то, что новая версия чинила. Пишет её тот, кто
+   * собирает; читает — загрузчик реюза, и отсутствие поля для него такой же
+   * отказ, как несовпадение.
+   */
+  contentVersion: z.string().min(1),
   generatedAt: z.string().min(1),
   pageCount: z.number().int().nonnegative(),
   baseSlotCount: z.number().int().nonnegative(),

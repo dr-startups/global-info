@@ -1,79 +1,104 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "FRONT_MATTER",
-  "sectionType": "FRONT_MATTER",
-  "fragmentKey": "FRONT_MATTER_MAIN",
   "caseId": "cmreamy2t0002o30f29urzcog",
+  "contentHash": "sha256:90a55ef4953756ec50e58c54ff2a4710b0a081fd7ca8bcaa2c792ace953967b4",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
-  "promptVersion": "front-matter-deterministic-v1",
-  "contentHash": "sha256:72d6a53023319939042f7416d6e55dfc550d0af801268edc9002b9984f09417a",
-  "inputHash": "sha256:db119da7da61871fd7452f30548bf791b993b3687cddd6574e7d4d03ff338033:7e3fad1fd9355e37",
-  "generatedAt": "2026-07-17T09:49:29.031Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [],
   "evidenceRefs": [],
+  "fragmentKey": "FRONT_MATTER_MAIN",
+  "generatedAt": "2026-09-02T12:26:21.541Z",
+  "inputHash": "sha256:4796189f4ffb98b638f788642600b2a19f44ed541ed378ffc4f897fe12ae074b:953ad6302c4b5000",
   "inputs": {
-    "findingIds": [],
     "evidenceRefs": [],
+    "findingIds": [],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
-  "slides": [
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p01_cover",
-      "baseSlotId": "p01_cover",
-      "sectionId": "FRONT_MATTER",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "cover",
-      "title": "Отчёт о цифровом профиле — Сергей Глинка",
-      "content": {
-        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
-      },
-      "evidenceRefs": [],
-      "findingIds": [],
-      "metrics": {},
-      "visualAssetRefs": []
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p02_toc",
-      "baseSlotId": "p02_toc",
-      "sectionId": "FRONT_MATTER",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "toc",
-      "title": "Содержание отчёта",
-      "content": {
-        "bullets": []
-      },
-      "evidenceRefs": [],
-      "findingIds": [],
-      "metrics": {},
-      "visualAssetRefs": []
-    }
-  ],
   "metrics": {
-    "datasetCount": 0,
-    "displayedCount": 0,
     "adverseDatasetCount": 0,
-    "adverseDisplayedCount": 0
+    "adverseDisplayedCount": 0,
+    "datasetCount": 0,
+    "displayedCount": 0
   },
+  "promptVersion": "front-matter-deterministic-v1",
   "provenance": {
+    "evidenceRefs": [],
     "providers": [],
     "reportRunIds": [
       "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": []
+    ]
   },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "FRONT_MATTER",
+  "sectionType": "FRONT_MATTER",
+  "slides": [
+    {
+      "baseSlotId": "p01_cover",
+      "content": {
+        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {},
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p01_cover",
+      "templateId": "cover",
+      "title": "Отчёт о цифровом профиле — Сергей Глинка",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p02_toc",
+      "content": {
+        "bullets": []
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {},
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p02_toc",
+      "templateId": "toc",
+      "title": "Содержание отчёта",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p03_persona",
+      "content": {
+        "bullets": [
+          "Принадлежность материалов внешним источником не подтверждалась, поэтому среди них может оказаться материал об однофамильце.",
+          "Принадлежность отдельного материала проверяемому лицу отмечена на страницах отчёта ярлыком «О другом лице»: этот лист отвечает на вопрос обо всём отчёте сразу."
+        ],
+        "narrative": "Решения по персоне у этого кейса нет: панель выбора персоны не собиралась либо решение по ней не принималось.\nСбор шёл по данным субъекта, которые ввёл оператор.",
+        "whatToCheck": "Сверить материалы, принадлежность которых проверяемому лицу вызывает сомнение, по источнику каждого — там, где отчёт приводит его адрес: внешним источником принадлежность не подтверждена ни у одного из них."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [],
+      "isContinuation": false,
+      "metrics": {
+        "personaDecisionRecorded": 0
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "FRONT_MATTER",
+      "slideId": "p03_persona",
+      "templateId": "persona-check",
+      "title": "Кого проверяли",
+      "visualAssetRefs": []
+    }
+  ],
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

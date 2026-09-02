@@ -166,7 +166,7 @@ export const CANONICAL_THEME_DEFS: CanonicalThemeDef[] = [
       "бенефициар",
       "beneficia",
     ]),
-    legacyThemeIds: ["business_profile", "family_associates"],
+    legacyThemeIds: ["business_profile", "family_associates", "corporate_ownership"],
   },
   {
     themeId: "offshore_financial_transparency",
@@ -187,7 +187,7 @@ export const CANONICAL_THEME_DEFS: CanonicalThemeDef[] = [
       "\\byacht",
       `${B}яхт`,
     ]),
-    legacyThemeIds: ["offshore_corporate"],
+    legacyThemeIds: ["offshore_structures"],
   },
   {
     themeId: "regulatory",

@@ -27,11 +27,19 @@ import type {
   ReviewRiskFindingInput,
 } from "../validation/evidence-schemas";
 
+import { URL_TRACKING_PARAMS } from "../url-tracking-params";
+
 // ---------------------------------------------------------------------------
 // URL normalization + de-duplication
 // ---------------------------------------------------------------------------
 
-const TRACKING_PARAMS = /^(utm_|fbclid$|gclid$|yclid$|mc_)/i;
+/**
+ * Список меток — общий с ключом материала слоя деки
+ * (`serp-observation/material-key.ts`). Второй список здесь был бы вторым
+ * ответом на вопрос «одна ли это страница», и он у нас уже был: адрес с
+ * `?srsltid=` слой сбора считал новой строкой, а дека — новым материалом.
+ */
+const TRACKING_PARAMS = URL_TRACKING_PARAMS;
 
 export function normalizeUrl(raw: string): string {
   try {

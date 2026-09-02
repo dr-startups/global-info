@@ -3,14 +3,13 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
-import { createHash } from "node:crypto";
-import type { SlideBody, SlideContentContract, SectionType } from "../contracts";
-import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
+import type { SlideContentContract, SectionType } from "../contracts";
+import { contentHashOf, SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
-import type { ScopedFragmentInput } from "../scoped-input";
+import type { MetricSnapshot, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import {
   freshnessFootnote,
   reportDiffClientLine,
@@ -24,16 +23,21 @@ import type {
 import {
   RISK_ORDER,
   VISUAL_ASSET_UNAVAILABLE,
+  auditScopeLine,
   bulletWithFindingId,
   changeSinceLastReportLine,
   chunk,
   claimBodyWithoutTheme,
+  isQuoteIntroLine,
   clampClientText,
   fitClientSentences,
   fitStructuredBullet,
   isAdverse,
   makeSlotSlide,
+  packBulletPages,
   matchGptKeyRisk,
+  readShareExecutiveLine,
+  regionClientLabel,
   riskLabel,
   sourceLine,
   splitClientParagraphs,
@@ -45,9 +49,12 @@ import {
 import {
   assertSemanticSummaryGatesPass,
   paginateComposedClientSummary,
+  renderSemanticBlock,
   type SemanticBlock,
 } from "../semantic-summary-pagination";
+import { legacyRiskWordPlate } from "../../client/risk-scale";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
+import { continuationTitle } from "../continuation-slide";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -71,7 +78,7 @@ export function executiveFreshnessChangeVisibleLine(
 }
 
 const EXEC_FRESHNESS_CHANGE_RE =
-  /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта/i;
+  /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта|Негатив среди прочитанных/i;
 
 /** Drop §7.2 sentences so they can be re-placed as their own short paragraph. */
 function stripExecutiveFreshnessChangeSentences(text: string): string {
@@ -79,16 +86,44 @@ function stripExecutiveFreshnessChangeSentences(text: string): string {
     .replace(/[^.?!\n]*данные собраны[^.?!\n]*[.?!]?/giu, " ")
     .replace(/[^.?!\n]*самый свежий материал[^.?!\n]*[.?!]?/giu, " ")
     .replace(/[^.?!\n]*Новых материалов с прошлого отчёта[^.?!\n]*[.?!]?/giu, " ")
+    // Строка доли зачищается тем же проходом: пост-проход применяется дважды
+    // (после стадии 2 и после кэша), и без этого она удвоилась бы.
+    .replace(/[^.?!\n]*Негатив среди прочитанных[^.?!\n]*[.?!]?/giu, " ")
     .replace(/\s+/gu, " ")
     .replace(/\s+([,;:.])/gu, "$1")
     .trim();
+}
+
+/** §7.2 умещается в карточку резюме; строка доли к этому бюджету не относится. */
+const EXEC_FRESHNESS_CARD_BUDGET = 220;
+
+/**
+ * Короткая карточка видимых фактов резюме: §7.2 и доля негатива среди
+ * прочитанных страниц.
+ *
+ * Строка доли не клампится никогда — обрезанное число это не сокращение, а
+ * ложь. Тесниться в общем бюджете приходится части §7.2, у которой смысл
+ * сохраняется и в укороченном виде.
+ */
+function executiveVisibleFactsLine(
+  extras?: FragmentExtras,
+  ms?: MetricSnapshot
+): string | undefined {
+  const fresh = executiveFreshnessChangeVisibleLine(extras);
+  const share = ms ? readShareExecutiveLine(ms) : undefined;
+  const parts = [
+    fresh ? clampClientText(fresh, EXEC_FRESHNESS_CARD_BUDGET) : undefined,
+    share,
+  ].filter((x): x is string => Boolean(x));
+  return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 /** Must stay ≤ client-text-contract narrative budget (900). */
 const EXEC_NARRATIVE_BUDGET = 900;
 
 /**
- * Ensure §7.2 copy is present as its own short narrative paragraph.
+ * Ensure the visible-facts card (§7.2 + доля негатива среди прочитанных
+ * страниц) is present as its own short narrative paragraph.
  * The executive dashboard clips long cards (~420 chars / height) — folding into
  * the lead paragraph (PDF 28) hid the line; a dedicated short card stays visible.
  * Total narrative is clamped to the section-QA budget so «Дожать GPT» cannot
@@ -96,11 +131,11 @@ const EXEC_NARRATIVE_BUDGET = 900;
  */
 export function ensureExecutiveFreshnessChangeInNarrative(
   narrative: string,
-  extras?: FragmentExtras
+  extras?: FragmentExtras,
+  ms?: MetricSnapshot
 ): string {
-  const line = executiveFreshnessChangeVisibleLine(extras);
-  if (!line) return narrative;
-  const shortLine = clampClientText(line, 220);
+  const shortLine = executiveVisibleFactsLine(extras, ms);
+  if (!shortLine) return narrative;
   const paras = narrative
     .split("\n")
     .map((p) => stripExecutiveFreshnessChangeSentences(p))
@@ -121,7 +156,7 @@ export function ensureExecutiveFreshnessChangeInNarrative(
       break;
     }
   }
-  // Slot 1: short §7.2 card between lead conclusion and portrait/coverage.
+  // Slot 1: short visible-facts card between lead conclusion and portrait/coverage.
   return [lead, shortLine, ...rest].filter(Boolean).join("\n");
 }
 
@@ -135,25 +170,14 @@ function isMeaningfulExecNarrativePara(text: string): boolean {
 }
 
 /**
- * Post-pass after GPT/cache: re-assert §7.2 on EXECUTIVE_SUMMARY slides.
- * Stage-2 / SKIPPED_CACHED can replace narrative with one long paragraph and
- * drop the dedicated short card (PDF 29).
+ * Post-pass after GPT/cache: re-assert the visible-facts card (§7.2 + доля
+ * негатива) on EXECUTIVE_SUMMARY slides. Stage-2 / SKIPPED_CACHED can replace
+ * narrative with one long paragraph and drop the dedicated short card (PDF 29).
  */
 export function applyExecutiveFreshnessChangeToPacks<
-  T extends {
-    fragmentKey: string;
-    contentHash?: string;
-    slides: Array<{
-      isContinuation?: boolean;
-      content: {
-        narrative?: string;
-        bullets?: string[];
-        sourceNote?: string;
-      };
-    }>;
-  },
->(packs: T[], extras?: FragmentExtras): T[] {
-  const line = executiveFreshnessChangeVisibleLine(extras);
+  T extends { fragmentKey: string; contentHash?: string; slides: SlideContentContract[] },
+>(packs: T[], extras?: FragmentExtras, ms?: MetricSnapshot): T[] {
+  const line = executiveVisibleFactsLine(extras, ms);
   if (!line) return packs;
   return packs.map((pack) => {
     if (pack.fragmentKey !== "EXECUTIVE_SUMMARY") return pack;
@@ -175,15 +199,13 @@ export function applyExecutiveFreshnessChangeToPacks<
           ...slide.content,
           narrative: ensureExecutiveFreshnessChangeInNarrative(
             String(slide.content.narrative ?? ""),
-            extras
+            extras,
+            ms
           ),
         },
       };
     });
-    const contentHash = `sha256:${createHash("sha256")
-      .update(JSON.stringify(slides))
-      .digest("hex")}`;
-    return { ...pack, slides, contentHash };
+    return { ...pack, slides, contentHash: contentHashOf(slides) };
   });
 }
 
@@ -196,13 +218,6 @@ const EXEC_SURFACE_LABELS: Record<string, string> = {
   ai_answers: "ИИ-ответы",
   compliance: "комплаенс-базы",
   url_audit: "проверка URL",
-};
-
-const EXEC_REGION_LABELS: Record<string, string> = {
-  RU: "Россия",
-  UAE: "ОАЭ",
-  INTERNATIONAL: "международный контур",
-  GLOBAL: "глобальный контур",
 };
 
 /** REMEDIATION §7.3 — structured executive page blocks (вывод → факты → действия). */
@@ -228,11 +243,7 @@ export function composeExecutivePageStructure(
   const materialWord = pluralRu(ms.compositeCount, "материал", "материала", "материалов");
   const regionBits = Object.entries(ms.perRegionCounts ?? {})
     .filter(([, n]) => typeof n === "number" && n > 0)
-    .map(([r, n]) => `${EXEC_REGION_LABELS[String(r).toUpperCase()] ?? r} — ${n}`);
-  const overviewBits = (es.regionalOverview ?? [])
-    .filter((r) => (r.totalCount ?? 0) > 0 || /собра|материал|негатив/i.test(r.oneLiner))
-    .map((r) => r.oneLiner)
-    .slice(0, 2);
+    .map(([r, n]) => `${regionClientLabel(String(r))} — ${n}`);
   const surfaces = [
     ...new Set(
       scoped.surfaceUnits
@@ -246,17 +257,29 @@ export function composeExecutivePageStructure(
       : undefined;
   const changeLine = changeSinceLastReportLine(opts?.extras);
   // PDF-40 G.3 — coverage as a client sentence, not an internal «карта покрытия».
+  //
+  // Первым идёт предмет аудита: читатель должен узнать глубину проверки раньше,
+  // чем размер собранного корпуса, иначе большое число «собрано» читается как
+  // объём аудита.
+  const scopeLine = auditScopeLine(ms, { withRemainder: true });
   const coverage = clampClientText(
     [
+      scopeLine ? `${scopeLine} ` : "",
       `По собранным источникам: ${ms.compositeCount} ${materialWord}, из них уверенно об этом лице — ${ms.subjectMatchCount}`,
       regionBits.length > 0 ? ` (${regionBits.join("; ")})` : "",
       surfaces.length > 0 ? `. Смотрели: ${surfaces.slice(0, 7).join(", ")}` : "",
-      overviewBits.length > 0 ? `. ${overviewBits.join(" ")}` : "",
+      // Словарный процент `regionalOverview.oneLiner` здесь больше не
+      // печатается: он отвечает на тот же вопрос «какая доля негативна» другим
+      // определением — по субъектным материалам региона, а не по прочитанным
+      // страницам, — и уже расходился с ним (7 % при нуле прочитанных страниц).
+      // Доля негатива в резюме одна, и она едет строкой видимых фактов.
       fresh ? `. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : "",
       changeLine ? `. ${changeLine}` : "",
       ".",
     ].join(""),
-    450
+    // Бюджет абзаца поднят ровно на длину фразы об области аудита: она
+    // добавляется к покрытию, а не вытесняет из него «Смотрели» и свежесть.
+    450 + (scopeLine ? scopeLine.length + 1 : 0)
   );
 
   const likelyN = ms.likelySubjectCount ?? 0;
@@ -270,7 +293,11 @@ export function composeExecutivePageStructure(
           caveatLikely ??
             [
               likelyN > 0
-                ? `Материалы, требующие подтверждения: ${likelyN} — см. матрицу рисков и приложение.`
+                ? // Приложение здесь не называется: оно перечисляет находки с
+                  // неподтверждённой принадлежностью, а не наблюдения, которые
+                  // считает эта строка, — и в деке его может не быть вовсе.
+                  // Матрица рисков карточку с этим числом несёт всегда.
+                  `Материалы, требующие подтверждения: ${likelyN} — см. матрицу рисков.`
                 : "",
               ambN > 0
                 ? `Неоднозначная атрибуция: ${ambN} ${pluralRu(ambN, "наблюдение", "наблюдения", "наблюдений")} — не учтены как факты о субъекте.`
@@ -355,13 +382,11 @@ export function composeExecutivePageStructure(
 }
 
 function formatSemanticBullet(block: SemanticBlock): string {
-  if (block.heading && block.kind === "theme") {
-    // Heading already leads most composer theme bodies; avoid duplicate title line
-    // when the body starts with the same heading.
-    if (block.text.startsWith(block.heading)) return block.text;
-    return `${block.heading}. ${block.text}`;
-  }
-  return block.text;
+  // Склейка заголовка с телом — общая с полным текстом резюме
+  // (`themeBlockText`), чтобы дека и артефакт не расходились в том, где
+  // называется тема. Своей копии здесь больше нет: тем же вызовом укладка
+  // меряет бюджет, поэтому печать и замер разойтись не могут.
+  return renderSemanticBlock(block);
 }
 
 function adverseFindingIdsForExecutive(
@@ -400,18 +425,19 @@ export function buildExecutiveSummaryFromComposed(
   const riskLevel = composed.sections.overallAssessment.match(
     /критический|высокий|средний|низкий/i
   )?.[0];
-  const verdictLabel = es
-    ? verdictClientLabel(es.verdict)
-    : riskLevel
-      ? riskLevel
-      : "по открытым источникам";
+  // Резюме, составленное до перехода на три ступени, содержит слово
+  // «критический»: в плашку оно уехало бы как есть, если не привести.
+  const verdictLabel =
+    (es ? verdictClientLabel(es.verdict) : riskLevel && legacyRiskWordPlate(riskLevel)) ||
+    "по открытым источникам";
 
-  // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold §7.2
-  // into the packed overview when it fits; otherwise it rides as a continuation block.
-  const freshLine = executiveFreshnessChangeVisibleLine(extras);
+  // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold the
+  // visible-facts card (§7.2 + доля негатива) into the packed overview when it
+  // fits; the post-pass re-asserts it on the pack in any case.
+  const factsLine = executiveVisibleFactsLine(extras, ms);
   let narrative = plan.overviewNarrative.join("\n");
-  if (freshLine) {
-    const trial = narrative ? `${narrative}\n${freshLine}` : freshLine;
+  if (factsLine) {
+    const trial = narrative ? `${narrative}\n${factsLine}` : factsLine;
     if (trial.length <= EXEC_NARRATIVE_BUDGET) {
       narrative = trial;
     }
@@ -428,7 +454,7 @@ export function buildExecutiveSummaryFromComposed(
     content: {
       narrative,
       kpis: [
-        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "Материалов собрано", value: String(ms.compositeCount), tone: "neutral" },
         { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
         {
           label: "Вероятно о субъекте",
@@ -473,9 +499,7 @@ export function buildExecutiveSummaryFromComposed(
       continuationIndex: pageIdx + 1,
       templateId: "continuation",
       title:
-        totalPages > 1
-          ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
-          : baseTitle,
+        totalPages > 1 ? continuationTitle(baseTitle, pageIdx + 1, totalPages) : baseTitle,
       subtitle: undefined,
       content: {
         bullets: pageBlocks.map(formatSemanticBullet),
@@ -520,7 +544,15 @@ export function buildExecutiveSummaryFragment(
   // continuation page carries the full detail.
   // PDF-40 G.2b/G.3 — concrete evidence first (quotes + источник); GPT advice
   // is a short trailing line, never a replacement for the factual basis.
-  const cardTexts = es.keyFindings.map((k) => {
+  /**
+   * Тематический блок резюме: тема, фактура, объяснение риска, «Что делать».
+   *
+   * `factLines` ограничивает фактуру для узких карточек первой страницы;
+   * страница-продолжение берёт её целиком. Объяснение риска от модели живёт
+   * только здесь: карточка матрицы стала сводкой, и без этой строки
+   * `keyRisks[].explanation` не печатался бы в отчёте вовсе.
+   */
+  const themeBullet = (k: ExecutiveSummaryExtras["keyFindings"][number], factLines?: number) => {
     const finding = scoped.findings.find((f) => f.findingId === k.findingId);
     const concrete = finding
       ? claimBodyWithoutTheme(finding)
@@ -529,27 +561,20 @@ export function buildExecutiveSummaryFragment(
           .trim();
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
     // Keep framing + up to 2 quote lines (+ scale); drop a long why-tail if tight.
-    const core = concrete
-      .split("\n")
-      .filter((ln) => ln.trim().length > 0)
-      .slice(0, 4)
-      .join("\n");
+    const core = factLines
+      ? concrete
+          .split("\n")
+          .filter((ln) => ln.trim().length > 0)
+          .slice(0, factLines)
+          .join("\n")
+      : concrete;
     const lines = [`«${k.title}»`, core];
+    if (risk?.explanation) lines.push(risk.explanation);
     if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
     return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
-  });
-  const bullets = es.keyFindings.map((k) => {
-    const finding = scoped.findings.find((f) => f.findingId === k.findingId);
-    const concrete = finding
-      ? claimBodyWithoutTheme(finding)
-      : String(k.factualBasis ?? "")
-          .replace(/^Подтверждённый факт:\s*/iu, "")
-          .trim();
-    const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    const lines = [`«${k.title}»`, concrete];
-    if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
-    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
-  });
+  };
+  const cardTexts = es.keyFindings.map((k) => themeBullet(k, 4));
+  const bullets = es.keyFindings.map((k) => themeBullet(k));
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks. Still show
   // coverage / LIKELY / namesake / recommendations (§7.3).
@@ -596,7 +621,7 @@ export function buildExecutiveSummaryFragment(
   }
   // Dense GPT path often omits coverage; sourceNote is not drawn on the
   // executive dashboard — fold §7.2 into the visible narrative card.
-  narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras);
+  narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras, ms);
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
@@ -610,7 +635,7 @@ export function buildExecutiveSummaryFragment(
       // Right-column KPI cards on the executive dashboard: the headline
       // numbers of the whole audit at a glance (short labels — narrow cards).
       kpis: [
-        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "Материалов собрано", value: String(ms.compositeCount), tone: "neutral" },
         { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
         {
           label: "Вероятно о субъекте",
@@ -657,9 +682,26 @@ export function buildExecutiveSummaryFragment(
   if (contBullets.length > 0) {
     // PDF-46 I.3 — 3 theme blocks per continuation page (block-first; more pages OK).
     const THEME_PER_PAGE = 3;
-    const totalPages = Math.ceil(contBullets.length / THEME_PER_PAGE);
+    // Раскладка общая с остальными страницами буллетов, а не своя.
+    //
+    // Здесь стояла нарезка `slice` по три подряд: четыре блока давали
+    // `ceil(4/3) = 2` страницы вида [3, 1], и последняя уходила под один блок.
+    // На эталонной деке это была страница 5 — «Резюме — темы риска
+    // (продолжение 2/2)» со 175 знаками на целом листе, 24% заполнения.
+    //
+    // `packBulletPages` умеет ровно это: он же добирает хвост из предыдущей
+    // страницы (`balanceTailPage`), чтобы последний лист не остался с
+    // одиноким блоком. Правило было написано дважды — в пагинаторе резюме и
+    // в раскладке буллетов, — а этот третий участник о нём не знал.
+    const pages = packBulletPages(
+      contBullets,
+      THEME_PER_PAGE,
+      THEME_PER_PAGE,
+      DECK_TEMPLATE_REGISTRY["continuation"].layout.itemCharBudget
+    );
+    const totalPages = pages.length;
     for (let pageIdx = 0; pageIdx < totalPages; pageIdx += 1) {
-      const chunk = contBullets.slice(pageIdx * THEME_PER_PAGE, (pageIdx + 1) * THEME_PER_PAGE);
+      const chunk = pages[pageIdx]!;
       const baseTitle = sparse
         ? "Резюме — покрытие и ограничения"
         : "Резюме — темы риска";
@@ -671,9 +713,7 @@ export function buildExecutiveSummaryFragment(
         continuationIndex: pageIdx + 1,
         templateId: "continuation",
         title:
-          totalPages > 1
-            ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
-            : baseTitle,
+          totalPages > 1 ? continuationTitle(baseTitle, pageIdx + 1, totalPages) : baseTitle,
         subtitle: undefined,
         content: {
           bullets: chunk,
@@ -686,11 +726,6 @@ export function buildExecutiveSummaryFragment(
   return { slides, status: "READY" };
 }
 
-/**
- * Cards that fit on one risk-matrix page with typical GPT detail length.
- * PDF-46 I.3 — three full cards above the footer; overflow → continuations.
- */
-const RISK_MATRIX_PAGE_CAPACITY = 3;
 /** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
 const RISK_MATRIX_LIKELY_RESERVED = 1;
 /**
@@ -699,31 +734,95 @@ const RISK_MATRIX_LIKELY_RESERVED = 1;
  */
 export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
+/** Ёмкость и текстовый бюджет карточек матрицы объявлены только реестром. */
+const RISK_MATRIX_TEMPLATE = DECK_TEMPLATE_REGISTRY["risk-matrix"];
+/**
+ * Сколько знаков даётся строке «в чём проблема».
+ *
+ * Две нарисованных строки тела карточки при ширине текстовой колонки: столько
+ * помещается, не поднимая карточку выше расчётной высоты, по которой считалась
+ * ёмкость страницы.
+ */
+const RISK_MATRIX_PROBLEM_CHARS = 160;
+/** Подпись строки действия — она же считается в бюджете, поэтому объявлена раз. */
+const RISK_MATRIX_ACTION_PREFIX = "Что делать: ";
+/**
+ * Суффикс заголовка строки с неподтверждённой принадлежностью.
+ *
+ * Тема словаря у неподтверждённой строки та же, что у подтверждённой, поэтому
+ * в матрице выходили две карточки с одинаковым заголовком и разными вердиктами
+ * — на живом отчёте 21.08 это читалось как повтор (пункт CQ). Различие вынесено
+ * в заголовок: читатель просматривает их, а не чипы уровня.
+ */
+const UNCONFIRMED_TITLE_SUFFIX = " — принадлежность не подтверждена";
+/**
+ * Что остаётся в теле карточки.
+ *
+ * Только следствие статуса: сам статус теперь сказан заголовком и чипом
+ * уровня, и повторять его третий раз незачем.
+ */
+const LIKELY_CAVEAT =
+  "До уточнения идентификации материал не включён в итог «об этом лице».";
+
+/** Строка, которой заголовок обязан назвать неподтверждённую принадлежность. */
+function isUnconfirmedRow(f: Finding): boolean {
+  return f.subjectMatch === "LIKELY_SUBJECT" && f.findingId !== RISK_MATRIX_LIKELY_AGGREGATE_ID;
+}
+
+/**
+ * Тело карточки матрицы: сводка, а не выписка.
+ *
+ * Строка статистики синтезатора идёт дословно — числа остаются с одним
+ * источником правды. Цитаты, «Примеры: …» и «Где видно: …» в карточку не
+ * попадают никогда: они уже напечатаны в тематических блоках региональных
+ * резюме, и матрица их дублировала, раздувая карточку до 575 знаков.
+ *
+ * Объяснение риска от модели (`risk.explanation`) печатается в резюме, а не
+ * здесь: карточке нужна одна строка «в чём проблема», а не две.
+ */
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
-  // PDF-40 G.1b / PDF-46 I.4 — headline shows theme; keep structured lines whole.
-  const claim = claimBodyWithoutTheme(f);
-  if (f.subjectMatch === "LIKELY_SUBJECT") {
-    return fitStructuredBullet(
-      [
-        claim,
-        "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
-      ].join("\n"),
-      900
-    );
+  // PDF-40 G.1b — headline уже показывает тему, поэтому строка темы снимается.
+  const claimLines = claimBodyWithoutTheme(f).split("\n").map((l) => l.trim());
+  /*
+   * Строкой «в чём проблема» становится масштаб темы: он несёт числа, а первой
+   * строкой претензии стоит ввод к цитатам («Найдены материалы делового и
+   * биографического профиля»), который повторяет заголовок карточки.
+   *
+   * Двоеточие в конце ввода признаком быть не может: перекладка абзаца его
+   * снимает, и достаточно одной цитаты вместо двух, чтобы карточка напечатала
+   * ввод и склеила его с рекомендацией в строку без точки — «…профиля Что
+   * делать: …». Масштаба нет — печатается то, что есть, а висящее двоеточие
+   * снимается.
+   */
+  let head = claimLines[0] ?? "";
+  if (isQuoteIntroLine(head)) {
+    const scale = claimLines.find((l) => /^(Всего по теме|В корпусе):/u.test(l));
+    head = scale ?? `${head.replace(/:$/u, "")}.`;
   }
-  const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
-  if (risk) {
-    return fitStructuredBullet(
-      [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
-      900
-    );
+  const problem = clampClientText(head, RISK_MATRIX_PROBLEM_CHARS);
+  const lines = [problem];
+  if (isUnconfirmedRow(f)) {
+    // У темы с неподтверждённой принадлежностью действие одно — уточнить её,
+    // и оговорка говорит об этом полнее рекомендации. У агрегата претензия
+    // сама объясняет статус, второй раз повторять его незачем.
+    lines.push(LIKELY_CAVEAT);
+  } else {
+    const advice = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks)?.advice;
+    // Что осталось от бюджета реестра после строки «в чём проблема» и переноса.
+    const budget =
+      RISK_MATRIX_TEMPLATE.layout.itemCharBudget -
+      problem.length -
+      RISK_MATRIX_ACTION_PREFIX.length -
+      "\n".length;
+    const action = clampClientText((advice ?? f.recommendedAction ?? "").trim(), budget);
+    if (action) lines.push(`${RISK_MATRIX_ACTION_PREFIX}${action}`);
   }
-  return fitStructuredBullet([claim, `Что делать: ${f.recommendedAction}`].join("\n"), 900);
+  return fitStructuredBullet(lines.join("\n"), RISK_MATRIX_TEMPLATE.layout.itemCharBudget);
 }
 
 function riskMatrixRow(f: Finding): string[] {
   return [
-    f.theme,
+    isUnconfirmedRow(f) ? `${f.theme}${UNCONFIRMED_TITLE_SUFFIX}` : f.theme,
     f.subjectMatch === "LIKELY_SUBJECT" ? "Требует подтверждения" : riskLabel(f.riskLevel),
     f.promotionPriority,
     f.findingId === RISK_MATRIX_LIKELY_AGGREGATE_ID ? "сводка" : f.findingId,
@@ -744,7 +843,7 @@ function riskMatrixSlideFindingIds(findings: Finding[]): string[] {
 export function packRiskMatrixPages(
   confirmed: Finding[],
   likely: Finding[],
-  pageCapacity = RISK_MATRIX_PAGE_CAPACITY,
+  pageCapacity = RISK_MATRIX_TEMPLATE.maxTableRowsPerSlide,
   likelyReserved = RISK_MATRIX_LIKELY_RESERVED
 ): Finding[][] {
   const conf = [...confirmed].sort(
@@ -754,18 +853,60 @@ export function packRiskMatrixPages(
     (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
   );
   if (conf.length === 0 && lik.length === 0) return [];
-  if (lik.length === 0) {
-    const pages: Finding[][] = [];
-    for (let i = 0; i < conf.length; i += pageCapacity) pages.push(conf.slice(i, i + pageCapacity));
-    return pages;
-  }
   const reserve = Math.min(likelyReserved, lik.length, pageCapacity);
-  const confOnFirst = Math.max(0, pageCapacity - reserve);
-  const first = [...conf.slice(0, confOnFirst), ...lik.slice(0, reserve)];
-  const rest = [...conf.slice(confOnFirst), ...lik.slice(reserve)];
+  const confOnFirst = Math.min(conf.length, Math.max(0, pageCapacity - reserve));
+  /*
+   * Остаток первой страницы добирается вероятными: резерв — это минимум под
+   * «Требует подтверждения», а не потолок листа.
+   *
+   * Отсюда же следует, что помещающийся целиком набор не делится: при
+   * `conf + lik ≤ ёмкости` на первую страницу уходят все подтверждённые и все
+   * вероятные. Пока добора не было, резерв резал лист по `ёмкость − резерв`, и
+   * одна подтверждённая тема с двумя вероятными раскладывалась в [1, 2] — две
+   * страницы под три карточки.
+   */
+  const likOnFirst = Math.min(lik.length, pageCapacity - confOnFirst);
+  const first = [...conf.slice(0, confOnFirst), ...lik.slice(0, likOnFirst)];
+  const rest = [...conf.slice(confOnFirst), ...lik.slice(likOnFirst)];
   const pages: Finding[][] = [first];
   for (let i = 0; i < rest.length; i += pageCapacity) pages.push(rest.slice(i, i + pageCapacity));
-  return pages.filter((p) => p.length > 0);
+  return unlonelyTail(pages.filter((p) => p.length > 0));
+}
+
+/**
+ * Последняя страница матрицы не остаётся с одной карточкой.
+ *
+ * Пять тем при ёмкости четыре давали [4, 1]: лист под одну карточку читается
+ * как брошенный. С предыдущей страницы переносится ровно одна тема.
+ *
+ * Две оговорки, обе — из разбора составов с вероятными темами:
+ *
+ * 1. С двухкарточной страницы не переносим ничего: одинокий хвост сменился бы
+ *    одинокой предыдущей страницей, то есть правило сработало бы против себя.
+ *    Если при такой ёмкости хвост неизбежен, он остаётся — это честнее.
+ * 2. Первая страница не отдаёт **единственную** вероятную тему: резерв держит
+ *    «Требует подтверждения» на виду. Когда вероятных на ней несколько (или
+ *    переносим не с первой страницы), ограничения нет — видимость сохраняется
+ *    и без него.
+ *
+ * `balanceTailPage` здесь намеренно не переиспользуется: он выравнивает
+ * страницы до почти равных ([4, 1] → [2, 3]) и отменил бы само сжатие матрицы.
+ * Вопрос тут другой — «не одинокий хвост», а не «равные страницы».
+ */
+function unlonelyTail(pages: Finding[][]): Finding[][] {
+  const last = pages.at(-1);
+  const prev = pages.at(-2);
+  if (!last || !prev || last.length !== 1 || prev.length < 3) return pages;
+  const isOnlyLikelyOnFirstPage = (idx: number): boolean =>
+    pages.length === 2 &&
+    prev[idx]!.subjectMatch === "LIKELY_SUBJECT" &&
+    !prev.some((f, j) => j !== idx && f.subjectMatch === "LIKELY_SUBJECT");
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    if (isOnlyLikelyOnFirstPage(i)) continue;
+    last.unshift(...prev.splice(i, 1));
+    return pages;
+  }
+  return pages;
 }
 
 export function buildRiskMatrixFragment(
@@ -795,8 +936,25 @@ export function buildRiskMatrixFragment(
         riskLevel: "low",
         promotionPriority: "APPENDIX",
         evidenceRefs: [],
+        /*
+         * Рекомендация называет исполнимое действие и верна на любом прогоне.
+         *
+         * Прежняя отправляла «в выдачу и приложение»: приложения в деке может
+         * не быть вовсе, а в выдаче этих материалов почти нет — на прогоне 92
+         * оценку «Вероятно» несут во всей деке две строки при двадцати
+         * посчитанных наблюдениях. «Учтены числом, но не перечислены» было
+         * абсолютом, который дека опровергает теми самыми двумя строками, —
+         * поэтому фраза счётная: часть видна поимённо, остальные только числом.
+         *
+         * Длина не декоративна. Строка «в чём проблема» съедает у бюджета
+         * карточки (`itemCharBudget` реестра) около 150 знаков, действию
+         * остаётся ~156, и формулировка, называющая оценку «Вероятно» дважды,
+         * в него не влезала: `clampClientText` отрезал бы ровно вторую половину
+         * — ту, ради которой фразу и меняли.
+         */
         recommendedAction:
-          "Проверить принадлежность материалов с оценкой «Вероятно» в выдаче и приложении; при подтверждении — включить в выводы следующего прогона.",
+          "Запросить поимённый разбор: в этом отчёте они учтены числом; " +
+          "поимённо видны только те из них, что попали в таблицы выдачи с оценкой «Вероятно».",
       } as unknown as Finding,
     ];
   }
@@ -851,7 +1009,7 @@ export function buildRiskMatrixFragment(
       isContinuation: true,
       continuationOf: baseSlide.slideId,
       continuationIndex: pageIdx,
-      title: `${baseSlide.title} (продолжение ${pageIdx + 1}/${pages.length})`,
+      title: continuationTitle(baseSlide.title, pageIdx + 1, pages.length),
       content: {
         table: { headers, rows: pageFindings.map(riskMatrixRow) },
         bullets: pageFindings.map((f) => riskMatrixDetail(f, extras)),
@@ -880,13 +1038,13 @@ export function buildDigitalProfileOverviewFragment(
     .filter(isAdverse)
     .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
     .slice(0, 4)
-    .map((f) => {
-      const body = themedClaim(f);
-      const marker = ` [${f.findingId}]`;
-      return body.length + marker.length <= 520
-        ? body + marker
-        : clampClientText(body.replace(/\n/gu, " "), 480) + marker;
-    });
+    // Подгонка та же, что у остальных тематических буллетов: сбрасываются
+    // целые строки в известном порядке (зачем-важно → где видно → масштаб →
+    // вторая цитата), а не режется хвост по знакам. Прежний рез плющил буллет
+    // в одну строку и отрезал по 480 знакам — с полными адресами это уносило
+    // вторую цитату раньше, чем служебные строки, ради сохранения которых
+    // порядок сброса и заведён.
+    .map((f) => bulletWithFindingId(themedClaim(f), f.findingId, 520));
   // Страница отдавала четыре темы риска одним слайдом и никогда не делилась.
   // На финальном прогоне до клиента дошла **одна**: под шестью KPI-плитками,
   // нарративом и карточкой «Действие» больше не помещалось, а лишнее рендерер
@@ -895,18 +1053,52 @@ export function buildDigitalProfileOverviewFragment(
   //
   // `firstPageBullets: 1` — по замеру этой страницы: обвязка оставляет под
   // блоки около 29 % листа, один тематический блок занимает ~19 %.
+  /*
+   * Заголовок обзора — вывод, а не название страницы.
+   *
+   * «Обзор цифрового профиля» не сообщает читателю ничего; эталон отрасли на
+   * этом месте пишет итог, который видно, не читая страницу целиком.
+   */
+  const adverseCount = scoped.findings.filter(isAdverse).length;
+  const overviewTitle =
+    adverseCount > 0
+      ? `Цифровой профиль: ${adverseCount} ${pluralRu(
+          adverseCount,
+          "тема",
+          "темы",
+          "тем"
+        )} повышенного внимания`
+      : "Цифровой профиль: тем повышенного внимания не выявлено";
   return {
     slides: withContinuations(
       makeSlotSlide({
         slot,
         sectionId,
+        title: overviewTitle,
         content: {
-          narrative: `По собранным источникам: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
-            .map(([r, n]) => `${r}: ${n}`)
-            .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+          // «Проанализировано» относится к предмету аудита, а собрано всегда
+          // шире: смешивать эти два числа под одной подписью нельзя.
+          narrative: [
+            auditScopeLine(s),
+            `По собранным источникам: ${s.compositeCount} ${pluralRu(
+              s.compositeCount,
+              "материал",
+              "материала",
+              "материалов"
+            )} из ${regions.length} ${pluralRu(
+              regions.length,
+              "регионального контура",
+              "региональных контуров",
+              "региональных контуров"
+            )} (${regions
+              .map(([r, n]) => `${regionClientLabel(r)}: ${n}`)
+              .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+          ]
+            .filter(Boolean)
+            .join(" "),
           // Labels fit the KPI card budget (28 chars) without clipping.
           kpis: [
-            { label: "Материалов проанализировано", value: String(s.compositeCount), tone: "neutral" },
+            { label: "Материалов собрано", value: String(s.compositeCount), tone: "neutral" },
             { label: "Связаны с проверяемым лицом", value: String(s.subjectMatchCount), tone: "good" },
             {
               label: "Вероятно о субъекте",
@@ -916,7 +1108,11 @@ export function buildDigitalProfileOverviewFragment(
             { label: "Требуют идентификации", value: String(s.ambiguousCount), tone: "warn" },
             { label: "Относятся к другим лицам", value: String(s.otherSubjectCount), tone: "warn" },
             { label: "Тем повышенного внимания", value: String(s.adverseFindingCount), tone: "risk" },
-            { label: "Региональные контуры", value: regions.map(([r]) => r).join(" · "), tone: "accent" },
+            {
+              label: "Региональные контуры",
+              value: regions.map(([r]) => regionClientLabel(r)).join(" · "),
+              tone: "accent",
+            },
           ],
           bullets: adverseThemes,
           whatToCheck:

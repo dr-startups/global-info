@@ -23,7 +23,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { conflictingPatronymics } from "./patronymic-conflict";
+import { conflictingPatronymics, foreignPatronymicsInQueryLine } from "./patronymic-conflict";
+import { transliterateRuToLat } from "../identity/transliterate-ru";
+import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
@@ -63,6 +65,63 @@ export type SubjectIdentity = {
 
 function norm(text: string): string {
   return text.toLowerCase().replace(/ё/gu, "е").replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Слово без различий, которые для написания имени различиями не являются:
+ * регистр, «ё»/«е» и диакритика («Holmström» = «Holmstrom»).
+ *
+ * Раньше формы фамилии сравнивались первыми четырьмя буквами. Это догадка, и
+ * она била по своим: у субъекта, чья фамилия произведена от его же имени
+ * («Иванов Иван Иванович»), собственное латинское имя признавалось формой
+ * фамилии и выпадало из имён, а материал о самом клиенте становился «одной
+ * фамилией».
+ */
+function foldWord(word: string): string {
+  return norm(word)
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+/** Склейка написаний: регистр и «ё»/«е» различиями не считаются. */
+function uniqByNorm(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((v) => {
+    const key = norm(v);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Латинские написания части имени — вывод из неё самой, обеими школами.
+ *
+ * Школы в проекте две, и расходятся они на «ё»: `transliterateRuToLat`
+ * порождает транслитерации профиля (Кремлёв → kremlev), `transliterateRuToEn`
+ * строит поисковые запросы (Кремлёв → Kremlyov). В собранных материалах
+ * встречаются обе, и собственная статья субъекта
+ * (`en.wikipedia.org/wiki/Umar_Kremlyov`) написана как раз по второй. Взять
+ * одну — значит оставить половину материалов субъекта без фамилии; взять обе
+ * второго ответа не заводит: обе становятся формами фамилии, а не именами.
+ *
+ * Оговорка, названная ревью 02.09.2026 и намеренно оставленная: на нынешнем
+ * входе `transliterateRuToLat` **избыточна**. Сюда подаются и падежные формы
+ * (`generateRussianNameForms`), а таблица падежей приводит «ё» к «е» до
+ * склонения, поэтому `transliterateRuToEn` от нормализованного именительного
+ * даёт ровно то, что дала бы `transliterateRuToLat` от исходного. Мутация
+ * «убрать `transliterateRuToLat`» не красит ни одного теста — поймать её
+ * нечем, и это сказано вслух, чтобы следующий читатель не удалил её как дубль
+ * вслепую: она перестанет быть избыточной ровно в тот день, когда падежную
+ * ветку сузят. Убрать её вместе с этой оговоркой — отдельный шаг (опись).
+ */
+function latinFormsOfNameParts(parts: string[]): string[] {
+  return uniqByNorm(
+    parts
+      .flatMap((p) => [transliterateRuToLat(p), transliterateRuToEn(p).toLowerCase()])
+      .map((f) => f.trim())
+      .filter((f) => f.length > 2)
+  );
 }
 
 function itemText(item: RawInventoryItem): string {
@@ -106,6 +165,18 @@ function surfaceOf(item: RawInventoryItem): string {
 /** Soft SERP lines where a full-name phrase is suggestive, not confirmatory. */
 function isSuggestionOrPaaSurface(surface: string): boolean {
   return /suggest|paa|people_also|related/.test(surface);
+}
+
+/**
+ * Поверхности, где строка запроса и есть весь материал.
+ *
+ * Список свой, а не общий с `isSuggestionOrPaaSurface`: тот управляет
+ * повышением до LIKELY_SUBJECT, а живые подсказки приходят с
+ * `surface: "autocomplete"`, которого он не знает, — расширять его здесь
+ * значило бы менять решения шире задачи.
+ */
+function isQueryLineSurface(surface: string): boolean {
+  return /autocomplete|suggest|paa|people_also|related/.test(surface);
 }
 
 /** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
@@ -338,6 +409,21 @@ export function classifySubjectRelevance(
   // кейсе, где отрицательные признаки не заполнены, защиты не было (шаг 13, C9).
   const derivedPatronymicConflicts = conflictingPatronymics(text, subject);
   conflictingIdentifiers.push(...derivedPatronymicConflicts);
+  /*
+   * На поверхностях-строках чужое отчество распознаётся в обоих алфавитах.
+   *
+   * «viktor feliksovich vekselberg ofac» — санкционная подсказка о другом
+   * человеке — получала «недостаточно признаков» (совпало одно имя) и уходила
+   * в негативный профиль субъекта: вывод о чужом отчестве работал только
+   * кириллицей и только рядом с фамилией субъекта, которой в строке нет.
+   * В короткой строке запроса ловушки «биография называет родню» нет по
+   * построению, поэтому связки «имя субъекта + чужое отчество» здесь
+   * достаточно.
+   */
+  const queryLinePatronymicConflicts = isQueryLineSurface(surfaceOf(item))
+    ? foreignPatronymicsInQueryLine(text, subject)
+    : [];
+  conflictingIdentifiers.push(...queryLinePatronymicConflicts);
   for (const n of subject.namesakeNoise) {
     if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
@@ -364,12 +450,20 @@ export function classifySubjectRelevance(
     decision = "OTHER_SUBJECT";
     reasonCode = "namesake_conflict";
     confidence = 0.9;
-  } else if (derivedPatronymicConflicts.length > 0 && !matchedStrong) {
+  } else if (
+    (derivedPatronymicConflicts.length > 0 || queryLinePatronymicConflicts.length > 0) &&
+    !matchedStrong
+  ) {
     // Именная тройка названа целиком, и отчество в ней чужое. В русской
     // системе имён это решающий признак другого человека, а не повод для
     // сомнений. Сильный идентификатор (ИНН) такой вывод перебивает.
+    // Код причины называет сработавшее правило: по нему в артефактах видно,
+    // строкой запроса выведен конфликт или длинным текстом.
     decision = "OTHER_SUBJECT";
-    reasonCode = "patronymic_conflict";
+    reasonCode =
+      derivedPatronymicConflicts.length > 0
+        ? "patronymic_conflict"
+        : "suggestion_foreign_patronymic";
     confidence = 0.9;
   } else if (hasConflict && hasGivenName) {
     // Both subject identifiers and conflicting identity — ambiguous, review.
@@ -470,6 +564,67 @@ export function promoteLikelyBySharedDomain(input: {
   });
 }
 
+/**
+ * Статья, найденная по межъязыковой ссылке, наследует решение статьи-источника.
+ *
+ * Это одна сущность Викиданных, а не две: у латинского заголовка «Alexei
+ * Mordashov» токенная классификация узнаёт фамилию, но не имя (наша
+ * транслитерация даёт «Aleksey», в статье стоит «Alexei»), и повторная
+ * классификация дала бы «одна фамилия» — «не подтверждено» рядом с
+ * подтверждённой ru-статьёй, две записи об одном разошлись бы. Направление
+ * наследования безопасно по построению: тёзка-источник передаёт сестре свою
+ * неподтверждённость, а не наоборот.
+ */
+export function inheritLanglinkDecisions(input: {
+  items: RawInventoryItem[];
+  resolution: SubjectResolution;
+}): SubjectResolution {
+  const byRef = new Map(input.resolution.items.map((r) => [r.evidenceRef, r]));
+  const languageOf = (item: RawInventoryItem): string =>
+    String(((item.rawMetadata ?? {}) as Record<string, unknown>).language ?? "")
+      .toLowerCase()
+      .split(/[-_]/u)[0] ?? "";
+  const sourceOf = (sourceLanguage: string, self: RawInventoryItem): RawInventoryItem | undefined =>
+    input.items.find((i) => {
+      if (i === self) return false;
+      const meta = (i.rawMetadata ?? {}) as Record<string, unknown>;
+      return (
+        meta.surface === "wikipedia" &&
+        meta.wikipediaExists === true &&
+        languageOf(i) === sourceLanguage
+      );
+    });
+
+  let changed = false;
+  const items = input.resolution.items.map((r) => {
+    const item = input.items.find((i) => `inventory:${i.inventoryId}` === r.evidenceRef);
+    const meta = (item?.rawMetadata ?? {}) as Record<string, unknown>;
+    const from = (meta.identityFromLanglink as { sourceLanguage?: string } | undefined)
+      ?.sourceLanguage;
+    if (!item || !from) return r;
+    const source = sourceOf(String(from).toLowerCase(), item);
+    const inherited = source ? byRef.get(`inventory:${source.inventoryId}`) : undefined;
+    if (!inherited) return r;
+    changed = true;
+    return {
+      ...r,
+      decision: inherited.decision,
+      confidence: inherited.confidence,
+      matchedIdentifiers: inherited.matchedIdentifiers,
+      conflictingIdentifiers: inherited.conflictingIdentifiers,
+      reasonCode: "langlink_inherited",
+    };
+  });
+  if (!changed) return input.resolution;
+
+  return SubjectResolutionSchema.parse({
+    ...input.resolution,
+    schemaVersion: SUBJECT_RESOLUTION_SCHEMA_VERSION,
+    items,
+    evidenceRefs: items.map((i) => i.evidenceRef),
+  });
+}
+
 export function buildSubjectResolution(input: {
   caseId: string;
   datasetId: string;
@@ -487,7 +642,12 @@ export function buildSubjectResolution(input: {
     subjectDisplayName: input.subject.displayName,
     items: classified,
   });
-  return promoteLikelyBySharedDomain({ items: input.items, resolution: base });
+  // Наследование по межъязыковой ссылке — последним: сестра получает
+  // окончательное решение источника, а не промежуточное.
+  return inheritLanglinkDecisions({
+    items: input.items,
+    resolution: promoteLikelyBySharedDomain({ items: input.items, resolution: base }),
+  });
 }
 
 /** Profile shape consumed by the classifier (subset of SubjectIdentityProfile). */
@@ -529,32 +689,55 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
   const structuredGiven = (profile.givenNames ?? []).filter(Boolean);
   const structuredPatr = (profile.patronymics ?? []).filter(Boolean);
 
-  // Surname transliteration token. Prefer the token that corresponds to a known
-  // family name (structured or positional); only fall back to the "shared by all
-  // variants" heuristic when family names are unknown. This avoids mislabelling
-  // the given-name token as the surname for non-Russian, given-first names.
+  /*
+   * Латиница фамилии выводится из самой фамилии.
+   *
+   * Прежняя догадка — «латиница фамилии это слово, общее для всех
+   * транслитераций» — ломается на первом же субъекте с псевдонимом: в
+   * `transliterations` лежат и транслитерации псевдонимов, общих слов не
+   * остаётся вовсе, и фамилия уезжала в кандидаты в имена. Тогда одно слово
+   * удовлетворяет сразу и «фамилия названа», и «имя названо», а однофамилец с
+   * чужим именем получает SUBJECT_MATCH / full_name_match — так статья о чужом
+   * человеке была подтверждена как статья о субъекте на живом прогоне.
+   *
+   * Инвариант узкий и другим быть не может: **написание фамилии, выводимое из
+   * самой фамилии, кандидатом в имена не становится**. Написание, приехавшее в
+   * профиль псевдонимом («Ivan Iakovlev» при фамилии «Яковлев»), ни одной
+   * таблицей не выводится, и опознать его можно только новой догадкой — а
+   * догадку здесь удаляют, а не заводят. Путь для такого написания есть и без
+   * догадки: оператор добавляет его в `familyNames` панелью профиля.
+   *
+   * Фамилия профилю неизвестна — молчим, а не гадаем.
+   */
+  const familySources = [...structuredFamily, profile.fullNameRu?.lastName ?? ""].filter(Boolean);
+  /*
+   * Падежные формы фамилии — тоже формы фамилии, и на латинской стороне их
+   * нужно называть явно. Кириллическую сторону это не задевало никогда:
+   * `matchesToken` порождает формы сам. А псевдоним оператора несёт фамилию в
+   * косвенном падеже («Фонд Борисова»), транслитерация псевдонима приносит
+   * «borisova», и без этой строки слово становилось «именем» — однофамилица
+   * Анна Борисова получала полное совпадение.
+   *
+   * Таблица падежей здесь та же, которой сверяется текст, а не новая догадка.
+   * Зазор, который она оставляет: падежную форму она строит от написания, где
+   * «ё» уже приведена к «е», поэтому «Kremlyova» (вторая школа, косвенный
+   * падеж) формой фамилии не станет — именительный «Kremlyov» станет.
+   */
+  const surnameLatinForms = latinFormsOfNameParts([
+    ...familySources,
+    ...familySources.flatMap(generateRussianNameForms),
+  ]);
   const familyTokenSet = new Set(
-    [...structuredFamily, profile.fullNameRu?.lastName ?? ""]
-      .flatMap((f) => f.toLowerCase().replace(/ё/gu, "е").split(/\s+/))
+    [...familySources, ...surnameLatinForms]
+      .flatMap((f) => norm(f).split(/\s+/))
       .filter((w) => w.length > 2)
+      .map(foldWord)
   );
+  const matchesFamily = (tok: string): boolean => familyTokenSet.has(foldWord(tok));
+  // Остальные токены транслитераций — кандидаты в имена.
   const translits = (profile.transliterations ?? []).map((t) => t.toLowerCase());
-  const tokenSets = translits.map((t) => new Set(t.split(/\s+/).filter((w) => w.length > 2)));
-  const sharedTokens =
-    tokenSets.length > 0
-      ? [...tokenSets[0]].filter((tok) => tokenSets.every((s) => s.has(tok)))
-      : [];
-  const matchesFamily = (tok: string): boolean =>
-    familyTokenSet.has(tok) ||
-    [...familyTokenSet].some(
-      (ft) => (ft.length >= 4 && tok.startsWith(ft.slice(0, 4))) || (tok.length >= 4 && ft.startsWith(tok.slice(0, 4)))
-    );
-  const surnameTranslit = sharedTokens.find(matchesFamily) ?? sharedTokens[0] ?? "";
-  // Non-surname translit tokens become first-name candidates — but never tokens
-  // that transliterate a known family name (guards the surname leaking in as a
-  // first name for given-first Latin names).
   const translitFirsts = translits.flatMap((t) =>
-    t.split(/\s+/).filter((w) => w.length > 2 && w !== surnameTranslit && !matchesFamily(w))
+    t.split(/\s+/).filter((w) => w.length > 2 && !matchesFamily(w))
   );
 
   // Backward-compat positional fallback (lower confidence): only used to seed
@@ -565,9 +748,7 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
 
   const lastName =
     structuredFamily[0] ?? positionalLast ?? profile.displayName.split(/\s+/)[0] ?? "";
-  const lastNameVariants = [
-    ...new Set([...structuredFamily.slice(1), surnameTranslit].filter(Boolean)),
-  ];
+  const lastNameVariants = uniqByNorm([...structuredFamily.slice(1), ...surnameLatinForms]);
   const firstNames = [
     ...new Set([...structuredGiven, positionalFirst, ...translitFirsts].filter(Boolean)),
   ];

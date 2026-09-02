@@ -110,8 +110,11 @@ describe("рендерер о выброшенном содержимом соо
     const src = readFileSync(join(process.cwd(), "renderer/orion_golden_render/common.py"), "utf8");
     expect(src).toMatch(/dropped_bullets/u);
     expect(src).toMatch(/droppedBullets/u);
-    // Признак ставится там же, где блоки выбрасываются.
-    expect(src).toMatch(/kept\.pop\(\)\s*\n\s*dropped_bullets \+= 1/u);
+    // Потеря считается одним вычитанием «подано минус нарисовано»: пока
+    // слагаемых было несколько, элементы сверх `max_items` не попадали ни в
+    // одно из них и исчезали молча. Что вычитание верно на живом наборе,
+    // проверяет смок `smoke_bullet_measure_matches_render.py` (К3).
+    expect(src).toMatch(/dropped_bullets = max\(0, submitted - len\(kept\)\)/u);
   });
 
   it("сверка геометрии называет потерю своим кодом", async () => {

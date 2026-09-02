@@ -2,16 +2,13 @@
  * PDF review 36 — phases D (text fits whole) and E (design) — offline acceptance.
  * - D.1/D.2: sidebarSafe keeps whole sentences, never «…относящийся к.»
  * - D.4: statusLine is human phrasing, no «уверенность 90%»
- * - D.5: example titles join on whole-title boundaries; SERP suffixes cleaned;
+ * - D.5: SERP suffixes cleaned in example titles;
  *        the §7.2 diff line lives only in the executive narrative (no bullet dupe)
  */
 
 import { describe, expect, it } from "vitest";
 import { sidebarSafe } from "../../src/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
-import {
-  cleanExampleTitle,
-  joinTitlesWithinBudget,
-} from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import { cleanExampleTitle } from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 import {
   applyExecutiveFreshnessChangeToPacks,
   statusLine,
@@ -25,13 +22,14 @@ describe("D.1/D.2 — sidebarSafe keeps whole sentences", () => {
     expect(out).toBe("Первое предложение о субъекте. Второе предложение с деталями анализа.");
   });
 
-  it("never leaves a dangling participle/preposition when the first sentence is over budget", () => {
+  it("returns nothing when not even the first sentence fits", () => {
+    // Обрубок по границе слова панель больше не печатает вовсе: блок берёт
+    // целые предложения или не берёт ничего. Прежняя редакция обрезала фразу
+    // и закрывала её точкой — «…зафиксирован 1 результат, относящийся к.», —
+    // и клиент читал предложение, оборванное на предлоге.
     const text =
       "По этому блоку нет подтверждённых риск-сигналов: в панели знаний зафиксирован один результат, относящийся к проверяемому лицу и его окружению без негативного контекста.";
-    const out = sidebarSafe(text, 110);
-    expect(out).toBeDefined();
-    expect(out!).toMatch(/[.!?]$/u);
-    expect(out!).not.toMatch(/\s(?:к|относящийся|и|с|в|о)\.$/iu);
+    expect(sidebarSafe(text, 110)).toBeUndefined();
   });
 
   it("returns short text unchanged", () => {
@@ -46,13 +44,15 @@ describe("D.4 — statusLine human phrasing", () => {
       riskLevel: "critical",
     } as never);
     expect(line).not.toMatch(/уверенность \d+%/u);
-    expect(line).toMatch(/тема подтверждена/u);
-    expect(line).toMatch(/достоверность оценки высокая/u);
+    expect(line).toMatch(/[Тт]ема подтверждена/u);
+    // Было «достоверность оценки высокая»: рядом со ступенью «высокий» это
+    // один корень дважды об одном предложении.
+    expect(line).toMatch(/оценка достоверна/u);
   });
 
   it("preliminary signal below 0.7 confidence", () => {
     const line = statusLine({ confidence: 0.5, riskLevel: "medium" } as never);
-    expect(line).toMatch(/сигнал предварительный/u);
+    expect(line).toMatch(/[Сс]игнал предварительный/u);
     expect(line).toMatch(/оценка требует подтверждения/u);
   });
 });
@@ -68,14 +68,6 @@ describe("D.5 — example titles cut on whole-title boundaries", () => {
     expect(cleanExampleTitle("Обычный заголовок без мусора")).toBe(
       "Обычный заголовок без мусора"
     );
-  });
-
-  it("joinTitlesWithinBudget never cuts mid-title", () => {
-    const titles = ["Первый заголовок статьи", "Второй заголовок подлиннее", "Третий заголовок"];
-    const joined = joinTitlesWithinBudget(titles, 52);
-    expect(joined).toBe("Первый заголовок статьи · Второй заголовок подлиннее");
-    const tight = joinTitlesWithinBudget(titles, 30);
-    expect(tight).toBe("Первый заголовок статьи");
   });
 });
 

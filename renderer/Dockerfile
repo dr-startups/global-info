@@ -24,6 +24,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY renderer/ .
 
+# Гарнитура отчёта — в системные шрифты образа: PPTX несёт только имя семейства,
+# а рисует его LibreOffice при конвертации в PDF. Без установки он подставил бы
+# запасной шрифт: PDF разошёлся бы с тем начертанием, которым рендерер мерил
+# высоту текста, и разметка, сошедшаяся в PPTX, поехала бы в PDF.
+RUN mkdir -p /usr/share/fonts/opentype/inter \
+    && cp /app/fonts/Inter-*.otf /usr/share/fonts/opentype/inter/ \
+    && fc-cache -f \
+    && fc-match Inter
+
 ENV DATA_ROOT=/data
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080

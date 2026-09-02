@@ -7,6 +7,7 @@
 
 import type { Finding } from "../contracts/finding";
 import { EXECUTIVE_SUMMARY_PROMPT_VERSION } from "./prompt-version";
+import { clientCoverageLimitationLines } from "./coverage-limitation-lines";
 import {
   EXECUTIVE_SUMMARY_STAGE_OUTPUT_SCHEMA_VERSION,
   type BasisKind,
@@ -271,8 +272,10 @@ export function composeExecutiveSummaryDeterministic(
   }
   for (const note of input.identityPollution.notes) identityCaveats.push(fitText(note, 320));
 
-  const dataLimitations: string[] = input.dataGaps.map((g) =>
-    fitText(`${g.area}: ${g.detail}`, 320)
+  // Формулировка пробела — общая с клиентским пакетом: два почти одинаковых
+  // ответа на один вопрос разошлись бы молча.
+  const dataLimitations: string[] = clientCoverageLimitationLines(input.dataGaps).map((l) =>
+    fitText(l, 320)
   );
   for (const sq of input.sourceQuality) {
     if ((sq.conflictsWithDomains ?? []).length > 0) {

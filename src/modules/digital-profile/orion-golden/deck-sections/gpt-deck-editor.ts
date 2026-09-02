@@ -17,6 +17,7 @@
  */
 
 import { z } from "zod";
+import { contentHashOf } from "./contracts";
 import type { FragmentKey, SectionPackV2, SlideContentContract } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import type { ScopedEvidenceIndex, SubjectProfileInput } from "./scoped-input";
@@ -24,12 +25,13 @@ import type { GptJsonCaller } from "../gpt/gpt-case-analysis";
 import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-queue";
 import {
   allowedDomainsForSlide,
-  contentHashOf,
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   isHonestEmptyStateSlide,
+  packRewriteBlock,
   rejectDroppedEvidenceQuotes,
   rejectReason,
   rejectWeakQuoteLines,
+  type PackRewriteBlock,
 } from "./llm-slide-copy";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
@@ -143,6 +145,14 @@ export type GptDeckEditorReport = {
   editedSlides: number;
   appliedFields: number;
   fragments: GptDeckEditorFragmentReport[];
+  /**
+   * Паки, которых модель не видела, и почему.
+   *
+   * Молчаливый пропуск и есть то, за чем дефект прятался: в артефакте прогона
+   * не было видно, что резюме вообще отдавалось модели. Теперь правило видно
+   * на каждом прогоне (шаг 0028).
+   */
+  skippedFragments: Array<{ fragmentKey: FragmentKey; reason: PackRewriteBlock }>;
 };
 
 function emptyReport(
@@ -156,14 +166,35 @@ function emptyReport(
     ...(detail ? { detail } : {}),
     editedSlides: 0,
     appliedFields: 0,
+    skippedFragments: [],
     fragments: [],
   };
+}
+
+/** Что модель не видела и почему — то же правило, что решает про слайды. */
+function skippedFragmentsOf(
+  packs: readonly SectionPackV2[]
+): Array<{ fragmentKey: FragmentKey; reason: PackRewriteBlock }> {
+  const out: Array<{ fragmentKey: FragmentKey; reason: PackRewriteBlock }> = [];
+  for (const pack of packs) {
+    const reason = packRewriteBlock(pack);
+    if (reason) out.push({ fragmentKey: pack.fragmentKey, reason });
+  }
+  return out;
 }
 
 /** Slides the editor may touch: analytical, base (non-continuation), non-empty. */
 function editableSlides(pack: SectionPackV2): SlideContentContract[] {
   if (pack.status !== "READY") return [];
-  if (getFragmentPrompt(pack.fragmentKey).deterministic) return [];
+  /*
+   * Вопрос «переписывает ли модель этот пак» задаётся одной функцией.
+   *
+   * Здесь стоял только признак фрагмента, и пак составленного резюме — который
+   * стадия 2 не трогает намеренно — уходил модели целиком. На живом отчёте
+   * 22.08 она переписала название темы, приходящее данными, и документ
+   * разошёлся сам с собой (шаг 0028).
+   */
+  if (packRewriteBlock(pack)) return [];
   return pack.slides.filter(
     (s) => !s.isContinuation && !isHonestEmptyStateSlide(s)
   );
@@ -283,7 +314,9 @@ export async function runGptDeckEditorPass(input: {
     }
   }
   if (deckDigest.length === 0) {
-    return { packs: input.packs, report: emptyReport("SKIPPED_EMPTY") };
+    const empty = emptyReport("SKIPPED_EMPTY");
+    empty.skippedFragments = skippedFragmentsOf(input.packs);
+    return { packs: input.packs, report: empty };
   }
 
   const defaults = defaultGptCallQueueOptions();
@@ -339,6 +372,7 @@ export async function runGptDeckEditorPass(input: {
   }
 
   const report = emptyReport(byFragment.size === 0 ? "NO_CHANGES" : "APPLIED");
+  report.skippedFragments = skippedFragmentsOf(input.packs);
   if (parsed.droppedSlides > 0) {
     report.detail = `dropped-invalid-slides:${parsed.droppedSlides}`;
   }

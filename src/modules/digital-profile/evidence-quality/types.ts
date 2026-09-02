@@ -14,6 +14,10 @@ export type EvidenceSurfaceType =
   | "IMAGE_RESULT"
   | "VIDEO_RESULT"
   | "KNOWLEDGE_BLOCK"
+  // Нейро-ответ поисковика. Отдельно от KNOWLEDGE_BLOCK и тем более от
+  // SEARCH_SUGGESTION: подсказка — ассоциация строки ввода, панель знаний —
+  // карточка справочника, а это сгенерированный текст со своими источниками.
+  | "AI_ANSWER"
   | "WIKIPEDIA_RESULT"
   | "MANUAL_COMPLIANCE"
   | "MANUAL_IMPORT";
@@ -30,6 +34,9 @@ export type ContentClass =
   | "SOCIAL_PROFILE"
   | "BIOGRAPHY"
   | "NEWS_NEUTRAL"
+  // Ответ поискового ИИ: не публикация и не карточка справочника, а
+  // сгенерированный текст со своими источниками.
+  | "AI_ANSWER"
   | "IMAGE_NEUTRAL"
   | "VIDEO_NEUTRAL"
   | "KNOWLEDGE_PANEL"

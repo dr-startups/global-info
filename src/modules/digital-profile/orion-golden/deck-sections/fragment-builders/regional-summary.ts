@@ -7,8 +7,10 @@ import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { pluralRu } from "../../../report/i18n/plural-ru";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
+import { looksLikeSurfaceBlockHeading } from "../../analytics/client-quote-hygiene";
+import { quoteForClaim } from "../../analytics/finding-synthesizer";
 import {
   bulletWithFindingId,
   claimText,
@@ -20,12 +22,25 @@ import {
   isAdverse,
   localizedThemedClaim,
   makeSlotSlide,
+  readShareDenominator,
+  readShareRegionalSentence,
   sourceLine,
   splitClientParagraphs,
   statusLine,
   uniqueRefs,
   withContinuations,
 } from "./shared";
+
+/**
+ * Сколько знаков даётся заголовку-примеру.
+ *
+ * Восемьдесят резали «Dubai Free Zone filing lists Anders Holmström as UBO of
+ * Nordkap Capital affiliate» посередине — на слове «Capital». Теперь заголовок
+ * либо помещается целиком, либо не печатается вовсе, и бюджет подобран так,
+ * чтобы обычный заголовок выдачи помещался: строка примеров всё равно одна на
+ * три названия.
+ */
+const EXAMPLE_TITLE_BUDGET = 120;
 
 function uncategorizedBulletForRegion(
   regionKey: string,
@@ -47,18 +62,85 @@ function uncategorizedBulletForRegion(
     }
   }
   if (count === 0) return null;
+  /*
+   * Пример материала — целая фраза, а не обрывок.
+   *
+   * Подпись служебного блока выдачи («Картинки по запросу "…"») материалом не
+   * является: у неё нет ни автора, ни содержания. Обрезанный поисковиком
+   * заголовок — тоже: в отчёте 73 строка примеров кончалась «Почетные граждане
+   * / Аппарат Губернатора Ямало-Ненецкого...», и читателю из неё не следует
+   * ничего. Правило то же, что и в блоках тем: целое или ничего.
+   */
   const titles = examples
-    .map((e) => e.title.trim())
-    .filter(Boolean)
+    .map((e) => quoteForClaim(e.title.trim(), EXAMPLE_TITLE_BUDGET))
+    .filter((t) => Boolean(t) && !looksLikeSurfaceBlockHeading(t))
     .slice(0, 3);
   const examplesNote = titles.length
-    ? ` (примеры: ${titles.map((t) => clampClientText(t, 80)).join(" · ")})`
+    ? ` (примеры: ${titles.join(" · ")})`
     : "";
   return {
     bullet: `Другие материалы о субъекте: ${count}${examplesNote}`,
     evidenceRefs: examples.map((e) => e.evidenceRef),
     count,
   };
+}
+
+/** Единица строки таблицы метрик до печати: пара «Система + Показатель» и числа. */
+export type MetricSurfaceRow = {
+  engine: string;
+  label: string;
+  total: number;
+  adverse: number;
+  matched: number;
+};
+
+/**
+ * Строки таблицы метрик, сведённые по паре «Система + Показатель».
+ *
+ * `p25_uae_metrics` печатал подряд «Поисковые системы | Изображения в поиске |
+ * 19» и «… | 30»: у всех единиц поверхности `images` поле `engine` равно
+ * `null`, поэтому подпись системы честно одна и та же, а различает эти две
+ * единицы **регион** (`INTERNATIONAL` и `UAE`) — которого в таблице нет ни в
+ * одной колонке. Клиент видел один показатель дважды с разными числами и не
+ * мог сказать, чем они отличаются.
+ *
+ * Отвергнуто дописывание региона в «Комментарий»: колонка «Система»
+ * продолжила бы печатать одно слово дважды — на взгляд клиента страница не
+ * изменилась бы, — а в колонку счётчиков въехал бы факт другого рода.
+ * Отвергнута и печать региона в колонке «Система»: регион не система, а
+ * заголовок колонки закреплён эталоном.
+ *
+ * Счётчики складываются **числами**, а не склеиваются строками, и формулировка
+ * у слитой строки та же, что у одиночной: она собирается здесь один раз.
+ * Двойного счёта сложение не добавляет — строка «Материалы региона» и сегодня
+ * даёт дедуплицированное число отдельно, а две строки, читаемые подряд, уже
+ * складывались читателем.
+ *
+ * Порядок: слитая строка стоит на месте **первой** из слитых.
+ */
+export function mergeMetricRows(input: ReadonlyArray<MetricSurfaceRow>): string[][] {
+  const merged = new Map<string, MetricSurfaceRow>();
+  for (const row of input) {
+    const key = `${row.engine}\u0000${row.label}`;
+    const prev = merged.get(key);
+    if (prev) {
+      prev.total += row.total;
+      prev.adverse += row.adverse;
+      prev.matched += row.matched;
+    } else {
+      merged.set(key, { ...row });
+    }
+  }
+  return [...merged.values()].map((r) => [
+    r.engine,
+    r.label,
+    String(r.total),
+    r.adverse > 0
+      ? `негативных: ${r.adverse}; подтверждена связь с лицом: ${r.matched}`
+      : r.matched > 0
+        ? `подтверждена связь с лицом: ${r.matched}`
+        : "негативных сигналов не выявлено",
+  ]);
 }
 
 export function buildRegionalSummaryFragment(
@@ -74,7 +156,40 @@ export function buildRegionalSummaryFragment(
   const metricsSlot = slots.find((s) => s.templateId === "serp-table")!;
   const regionKey = key.startsWith("RU_") ? "RU" : "UAE";
   const materialCount = scoped.metricSnapshot.perRegionCounts[regionKey] ?? 0;
+  /**
+   * Сколько материалов региона вошло в предмет аудита.
+   *
+   * Раньше страница обещала: «в выдаче по региону „Россия" проверяющий увидит
+   * 404 материала». Это неправда дважды: аудит смотрит ТОП-20 по каждому
+   * запросу, а не весь собранный корпус, и проверяющий увидит двадцать строк
+   * выдачи, а не четыреста. Собранное и проверенное — два разных числа, и
+   * называть их надо порознь.
+   */
+  const analyzedInRegion = (scoped.metricSnapshot.analysisLanes ?? [])
+    .filter((lane) => lane.region.toUpperCase() === regionKey)
+    .reduce((sum, lane) => sum + lane.analyzed, 0);
+  const topN = scoped.metricSnapshot.analysisTopN ?? 20;
   const uncategorized = uncategorizedBulletForRegion(regionKey, extras);
+  /*
+   * Доля негатива среди прочитанных страниц региона — предложением и теми же
+   * числами в машинных полях, чтобы приёмка сверяла слова с числами, не
+   * разбирая текст. Полей нет, когда мерить было нечего.
+   *
+   * Печатный носитель фразы — `content.statusNote`, а не нарратив. Нарратив
+   * переписывает стадия 2 (на живом прогоне она выбросила и процент, и базу
+   * «прочитано 50 из 86 отобранных») и подгоняет по высоте рендерер, отбрасывая
+   * предложения с конца. statusNote не уходит модели, не принимается от неё и
+   * печатается своей строкой.
+   */
+  const readShare = scoped.metricSnapshot.linkReadByRegion?.[regionKey];
+  const readShareSentence = readShareRegionalSentence(scoped.metricSnapshot, regionKey);
+  const readShareMetrics: Record<string, number> = readShare
+    ? {
+        linkRead: readShareDenominator(readShare),
+        linkAdverse: readShare.adverseRead,
+        linkRequested: readShare.requested,
+      }
+    : {};
 
   const slides: SlideContentContract[] = [
     makeSlotSlide({
@@ -115,6 +230,7 @@ export function buildRegionalSummaryFragment(
         sectionId,
         content: {
           narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
+          statusNote: readShareSentence,
           bullets: [
             "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
             ...(uncategorized ? [uncategorized.bullet] : []),
@@ -140,6 +256,7 @@ export function buildRegionalSummaryFragment(
           materials: materialCount,
           findings: 0,
           uncategorized: uncategorized?.count ?? 0,
+          ...readShareMetrics,
         },
       })
     );
@@ -180,21 +297,53 @@ export function buildRegionalSummaryFragment(
         : []),
     ];
     const materialWord = pluralRu(materialCount, "материал", "материала", "материалов");
+    /*
+     * Заголовок страницы — вывод, а не название раздела.
+     *
+     * В эталоне отрасли (`docs/etalon-orion-razbor.md`) читатель узнаёт итог
+     * аудита, прочитав одни заголовки: «Результаты поиска на первых 2
+     * страницах Google и Яндекса содержат нежелательные данные». У нас на
+     * этом месте стояло «Россия — резюме аудита» — ярлык, который не сообщает
+     * ничего.
+     */
+    const verdictTitle =
+      adverseN > 0
+        ? `${regionLabel}: в выдаче есть материалы повышенного внимания`
+        : `${regionLabel}: материалов повышенного внимания в выдаче не найдено`;
     const base = makeSlotSlide({
       slot: summarySlot,
       sectionId,
+      title: verdictTitle,
       content: {
         narrative: fitClientSentences(
           [
-            `В выдаче по региону «${regionLabel}» проверяющий увидит ${materialCount} ${materialWord}.`,
+            analyzedInRegion > 0
+              ? `Предмет аудита по региону «${regionLabel}» — ТОП-${topN} выдачи: ${analyzedInRegion} ${pluralRu(
+                  analyzedInRegion,
+                  "материал",
+                  "материала",
+                  "материалов"
+                )}; всего по региону собрано ${materialCount}.`
+              : `По региону «${regionLabel}» собрано ${materialCount} ${materialWord}.`,
             `${themesPhrase.charAt(0).toUpperCase()}${themesPhrase.slice(1)}.`,
             themeLead,
           ],
           500
         ),
+        statusNote: readShareSentence,
         // Scorecard-lite KPIs (ORION GSM regional audit vibe).
         kpis: [
-          { label: "Материалов региона", value: String(materialCount), tone: "neutral" },
+          // Плитка называет то же, что и текст рядом: собрано — это собрано.
+          ...(analyzedInRegion > 0
+            ? [
+                {
+                  label: `В аудите (ТОП-${topN})`,
+                  value: String(analyzedInRegion),
+                  tone: "neutral" as const,
+                },
+              ]
+            : []),
+          { label: "Собрано по региону", value: String(materialCount), tone: "neutral" as const },
           {
             label: "Тем повышенного внимания",
             value: String(adverseN),
@@ -228,6 +377,7 @@ export function buildRegionalSummaryFragment(
         likely: likelyN,
         adverse: adverseN,
         uncategorized: uncategorized?.count ?? 0,
+        ...readShareMetrics,
       },
     });
     slides.push(...withContinuations(base, "regional-summary"));
@@ -258,21 +408,21 @@ export function buildRegionalSummaryFragment(
     const m = u.metrics.find((x) => x.key === key);
     return typeof m?.value === "number" ? m.value : Number(m?.value ?? 0) || 0;
   };
+  const surfaceRows: MetricSurfaceRow[] = [];
   for (const u of scoped.surfaceUnits) {
     const label = SURFACE_TABLE_LABELS[u.surface];
     if (!label) continue;
     const total = metricOf(u, "totalCount");
     if (total === 0) continue;
-    const adverse = metricOf(u, "adverseSubjectCount");
-    const matched = metricOf(u, "subjectMatchCount");
-    const comment =
-      adverse > 0
-        ? `негативных: ${adverse}; подтверждена связь с лицом: ${matched}`
-        : matched > 0
-          ? `подтверждена связь с лицом: ${matched}`
-          : "негативных сигналов не выявлено";
-    rows.push([engineLabel(u.engine), label, String(total), comment]);
+    surfaceRows.push({
+      engine: engineLabel(u.engine),
+      label,
+      total,
+      adverse: metricOf(u, "adverseSubjectCount"),
+      matched: metricOf(u, "subjectMatchCount"),
+    });
   }
+  rows.push(...mergeMetricRows(surfaceRows));
   for (const u of urlAuditUnits) {
     const checked = u.evidenceRefs.length;
     // Metric keys are internal (totalCount/…); the client sees a plain summary.

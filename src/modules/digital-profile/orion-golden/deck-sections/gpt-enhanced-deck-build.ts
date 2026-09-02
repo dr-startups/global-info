@@ -12,13 +12,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FragmentKey, SectionPackV2 } from "./contracts";
 import { FRAGMENT_ARTIFACT_PATHS } from "./contracts";
-import { buildAllSections, type SectionBuildContext } from "./section-builders";
+import type { SectionBuildContext } from "./section-builders";
 import { validateSectionPack } from "./section-validation";
 import {
+  buildSectionPacksUnderTableMeasure,
   loadPreviousPacks,
-  runDeckBuild,
+  runDeckBuildMeasured,
+  type BulletFitReport,
   type DeckBuildResult,
+  type RendererAssetEntry,
 } from "./run-deck-build";
+import type { BulletMeasureAdapter } from "./measured-bullet-fit";
+import type { SerpObservationForGate } from "./assembly-validation";
 import {
   enhanceSectionPacksWithGptCopy,
   type GptSlideCopyReport,
@@ -32,6 +37,7 @@ import {
   type GptDeckComposition,
 } from "./gpt-deck-composer";
 import { applyExecutiveFreshnessChangeToPacks } from "./fragment-builders";
+import { boolSetting } from "../../config/defaults";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 
@@ -96,6 +102,8 @@ export type GptDeckLayer = {
 };
 
 export type GptDeckBuildResult = DeckBuildResult & {
+  /** Разбор цикла «сборка → мера → перекладка». */
+  bulletFit: BulletFitReport;
   gptReport: GptSlideCopyReport | null;
   /** Stage-3 whole-deck editorial pass (level 1); null when the pass did not run. */
   gptEditorReport?: GptDeckEditorReport | null;
@@ -103,14 +111,23 @@ export type GptDeckBuildResult = DeckBuildResult & {
   gptComposition?: GptDeckComposition | null;
 };
 
-/** Stage-3 editor is on by default with a GPT layer; ORION_GPT_DECK_EDITOR=0 disables. */
-function deckEditorEnabled(): boolean {
-  return String(process.env.ORION_GPT_DECK_EDITOR ?? "1") !== "0";
+/**
+ * Stage-3 editor; on by default with a GPT layer, ORION_GPT_DECK_EDITOR=0 off.
+ *
+ * The default lives in `config/defaults.ts` and is read by the shared
+ * `boolSetting`. The local parser understood exactly one word for «off» (`0`),
+ * so a deliberate `ORION_GPT_DECK_EDITOR=false` left the stage running; and the
+ * setting itself is not a secret, so the environment is the wrong home for it.
+ */
+export function deckEditorEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return boolSetting("ORION_GPT_DECK_EDITOR", env);
 }
 
-/** Stage-1.5 composer is on by default with a GPT layer; ORION_GPT_DECK_COMPOSER=0 disables. */
-function deckComposerEnabled(): boolean {
-  return String(process.env.ORION_GPT_DECK_COMPOSER ?? "1") !== "0";
+/** Stage-1.5 composer; same default and same shared parser as the editor. */
+export function deckComposerEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return boolSetting("ORION_GPT_DECK_COMPOSER", env);
 }
 
 export async function runDeckBuildWithGptCopy(input: {
@@ -127,12 +144,35 @@ export async function runDeckBuildWithGptCopy(input: {
    * SectionPacks cannot short-circuit as SKIPPED_CACHED (unified «Пересобрать»).
    */
   forceGptCopy?: boolean;
+  /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Имя субъекта и ассеты нужны мерному прогону: он меряет тот же пейлоад. */
+  subjectName: string;
+  assets?: RendererAssetEntry[];
+  /**
+   * Мерный прогон рендерера. `null`/не задан — офлайн-сборка: цикл не
+   * выполняется, дека остаётся такой, какой её разложил сид. Требовать меру
+   * там, где отчёт публикуется, — дело вызывающего.
+   */
+  measure?: BulletMeasureAdapter | null;
 }): Promise<GptDeckBuildResult> {
   const buildLog: DeckBuildResult["buildLog"] = [];
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const ctx: SectionBuildContext = { ...input.ctx, previousPacks, buildLog };
 
-  let packs: SectionPackV2[] = buildAllSections(ctx);
+  /*
+   * Раскрой таблиц снимается мерой **до** стадий GPT: стадия 2 переписывает
+   * абзац конкретных листов, и перекладка после неё оставила бы её текст на
+   * страницах, которых больше нет.
+   */
+  let packs: SectionPackV2[] = await buildSectionPacksUnderTableMeasure({
+    ctx,
+    bundleForValidation: input.bundleForValidation,
+    knownEvidenceRefs: input.knownEvidenceRefs,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
+  });
   let gptReport: GptSlideCopyReport | null = null;
   let gptEditorReport: GptDeckEditorReport | null = null;
   let gptComposition: GptDeckComposition | null = null;
@@ -220,7 +260,7 @@ export async function runDeckBuildWithGptCopy(input: {
   }
 
   // After GPT/cache — §7.2 must stay a short dedicated narrative card on p03.
-  packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras);
+  packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras, ctx.metricSnapshot);
 
   // Level 2.5 — the composer's per-slide layout picks reach the assembler as
   // a presentation-only map; SectionPack content and hashes stay untouched.
@@ -228,7 +268,7 @@ export async function runDeckBuildWithGptCopy(input: {
     ? new Map(gptComposition.layouts.map((l) => [l.slideId, l.layoutVariant]))
     : undefined;
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
     knownEvidenceRefs: input.knownEvidenceRefs,
@@ -238,6 +278,10 @@ export async function runDeckBuildWithGptCopy(input: {
     prebuiltPacks: packs,
     prebuiltBuildLog: buildLog,
     layoutVariants,
+    serpObservations: input.serpObservations,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
   });
   if (gptReport) {
     result.artifacts["gpt-report-copy.json"] = join(input.outputRoot, "gpt-report-copy.json");
@@ -267,6 +311,17 @@ export async function runDeckGptCopyRetry(input: {
   baseObservationCountBefore: number;
   baseObservationCountAfter: number;
   gpt: GptDeckLayer;
+  /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Имя субъекта и ассеты нужны мерному прогону: он меряет тот же пейлоад. */
+  subjectName: string;
+  assets?: RendererAssetEntry[];
+  /**
+   * Мерный прогон рендерера. `null`/не задан — офлайн-сборка: цикл не
+   * выполняется, дека остаётся такой, какой её разложил сид. Требовать меру
+   * там, где отчёт публикуется, — дело вызывающего.
+   */
+  measure?: BulletMeasureAdapter | null;
 }): Promise<GptDeckBuildResult> {
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const packs = packsInArtifactOrder(previousPacks);
@@ -309,7 +364,8 @@ export async function runDeckGptCopyRetry(input: {
 
   const packsWithFreshness = applyExecutiveFreshnessChangeToPacks(
     enhanced.packs,
-    ctx.extras
+    ctx.extras,
+    ctx.metricSnapshot
   );
 
   mkdirSync(input.outputRoot, { recursive: true });
@@ -319,7 +375,7 @@ export async function runDeckGptCopyRetry(input: {
     "utf8"
   );
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
     knownEvidenceRefs: input.knownEvidenceRefs,
@@ -329,6 +385,10 @@ export async function runDeckGptCopyRetry(input: {
     prebuiltPacks: packsWithFreshness,
     prebuiltBuildLog: buildLog,
     layoutVariants: loadCompositionLayoutsFromDisk(input.outputRoot),
+    serpObservations: input.serpObservations,
+    subjectName: input.subjectName,
+    assets: input.assets,
+    measure: input.measure,
   });
   result.artifacts["gpt-report-copy.json"] = join(
     input.outputRoot,

@@ -67,6 +67,20 @@ export const CanonicalClaimSchema = z.object({
     reportRunIds: z.array(z.string()),
     findingIds: z.array(z.string()),
   }),
+  /**
+   * Типы доказательств, на которых стоит утверждение: `search_result`,
+   * `ai_answer`, `related_query`, `suggestion`, `compliance_hit`, …
+   *
+   * Без этого поля природу записи приходилось угадывать по её виду: домен
+   * сопоставляли со списком известных баз, а строку — с формой вопроса. Обе
+   * догадки уже подвели: совпадение из базы печаталось как заголовок
+   * найденного материала, а служебная строка ИИ-ответа — как публикация.
+   * Тип известен на входе конвейера (`RawInventoryItem.evidenceType`) и
+   * теперь доносится до текста.
+   *
+   * `default([])` — чтобы прежние артефакты читались без миграции.
+   */
+  evidenceTypes: z.array(z.string()).default([]),
   originalTitle: z.string(),
   /**
    * Domain and URL of the material `originalTitle` came from.

@@ -85,9 +85,11 @@ describe("исход шага выводится из состояния джо�
     expect(out).toMatchObject({ kind: "failed", retryable: false });
   });
 
-  it("отмена прогона пропускает шаг, а не роняет его", () => {
-    expect(outcomeFromJob(STEP, job(), job({ cancelRequested: true }), NOW).kind).toBe("skipped");
-    expect(outcomeFromJob(STEP, job(), job({ stage: "CANCELLED" }), NOW).kind).toBe("skipped");
+  it("пауза прогона останавливает шаг, сохраняя место остановки", () => {
+    // `skipped` считался улаженным состоянием и каскадом уносил конвейер в
+    // «всё готово»; отказ конвейер останавливает и оставляет что возобновлять.
+    expect(outcomeFromJob(STEP, job(), job({ cancelRequested: true }), NOW).kind).toBe("failed");
+    expect(outcomeFromJob(STEP, job(), job({ stage: "CANCELLED" }), NOW).kind).toBe("failed");
   });
 
   it("готовый отчёт закрывает шаг", () => {
@@ -114,6 +116,15 @@ describe("исход шага выводится из состояния джо�
     const base: WorkflowStepRow = { ...STEP, name: "BASE_COLLECTION", position: 1 };
     const here = job({ stage: "BASE_COLLECTION" });
     expect(outcomeFromJob(base, here, here, NOW).kind).toBe("waiting");
+  });
+
+  it("клиентский контент закрывает шаги, стоящие до подготовки отчёта", () => {
+    // Позиция `CLIENT_CONTENT` — та же, что у `ORION_PREPARE`, и на нынешнем
+    // реестре это четвёрка. Ответ на сегодняшнем реестре меняться не должен:
+    // выведение позиции из реестра чинит будущую вставку шага, а не сегодня.
+    const merge: WorkflowStepRow = { ...STEP, name: "COMPOSITE_MERGE", position: 3 };
+    const ahead = job({ stage: "CLIENT_CONTENT" });
+    expect(outcomeFromJob(merge, ahead, ahead, NOW).kind).toBe("done");
   });
 
   it("переход между внутренними стадиями шага подготовки не считается завершением", () => {

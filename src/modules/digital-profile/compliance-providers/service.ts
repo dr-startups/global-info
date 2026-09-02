@@ -37,6 +37,11 @@ import {
   buildApprovedComplianceVisualMeta,
   type ComplianceVisualProvider,
 } from "../orion-golden/classic/orion-compliance-visual-assets";
+import {
+  isComplianceCaseRow,
+  isComplianceReportMaterial,
+  type DatabaseProfileHitInput,
+} from "../services/compliance-inventory-adapter";
 import type { ImportedEvidenceDocument, LexisNexisSignal } from "../types";
 import { ValidationError } from "../http/errors";
 
@@ -44,6 +49,11 @@ export const COMPLIANCE_FINDING_OWNER = "compliance-layer-v1";
 
 const RISK_FINDING_TYPES: ReadonlySet<ComplianceRiskType> = new Set([
   "SANCTIONS",
+  // Связь с санкционным лицом — не листинг, но разбирает её тот же аналитик и
+  // тем же порядком: до появления отдельного типа такая запись приходила сюда
+  // как SANCTIONS и находку получала. Убрать её отсюда значило бы тихо
+  // перестать заводить задачу на сверку.
+  "SANCTION_LINKED",
   "PEP",
   "WATCHLIST",
   "LAW_ENFORCEMENT",
@@ -82,7 +92,10 @@ function dbProviderOf(name: ComplianceProviderName | ManualComplianceImportInput
 }
 
 function riskThemeOf(riskTypes: ComplianceRiskType[]): string {
-  if (riskTypes.includes("SANCTIONS")) return "sanctions";
+  // Тема — внутренняя группировка работы аналитика, а не клиентская метка:
+  // связь с санкционным лицом разбирается вместе с санкциями, но в отчёте
+  // называется своим именем (`COMPLIANCE_CATEGORY_LABELS`).
+  if (riskTypes.includes("SANCTIONS") || riskTypes.includes("SANCTION_LINKED")) return "sanctions";
   if (riskTypes.includes("PEP") || riskTypes.includes("POLITICAL_EXPOSURE")) return "pep_rca";
   if (riskTypes.includes("ADVERSE_MEDIA")) return "adverse_media";
   if (riskTypes.includes("LAW_ENFORCEMENT") || riskTypes.includes("LEGAL")) return "criminal";
@@ -91,7 +104,14 @@ function riskThemeOf(riskTypes: ComplianceRiskType[]): string {
 
 function severityOf(riskTypes: ComplianceRiskType[]): "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" {
   if (riskTypes.includes("SANCTIONS")) return "HIGH";
-  if (riskTypes.includes("PEP") || riskTypes.includes("WATCHLIST")) return "MEDIUM";
+  // Связь ниже листинга: сам по себе субъект в перечнях не числится.
+  if (
+    riskTypes.includes("PEP") ||
+    riskTypes.includes("WATCHLIST") ||
+    riskTypes.includes("SANCTION_LINKED")
+  ) {
+    return "MEDIUM";
+  }
   return "LOW";
 }
 
@@ -136,7 +156,10 @@ export async function runComplianceScreening(
     caseId,
     subjectFullName: subject.fullName,
     aliases: subject.aliases,
-    dateOfBirth: null,
+    // Дата рождения и гражданство — признаки сверки, а не украшение запроса:
+    // здесь стоял литеральный `null`, и в базу уходило одно имя.
+    dateOfBirth: subject.dateOfBirth,
+    nationality: subject.nationality,
     country: subject.location,
   });
 
@@ -234,7 +257,9 @@ export async function importManualComplianceHit(
   const scoring = computeMatchScore({
     subjectFullName: subject.fullName,
     subjectAliases: subject.aliases,
-    subjectDob: null,
+    // Дата субъекта теперь загружается, и игнорировать её здесь значило бы
+    // повторить дефект проверки по санкционным базам на соседней шкале.
+    subjectDob: subject.dateOfBirth,
     subjectCountry: subject.location,
     matchedName: input.matchedName,
     matchedDob: input.datesOfBirth?.[0] ?? null,
@@ -352,23 +377,6 @@ function signalToRiskTypes(signal: LexisNexisSignal): ComplianceRiskType[] {
     default:
       return ["OTHER"];
   }
-}
-
-function isLexisHybridMaster(row: {
-  rawMetadataSafe: Prisma.JsonValue | null;
-}): boolean {
-  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
-  const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
-  return String(hybrid.kind ?? "") === "lexisnexis_report";
-}
-
-function isComplianceVisualMaster(row: {
-  rawMetadataSafe: Prisma.JsonValue | null;
-}): boolean {
-  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
-  const visual = (safe.complianceVisual ?? {}) as Record<string, unknown>;
-  const kind = String(visual.kind ?? "");
-  return kind === "dow_jones_report" || kind === "world_check_report";
 }
 
 const COMPLIANCE_VISUAL_MAX_PAGES = 4;
@@ -869,26 +877,25 @@ export async function reviewComplianceHit(
   return row;
 }
 
-export async function buildComplianceSummaryBlock(
-  caseId: string,
-  locale: "ru" | "en" = "ru",
-  options: { includeDemoData?: boolean } = {}
-): Promise<ComplianceSummaryBlock> {
-  const includeDemo = options.includeDemoData === true;
-  const allHits = await prisma.databaseProfile.findMany({
-    where: { caseId },
-    orderBy: { importedAt: "desc" },
-  });
-
-  const hits = includeDemo
-    ? allHits
-    : allHits.filter(
-        (h) =>
-          h.hitSource !== "MOCK" &&
-          !(h.importedBy ?? "").startsWith("mock:") &&
-          !(h.rawMetadataSafe as { demo?: boolean } | null)?.demo
-      );
-  const filteredHits = hits.filter((h) => !isLexisHybridMaster(h) && !isComplianceVisualMaster(h));
+/**
+ * Счётчики и предупреждения сводки — отдельно от чтения базы.
+ *
+ * Разбор аналитика считается по строкам дела, а материал отчёта — по тем же
+ * строкам минус снятые с рассмотрения. Пока `falsePositives` считался по
+ * материалу отчёта, он был структурно нулевым, а дело, где все записи разобраны
+ * как ложные срабатывания, получало предупреждение «записи не добавлены,
+ * провайдеры не настроены» — оба утверждения неверны.
+ */
+export function summarizeComplianceHitRows(
+  allHits: DatabaseProfileHitInput[],
+  options: { locale?: "ru" | "en"; includeDemo?: boolean } = {}
+): Omit<ComplianceSummaryBlock, "providerStatuses"> {
+  const locale = options.locale ?? "ru";
+  const includeDemo = options.includeDemo === true;
+  // Отбор строк — один ответ на весь продукт: те же предикаты, которыми
+  // канонический адаптер наполняет инвентарь деки.
+  const caseRows = allHits.filter((h) => isComplianceCaseRow(h, { includeDemo }));
+  const filteredHits = caseRows.filter((h) => isComplianceReportMaterial(h, { includeDemo }));
 
   const reviewRequiredWarning =
     locale === "ru"
@@ -900,16 +907,19 @@ export async function buildComplianceSummaryBlock(
   let confirmedHits = 0;
   let falsePositives = 0;
 
+  for (const h of caseRows) {
+    const status = String(h.reviewStatus ?? "");
+    if (status === "FALSE_POSITIVE") falsePositives++;
+  }
   for (const h of filteredHits) {
     const rts = (Array.isArray(h.riskTypes) ? h.riskTypes : []) as string[];
     for (const rt of rts) byRiskType[rt] = (byRiskType[rt] ?? 0) + 1;
     if (h.reviewStatus === "PENDING" || h.reviewStatus === "NEEDS_REVIEW") pendingHits++;
     else if (h.reviewStatus === "MATCH_CONFIRMED") confirmedHits++;
-    else if (h.reviewStatus === "FALSE_POSITIVE") falsePositives++;
   }
 
   const warnings: string[] = [];
-  if (filteredHits.length === 0) {
+  if (caseRows.length === 0) {
     if (allHits.length > 0 && !includeDemo) {
       warnings.push(
         locale === "ru"
@@ -919,13 +929,18 @@ export async function buildComplianceSummaryBlock(
     } else {
       warnings.push(locale === "ru" ? "Комплаенс-скрининг не выполнен." : "No compliance screening recorded.");
     }
+  } else if (filteredHits.length === 0) {
+    warnings.push(
+      locale === "ru"
+        ? "Все compliance-записи по делу разобраны аналитиком: активных совпадений нет."
+        : "Every compliance record in this case was reviewed by an analyst: no active matches."
+    );
   }
   if (pendingHits > 0) warnings.push(reviewRequiredWarning);
 
-  const activeHits = filteredHits.filter((h) => isActiveReview(h.reviewStatus));
+  const activeHits = filteredHits.filter((h) => isActiveReview(String(h.reviewStatus ?? "")));
 
   return {
-    providerStatuses: listComplianceProviderStatus(),
     totalHits: filteredHits.length,
     pendingHits,
     confirmedHits,
@@ -936,13 +951,31 @@ export async function buildComplianceSummaryBlock(
       provider: h.provider,
       matchedName: h.matchedName ?? "—",
       riskTypes: (Array.isArray(h.riskTypes) ? h.riskTypes : []) as string[],
-      matchScore: h.matchScore,
-      confidence: h.confidence,
-      reviewStatus: h.reviewStatus,
-      source: h.hitSource,
+      matchScore: h.matchScore ?? null,
+      confidence: h.confidence ?? null,
+      reviewStatus: String(h.reviewStatus ?? ""),
+      source: String(h.hitSource ?? ""),
     })),
     dataQualityWarnings: warnings,
     reviewRequiredWarning,
+  };
+}
+
+export async function buildComplianceSummaryBlock(
+  caseId: string,
+  locale: "ru" | "en" = "ru",
+  options: { includeDemoData?: boolean } = {}
+): Promise<ComplianceSummaryBlock> {
+  const allHits = await prisma.databaseProfile.findMany({
+    where: { caseId },
+    orderBy: { importedAt: "desc" },
+  });
+  return {
+    providerStatuses: listComplianceProviderStatus(),
+    ...summarizeComplianceHitRows(allHits as DatabaseProfileHitInput[], {
+      locale,
+      includeDemo: options.includeDemoData === true,
+    }),
   };
 }
 

@@ -43,6 +43,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
       jobId,
       includedCount: bundle.includedCount,
       skippedBinaryCount: bundle.skippedBinaryCount,
+      skippedOversizeCount: bundle.skippedOversizeCount,
     },
   });
 

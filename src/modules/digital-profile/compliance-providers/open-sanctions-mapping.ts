@@ -15,6 +15,7 @@
  * нет, должно означать «нет сведений», а не падение прогона.
  */
 
+import { pluralRu } from "../report/i18n/plural-ru";
 import type {
   ComplianceConfidenceLevel,
   ComplianceRiskType,
@@ -89,6 +90,7 @@ export function normalizeBirthDate(value: string | null | undefined): string {
  */
 const TOPIC_PREFIX_TO_RISK: Array<[string, ComplianceRiskType]> = [
   ["sanction", "SANCTIONS"],
+  ["sanction.linked", "SANCTION_LINKED"],
   ["role.pep", "PEP"],
   ["role.rca", "PEP"],
   ["role.oligarch", "POLITICAL_EXPOSURE"],
@@ -108,9 +110,16 @@ export function riskTypesFromTopics(topics: readonly string[]): ComplianceRiskTy
   for (const topic of topics) {
     const t = String(topic ?? "").trim().toLowerCase();
     if (!t) continue;
+    // Тема получает самый частный подходящий префикс, а не все подходящие
+    // сразу. Пока накапливались все, `sanction.linked` («связан с санкционным
+    // лицом») попадала ещё и в `SANCTIONS`, и клиент читал «Категория:
+    // Санкционные списки» о человеке, которого ни в одном перечне нет.
+    let best: [string, ComplianceRiskType] | undefined;
     for (const [prefix, risk] of TOPIC_PREFIX_TO_RISK) {
-      if (t === prefix || t.startsWith(`${prefix}.`)) found.add(risk);
+      if (t !== prefix && !t.startsWith(`${prefix}.`)) continue;
+      if (!best || prefix.length > best[0].length) best = [prefix, risk];
     }
+    if (best) found.add(best[1]);
   }
   // Сущность без распознанной темы всё равно найдена в базе комплаенса —
   // умолчать об этом нельзя, поэтому она попадает в «прочее», а не исчезает.
@@ -143,6 +152,26 @@ function firstNonEmpty(values: string[]): string {
   return values.find((v) => v.length > 0) ?? "";
 }
 
+/**
+ * Названия типов риска для клиентского текста.
+ *
+ * Тема провайдера — машинный код (`role.oligarch`, `poi`), и в отчёт он
+ * попадать не должен. Перевод кода в тип риска уже описан таблицей
+ * `TOPIC_PREFIX_TO_RISK`; здесь тип получает имя, которое читает человек.
+ */
+export const RISK_TYPE_LABEL_RU: Record<ComplianceRiskType, string> = {
+  SANCTIONS: "санкционные списки",
+  SANCTION_LINKED: "связь с санкционным лицом",
+  PEP: "публичные должностные лица (PEP)",
+  ADVERSE_MEDIA: "негативные публикации",
+  WATCHLIST: "списки наблюдения",
+  LAW_ENFORCEMENT: "правоохранительные материалы",
+  LEGAL: "судебные и правовые материалы",
+  INSOLVENCY: "несостоятельность",
+  POLITICAL_EXPOSURE: "политическая значимость",
+  OTHER: "прочие основания",
+};
+
 /** Кратко о совпадении: списки, где числится, и роль. */
 export function summarizeEntity(entity: Record<string, unknown>): string {
   const datasets = Array.isArray(entity.datasets)
@@ -151,9 +180,40 @@ export function summarizeEntity(entity: Record<string, unknown>): string {
   const topics = props(entity, "topics");
   const position = firstNonEmpty(props(entity, "position"));
   const parts: string[] = [];
-  if (topics.length > 0) parts.push(`темы: ${topics.join(", ")}`);
+  // Темы называются словами, а не кодами провайдера.
+  //
+  // Здесь стояло `topics.join(", ")`, и в отчёте о Тинькове (28.07, стр. 54)
+  // клиент читал «Темы: sanction, role.oligarch, role.pep, poi». Машинная
+  // строка посреди клиентского текста обесценивает документ целиком, а перевод
+  // этих же кодов в типы риска лежал в двадцати строках выше и не
+  // использовался. Неизвестный код провайдера уходит в «прочие основания»:
+  // общая формулировка честнее машинного кода.
+  //
+  // «Тем нет вовсе» и «тема есть, но незнакомая» — разные случаи:
+  // `riskTypesFromTopics` намеренно отдаёт «прочее» на пустом входе, чтобы
+  // совпадение не исчезло, но писать «темы: прочие основания» там, где тем не
+  // было, значит сообщать о том, чего провайдер не говорил.
+  if (topics.length > 0) {
+    const riskLabels = [
+      ...new Set(riskTypesFromTopics(topics).map((t) => RISK_TYPE_LABEL_RU[t])),
+    ].filter(Boolean);
+    if (riskLabels.length > 0) parts.push(`темы: ${riskLabels.join(", ")}`);
+  }
   if (position) parts.push(`должность: ${position}`);
-  if (datasets.length > 0) parts.push(`источники: ${datasets.slice(0, 5).join(", ")}`);
+  // Наборы данных называются числом, а не именами.
+  //
+  // Имя набора — такой же машинный код, как код темы: на прогоне 20.08
+  // (страница 61) клиент читал «источники: ext_gb_coh_psc, wd_oligarchs,
+  // ru_billionaires_2021, ext_ru_egrul, wd_curated». Прослеживаемость от этого
+  // не страдает — строкой ниже в той же карточке стоит ссылка на карточку
+  // записи OpenSanctions, по которой видны все наборы.
+  //
+  // Наборов нет — строки нет вовсе: «источников в записи: 0» сообщало бы о том,
+  // чего провайдер не говорил, — то же правило, что для пустых тем выше.
+  if (datasets.length > 0) {
+    const word = pluralRu(datasets.length, "источник", "источника", "источников");
+    parts.push(`${word} в записи: ${datasets.length}`);
+  }
   return parts.length > 0 ? parts.join("; ") : "запись в базе OpenSanctions без дополнительных сведений";
 }
 
@@ -165,6 +225,35 @@ export interface OpenSanctionsMappingInput {
   minScore: number;
   /** Базовый адрес — из него собирается ссылка на карточку сущности. */
   webBaseUrl: string;
+  /**
+   * Свойства запроса, которые ушли в сеть, — те самые, из тела `/match`.
+   *
+   * Сохраняются рядом с ответом: 25.08 в отчёт приехала запись о постороннем
+   * человеке со счётом 1.0, и ответить на вопрос «что мы вообще спросили»
+   * было нечем — тела запроса нет ни в одном артефакте прогона. Опечатка в
+   * дате рождения уводит настоящее совпадение ниже порога так же тихо, и
+   * увидеть это можно только по посланным значениям.
+   */
+  sentQuery?: Record<string, string[]>;
+}
+
+/**
+ * Настройки сопоставления, если провайдер их сообщил.
+ *
+ * Порог мы не передаём, значит, применяется его собственный, а какой именно —
+ * видно только из ответа. Отсутствующие поля не подставляются нулями: «порог
+ * 0» и «порог неизвестен» — разные вещи.
+ */
+function matcherSettings(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") return {};
+  const root = payload as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const algorithm = String(root.algorithm ?? "").trim();
+  if (algorithm) out.algorithm = algorithm;
+  if (typeof root.threshold === "number" && Number.isFinite(root.threshold)) {
+    out.threshold = root.threshold;
+  }
+  return out;
 }
 
 /**
@@ -179,6 +268,7 @@ export function mapOpenSanctionsResponse(
   input: OpenSanctionsMappingInput
 ): ComplianceScreeningHit[] {
   const results = extractResults(input.payload);
+  const settings = matcherSettings(input.payload);
   const hits: ComplianceScreeningHit[] = [];
 
   for (const entity of results) {
@@ -214,6 +304,20 @@ export function mapOpenSanctionsResponse(
         schema: String(entity.schema ?? ""),
         firstSeen: String(entity.first_seen ?? ""),
         lastSeen: String(entity.last_seen ?? ""),
+        // Все формы имени записи, а не только `caption`.
+        //
+        // Печатаем мы `caption`, а сопоставить провайдер мог другое значение
+        // того же многозначного свойства — тогда на карточке стоит не то имя,
+        // по которому совпало. Пока формы не сохранены, спор «неверен запрос
+        // или неверна наша печать» решить нечем.
+        names: props(entity, "name"),
+        // Что провайдер сказал о самом совпадении. Поля, которых он не
+        // прислал, отсутствуют: `match: false` и «признака нет» — разные
+        // ответы, и второй нельзя записывать первым.
+        ...(typeof entity.match === "boolean" ? { match: entity.match } : {}),
+        ...(isEntityObject(entity.features) ? { features: entity.features } : {}),
+        ...settings,
+        ...(input.sentQuery ? { query: input.sentQuery } : {}),
       },
       reviewStatus: "PENDING",
     });

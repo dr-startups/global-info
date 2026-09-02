@@ -8,9 +8,11 @@ import {
   buildObservationThemeGrouping,
   classifyObservationHighlight,
   observationToResultView,
+  type ObservationVerdictByRef,
 } from "./resolve-observation-highlights";
+import { serpMaterialKey } from "./material-key";
 import {
-  SYNTHETIC_API_SERP_CAPTION,
+  SERP_SNAPSHOT_CAPTION,
   type PersistedSerpObservation,
 } from "./types";
 
@@ -27,35 +29,49 @@ const VISIBLE_PER_ENGINE = 5;
 export function selectVisibleObservationsForEngine(
   observations: PersistedSerpObservation[],
   engine: "YANDEX" | "GOOGLE",
-  limit = VISIBLE_PER_ENGINE
+  limit = VISIBLE_PER_ENGINE,
+  verdictByRef?: ObservationVerdictByRef
 ): PersistedSerpObservation[] {
   const sorted = observations
     .filter((o) => o.engine === engine)
     .sort((a, b) => a.rank - b.rank);
+  const framed = (o: PersistedSerpObservation): boolean =>
+    classifyObservationHighlight(o, verdictByRef?.[o.id]).isHighlighted;
 
   const highlighted: PersistedSerpObservation[] = [];
   const neutral: PersistedSerpObservation[] = [];
   for (const o of sorted) {
-    if (classifyObservationHighlight(o).isHighlighted) highlighted.push(o);
+    if (framed(o)) highlighted.push(o);
     else neutral.push(o);
   }
 
   const picked: PersistedSerpObservation[] = [];
   const seen = new Set<string>();
+  /*
+   * Один материал — одна строка колонки, и место схлопнутой занимает следующая.
+   *
+   * Ключ наблюдения включает запрос, поэтому один и тот же адрес приходит
+   * несколькими наблюдениями: колонка рисовала его дважды, обещая читателю, что
+   * поисковик показал этот результат два раза. Сводим тем же ключом, что дека и
+   * таблица выдачи; повтор идентификатора он покрывает заодно. Место схлопнутой
+   * строки не пропадает — цикл идёт дальше, пока не наберёт `limit`, иначе
+   * снимок молча укоротился бы.
+   *
+   * Наблюдение, у которого нет ни адреса, ни заголовка, ни домена, материал не
+   * называет: сводить его не с чем, и строка у него своя.
+   */
   const push = (o: PersistedSerpObservation) => {
-    if (picked.length >= limit || seen.has(o.id)) return;
-    seen.add(o.id);
+    if (picked.length >= limit) return;
+    const key = serpMaterialKey(o, `id:${o.id}`);
+    if (seen.has(key)) return;
+    seen.add(key);
     picked.push(o);
   };
   for (const o of highlighted) push(o);
   for (const o of neutral) push(o);
   // Paint highlights first so the SVG card never clips red frames at the bottom.
-  const hl = picked
-    .filter((o) => classifyObservationHighlight(o).isHighlighted)
-    .sort((a, b) => a.rank - b.rank);
-  const neu = picked
-    .filter((o) => !classifyObservationHighlight(o).isHighlighted)
-    .sort((a, b) => a.rank - b.rank);
+  const hl = picked.filter(framed).sort((a, b) => a.rank - b.rank);
+  const neu = picked.filter((o) => !framed(o)).sort((a, b) => a.rank - b.rank);
   return [...hl, ...neu];
 }
 
@@ -64,6 +80,11 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
   subjectName: string;
   queryText: string;
   language?: SerpLanguage;
+  /**
+   * Решения по прочитанным страницам: они назначают рамки и дают легенде
+   * кластерные ярлыки сюжетов — язык резюме, а не рубрики справочника.
+   */
+  verdictByRef?: ObservationVerdictByRef;
 }): SerpSnapshotViewModel {
   const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
@@ -72,15 +93,26 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
     input.subjectName
   );
 
-  const yandexObs = selectVisibleObservationsForEngine(observations, "YANDEX");
-  const googleObs = selectVisibleObservationsForEngine(observations, "GOOGLE");
+  const verdictByRef = input.verdictByRef;
+  const yandexObs = selectVisibleObservationsForEngine(
+    observations,
+    "YANDEX",
+    VISIBLE_PER_ENGINE,
+    verdictByRef
+  );
+  const googleObs = selectVisibleObservationsForEngine(
+    observations,
+    "GOOGLE",
+    VISIBLE_PER_ENGINE,
+    verdictByRef
+  );
   const visible = [...yandexObs, ...googleObs];
 
   // Themes/legend only from rows that appear in the PNG columns.
-  const { grouping } = buildObservationThemeGrouping(visible, language);
+  const { grouping } = buildObservationThemeGrouping(visible, language, verdictByRef);
 
-  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping));
-  const googleResults = googleObs.map((o) => observationToResultView(o, grouping));
+  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping, verdictByRef));
+  const googleResults = googleObs.map((o) => observationToResultView(o, grouping, verdictByRef));
 
   const dateLabel = new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ru-RU", {
     day: "numeric",
@@ -121,7 +153,7 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
     },
     width: 1400,
     height: 900,
-    footerNote: SYNTHETIC_API_SERP_CAPTION,
+    footerNote: SERP_SNAPSHOT_CAPTION,
     sourceLabel,
   };
 }
@@ -190,7 +222,7 @@ export async function createSyntheticSerpAssetFromObservations(input: {
       mimeType: "image/png",
       width: vm.width,
       height: vm.height,
-      caption: SYNTHETIC_API_SERP_CAPTION,
+      caption: SERP_SNAPSHOT_CAPTION,
       status: "READY",
       observations: {
         create: input.observations.map((o) => ({
@@ -205,7 +237,7 @@ export async function createSyntheticSerpAssetFromObservations(input: {
     assetId: row.id,
     storageKey,
     sha256: digest,
-    caption: SYNTHETIC_API_SERP_CAPTION,
+    caption: SERP_SNAPSHOT_CAPTION,
     observationIds: input.observations.map((o) => o.id),
     png,
   };

@@ -11,7 +11,7 @@ import type {
   CaseAgent,
   SavedEvidenceSummary,
 } from "../types";
-import { isArsenkinEnabled, arsenkinApiToken } from "../../providers/arsenkin/flags";
+import { isArsenkinEnabled, arsenkinApiToken, arsenkinTools } from "../../providers/arsenkin/flags";
 import type { ArsenkinToolName } from "../../providers/arsenkin/flags";
 
 function arsenkinAvailability(): AgentAvailability {
@@ -56,7 +56,27 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
   readonly agentName: AgentNameValue = "SEARCH_SURFACES";
 
   availability(): AgentAvailability {
-    return arsenkinAvailability();
+    /*
+     * Агент считается доступным, только если хотя бы один его инструмент
+     * включён составом `ARSENKIN_TOOLS`.
+     *
+     * Раньше состав инструментов проверялся лишь в `enrich-report-run-with-
+     * arsenkin`, а агенты запускались всегда. Из-за этого отключение второй
+     * стадии на прогон не влияло: `ARSENKIN_URL_AUDIT_REAL`
+     * (check-h, indexation) уходил в работу и падал, а время прогона не
+     * менялось. Состав — это один ответ на вопрос «какие инструменты
+     * работают», и агенты обязаны спрашивать его же.
+     */
+    const base = arsenkinAvailability();
+    if (base.status !== "ENABLED") return base;
+    const enabled = arsenkinTools();
+    if (!this.tools.some((t) => enabled.includes(t))) {
+      return {
+        status: "DISABLED",
+        message: `Инструменты агента (${this.tools.join(", ")}) не входят в ARSENKIN_TOOLS.`,
+      };
+    }
+    return base;
   }
 
   async validateInput(ctx: AgentContext): Promise<void> {
@@ -104,12 +124,28 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
   }
 }
 
+/**
+ * Инструменты каждого агента — в одном месте.
+ *
+ * Раньше состав был записан только в полях классов, и всякий, кому нужно было
+ * узнать «чем работает этот агент», либо создавал экземпляр, либо повторял
+ * список у себя. Ответ на вопрос должен быть один и доступен без экземпляра:
+ * по нему решается, участвует ли агент в прогоне вообще.
+ */
+export const ARSENKIN_AGENT_TOOLS = {
+  ARSENKIN_SEARCH_TOP_REAL: ["check-top"],
+  ARSENKIN_SUGGESTIONS_REAL: ["suggest"],
+  ARSENKIN_PAA_REAL: ["paa"],
+  ARSENKIN_AI_SEARCH_REAL: ["ai-serp"],
+  ARSENKIN_URL_AUDIT_REAL: ["check-h", "indexation"],
+} as const satisfies Record<string, readonly ArsenkinToolName[]>;
+
 export class ArsenkinSearchTopRealAgent extends ArsenkinCaseAgentBase {
   readonly name = "ARSENKIN_SEARCH_TOP_REAL";
   readonly displayName = "Arsenkin Search TOP (real)";
   readonly description =
     "check-top: RU Yandex organic, RU Google organic, UAE Google organic.";
-  readonly tools: ArsenkinToolName[] = ["check-top"];
+  readonly tools: ArsenkinToolName[] = [...ARSENKIN_AGENT_TOOLS.ARSENKIN_SEARCH_TOP_REAL];
 }
 
 export class ArsenkinSuggestionsRealAgent extends ArsenkinCaseAgentBase {
@@ -117,28 +153,28 @@ export class ArsenkinSuggestionsRealAgent extends ArsenkinCaseAgentBase {
   readonly displayName = "Arsenkin Suggestions (real)";
   readonly description =
     "suggest: RU Yandex / RU Google / UAE Google suggestions.";
-  readonly tools: ArsenkinToolName[] = ["suggest"];
+  readonly tools: ArsenkinToolName[] = [...ARSENKIN_AGENT_TOOLS.ARSENKIN_SUGGESTIONS_REAL];
 }
 
 export class ArsenkinPaaRealAgent extends ArsenkinCaseAgentBase {
   readonly name = "ARSENKIN_PAA_REAL";
   readonly displayName = "Arsenkin PAA (real)";
   readonly description = "paa: RU Google PAA, UAE Google PAA.";
-  readonly tools: ArsenkinToolName[] = ["paa"];
+  readonly tools: ArsenkinToolName[] = [...ARSENKIN_AGENT_TOOLS.ARSENKIN_PAA_REAL];
 }
 
 export class ArsenkinAiSearchRealAgent extends ArsenkinCaseAgentBase {
   readonly name = "ARSENKIN_AI_SEARCH_REAL";
   readonly displayName = "Arsenkin AI Search (real)";
   readonly description = "ai-serp: RU Yandex AI, RU Google AI, UAE Google AI.";
-  readonly tools: ArsenkinToolName[] = ["ai-serp"];
+  readonly tools: ArsenkinToolName[] = [...ARSENKIN_AGENT_TOOLS.ARSENKIN_AI_SEARCH_REAL];
 }
 
 export class ArsenkinUrlAuditRealAgent extends ArsenkinCaseAgentBase {
   readonly name = "ARSENKIN_URL_AUDIT_REAL";
   readonly displayName = "Arsenkin URL Audit (real)";
   readonly description = "check-h + indexation URL audit surfaces.";
-  readonly tools: ArsenkinToolName[] = ["check-h", "indexation"];
+  readonly tools: ArsenkinToolName[] = [...ARSENKIN_AGENT_TOOLS.ARSENKIN_URL_AUDIT_REAL];
 }
 
 export const ARSENKIN_REAL_AGENT_NAMES = [
@@ -151,4 +187,37 @@ export const ARSENKIN_REAL_AGENT_NAMES = [
 
 export function isArsenkinRealAgentName(name: string): boolean {
   return (ARSENKIN_REAL_AGENT_NAMES as readonly string[]).includes(name);
+}
+
+/**
+ * Участвует ли агент в прогоне при текущем составе инструментов.
+ *
+ * Тот же вопрос решает `availability()`, но там он смешан с токеном и
+ * готовностью базы, а здесь нужен именно состав: отключённый составом агент не
+ * должен ни отправляться, ни считаться незавершённым. Проверка ставится там,
+ * где **выбирают работу** — в определении разрыва отправок и в тике
+ * обогащения, — а не внутри того, кто эту работу описывает.
+ */
+export function isArsenkinAgentEnabled(
+  agentName: string,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const tools = (ARSENKIN_AGENT_TOOLS as Record<string, readonly ArsenkinToolName[]>)[agentName];
+  if (!tools) return false;
+  const enabled = arsenkinTools(env);
+  return tools.some((t) => enabled.includes(t));
+}
+
+/**
+ * Состав прогона: агенты, которые при нынешнем наборе инструментов работают.
+ *
+ * Знаменатель прогресса в кабинете был записан числом `5` — шестью литералами
+ * в одной функции. При составе по умолчанию (только первая стадия)
+ * работают трое, а панель показывала «scheduled 3/5 · completed 3/5» и
+ * выглядела недоделанным прогоном на исправном. Сколько агентов в деле —
+ * вопрос к составу, и ответ на него уже есть здесь; литерал в интерфейсе был
+ * вторым ответом на него же.
+ */
+export function enabledArsenkinAgentNames(env: NodeJS.ProcessEnv = process.env): string[] {
+  return ARSENKIN_REAL_AGENT_NAMES.filter((name) => isArsenkinAgentEnabled(name, env));
 }

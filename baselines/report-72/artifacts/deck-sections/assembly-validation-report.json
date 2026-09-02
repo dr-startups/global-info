@@ -1,6 +1,7 @@
 {
   "passed": true,
   "issues": [],
+  "notes": [],
   "checks": {
     "requiredSectionsPresent": true,
     "sectionOrderCorrect": true,
@@ -14,16 +15,27 @@
     "noEmptyStatusLabels": true,
     "canonicalBaseSlotCoverage": true,
     "noPlaceholderWithAvailableAsset": true,
+    "noInternalCodesInClientText": true,
+    "noPromisesOfMissingSections": true,
     "emptySidebarCountZero": true,
     "unexplainedAdverseMarkerCountZero": true,
     "visualCardsResolvedOrLabeled": true,
     "noMateriallyEmptyPages": true,
+    "declaredTablesHaveRows": true,
+    "serpRowTitleIsNotItsAddress": true,
+    "quotesWholeAndSourced": true,
+    "noRepeatedTextOnPage": true,
     "pageAccountingComplete": true,
     "sidebarScopeSubsets": true,
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
+    "panelPagesMatchDrawnRows": true,
     "noStalePacks": true,
     "packSelfContainedLineage": true,
     "sectionQaAllPassed": true
-  }
+  },
+  "blocking": [],
+  "skipped": [
+    "сверка печатной таблицы выдачи с наблюдениями пропущена: в деке нет позиционных таблиц выдачи"
+  ]
 }

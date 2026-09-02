@@ -62,9 +62,19 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
   const want = (t: string) => tools.has(t);
   const ruQueries = input.queriesRu.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 5);
   const uaeQueries = input.queriesUae.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 4);
-  const ruPrimary = ruQueries[0] ?? "subject";
-  const uaePrimary = uaeQueries[0] ?? ruPrimary;
+  /*
+   * Умолчания «subject» больше нет.
+   *
+   * Оно печатало английское слово вместо имени и уходило в платную заявку:
+   * живой план покупал `check-top` по строке «subject». Если русского запроса
+   * нет, берётся запрос контура ОАЭ — это настоящее имя; если нет ни одного,
+   * заявок не строится вовсе. Пустой план — отсутствие заявок, а не заявка с
+   * выдуманной строкой (пункт BH).
+   */
+  const ruPrimary: string | null = ruQueries[0] ?? uaeQueries[0] ?? null;
   const out: PlannedExactRequest[] = [];
+  if (!ruPrimary) return out;
+  const uaePrimary = uaeQueries[0] ?? ruPrimary;
 
   if (want("check-top")) {
     const se = pilotSeForRegion("RU");

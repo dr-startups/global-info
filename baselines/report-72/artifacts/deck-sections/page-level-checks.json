@@ -5,7 +5,7 @@
   "noOtherSubjectInNeutralRows": true,
   "noDuplicatedPageBodies": true,
   "duplicatedBodies": [],
-  "aiSecurityFindingComplete": true,
+  "aiSecurityFindingComplete": false,
   "urlAuditCompactRowsNotFullPages": true,
   "emptyStatesExplained": true,
   "continuationsAdjacent": true,

@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import type { FragmentKey, SectionPackV2, SectionType } from "./contracts";
-import { SECTION_PACK_SCHEMA_VERSION } from "./contracts";
+import { contentHashOf, SECTION_PACK_SCHEMA_VERSION } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import {
   buildScopedInput,
@@ -41,6 +41,23 @@ import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
 
+/**
+ * Пакет не сходился со своим хэшем, и хэш перештампован.
+ *
+ * Так выглядит либо пакет, записанный прежней формулой хэша, либо правка файла
+ * руками. Пересчёт стирает единственный след этого состояния, поэтому след
+ * переносится в журнал сборки: он уезжает в `section-build-log.json`, то есть
+ * остаётся в артефактах прогона.
+ */
+export const CONTENT_HASH_REPAIRED = "content-hash-repaired" as const;
+
+export type SectionBuildLogEntry = {
+  fragmentKey: FragmentKey;
+  action: "REGENERATED" | "REUSED_CACHE";
+  /** `content-hash-repaired:<прежний хэш>` — иначе поля нет вовсе. */
+  warning?: string;
+};
+
 export type SectionBuildContext = {
   caseId: string;
   reportRunId: string;
@@ -55,13 +72,45 @@ export type SectionBuildContext = {
   /** Previously persisted packs for cache reuse (contentHash/inputHash). */
   previousPacks?: Map<FragmentKey, SectionPackV2>;
   /** Build log: which fragments were regenerated vs reused. */
-  buildLog?: Array<{ fragmentKey: FragmentKey; action: "REGENERATED" | "REUSED_CACHE" }>;
+  buildLog?: SectionBuildLogEntry[];
+  /**
+   * Уже собранные разделы — доступны фрагментам, которые строятся последними.
+   *
+   * Резюме собиралось первым, из тех же исходных находок, что и разделы, а не
+   * из написанных разделов. Поэтому оно пересказывало те же данные другими
+   * словами и расходилось с ними в акцентах, а про раздел, свернувшийся из-за
+   * нехватки данных, не знало вовсе и продолжало обещать его содержание.
+   *
+   * Порядок сборки теперь двухфазный (см. `buildAllSections`), и этому полю
+   * положено быть заполненным только на второй фазе.
+   */
+  builtPacks?: Map<FragmentKey, SectionPackV2>;
 };
 
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 // Related-queries fragments own canonical base slots (p20..p22, p32) and are
 // therefore required; only the appendix has no canonical slot.
 const OPTIONAL_FRAGMENTS: FragmentKey[] = ["APPENDIX_MAIN"];
+
+/**
+ * Поверхности, из которых строится таблица покрытия региона.
+ *
+ * Резюме региона получало только проверку URL, а таблица на соседнем слоте
+ * перечисляет поверхности выдачи — результаты, подсказки, связанные запросы,
+ * изображения, справочники, ИИ-ответы. Строк по ним не появлялось никогда:
+ * они были отфильтрованы до построителя. На живом прогоне, где проверки URL
+ * не было, страница «ОАЭ — метрики покрытия» состояла из заголовка и двух
+ * строк, повторяющих числа предыдущей страницы.
+ */
+const COVERAGE_TABLE_SURFACES: SurfaceKind[] = [
+  "url_audit",
+  "organic",
+  "suggestions",
+  "paa_related",
+  "images",
+  "wikipedia",
+  "ai_answers",
+];
 
 function fragmentScope(key: FragmentKey): FragmentScope {
   const ruScope = (surfaces: SurfaceKind[] | null): FragmentScope => ({
@@ -96,9 +145,10 @@ function fragmentScope(key: FragmentKey): FragmentScope {
         findingIds: null,
       };
     case "RU_SUMMARY":
-      // All regional findings + url_audit units (compact check-h/indexation
-      // rows on the metrics slot p08).
-      return { ...ruScope([]), unitSurfaces: ["url_audit"] };
+      // Все находки региона плюс поверхности, из которых собрана таблица
+      // покрытия на слоте метрик (p08 / p25): сколько собрано на каждой
+      // поверхности и сколько там негативного.
+      return { ...ruScope([]), unitSurfaces: COVERAGE_TABLE_SURFACES };
     case "RU_SERP":
     case "RU_SERP_SCREENSHOT":
       return ruScope(["organic"]);
@@ -113,7 +163,7 @@ function fragmentScope(key: FragmentKey): FragmentScope {
     case "RU_RELATED":
       return ruScope(["paa_related"]);
     case "UAE_SUMMARY":
-      return { ...uaeScope([]), unitSurfaces: ["url_audit"] };
+      return { ...uaeScope([]), unitSurfaces: COVERAGE_TABLE_SURFACES };
     case "UAE_SERP":
     case "UAE_SERP_SCREENSHOT":
       return uaeScope(["organic"]);
@@ -159,7 +209,7 @@ function composeFragment(
   const region = key.startsWith("RU_") ? "Россия" : key.startsWith("UAE_") ? "ОАЭ / международный" : "";
   switch (key) {
     case "FRONT_MATTER_MAIN":
-      return buildFrontMatterFragment(section, scoped);
+      return buildFrontMatterFragment(section, scoped, extras);
     case "EXECUTIVE_SUMMARY":
       return buildExecutiveSummaryFragment(section, scoped, extras);
     case "RISK_MATRIX":
@@ -171,7 +221,7 @@ function composeFragment(
       return buildRegionalSummaryFragment(key, section, region, scoped, extras);
     case "RU_SERP":
     case "UAE_SERP":
-      return buildSerpFragment(key, section, region, scoped);
+      return buildSerpFragment(key, section, region, scoped, extras);
     case "RU_SERP_SCREENSHOT":
     case "UAE_SERP_SCREENSHOT":
       return buildSerpScreenshotFragment(key, section, region, scoped, extras);
@@ -215,21 +265,59 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
             : null,
         }
       : key === "COMPLIANCE_MAIN"
-        ? extras.complianceNarrative ?? null
+        ? {
+            narrative: extras.complianceNarrative ?? null,
+            // Итог скрининга выбирает формулировку пустой страницы базы —
+            // значит, он вход фрагмента, и его изменение обязано пересобрать
+            // пакет, а не взяться из кэша.
+            screenings: extras.complianceScreenings ?? [],
+          }
         : key === "RU_SUMMARY" || key === "UAE_SUMMARY"
           ? extras.uncategorizedMaterials ?? null
-          : null;
+          : // Решение о персоне печатает один лист — его пакет от него и
+            // зависит. Отдать его всем ключам значило бы обесценить каждый
+            // готовый пакет прогона, где решение просто появилось.
+            key === "FRONT_MATTER_MAIN"
+            ? extras.personaDecision ?? null
+            : null;
+  const slots = slotsForFragment(key);
   // Visual asset bindings are fragment inputs: adding/removing an asset for a
   // slot the fragment owns must regenerate it (layout templates are NOT here —
   // template-only changes never invalidate packs).
   const slotAssets = Object.fromEntries(
-    slotsForFragment(key).map((s) => [s.slotId, extras.visualAssets?.[s.slotId] ?? []])
+    slots.map((s) => [s.slotId, extras.visualAssets?.[s.slotId] ?? []])
   );
+  // Раскрой выбирает состав каждого листа таблицы, его опоры, его фразу с
+  // номерами строк и его счётчики — значит, он вход фрагмента, и его появление
+  // обязано пересобрать пакет. Не входи он в ключ, пакет, записанный сидовым
+  // (мерный прогон застал рендерер прошлой версии — службы поднимаются по
+  // отдельности), переиспользовался бы и после того, как раскрой появился: лист
+  // остался бы с тремя строками до следующего подъёма версии содержимого, без
+  // отказа и без телеметрии. Цена — промах кэша на **черновой** сборке, у
+  // которой раскроя ещё нет: процессорное время без обращения к модели, потому
+  // что клиентский текст приезжает стадией 2, а не сборкой фрагмента.
+  //
+  // Ключ симметричен, и вторая сторона стоит денег. Пересборка отчёта, у
+  // которой меры нет вовсе (рендерер прошлой версии, офлайн-сборка, пустой
+  // вердикт), обнуляет раскрой: ключ возвращается к сидовому, и **настоящая**
+  // сборка пишет `REGENERATED`. У свежего пакета поля `gptCopy` нет, а
+  // `isGptCopyCacheHit` без него отвечает «нет» — значит стадия 2 оплачивается
+  // заново для `RU_SERP` и `UAE_SERP`, и раздел выдачи в том же прогоне
+  // возвращается с четырёх листов на десять. Содержимое при этом не пропадает
+  // и отказа нет: это трата и рост документа, а не окно деплоя.
+  //
+  // Берутся только слоты этого фрагмента: раскрой выдачи ОАЭ не повод платить
+  // за пересборку российской. Порядок задан сортировкой, чтобы ключ зависел от
+  // содержимого раскроя, а не от порядка страниц, в котором его собрали.
+  const tableCut = [...(extras.tableCut ?? [])]
+    .filter(([cutKey]) => slots.some((s) => cutKey.startsWith(`${s.slotId}|`)))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return createHash("sha256")
     .update(
       JSON.stringify({
         base,
         slotAssets,
+        tableCut,
         surfaceCollectionHints: extras.surfaceCollectionHints ?? [],
         materialFreshness: extras.materialFreshness ?? null,
         reportDiff: extras.reportDiff ?? null,
@@ -237,6 +325,21 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
     )
     .digest("hex")
     .slice(0, 16);
+}
+
+/**
+ * Пакет со своим собственным хэшем — и признак того, что хэш пришлось починить.
+ *
+ * Один ответ для обоих входов: ветки реюза и записи на диск (`prebuiltPacks`
+ * точечного ретрая стадии 2 приходят из `loadPreviousPacks` мимо реюза).
+ */
+export function packWithOwnContentHash(pack: SectionPackV2): {
+  pack: SectionPackV2;
+  repairedFrom: string | null;
+} {
+  const own = contentHashOf(pack.slides);
+  if (own === pack.contentHash) return { pack, repairedFrom: null };
+  return { pack: { ...pack, contentHash: own }, repairedFrom: pack.contentHash };
 }
 
 export function buildSectionPackForFragment(
@@ -270,14 +373,25 @@ export function buildSectionPackForFragment(
     previous.status !== "INSUFFICIENT_DATA" &&
     previous.status !== "FAILED"
   ) {
-    ctx.buildLog?.push({ fragmentKey: key, action: "REUSED_CACHE" });
-    return previous;
+    // Хэш пересчитывается о слайды, которые реюзятся. На пакете, записанном
+    // каноном, это тождественная операция; пакет, лежащий на боевом томе с
+    // хэшем прежней формулы, за один прогон приходит в согласие с собственным
+    // содержимым — без пересборки и без обращения к модели. Иначе «файл сходится
+    // со своим хэшем» осталось бы обещанием только для файлов, записанных после
+    // выката.
+    const repaired = packWithOwnContentHash(previous);
+    ctx.buildLog?.push({
+      fragmentKey: key,
+      action: "REUSED_CACHE",
+      ...(repaired.repairedFrom
+        ? { warning: `${CONTENT_HASH_REPAIRED}:${repaired.repairedFrom}` }
+        : {}),
+    });
+    return repaired.pack;
   }
 
   const output = composeFragment(key, scoped, ctx.extras);
-  const contentHash = `sha256:${createHash("sha256")
-    .update(JSON.stringify(output.slides))
-    .digest("hex")}`;
+  const contentHash = contentHashOf(output.slides);
 
   const adverseFindings = scoped.findings.filter((f) => (RISK_ORDER[f.riskLevel] ?? 0) >= 2);
   const displayedFindingIds = new Set(output.slides.flatMap((s) => s.findingIds));
@@ -386,14 +500,49 @@ export function buildAppendixSection(ctx: SectionBuildContext): SectionPackV2[] 
   return [buildSectionPackForFragment("APPENDIX_MAIN", ctx)];
 }
 
+/**
+ * Сборка в две фазы: сначала разделы, резюме — последним.
+ *
+ * Раньше порядок сборки совпадал с порядком в отчёте, и резюме собиралось
+ * первым — из тех же исходных находок, что и разделы. Оно не могло опираться
+ * на то, что в разделах действительно написано: пересказывало те же данные
+ * другими словами, расходилось с ними в акцентах и обещало содержание раздела,
+ * который свернулся из-за нехватки данных.
+ *
+ * Порядок вывода при этом не меняется — деку по-прежнему открывает резюме.
+ * Меняется только очерёдность построения, и это разные вещи.
+ */
 export function buildAllSections(ctx: SectionBuildContext): SectionPackV2[] {
+  // Фаза A — разделы. Резюме сюда не входит.
+  const frontMatter = buildFrontMatterSection(ctx);
+  const executiveRest = [
+    buildSectionPackForFragment("RISK_MATRIX", ctx),
+    buildSectionPackForFragment("DIGITAL_PROFILE_OVERVIEW", ctx),
+  ];
+  const ru = buildRuProfileSection(ctx);
+  const uae = buildUaeProfileSection(ctx);
+  const compliance = buildComplianceSection(ctx);
+  const appendix = buildAppendixSection(ctx);
+
+  // Фаза B — резюме, которому уже видно написанное.
+  const builtPacks = new Map<FragmentKey, SectionPackV2>();
+  for (const pack of [...frontMatter, ...executiveRest, ...ru, ...uae, ...compliance, ...appendix]) {
+    builtPacks.set(pack.fragmentKey, pack);
+  }
+  const executiveSummary = buildSectionPackForFragment("EXECUTIVE_SUMMARY", {
+    ...ctx,
+    builtPacks,
+  });
+
+  // Порядок вывода — как в отчёте, а не как в сборке.
   return [
-    ...buildFrontMatterSection(ctx),
-    ...buildExecutiveSection(ctx),
-    ...buildRuProfileSection(ctx),
-    ...buildUaeProfileSection(ctx),
-    ...buildComplianceSection(ctx),
-    ...buildAppendixSection(ctx),
+    ...frontMatter,
+    executiveSummary,
+    ...executiveRest,
+    ...ru,
+    ...uae,
+    ...compliance,
+    ...appendix,
   ];
 }
 

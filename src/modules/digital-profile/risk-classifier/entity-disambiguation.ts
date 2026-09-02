@@ -6,6 +6,8 @@
  * — as adverse hits on the audit subject.
  */
 
+import { transliterateRuToLat } from "../orion-golden/identity/transliterate-ru";
+
 export type IdentityConfidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 
 export interface SubjectIdentity {
@@ -57,20 +59,96 @@ const PATRONYMIC_RE = new RegExp(
   "gi"
 );
 
-/** Parses a Russian-style full name into surname / given / patronymic parts. */
+/**
+ * Patronymic suffixes — a deliberately narrow list, Cyrillic and Latin.
+ *
+ * Bare "ич" is NOT here, and the reason is the second user of this predicate:
+ * the suggestion filter (subject-query-set) reads any patronymic that is not
+ * the subject's own as a sign of another person. With bare "ич" a Balkan
+ * surname inside a suggestion — "сидоров и вучич переговоры" — becomes a
+ * foreign patronymic, and a legitimate paid query about the subject is thrown
+ * away. A "-ович" word in FIRST position is handled by a different rule: the
+ * patronymic is only looked for from the second token on.
+ */
+const PATRONYMIC_TOKEN_RE =
+  /(ович|евич|ьевич|овна|евна|ична|инична|ovich|evich|yevich|ovna|evna|ichna)$/i;
+
+/**
+ * Surname suffixes used only to order a two-token name.
+ *
+ * The Latin list carries no "-in": it would make "Kevin Martin" surname-first,
+ * and a Western name is given-first. The length floor is there for "Eva" —
+ * three letters ending in "eva" — while a transliterated surname ("Tinkov",
+ * "Kremlev") is longer. Both are needed: a confirmed Latin alias arrives in the
+ * "Surname Given" order, and on "Tinkov Oleg" a Cyrillic-only list called the
+ * given name a surname again.
+ */
+const RU_SURNAME_SUFFIX = /(ов|ев|ин|ын|ский|цкая|ова|ева|ина)$/i;
+const LAT_SURNAME_SUFFIX = /(ov|ev|ova|eva|sky|skaya)$/i;
+const LAT_SURNAME_MIN_LENGTH = 5;
+
+function looksLikeSurname(token: string): boolean {
+  const t = normToken(token);
+  return (
+    RU_SURNAME_SUFFIX.test(t) ||
+    (t.length >= LAT_SURNAME_MIN_LENGTH && LAT_SURNAME_SUFFIX.test(t))
+  );
+}
+
+/** Does the token look like a patronymic — by suffix, not by its place. */
+export function looksLikePatronymic(token: string): boolean {
+  return PATRONYMIC_TOKEN_RE.test(normToken(token));
+}
+
+/**
+ * Parses a full name into surname / given / patronymic parts.
+ *
+ * The part order is decided BY THE PATRONYMIC, not by position. A purely
+ * positional split called "Умар" the surname of "Умар Назарович Кремлев": the
+ * whole paid collection then searched for "Назарович Умар", and the guard that
+ * drops a query without a surname passed it, because it looked for "Умар".
+ *
+ * The patronymic is only looked for from the second token on: in first
+ * position a "-ович" word is a surname ("Джокович Новак Иванович").
+ *
+ * Every field holds ONE token. Anything beyond three parts — "оглы"/"кызы", a
+ * second surname — stays in fullName only: a field with a space inside is
+ * compared to a page as a substring ("кремлев оглы" is never found next to
+ * "Кремлев") and to the tokens of a search suggestion never at all, so the
+ * subject's own materials would turn into a namesake's. The paid query builders
+ * put those tokens back from fullName, and that is where they matter.
+ */
 export function parseSubjectName(fullName: string): SubjectIdentity {
   const trimmed = fullName.trim().replace(/\s+/g, " ");
   const parts = trimmed.split(" ").filter(Boolean);
   if (parts.length >= 3) {
+    if (looksLikePatronymic(parts[1]!)) {
+      // "Given Patronymic Surname".
+      return {
+        fullName: trimmed,
+        surname: parts[2]!,
+        givenName: parts[0]!,
+        patronymic: parts[1]!,
+      };
+    }
+    // "Surname Given Patronymic", and the same when no patronymic is visible.
     return {
       fullName: trimmed,
-      surname: parts[0] ?? null,
-      givenName: parts[1] ?? null,
-      patronymic: parts[2] ?? null,
+      surname: parts[0]!,
+      givenName: parts[1]!,
+      patronymic: parts[2]!,
     };
   }
   if (parts.length === 2) {
-    return { fullName: trimmed, surname: parts[0] ?? null, givenName: parts[1] ?? null, patronymic: null };
+    // A two-token name declares no order, so the suffix decides: "Тиньков Олег"
+    // and "Tinkov Oleg" are surname-first, "Anders Holmström" is not.
+    const surnameFirst = looksLikeSurname(parts[0]!);
+    return {
+      fullName: trimmed,
+      surname: surnameFirst ? parts[0]! : parts[1]!,
+      givenName: surnameFirst ? parts[1]! : parts[0]!,
+      patronymic: null,
+    };
   }
   return { fullName: trimmed, surname: parts[0] ?? null, givenName: null, patronymic: null };
 }
@@ -79,46 +157,10 @@ function normToken(s: string): string {
   return s.toLowerCase().replace(/ё/g, "е").trim();
 }
 
-const CYR_TO_LAT: Record<string, string> = {
-  а: "a",
-  б: "b",
-  в: "v",
-  г: "g",
-  д: "d",
-  е: "e",
-  ё: "e",
-  ж: "zh",
-  з: "z",
-  и: "i",
-  й: "y",
-  к: "k",
-  л: "l",
-  м: "m",
-  н: "n",
-  о: "o",
-  п: "p",
-  р: "r",
-  с: "s",
-  т: "t",
-  у: "u",
-  ф: "f",
-  х: "kh",
-  ц: "ts",
-  ч: "ch",
-  ш: "sh",
-  щ: "shch",
-  ъ: "",
-  ы: "y",
-  ь: "",
-  э: "e",
-  ю: "yu",
-  я: "ya",
-};
-
 function transliterateRuToken(token: string): string {
-  let out = "";
-  for (const ch of normToken(token)) out += CYR_TO_LAT[ch] ?? ch;
-  return out.replace(/[^a-z0-9]/g, "");
+  // Таблица общая с профилем субъекта и классификатором: копия, разошедшаяся в
+  // одной букве, ломает сверку транслитераций молча.
+  return transliterateRuToLat(normToken(token)).replace(/[^a-z0-9]/g, "");
 }
 
 function tokenize(value: string): string[] {
@@ -398,17 +440,46 @@ export function isLikelyNamesake(text: string, subject: SubjectIdentity | null):
   if (subject.givenName) {
     const given = normToken(subject.givenName);
     const surname = normToken(subject.surname);
+    // The case is read off the original text, so "ё" is folded by a replacement
+    // of the same length: positions and capitals stay where they were.
+    const cased = text.replace(/ё/g, "е").replace(/Ё/g, "Е");
     const re = new RegExp(
-      `${surname}[\\s,.(—–-]+([а-яё]{3,})(?:\\s+[а-яё]{3,})?`,
+      `${surname}[\\s,.(—–-]+([а-яА-Я]{3,})(?:\\s+[а-яА-Я]{3,})?`,
       "i"
     );
-    const m = hay.match(re);
-    const captured = m?.[1] ? normToken(m[1]) : null;
-    if (captured && captured !== given && captured !== surname && captured.length >= 4) {
+    const m = cased.match(re);
+    const capturedRaw = m?.[1] ?? null;
+    const captured = capturedRaw ? normToken(capturedRaw) : null;
+    if (
+      captured &&
+      captured !== given &&
+      captured !== surname &&
+      captured.length >= 4 &&
+      capturedRaw !== null &&
+      looksLikeGivenNameToken(capturedRaw)
+    ) {
       return true;
     }
   }
   return false;
+}
+
+/**
+ * A word after the surname passes for another person's given name only when it
+ * is capitalised and not written in full caps.
+ *
+ * "Кремлев рассказал о планах федерации" is an ordinary news sentence, not a
+ * second person. While the subject's surname was wrongly the given name, this
+ * heuristic stayed silent by accident; with the surname correct it started
+ * calling the subject's own materials someone else's. In an all-caps headline
+ * the case says nothing, so no mark is set there either: "belonging needs
+ * checking" is honester than a guess, and such a line is still not accepted as
+ * the subject — the belonging model resolves it next.
+ */
+function looksLikeGivenNameToken(rawToken: string): boolean {
+  const first = rawToken.charAt(0);
+  if (first !== first.toLocaleUpperCase("ru-RU")) return false;
+  return rawToken !== rawToken.toLocaleUpperCase("ru-RU");
 }
 
 /** Assesses how confidently a result refers to the audit subject. */

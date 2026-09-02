@@ -32,8 +32,24 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Stage S2 LIVE SERP — Playwright looks here for Chromium binaries.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Built app + the bits needed to run, migrate and create an admin at runtime.
+# Зависимости — отдельным слоем и раньше кода: они меняются вместе с
+# package-lock, а не с каждой правкой в src.
 COPY --from=build /app/node_modules ./node_modules
+
+# Chromium + OS libs for LIVE SERP capture (manual API only; not used by PDF render).
+# --with-deps installs apt packages required by headless Chrome on Debian slim.
+#
+# Стоит ДО копирования кода намеренно. Раньше этот шаг шёл последним, после
+# всех COPY, и любая правка в `src` инвалидировала слои выше — значит, Chromium
+# (~150 МБ) и apt-пакеты качались заново на каждой сборке. Из-за этого образ
+# собирался очень долго при однострочном изменении кода.
+#
+# Слой зависит только от node_modules, поэтому переживает правки кода и
+# пересобирается тогда, когда действительно меняется playwright.
+RUN npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+
+# Built app + the bits needed to run, migrate and create an admin at runtime.
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/package.json ./package.json
@@ -44,11 +60,6 @@ COPY --from=build /app/src ./src
 COPY --from=build /app/scripts ./scripts
 # Local golden-render fallback imports orion_golden_renderer from here.
 COPY --from=build /app/renderer ./renderer
-
-# Chromium + OS libs for LIVE SERP capture (manual API only; not used by PDF render).
-# --with-deps installs apt packages required by headless Chrome on Debian slim.
-RUN npx playwright install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3000
 

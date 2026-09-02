@@ -114,7 +114,7 @@ export function mapStatusToProviderError(
   }
   if (status === 401 || status === 403) {
     return new ProviderHttpError(
-      "PROVIDER_BAD_RESPONSE",
+      "PROVIDER_UNAUTHORIZED",
       reason
         ? `Provider rejected the request (HTTP ${status}): ${reason}`
         : `Provider rejected the request (HTTP ${status}). Check API key / folder id.`,
@@ -185,6 +185,24 @@ export async function postJson(
   body: unknown,
   options: TimedFetchOptions
 ): Promise<unknown> {
+  const text = await postText(url, body, options);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new ProviderHttpError("PROVIDER_INVALID_RESPONSE", "Invalid JSON from provider.", false);
+  }
+}
+
+/**
+ * POST and read the body as text — для ответов, которые не являются одним
+ * JSON-документом (поток JSON Lines у GenSearch: разбор одним `JSON.parse` на
+ * нём падает). Секрет уходит заголовком и не логируется.
+ */
+export async function postText(
+  url: string,
+  body: unknown,
+  options: TimedFetchOptions
+): Promise<string> {
   const res = await timedFetch(url, {
     ...options,
     method: "POST",
@@ -198,11 +216,7 @@ export async function postJson(
   if (text.length > MAX_PROVIDER_RESPONSE_BYTES) {
     throw new ProviderHttpError("PROVIDER_BAD_RESPONSE", "Provider response too large.", false);
   }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ProviderHttpError("PROVIDER_INVALID_RESPONSE", "Invalid JSON from provider.", false);
-  }
+  return text;
 }
 
 /** GET text with timeout + status mapping (for XML APIs). */

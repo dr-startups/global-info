@@ -1,13 +1,13 @@
 /**
  * Deck coverage reconciliation: proves that the assembled deck preserves all
- * 36 canonical First36 base slots and explicitly maps every page of the
+ * canonical First36 base slots and explicitly maps every page of the
  * 43-page v72 baseline. Fails closed when a base slot, promoted finding,
  * promoted-finding evidence reference or required surface disappears without
  * an explicit valid mapping.
  */
 
 import type { ReportDeckManifest, SectionPackV2 } from "./contracts";
-import { CANONICAL_BASE_SLOTS, EXPLICIT_SLOT_MERGES } from "./canonical-slots";
+import { CANONICAL_BASE_SLOTS, CANONICAL_SLOT_IDS, EXPLICIT_SLOT_MERGES } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 
 export type CoverageStatus =
@@ -44,7 +44,8 @@ export type CoverageReconciliation = {
   sourceDatasetId: string;
   generatedAt: string;
   baseSlotCoverage: number;
-  requiredBaseSlotCount: 36;
+  /** Сколько базовых слотов обязано присутствовать; считается по перечню. */
+  requiredBaseSlotCount: number;
   physicalPageCount: number;
   continuationCount: number;
   slots: SlotCoverageEntry[];
@@ -119,7 +120,7 @@ export function buildCoverageReconciliation(input: {
   const packSlides = packs.flatMap((p) => p.slides);
   const slideContent = new Map(packSlides.map((s) => [s.slideId, s]));
 
-  // --- 36 canonical slots ---
+  // --- canonical slots ---
   const slots: SlotCoverageEntry[] = [];
   const missingBaseSlots: string[] = [];
   for (const def of CANONICAL_BASE_SLOTS) {
@@ -304,7 +305,7 @@ export function buildCoverageReconciliation(input: {
     sourceDatasetId: deckManifest.sourceDatasetId,
     generatedAt: new Date().toISOString(),
     baseSlotCoverage: deckManifest.baseSlotCoverage,
-    requiredBaseSlotCount: 36,
+    requiredBaseSlotCount: CANONICAL_SLOT_IDS.length,
     physicalPageCount: deckManifest.pageCount,
     continuationCount: deckManifest.continuationCount,
     slots,
@@ -314,6 +315,8 @@ export function buildCoverageReconciliation(input: {
     missingPromotedFindings,
     missingEvidenceRefs,
     missingSurfaces,
-    failed: Object.values(checks).some((c) => !c) || deckManifest.baseSlotCoverage < 36,
+    failed:
+      Object.values(checks).some((c) => !c) ||
+      deckManifest.baseSlotCoverage < CANONICAL_SLOT_IDS.length,
   };
 }

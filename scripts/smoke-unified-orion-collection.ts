@@ -1,15 +1,26 @@
 /**
  * Offline acceptance for unified ORION + Arsenkin collection.
  * NETWORK_CALLS=0 — no live Arsenkin / Yandex / Serper.
+ *
+ * Хранилище прогонов переводится в файловый режим до первого импорта стора:
+ * `getUnifiedCollectionJobStoreMode()` читает переменную в момент вызова, но
+ * полагаться на порядок вызовов незачем — режим объявляется здесь.
+ *
+ * Смок назывался офлайновым и при этом писал строку в `dp_unified_collection_jobs`
+ * через Prisma. На машине разработчика он проходил за счёт оставшейся базы, а в
+ * CI, где Postgres не поднимается вовсе, шаг «офлайн-смоки» пройти не мог.
+ * Файловый режим для того и оставлен (см. комментарий в самом сторе).
  */
 
+process.env.UNIFIED_COLLECTION_JOB_STORE = "file";
+
 import assert from "node:assert/strict";
-import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import {
   deleteUnifiedCollectionJobForTests,
+  getUnifiedCollectionJobStoreMode,
   loadUnifiedCollectionJob,
   readUnifiedArtifact,
 } from "../src/modules/digital-profile/services/unified-collection-job-store";
@@ -17,6 +28,7 @@ import {
   startUnifiedOrionCollection,
   runUnifiedCollectionTick,
 } from "../src/modules/digital-profile/services/unified-orion-collection-orchestrator";
+import { CanonicalPrepareBlockedError } from "../src/modules/digital-profile/services/canonical-report-prepare";
 import { assertReportReadyGates } from "../src/modules/digital-profile/services/report-ready-gates";
 import { mergeCompositeSerp, buildReportDataBinding } from "../src/modules/digital-profile/services/composite-serp-merge";
 import { listAgentDefinitions, getAgent } from "../src/modules/digital-profile/agents/registry";
@@ -117,6 +129,24 @@ const fixtureBaseRows = [
   },
 ];
 
+/**
+ * Состояние ворот выбора персоны подставляется явно.
+ *
+ * Это не обход ворот: у смока нет ни строки `Case`, ни базы — он работает с
+ * файловым хранилищем прогонов, поэтому спросить состояние ему не у кого.
+ * Обход по `isFixture` здесь не годится: он сделал бы проверку ворот пустой,
+ * а пропуск, выглядящий как pass, — ровно то, чего раннер смоков не допускает.
+ */
+const DECIDED_SUBJECT_HASH = "unified-smoke-subject";
+
+const personaDecided = {
+  loadPersonaGateInput: async () => ({
+    isFixture: false,
+    subjectInputHash: DECIDED_SUBJECT_HASH,
+    decidedHashes: [DECIDED_SUBJECT_HASH],
+  }),
+};
+
 async function drainJob(caseId: string, deps: Parameters<typeof runUnifiedCollectionTick>[1], max = 20) {
   for (let i = 0; i < max; i++) {
     const job = await runUnifiedCollectionTick(caseId, deps);
@@ -136,14 +166,21 @@ async function drainJob(caseId: string, deps: Parameters<typeof runUnifiedCollec
 describe("unified orion arsenkin collection", () => {
   before(async () => {
     process.env.NETWORK_CALLS = "0";
-    // Джоба ссылается на кейс внешним ключом: без него смок падает на чужой
-    // машине, а на машине разработчика проходит за счёт оставшихся строк.
-    for (const id of SMOKE_CASE_IDS) await ensureSmokeCase(id);
+    // Кейс-заглушка в базе больше не нужна: в файловом режиме прогон лежит
+    // в `storage/`, а внешнего ключа на `cases`, ради которого она заводилась,
+    // здесь нет.
     await deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
   it("NETWORK_CALLS=0", () => {
     assert.equal(process.env.NETWORK_CALLS, "0");
+  });
+
+  it("офлайновый смок не ходит в базу: хранилище прогонов файловое", () => {
+    // Проверка защищает сам контракт офлайновости. Стоит режиму вернуться в
+    // `db`, смок снова начнёт зависеть от Postgres — и это будет видно здесь,
+    // а не в CI без базы.
+    assert.equal(getUnifiedCollectionJobStoreMode(), "file");
   });
 
   it("five Arsenkin agents registered as REAL", () => {
@@ -301,7 +338,7 @@ describe("unified orion arsenkin collection", () => {
     const started = await startUnifiedOrionCollection({
       caseId: CASE_ID,
       requestedBy: "smoke",
-      deps,
+      deps: { ...deps, ...personaDecided },
     });
     assert.equal(started.created, true);
     // Drain synchronously (avoid relying on setImmediate race)
@@ -361,7 +398,7 @@ describe("unified orion arsenkin collection", () => {
         prepareDatasetId: binding.compositeDatasetId,
       }),
     };
-    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
+    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...deps, ...personaDecided } });
     const job = await drainJob(caseId, deps);
     assert.equal(job?.stage, "FAILED_TERMINAL");
     // Шаг 13, B2: сообщение называет причину вместо «mock/fallback».
@@ -389,10 +426,50 @@ describe("unified orion arsenkin collection", () => {
         prepareDatasetId: "old-base-dataset-not-composite",
       }),
     };
-    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
+    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...deps, ...personaDecided } });
     const job = await drainJob(caseId, deps);
     assert.equal(job?.stage, "FAILED_TERMINAL");
     assert.equal(job?.lastErrorCode, "REPORT_READY_GATE_FAILED");
+  });
+
+  /*
+   * Недоступная база на подготовке — наша авария, а не результат сбора.
+   *
+   * Собранное цело, платить заново не за что, поэтому прогон возвращается к
+   * этому шагу сам. Терминальная ветка здесь была бы дороже отказа: она
+   * закрывает джобу и требует человека.
+   */
+  it("недоступная база на подготовке → возврат к шагу, а не терминал", async () => {
+    const caseId = "unified-smoke-db-unavailable";
+    await deleteUnifiedCollectionJobForTests(caseId);
+    const deps = {
+      autoSchedule: false as const,
+      fixtureBaseRows,
+      runFullAudit: async () => mockFullAuditReal(),
+      runArsenkinEnrichment: async () => ({
+        arsenkinReportRunId: "a1",
+        enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `a${i + 1}`),
+        coverage: { ...emptyCoverage(12), measured: 12, progressRatio: 1 },
+        observations: [],
+        enrichmentComplete: true,
+      }),
+      runPrepare: async () => {
+        throw new CanonicalPrepareBlockedError(
+          "PREPARE_DB_UNAVAILABLE",
+          "prisma client unavailable"
+        );
+      },
+    };
+    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...deps, ...personaDecided } });
+    for (let i = 0; i < 20; i += 1) {
+      const ticked = await runUnifiedCollectionTick(caseId, deps);
+      if (!ticked || ticked.stage === "FAILED_RETRYABLE" || ticked.stage === "FAILED_TERMINAL") break;
+    }
+    const job = await loadUnifiedCollectionJob(caseId);
+    assert.equal(job?.stage, "FAILED_RETRYABLE");
+    assert.equal(job?.lastErrorCode, "PREPARE_DB_UNAVAILABLE");
+    // Ссылки прежнего отчёта эта ветка не трогает.
+    assert.equal(job?.reportLinks?.pdf ?? null, null);
   });
 
   it("idempotent start does not create second active job", async () => {
@@ -412,15 +489,53 @@ describe("unified orion arsenkin collection", () => {
         enrichmentComplete: false,
       }),
     };
-    const a = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: holdDeps });
+    const a = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...holdDeps, ...personaDecided } });
     // Drain until WAITING arsenkin ingest — not terminal REPORT_READY
     for (let i = 0; i < 6; i++) {
       const j = await runUnifiedCollectionTick(caseId, holdDeps);
       if (j?.stage === "ARSENKIN_ENRICHMENT" && j.status === "WAITING") break;
     }
-    const b = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: holdDeps });
+    const b = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...holdDeps, ...personaDecided } });
     assert.equal(b.created, false);
     assert.equal(a.unifiedJobId, b.unifiedJobId);
+  });
+
+  /*
+   * Ворота выбора персоны на живом маршруте старта.
+   *
+   * Кейс подтеста фикстурным **не** помечается: обход по `isFixture` сделал бы
+   * проверку пустой — она прошла бы, ничего не проверив.
+   */
+  it("без решения по персоне платный прогон не рождается, с решением — стартует", async () => {
+    const caseId = "unified-smoke-persona-gate";
+    await deleteUnifiedCollectionJobForTests(caseId);
+    const deps = { autoSchedule: false as const, fixtureBaseRows };
+    const pending = {
+      loadPersonaGateInput: async () => ({
+        isFixture: false,
+        subjectInputHash: DECIDED_SUBJECT_HASH,
+        decidedHashes: [] as string[],
+      }),
+    };
+
+    await assert.rejects(
+      () => startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: { ...deps, ...pending } }),
+      (err: unknown) => {
+        const e = err as { code?: string; details?: { reason?: string } };
+        assert.equal(e.code, "CONFLICT");
+        assert.equal(e.details?.reason, "PERSONA_NOT_CONFIRMED");
+        return true;
+      }
+    );
+    assert.equal(await loadUnifiedCollectionJob(caseId), null);
+
+    const started = await startUnifiedOrionCollection({
+      caseId,
+      requestedBy: "smoke",
+      deps: { ...deps, ...personaDecided },
+    });
+    assert.equal(started.created, true);
+    await deleteUnifiedCollectionJobForTests(caseId);
   });
 
   it("coverage breakdown exposes measured/noResults/notSupported/failedFinal", () => {

@@ -1,90 +1,90 @@
 [
   {
     "fragmentKey": "FRONT_MATTER_MAIN",
-    "action": "REGENERATED"
-  },
-  {
-    "fragmentKey": "EXECUTIVE_SUMMARY",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RISK_MATRIX",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_SUMMARY",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_SERP",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_SERP_SCREENSHOT",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_SUGGESTIONS",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_IMAGES",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_IDENTITY_WIKIPEDIA",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_KNOWLEDGE_AI",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "RU_RELATED",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_SUMMARY",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_SERP",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_SERP_SCREENSHOT",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_SUGGESTIONS",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_IMAGES",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_IDENTITY_WIKIPEDIA",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_KNOWLEDGE_AI",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "UAE_RELATED",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "COMPLIANCE_MAIN",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
   },
   {
     "fragmentKey": "APPENDIX_MAIN",
-    "action": "REGENERATED"
+    "action": "REUSED_CACHE"
+  },
+  {
+    "fragmentKey": "EXECUTIVE_SUMMARY",
+    "action": "REUSED_CACHE"
   }
 ]

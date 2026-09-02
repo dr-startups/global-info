@@ -84,7 +84,8 @@ function assertWithinJobRoot(jobRoot: string, candidate: string): string {
 /**
  * Resolve the on-disk path for a downloadable kind.
  * pdf/pptx require an explicit reportLinks entry.
- * contactSheet may use reportLinks.contactSheet or the well-known render/contact-sheet.png.
+ * contactSheet may use reportLinks.contactSheet or the well-known
+ * render/contact-sheet.png (local python render only — see below).
  */
 function resolveArtifactPath(
   kind: CanonicalArtifactKind,
@@ -103,7 +104,13 @@ function resolveArtifactPath(
   if (recorded) {
     return assertWithinJobRoot(jobRoot, recorded);
   }
-  // Well-known job-scoped location written by the HTTP renderer path.
+  // Well-known job-scoped fallback, written by the LOCAL python adapter only:
+  // it builds the sheet itself (scripts/build-contact-sheet.py) straight under
+  // this final name — unlike the client PPTX/PDF, which land under pending names
+  // and are published only after the telemetry gate.
+  // A live deployment never gets here with a real file: it always renders over
+  // HTTP, and /orion/render-golden returns no contact sheet at all, so nothing
+  // writes render/contact-sheet.png there.
   return assertWithinJobRoot(jobRoot, join(jobRoot, "render", "contact-sheet.png"));
 }
 

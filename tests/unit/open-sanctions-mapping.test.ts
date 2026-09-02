@@ -91,7 +91,10 @@ describe("темы провайдера превращаются в типы р�
   it("подтема попадает в раздел своей темы", () => {
     // Иерархия у провайдера растёт: `crime.fraud` не должен уходить в «прочее».
     expect(riskTypesFromTopics(["crime.fraud"])).toEqual(["LAW_ENFORCEMENT"]);
-    expect(riskTypesFromTopics(["sanction.linked"])).toEqual(["SANCTIONS"]);
+    expect(riskTypesFromTopics(["sanction.counter"])).toEqual(["SANCTIONS"]);
+    // Кроме подтем, у которых есть собственный тип: «связан с санкционным
+    // лицом» — не санкционные списки, и раздел темы здесь свой.
+    expect(riskTypesFromTopics(["sanction.linked"])).toEqual(["SANCTION_LINKED"]);
   });
 
   it("несколько тем дают несколько типов без повторов", () => {
@@ -184,11 +187,18 @@ describe("ответ провайдера превращается в совпа
     expect(map("строка")).toEqual([]);
   });
 
-  it("краткое описание называет списки и роль, а не выдумывает", () => {
+  it("краткое описание называет роль и число списков, а не выдумывает", () => {
     const summary = summarizeEntity(ENTITY);
-    expect(summary).toContain("sanction");
+    // Тема называется словами: код провайдера («sanction», «role.pep», «poi»)
+    // в клиентский текст не попадает. Проверка держала здесь именно код и тем
+    // закрепляла дефект — в отчёте о Тинькове (28.07, стр.54) клиент читал
+    // «Темы: sanction, role.oligarch, role.pep, poi».
+    expect(summary).toMatch(/санкцион/iu);
+    expect(summary).not.toContain("sanction");
     expect(summary).toContain("Chief Executive Officer");
-    expect(summary).toContain("us_ofac_sdn");
+    // Имена наборов данных — такие же машинные коды: клиенту называется их число.
+    expect(summary).not.toContain("us_ofac_sdn");
+    expect(summary).toContain("источника в записи: 2");
     expect(summarizeEntity({ id: "x" })).toMatch(/без дополнительных сведений/);
   });
 });

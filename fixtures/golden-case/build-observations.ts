@@ -5,8 +5,71 @@
 
 import type { CompositeObservation } from "../../src/modules/digital-profile/services/composite-serp-merge";
 
+/**
+ * Полоса размера корпуса — проверка целости фикстуры, а не свойство продукта.
+ *
+ * Объявлена здесь и читается смоком: пока границы стояли в двух местах, правка
+ * фикстуры проходила её собственную проверку и падала на смоке. Верхняя граница
+ * поднята вместе с блоком дополнительных написаний ФИО — без него вторая
+ * таблица выдачи не собиралась ни на одном корпусе.
+ */
+export const GOLDEN_CASE_OBSERVATION_BAND = { min: 280, max: 360 } as const;
+
 const SUBJECT = "Anders Holmström";
 const COMPANY = "Nordkap Capital";
+
+/*
+ * Домены и заголовки золотого кейса.
+ *
+ * Раньше вся выдача жила на `ru.example` / `uae.example`, а заголовки-набивку
+ * различал суффикс «— source 42». Из-за этого эталон не мог подтверждать
+ * качество текста, ради которого заведён:
+ *
+ * - `.example` опознаётся продуктом как демо-домен (`isMockClientDomain`) и
+ *   вычищается из клиентского текста. Строки источников всегда падали в
+ *   запасную формулировку «Источники — поисковая выдача», и настоящий путь
+ *   «Источники — a, b и c» не проверялся ни разу;
+ * - один домен на всю выдачу означает, что перечисление источников, отбор
+ *   опорных доменов и склейка материалов по паре «домен + заголовок» работали
+ *   на вырожденных данных;
+ * - «— source 42» в заголовке — это не то, что бывает в выдаче, и такой текст
+ *   нельзя оценивать как клиентский.
+ *
+ * Домены вымышленные и намеренно не совпадают с настоящими изданиями: субъект
+ * тоже вымышлен, а фикстура не ходит в сеть. Зато они выглядят как домены, и
+ * конвейер обращается с ними как с настоящими.
+ */
+const RU_SOURCE_HOSTS = [
+  "affarsposten.se",
+  "stockholm-kuriren.se",
+  "nordmarket-watch.se",
+  "finansbladet.se",
+  "granskaren.se",
+  "kapitalnytt.se",
+  "delovoy-vestnik.ru",
+  "rynok-segodnya.ru",
+  "pravo-obzor.ru",
+  "bizdaily-nordic.se",
+  "reestr-novosti.ru",
+  "svenskt-naringsliv-nytt.se",
+];
+
+const UAE_SOURCE_HOSTS = [
+  "gulf-business-review.ae",
+  "emirates-ledger.ae",
+  "dubai-market-daily.ae",
+  "khaleej-finance-post.ae",
+  "difc-briefing.ae",
+  "abudhabi-capital-news.ae",
+];
+
+/** Как издания по-разному подают один и тот же сюжет. */
+const COVERAGE_ANGLES = ["Обзор", "Комментарий", "Подробности", "Хроника", "Разбор", "Контекст"];
+
+/** Детерминированный выбор хоста: индекс наблюдения → домен из пула. */
+function host(pool: string[], i: number): string {
+  return pool[i % pool.length]!;
+}
 
 const ORGANIC_RU_TITLES = [
   `${SUBJECT}, founder of ${COMPANY}, faces tax-fraud probe in Stockholm`,
@@ -97,7 +160,7 @@ const NAMESAKE_TITLES = [
 function base(
   partial: Partial<CompositeObservation> & Pick<CompositeObservation, "kind" | "key">
 ): CompositeObservation {
-  return {
+  const row: CompositeObservation = {
     region: "RU",
     engine: "YANDEX",
     query: SUBJECT,
@@ -105,6 +168,36 @@ function base(
     primaryProvider: "yandex",
     evidenceRefs: [],
     ...partial,
+  };
+  /*
+   * Пометка «это само имя субъекта» — то же, что живой сбор пишет в
+   * `rawMetadata` строки выдачи. Без неё таблица «ТОП-20 по запросу ФИО»
+   * выбирала бы основной запрос запасным правилом (по числу материалов, на
+   * равных — по алфавиту), а с несколькими написаниями в корпусе это ровно тот
+   * случай, ради которого пометку и завели.
+   *
+   * Признак берётся из данных строки, а не проставляется списком: запрос равен
+   * имени субъекта — значит это оно и есть.
+   */
+  return row.query === SUBJECT ? { ...row, subjectNameQuery: true } : row;
+}
+
+/**
+ * Позиция в выдаче по разрезу «регион × движок».
+ *
+ * Фикстура моделирует настоящую выдачу, а в ней у каждой строки есть номер.
+ * Порядок генерации и есть порядок выдачи: заглавные материалы идут первыми,
+ * «набивка» уходит в хвост — то есть ниже двадцатой позиции, куда проверяющий
+ * не заглядывает. Без позиций золотой кейс не мог проверить правило ТОП-20:
+ * материал без номера в предмет аудита не берётся.
+ */
+function rankCounter(): (region: string, engine: string) => number {
+  const byLane = new Map<string, number>();
+  return (region, engine) => {
+    const lane = `${region}|${engine}`;
+    const next = (byLane.get(lane) ?? 0) + 1;
+    byLane.set(lane, next);
+    return next;
   };
 }
 
@@ -119,6 +212,7 @@ function slug(s: string): string {
 /** Build the golden-case composite corpus (~300 rows). Deterministic. */
 export function buildGoldenCaseObservations(): CompositeObservation[] {
   const rows: CompositeObservation[] = [];
+  const nextRank = rankCounter();
   let n = 0;
   const id = () => {
     n += 1;
@@ -132,16 +226,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     const providers = engine === "GOOGLE" ? (["serper"] as string[]) : (["yandex"] as string[]);
     rows.push(
       base({
-        key: `organic|ru|${engine.toLowerCase()}|q|https://ru.example/o-${id()}`,
+        key: `organic|ru|${engine.toLowerCase()}|q|https://${host(RU_SOURCE_HOSTS, i)}/o-${id()}`,
         kind: "organic",
         surface: "organic",
         region: "RU",
         engine,
         providers,
         primaryProvider: providers[0]!,
-        url: `https://ru.example/o-${slug(title)}-${i}`,
+        url: `https://${host(RU_SOURCE_HOSTS, i)}/${slug(title)}-${i}`,
         title,
         snippet: `${title}. Context: ${COMPANY}, Stockholm fintech, identity anchors for subject resolution.`,
+        rank: nextRank("RU", engine),
         evidenceRefs: [`searchResult:sr-ru-o-${i}`],
         baseSearchResultId: `sr-ru-o-${i}`,
         riskLabel: /tax|sanction|offshore|whistle|prosecut|probe|hearing/i.test(title)
@@ -157,16 +252,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     const providers = engine === "GOOGLE" ? (["serper"] as string[]) : (["yandex"] as string[]);
     rows.push(
       base({
-        key: `organic|ru|${engine.toLowerCase()}|q|https://ru.example/pad-${id()}`,
+        key: `organic|ru|${engine.toLowerCase()}|q|https://${host(RU_SOURCE_HOSTS, i)}/pad-${id()}`,
         kind: "organic",
         surface: "organic",
         region: "RU",
         engine,
         providers,
         primaryProvider: providers[0]!,
-        url: `https://ru.example/pad-${i}`,
-        title: `${theme} — source ${i}`,
-        snippet: `Additional SERP hit ${i} about ${SUBJECT} and ${COMPANY}.`,
+        url: `https://${host(RU_SOURCE_HOSTS, i)}/${slug(theme)}-${i}`,
+        title: `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${theme}`,
+        snippet: `${theme}. Материал издания ${host(RU_SOURCE_HOSTS, i)} о ${SUBJECT} и ${COMPANY}.`,
+        rank: nextRank("RU", engine),
         evidenceRefs: [`searchResult:sr-ru-pad-${i}`],
         baseSearchResultId: `sr-ru-pad-${i}`,
       })
@@ -178,16 +274,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     const title = ORGANIC_UAE_TITLES[i]!;
     rows.push(
       base({
-        key: `organic|uae|google|q|https://uae.example/o-${id()}`,
+        key: `organic|uae|google|q|https://${host(UAE_SOURCE_HOSTS, i)}/o-${id()}`,
         kind: "organic",
         surface: "organic",
         region: "UAE",
         engine: "GOOGLE",
         providers: ["serper"],
         primaryProvider: "serper",
-        url: `https://uae.example/o-${slug(title)}-${i}`,
+        url: `https://${host(UAE_SOURCE_HOSTS, i)}/${slug(title)}-${i}`,
         title,
         snippet: `${title}. UAE market context for ${SUBJECT}.`,
+        rank: nextRank("UAE", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-uae-o-${i}`],
         baseSearchResultId: `sr-uae-o-${i}`,
         riskLabel: /PEP|sanction|compliance/i.test(title) ? "adverse" : null,
@@ -198,16 +295,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     const theme = ORGANIC_UAE_TITLES[i % ORGANIC_UAE_TITLES.length]!;
     rows.push(
       base({
-        key: `organic|uae|google|q|https://uae.example/pad-${id()}`,
+        key: `organic|uae|google|q|https://${host(UAE_SOURCE_HOSTS, i)}/pad-${id()}`,
         kind: "organic",
         surface: "organic",
         region: "UAE",
         engine: "GOOGLE",
         providers: ["serper"],
         primaryProvider: "serper",
-        url: `https://uae.example/pad-${i}`,
-        title: `${theme} — UAE source ${i}`,
-        snippet: `Additional UAE SERP hit ${i} about ${SUBJECT}.`,
+        url: `https://${host(UAE_SOURCE_HOSTS, i)}/${slug(theme)}-${i}`,
+        title: `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${theme}`,
+        snippet: `${theme}. Материал издания ${host(UAE_SOURCE_HOSTS, i)} о ${SUBJECT}.`,
+        rank: nextRank("UAE", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-uae-pad-${i}`],
         baseSearchResultId: `sr-uae-pad-${i}`,
       })
@@ -218,16 +316,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   for (let i = 0; i < NAMESAKE_TITLES.length; i++) {
     rows.push(
       base({
-        key: `organic|ru|google|q|https://nhl.example/ns-${id()}`,
+        key: `organic|ru|google|q|https://nordic-hockey-report.se/ns-${id()}`,
         kind: "organic",
         surface: "organic",
         region: "RU",
         engine: "GOOGLE",
         providers: ["serper"],
         primaryProvider: "serper",
-        url: `https://nhl.example/holmstrom-${i}`,
+        url: `https://nordic-hockey-report.se/holmstrom-${i}`,
         title: NAMESAKE_TITLES[i]!,
         snippet: `${NAMESAKE_TITLES[i]!}. Hockey goaltender — not the fintech founder.`,
+        rank: nextRank("RU", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-ns-${i}`],
         baseSearchResultId: `sr-ns-${i}`,
       })
@@ -239,17 +338,17 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   const LIKELY_ROWS: Array<{ title: string; url: string; snippet: string }> = [
     {
       title: "Holmström of Nordkap Capital mentioned in Stockholm market brief",
-      url: "https://biz.example/likely-nordkap-brief",
+      url: "https://bizdaily-nordic.se/likely-nordkap-brief",
       snippet: "Surname + Nordkap Capital / Stockholm context without given name.",
     },
     {
       title: "Holmstrom fintech outlook for Nordic credit markets",
-      url: "https://biz.example/likely-fintech-outlook",
+      url: "https://bizdaily-nordic.se/likely-fintech-outlook",
       snippet: "Surname + fintech context; identity not fully confirmed.",
     },
     {
       title: "Holmström: company registry notice",
-      url: "https://ru.example/likely-registry-notice",
+      url: "https://reestr-novosti.ru/likely-registry-notice",
       snippet: "Surname-only on a domain that already hosts confirmed subject matches.",
     },
   ];
@@ -267,6 +366,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: row.url,
         title: row.title,
         snippet: row.snippet,
+        rank: nextRank("RU", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-likely-${i}`],
         baseSearchResultId: `sr-likely-${i}`,
       })
@@ -432,8 +532,8 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         engine,
         providers,
         primaryProvider: providers[0]!,
-        url: `https://img.example/${region.toLowerCase()}/page-${i}`,
-        imageUrl: `https://cdn.example/img/${region.toLowerCase()}-${i}.jpg`,
+        url: `https://bildarkiv-nordic.se/${region.toLowerCase()}/page-${i}`,
+        imageUrl: `https://cdn.bildarkiv-nordic.se/img/${region.toLowerCase()}-${i}.jpg`,
         title: `Photo of ${SUBJECT} at ${COMPANY} event ${i}`,
         snippet: `Image result ${i} for ${SUBJECT}.`,
         evidenceRefs: [`surface:ss-img-${i}`],
@@ -496,16 +596,22 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   }
 
   // --- Exactly 2 compliance hits ---
+  //
+  // Позиции у этих двух строк заданы числом, а не счётчиком разреза: это
+  // выдача по узкой пробе («имя + compliance»), где счётчик разреза уже ушёл за
+  // двадцатую строку, а в самой пробе скрин-база стоит на первой странице.
+  // Позиция в выдаче считается внутри запроса, а не по разрезу целиком.
   rows.push(
     base({
-      key: `organic|ru|google|q|https://compliance.example/lexis-${id()}`,
+      key: `organic|ru|google|q|https://worldcompliance-screening.ae/lexis-${id()}`,
       kind: "organic",
       surface: "organic",
       region: "RU",
       engine: "GOOGLE",
+      rank: 6,
       providers: ["serper"],
       primaryProvider: "serper",
-      url: "https://compliance.example/lexisnexis/holmstrom-1",
+      url: "https://worldcompliance-screening.ae/lexisnexis/holmstrom-1",
       title: `${SUBJECT} — LexisNexis WorldCompliance adverse media hit`,
       snippet: `Compliance database hit: adverse media and watchlist reference for ${SUBJECT} of ${COMPANY}; requires analyst verification.`,
       evidenceRefs: ["searchResult:sr-compliance-1"],
@@ -515,14 +621,15 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   );
   rows.push(
     base({
-      key: `organic|uae|google|q|https://compliance.example/dowjones-${id()}`,
+      key: `organic|uae|google|q|https://worldcompliance-screening.ae/dowjones-${id()}`,
       kind: "organic",
       surface: "organic",
       region: "UAE",
       engine: "GOOGLE",
+      rank: 4,
       providers: ["serper"],
       primaryProvider: "serper",
-      url: "https://compliance.example/dowjones/holmstrom-2",
+      url: "https://worldcompliance-screening.ae/dowjones/holmstrom-2",
       title: `${SUBJECT} — Dow Jones Risk & Compliance PEP/RCA match`,
       snippet: `Dow Jones screening returned a potential PEP/RCA match for ${SUBJECT}; identity confirmation required.`,
       evidenceRefs: ["searchResult:sr-compliance-2"],
@@ -543,8 +650,8 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         engine: region === "RU" ? "YANDEX" : "GOOGLE",
         providers: region === "RU" ? ["yandex"] : ["serper"],
         primaryProvider: region === "RU" ? "yandex" : "serper",
-        url: `https://capture.example/serp/${region.toLowerCase()}-${i}.png`,
-        imageUrl: `https://capture.example/serp/${region.toLowerCase()}-${i}.png`,
+        url: `https://serp-capture-archive.se/serp/${region.toLowerCase()}-${i}.png`,
+        imageUrl: `https://serp-capture-archive.se/serp/${region.toLowerCase()}-${i}.png`,
         title: `SERP screenshot ${region} #${i} for ${SUBJECT}`,
         snippet: `Metadata for captured SERP page ${i}.`,
         evidenceRefs: [`surface:ss-shot-${i}`],
@@ -553,10 +660,117 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     );
   }
 
-  if (rows.length < 280 || rows.length > 340) {
+  // --- Нейро-ответ Яндекса (официальный GenSearch), RU ---
+  // Тело ответа плюс названные Яндексом источники: страница обязана напечатать
+  // текст целиком, подпись про официальный API и перечень источников.
+  const GEN_ANSWER_TEXT = [
+    `${SUBJECT} — основатель и управляющий партнёр инвестиционной компании ${COMPANY}.`,
+    `По данным открытых источников, ${COMPANY} специализируется на прямых инвестициях в скандинавский промышленный сектор и в последние годы расширяет присутствие в ОАЭ.`,
+    `Публикации деловых изданий связывают предпринимателя с налоговым разбирательством и с расширением бизнеса в Дубае; окончательных решений по разбирательству в открытых источниках нет.`,
+    `Также встречаются материалы о полном тёзке — хоккейном вратаре, которые к предпринимателю отношения не имеют.`,
+  ].join(" ");
+  rows.push(
+    base({
+      key: `other|ru|yandex|gen_answer|${id()}`,
+      kind: "other",
+      surface: "ai_answer",
+      region: "RU",
+      engine: "YANDEX",
+      url: "yandex-gen://answer/9f2c1a7b4e05",
+      contentKind: "answer_text",
+      title: `Нейро-ответ Яндекса (официальный API): ${SUBJECT}`,
+      snippet: GEN_ANSWER_TEXT,
+      evidenceRefs: ["surface:ss-gen-answer"],
+      baseSearchSurfaceItemId: "ss-gen-answer",
+    })
+  );
+  ["affarsposten.se", "finansbladet.se", "kapitalnytt.se"].forEach((hostName, i) => {
+    rows.push(
+      base({
+        key: `other|ru|yandex|gen_answer_source|${id()}`,
+        kind: "other",
+        surface: "ai_answer",
+        region: "RU",
+        engine: "YANDEX",
+        url: `https://${hostName}/profil/holmstrom-${i}`,
+        contentKind: "answer_source",
+        title: `${SUBJECT} и ${COMPANY}: профиль предпринимателя`,
+        evidenceRefs: [`surface:ss-gen-src-${i}`],
+        baseSearchSurfaceItemId: `ss-gen-src-${i}`,
+      })
+    );
+  });
+
+  /*
+   * Дополнительные написания ФИО — условие проверяемости второй таблицы.
+   *
+   * До этого блока во всей фикстуре был **один** запрос (`query: SUBJECT`),
+   * поэтому таблица «Найдено по дополнительным запросам» на золотом кейсе была
+   * пуста, и первым, кто увидел бы её с данными, оказался бы клиент. Кейс
+   * синтетический по замыслу, а запрет на подмену синтетикой относится к
+   * реальным делам, — поэтому расширение законно.
+   *
+   * Расширение **минимальное**: ровно столько строк, чтобы сработали обе ветки
+   * второй таблицы — «строки есть» и «часть срезана пределом». Предел
+   * срезаемой части равен глубине первой таблицы (20), значит непроверенных
+   * материалов нужно 21 и больше; взято 22, чтобы остаток (2) печатался
+   * множественным числом и проверял согласование фразы. Плюс один
+   * нежелательный: он обязан печататься всегда, поверх предела, и это видно
+   * только на корпусе, где предел действительно сработал.
+   *
+   * Написаний два, а не пять: третье и четвёртое не добавили бы ни одной новой
+   * ветки, а корпус живёт в полосе размера.
+   */
+  const EXTRA_SPELLINGS = [`Holmström ${SUBJECT.split(" ")[0]}`, `${SUBJECT} ${COMPANY}`];
+  const EXTRA_HOSTS = ["nordic-business-wire.se", "stockholm-ledger.se", "baltic-market-eye.se"];
+  for (let i = 0; i < 23; i++) {
+    const adverse = i === 0;
+    const engine = i % 2 === 0 ? "YANDEX" : "GOOGLE";
+    const hostName = EXTRA_HOSTS[i % EXTRA_HOSTS.length]!;
+    const title = adverse
+      ? `Prosecutors open a probe into ${SUBJECT} over a Malta holding`
+      : `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${SUBJECT} и ${COMPANY} — деловой обзор ${i}`;
+    rows.push(
+      base({
+        key: `organic|ru|${engine.toLowerCase()}|q2|https://${hostName}/x-${id()}`,
+        kind: "organic",
+        surface: "organic",
+        region: "RU",
+        engine,
+        providers: engine === "GOOGLE" ? ["serper"] : ["yandex"],
+        primaryProvider: engine === "GOOGLE" ? "serper" : "yandex",
+        // Запрос — не имя субъекта: именно этим материал и попадает во вторую
+        // таблицу, а не в первую.
+        query: EXTRA_SPELLINGS[i % EXTRA_SPELLINGS.length]!,
+        url: `https://${hostName}/${slug(title)}-x${i}`,
+        title,
+        snippet: adverse
+          ? `${title}. Материал издания ${hostName}.`
+          : `${SUBJECT}, ${COMPANY} и деловая среда Стокгольма. Материал издания ${hostName}.`,
+        rank: nextRank("RU", engine),
+        evidenceRefs: [`searchResult:sr-ru-x-${i}`],
+        baseSearchResultId: `sr-ru-x-${i}`,
+        riskLabel: adverse ? "adverse" : null,
+      })
+    );
+  }
+
+  if (rows.length < GOLDEN_CASE_OBSERVATION_BAND.min || rows.length > GOLDEN_CASE_OBSERVATION_BAND.max) {
     throw new Error(`golden-case observation count out of band: ${rows.length}`);
   }
-  return rows;
+  /*
+   * Позиция несёт имя того, чью нумерацию она означает.
+   *
+   * Живое слияние вычисляет это поле само (`rankInOneScale`): у базовой строки
+   * источник — её провайдер. Корпус без него был бы набором «старого образца», и
+   * ни таблица родного движка, ни ворота сверки печати с наблюдениями на золотом
+   * кейсе не работали бы вовсе — оба молча пропускали бы проверку.
+   */
+  return rows.map((row) =>
+    typeof row.rank === "number" && row.rank > 0 && !row.rankSource
+      ? { ...row, rankSource: row.primaryProvider }
+      : row
+  );
 }
 
 export function goldenCaseObservationStats(rows: CompositeObservation[]): Record<string, number> {

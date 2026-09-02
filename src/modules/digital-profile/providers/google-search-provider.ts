@@ -19,10 +19,13 @@ import type {
   SearchProviderResult,
 } from "./types";
 import { domainOf } from "./types";
+import { resolveSearchDepth } from "./search-depth";
 import type { ProviderCapabilities } from "../search-surfaces/types";
 
 const ENDPOINT = "https://www.googleapis.com/customsearch/v1";
 const MAX_PER_PAGE = 10; // Custom Search API hard limit per request.
+/** Потолок глубины на один запрос; аудит просит двадцать. */
+const GOOGLE_MAX_RESULTS_PER_QUERY = 50;
 
 interface GoogleItem {
   title?: string;
@@ -92,10 +95,11 @@ export class GoogleSearchProvider implements SearchProvider {
       return externalGoogleSerpProvider.search(request);
     }
 
-    const limit = Math.min(
-      request.limit ?? providerConfig.google.resultsPerQuery,
-      providerConfig.google.resultsPerQuery
-    );
+    const limit = resolveSearchDepth({
+      requested: request.limit,
+      fallback: providerConfig.google.resultsPerQuery,
+      max: GOOGLE_MAX_RESULTS_PER_QUERY,
+    });
     const snapshots: unknown[] = [];
     const results: SearchProviderResult[] = [];
 

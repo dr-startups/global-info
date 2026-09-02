@@ -1,27 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "EXECUTIVE",
-  "sectionType": "EXECUTIVE",
-  "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
   "caseId": "cmreamy2t0002o30f29urzcog",
+  "contentHash": "sha256:baf00d81874b749e594adebb6fb327db6a82f3b931f4f92cd53460bde56644ba",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
-  "promptVersion": "digital-profile-overview-deterministic-v1",
-  "contentHash": "sha256:48d4198776da797248e567127726ce7dcdcf6eaafa9344035ae0ac6d4ef5e07c",
-  "inputHash": "sha256:733472b29c75028779591cb16e5d80077a12918d3ba70c4193fe4edfc0f63642:095c68b0eecae74b",
-  "generatedAt": "2026-07-17T09:49:29.033Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53",
-    "finding-offshore_corporate-subject_match-1b4c64c7"
-  ],
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -79,15 +60,10 @@
     "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
     "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
   ],
+  "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
+  "generatedAt": "2026-09-02T12:26:21.542Z",
+  "inputHash": "sha256:3c34d67171cc0486f5c706c071e253770bfd3261cae14577103d477503fef180:b5123bd3a39c0aaf",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53",
-      "finding-offshore_corporate-subject_match-1b4c64c7"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -145,85 +121,25 @@
       "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
       "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53",
+      "finding-offshore_corporate-subject_match-1b4c64c7"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
-  "slides": [
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p05_profile_dashboard",
-      "baseSlotId": "p05_profile_dashboard",
-      "sectionId": "EXECUTIVE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "regional-summary",
-      "title": "Обзор цифрового профиля",
-      "content": {
-        "narrative": "Составной набор данных: 343 материалов из 2 региональных контуров (RU: 214, UAE: 129). Идентификация субъекта выполнена для каждого материала.",
-        "kpis": [
-          {
-            "label": "Материалов проанализировано",
-            "value": "343",
-            "tone": "neutral"
-          },
-          {
-            "label": "Связаны с проверяемым лицом",
-            "value": "153",
-            "tone": "good"
-          },
-          {
-            "label": "Требуют идентификации",
-            "value": "80",
-            "tone": "warn"
-          },
-          {
-            "label": "Относятся к другим лицам",
-            "value": "41",
-            "tone": "warn"
-          },
-          {
-            "label": "Тем повышенного внимания",
-            "value": "3",
-            "tone": "risk"
-          },
-          {
-            "label": "Региональные контуры",
-            "value": "RU · UAE",
-            "tone": "accent"
-          }
-        ],
-        "bullets": [
-          "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
-          "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-          "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
-        ],
-        "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах.",
-        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
-      },
-      "evidenceRefs": [],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-business_profile-subject_match-a59d6fee",
-        "finding-family_associates-subject_match-a4427a53",
-        "finding-offshore_corporate-subject_match-1b4c64c7"
-      ],
-      "metrics": {
-        "compositeCount": 343,
-        "subjectMatchCount": 153,
-        "adverseFindingCount": 3
-      },
-      "visualAssetRefs": []
-    }
-  ],
   "metrics": {
-    "datasetCount": 55,
-    "displayedCount": 0,
     "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 3
+    "adverseDisplayedCount": 3,
+    "datasetCount": 55,
+    "displayedCount": 0
   },
+  "promptVersion": "digital-profile-overview-deterministic-v1",
   "provenance": {
+    "evidenceRefs": [],
     "providers": [
       "arsenkin",
       "google",
@@ -233,11 +149,133 @@
     ],
     "reportRunIds": [
       "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": []
+    ]
   },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "EXECUTIVE",
+  "sectionType": "EXECUTIVE",
+  "slides": [
+    {
+      "baseSlotId": "p05_profile_dashboard",
+      "content": {
+        "bullets": [
+          "Криминальные / судебные материалы\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]"
+        ],
+        "kpis": [
+          {
+            "label": "Материалов собрано",
+            "tone": "neutral",
+            "value": "343"
+          },
+          {
+            "label": "Связаны с проверяемым лицом",
+            "tone": "good",
+            "value": "149"
+          },
+          {
+            "label": "Вероятно о субъекте",
+            "tone": "warn",
+            "value": "0"
+          },
+          {
+            "label": "Требуют идентификации",
+            "tone": "warn",
+            "value": "161"
+          },
+          {
+            "label": "Относятся к другим лицам",
+            "tone": "warn",
+            "value": "33"
+          },
+          {
+            "label": "Тем повышенного внимания",
+            "tone": "risk",
+            "value": "3"
+          },
+          {
+            "label": "Региональные контуры",
+            "tone": "accent",
+            "value": "Россия · ОАЭ"
+          }
+        ],
+        "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (Россия: 246, ОАЭ: 97). Принадлежность каждого материала к проверяемому лицу проверена.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29.",
+        "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "isContinuation": false,
+      "metrics": {
+        "adverseFindingCount": 3,
+        "compositeCount": 343,
+        "likelySubjectCount": 0,
+        "subjectMatchCount": 149
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "EXECUTIVE",
+      "slideId": "p05_profile_dashboard",
+      "templateId": "regional-summary",
+      "title": "Цифровой профиль: 3 темы повышенного внимания",
+      "visualAssetRefs": []
+    },
+    {
+      "baseSlotId": "p05_profile_dashboard",
+      "content": {
+        "bullets": [
+          "Внимание по линии безопасности / оборонный контур\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. [finding-security_scrutiny-subject_match-0ae970c7]",
+          "PEP / RCA / watchlist-сигналы\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+        ],
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29."
+      },
+      "continuationIndex": 1,
+      "continuationOf": "p05_profile_dashboard",
+      "evidenceRefs": [],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseFindingCount": 3,
+        "compositeCount": 343,
+        "likelySubjectCount": 0,
+        "subjectMatchCount": 149
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "EXECUTIVE",
+      "slideId": "p05_profile_dashboard__cont1",
+      "templateId": "regional-summary",
+      "title": "Цифровой профиль: 3 темы повышенного внимания (продолжение 2/2)",
+      "visualAssetRefs": []
+    }
+  ],
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53",
+    "finding-offshore_corporate-subject_match-1b4c64c7"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

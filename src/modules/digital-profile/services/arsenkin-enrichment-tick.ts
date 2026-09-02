@@ -4,7 +4,10 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
+import {
+  ARSENKIN_REAL_AGENT_NAMES,
+  isArsenkinAgentEnabled,
+} from "../agents/real/real-arsenkin-agents";
 import {
   buildArsenkinEnrichmentState,
   emptyArsenkinEnrichmentState,
@@ -764,7 +767,12 @@ export async function runDurableArsenkinEnrichmentTick(input: {
       };
     }
 
-    if (gap.unregistered.length === ARSENKIN_REAL_AGENT_NAMES.length) {
+    // «Стадия не начиналась» — это когда не зарегистрирован ни один агент **из
+    // тех, кому положено работать**. Сравнение с полным списком из пяти
+    // никогда не совпадало бы: двое отключены составом, и отказ уходил
+    // бы в менее точный ARSENKIN_NO_TASKS_TO_POLL.
+    const expectedAgentCount = ARSENKIN_REAL_AGENT_NAMES.length - gap.disabled.length;
+    if (gap.unregistered.length > 0 && gap.unregistered.length === expectedAgentCount) {
       return {
         state: emptyArsenkinEnrichmentState({
           caseId: job.caseId,
@@ -917,20 +925,63 @@ export async function runDurableArsenkinEnrichmentTick(input: {
 
   for (let i = 0; i < ARSENKIN_REAL_AGENT_NAMES.length; i++) {
     const agentName = ARSENKIN_REAL_AGENT_NAMES[i]!;
+    // Позиционный запасной вариант — только когда прогонов столько же, сколько
+    // агентов. Отключённые агенты своего прогона не заводят, и брать чужой по
+    // индексу значило бы приписать одному агенту задачи другого.
     const runId =
       enrichmentRunIds.find((id) => agentNameFromEnrichmentRunId(id) === agentName) ??
-      enrichmentRunIds[i]!;
-    const agentTasks = tasks.filter((t) => t.reportRunId === runId);
-    const exec = executions.find((e) => e.enrichmentReportRunId === runId);
+      (enrichmentRunIds.length === ARSENKIN_REAL_AGENT_NAMES.length
+        ? enrichmentRunIds[i] ?? null
+        : null);
+    const agentTasks = runId ? tasks.filter((t) => t.reportRunId === runId) : [];
+    const exec = runId ? executions.find((e) => e.enrichmentReportRunId === runId) : undefined;
 
-    if (input.offlineEmptyValid && agentTasks.length === 0 && !exec) {
+    /*
+     * Отключённый составом агент — законченный исход, а не незавершённая
+     * работа.
+     *
+     * Без этого прогон при составе по умолчанию (только первая
+     * стадия) не завершался вовсе: агенты `ai-serp` и `check-h`/`indexation`
+     * никогда бы не стали терминальными, а `enrichmentComplete` требует
+     * терминальности всех пяти. Условие «нет ни одной задачи» здесь
+     * обязательно: если задачи уже отправлены, они оплачены, и их результат
+     * забирается, чем бы ни был состав сейчас.
+     */
+    const disabledByTools = agentTasks.length === 0 && !exec && !isArsenkinAgentEnabled(agentName);
+
+    if ((input.offlineEmptyValid && agentTasks.length === 0 && !exec) || disabledByTools) {
+      if (disabledByTools) warnings.push(`arsenkin-agent-disabled-by-tools:${agentName}`);
       agents.push({
         agentName,
         enrichmentRunId: runId,
+        // `scheduled`/`terminal`/`ingested` остаются истинными намеренно: на них
+        // держатся гейты завершения стадии, и без них прогон снова ждал бы
+        // отключённых вечно. Меняется только **слово исхода**: выключенный
+        // составом инструмент отвечает `DISABLED`, а не «спросили, пусто».
+        // Оффлайн старше состава: там ни один вопрос не задавался вообще, и
+        // весь контур объявляет такую пустоту валидной — это `EMPTY_VALID`.
         scheduled: true,
         terminal: true,
-        terminalKind: "EMPTY_VALID",
+        terminalKind: input.offlineEmptyValid ? "EMPTY_VALID" : "DISABLED",
         ingested: true,
+        pendingTaskCount: 0,
+        doneTaskCount: 0,
+        submitUnknownCount: 0,
+        observationCount: 0,
+      });
+      continue;
+    }
+
+    if (!runId) {
+      // Включённый агент без прогона — ещё не зарегистрирован. Это ожидание, а
+      // не исход: разрыв отправок увидит его на следующем обороте.
+      agents.push({
+        agentName,
+        enrichmentRunId: null,
+        scheduled: false,
+        terminal: false,
+        terminalKind: null,
+        ingested: false,
         pendingTaskCount: 0,
         doneTaskCount: 0,
         submitUnknownCount: 0,

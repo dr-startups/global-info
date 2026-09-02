@@ -13,15 +13,55 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   toRendererPayload,
   type RendererAssetEntry,
 } from "../orion-golden/deck-sections/run-deck-build";
+import {
+  parseBulletMeasureVerdict,
+  type BulletMeasureAdapter,
+  type BulletMeasureVerdict,
+} from "../orion-golden/deck-sections/measured-bullet-fit";
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { RendererSlide } from "../orion-golden/deck-sections/deck-assembler";
 import { digitalProfileConfig } from "../config";
+
+/**
+ * Имя файла телеметрии одно на оба пути рендера: локальный python пишет его
+ * сам (`scripts/render-orion-golden-artifacts.py`), HTTP — здесь.
+ */
+export const LAYOUT_TELEMETRY_FILE = "layout-telemetry.json";
+
+/**
+ * Конечные имена клиентских документов — их знает и отдаёт на скачивание
+ * `canonical-report-artifacts.ts`.
+ */
+const CLIENT_PPTX_FILE = "rendered-client.pptx";
+const CLIENT_PDF_FILE = "rendered-client.pdf";
+
+/**
+ * Рендер пишет черновики, а конечные имена занимает только после суда.
+ *
+ * Иначе забракованный воротами документ уже лежит там, куда смотрят
+ * `reportLinks`: пересборка ловит исключение, возвращает джобу в
+ * `REPORT_READY` с прежними ссылками — и по кнопке скачивания уезжает дека с
+ * потерянными карточками. Происхождение байтов проверка скачивания не знает и
+ * знать не может, поэтому байты и не должны там оказываться.
+ */
+const PENDING_CLIENT_PPTX_FILE = "rendered-client.pending.pptx";
+const PENDING_CLIENT_PDF_FILE = "rendered-client.pending.pdf";
 
 export type DeckRenderInput = {
   deckManifest: ReportDeckManifest;
@@ -50,6 +90,8 @@ type GoldenHttpResult = {
   pages?: Array<{ pageNumber: number; contentBase64: string }>;
   pdfExportMode?: string;
   warnings?: string[];
+  /** Renderer layout telemetry — the evidence the loss gate judges. */
+  layoutTelemetry?: unknown;
 };
 
 export type HttpRenderDeps = {
@@ -114,11 +156,17 @@ function writePayload(input: DeckRenderInput): {
   });
   const payloadPath = join(input.outputRoot, "render-payload.json");
   writeFileSync(payloadPath, JSON.stringify(payload), "utf8");
-  const pptxPath = join(input.outputRoot, "rendered-client.pptx");
-  const pdfPath = join(input.outputRoot, "rendered-client.pdf");
+  const pptxPath = join(input.outputRoot, PENDING_CLIENT_PPTX_FILE);
+  const pdfPath = join(input.outputRoot, PENDING_CLIENT_PDF_FILE);
   const pagesDir = join(input.outputRoot, "pages-png");
   if (existsSync(pagesDir)) rmSync(pagesDir, { recursive: true, force: true });
   mkdirSync(pagesDir, { recursive: true });
+  // Телеметрия и черновики прошлого рендера пережили бы неудачный или
+  // неполный новый — и ворота осудили бы не тот документ, а публикация вынесла
+  // бы под конечным именем прошлые байты.
+  rmSync(join(input.outputRoot, LAYOUT_TELEMETRY_FILE), { force: true });
+  rmSync(pptxPath, { force: true });
+  rmSync(pdfPath, { force: true });
   return { payload, payloadPath, pptxPath, pdfPath, pagesDir };
 }
 
@@ -144,6 +192,37 @@ function finishFromFiles(
     renderer,
   };
 }
+
+/**
+ * Переносит клиентские документы под конечные имена. Зовётся подготовкой
+ * отчёта после суда телеметрии — до него забракованный рендер не должен быть
+ * скачиваемым (см. комментарий у `PENDING_CLIENT_PPTX_FILE`).
+ */
+export function publishRenderedClientArtifacts(
+  outputRoot: string,
+  rendered: DeckRenderResult
+): DeckRenderResult {
+  const move = (from: string | undefined, finalName: string): string | undefined => {
+    if (!from) return undefined;
+    const to = join(outputRoot, finalName);
+    if (resolve(from) !== resolve(to)) renameSync(from, to);
+    return to;
+  };
+  return {
+    ...rendered,
+    pptx: move(rendered.pptx, CLIENT_PPTX_FILE),
+    pdf: move(rendered.pdf, CLIENT_PDF_FILE),
+  };
+}
+
+/**
+ * Локальный интерпретатор для опционального python-пути (рендер и мера).
+ *
+ * Имя одно на модуль: три литерала «python» в трёх вызовах — это три ответа на
+ * один вопрос, и расходиться они начинают ровно тогда, когда на машине есть
+ * только `python3`.
+ */
+const LOCAL_PYTHON = "python";
 
 const DEFAULT_HEALTH_BACKOFF_MS = [15_000, 45_000];
 
@@ -284,6 +363,15 @@ export async function renderDeckViaHttp(
       Buffer.from(page.contentBase64, "base64")
     );
   }
+  // Транспорт не сочиняет: нет поля в ответе — нет файла на диске. Пустую
+  // телеметрию ворота прочли бы как «проверено, потерь нет».
+  if (json.layoutTelemetry) {
+    writeFileSync(
+      join(input.outputRoot, LAYOUT_TELEMETRY_FILE),
+      JSON.stringify(json.layoutTelemetry, null, 2),
+      "utf8"
+    );
+  }
   writeFileSync(
     join(input.outputRoot, "golden-render-meta.json"),
     JSON.stringify(
@@ -313,7 +401,7 @@ export const renderDeckWithPython: DeckRenderAdapter = async (input) => {
   const { payloadPath, pptxPath, pdfPath, pagesDir } = writePayload(input);
   try {
     execFileSync(
-      "python",
+      LOCAL_PYTHON,
       ["scripts/render-orion-golden-artifacts.py", payloadPath, pptxPath, pdfPath, pagesDir],
       { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } }
     );
@@ -325,7 +413,7 @@ export const renderDeckWithPython: DeckRenderAdapter = async (input) => {
   const contactSheet = join(input.outputRoot, "contact-sheet.png");
   try {
     execFileSync(
-      "python",
+      LOCAL_PYTHON,
       ["-X", "utf8", "scripts/build-contact-sheet.py", pagesDir, contactSheet],
       { cwd: process.cwd(), encoding: "utf8" }
     );
@@ -334,6 +422,124 @@ export const renderDeckWithPython: DeckRenderAdapter = async (input) => {
   }
   return finishFromFiles(pptxPath, pdfPath, pagesDir, "python:render-orion-golden-artifacts");
 };
+
+/**
+ * Бюджет ожидания мерного прогона.
+ *
+ * Мера рисует деку в память и не конвертирует её ни во что: это секунды, а не
+ * минуты рендера. Ждать приходится в основном общий лок рендерера, поэтому
+ * бюджет конечный и свой — «ожидание не попытка» соблюдается раздельными
+ * бюджетами, а не общим.
+ */
+const MEASURE_TIMEOUT_MS = 120_000;
+
+/**
+ * Мерный прогон по HTTP: тот же пейлоад, ручка `/orion/measure-layout`.
+ *
+ * Отказ меры громкий: исход сборки не должен зависеть от здоровья рендерера
+ * невидимо. Пропуск цикла разрешён только там, где адаптера нет вовсе, —
+ * офлайн-сборкам, которые ничего не публикуют.
+ */
+export async function measureDeckViaHttp(
+  payload: Record<string, unknown>,
+  deps?: HttpRenderDeps
+): Promise<BulletMeasureVerdict> {
+  const base = String(deps?.rendererBaseUrl ?? digitalProfileConfig.rendererUrl)
+    .trim()
+    .replace(/\/$/, "");
+  if (!base) throw new Error("HTTP renderer URL is not configured");
+  const fetchImpl = deps?.fetchImpl ?? fetch;
+  // Мера — **первый** контакт прогона с рендерером, и берёт она тот же общий
+  // лок. Без ожидания здоровья холодный старт сервиса ронял бы подготовку
+  // отказом попытки на ровном месте — там, где рендер спокойно ждёт.
+  await waitForRendererHealth(base, {
+    fetchImpl,
+    sleepMs: deps?.sleepMs,
+    healthAttempts: deps?.healthAttempts,
+    healthBackoffMs: deps?.healthBackoffMs,
+  });
+  const post = (): Promise<Response> =>
+    fetchImpl(`${base}/orion/measure-layout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(MEASURE_TIMEOUT_MS),
+    });
+  let res: Response;
+  try {
+    res = await post();
+  } catch (err) {
+    // Мера идемпотентна по пейлоаду ровно так же, как рендер: один повтор.
+    if (!isNetworkTimeoutError(err)) {
+      throw new Error(
+        sanitizeRendererClientError(
+          `HTTP renderer measure unreachable: ${err instanceof Error ? err.message : String(err)}`
+        )
+      );
+    }
+    try {
+      res = await post();
+    } catch (err2) {
+      throw new Error(
+        sanitizeRendererClientError(
+          `HTTP renderer measure unreachable: ${err2 instanceof Error ? err2.message : String(err2)}`
+        )
+      );
+    }
+  }
+  if (!res.ok) {
+    const body = sanitizeRendererClientError((await res.text().catch(() => "")).slice(0, 200));
+    throw new Error(`HTTP renderer measure failed (${res.status})${body ? `: ${body}` : ""}`);
+  }
+  return parseBulletMeasureVerdict(await res.json());
+}
+
+/**
+ * Мерный прогон локальным python — тем же скриптом, что и локальный рендер.
+ *
+ * Имя интерпретатора отдаётся параметром: приёмочный реплей ищет его сам
+ * (`scripts/lib/python`), а подготовка отчёта зовёт `python` — как и локальный
+ * рендер рядом. Реализация при этом одна.
+ */
+export function createLocalPythonMeasureAdapter(
+  interpreter: string = LOCAL_PYTHON
+): BulletMeasureAdapter {
+  return async (payload) => {
+    const dir = mkdtempSync(join(tmpdir(), "orion-measure-"));
+    const payloadPath = join(dir, "payload.json");
+    const outPath = join(dir, "measure.json");
+    try {
+      writeFileSync(payloadPath, JSON.stringify(payload), "utf8");
+      execFileSync(
+        interpreter,
+        ["scripts/render-orion-golden-artifacts.py", "--measure", payloadPath, outPath],
+        { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } }
+      );
+      return parseBulletMeasureVerdict(JSON.parse(readFileSync(outPath, "utf8")));
+    } catch (err) {
+      throw new Error(
+        sanitizeRendererClientError(err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+
+/**
+ * Мера того же пути, что и рендер: HTTP, если адрес рендерера отвечает за
+ * рендер; локальный python, если рендер идёт локально.
+ */
+export function createCanonicalBulletMeasureAdapter(
+  deps: HttpRenderDeps = {}
+): BulletMeasureAdapter {
+  return async (payload) => {
+    if (!deps.rendererBaseUrl && isLocalPythonRenderAllowed()) {
+      return createLocalPythonMeasureAdapter()(payload);
+    }
+    return measureDeckViaHttp(payload, deps);
+  };
+}
 
 export type CanonicalRenderDeps = HttpRenderDeps;
 

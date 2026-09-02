@@ -14,7 +14,7 @@
 import { parseYandexModTime } from "./published-date";
 import { providerConfig, getProviderAvailability } from "./config";
 import { getProviderCapabilities } from "./capabilities";
-import { postJson, toProviderError, ProviderHttpError } from "./http";
+import { postJson, postText, toProviderError, ProviderHttpError } from "./http";
 import {
   YANDEX_V2_ENDPOINT,
   buildYandexV2Body,
@@ -23,17 +23,35 @@ import {
   toSearchType,
   YandexV2ParseError,
 } from "./yandex-v2";
+import {
+  YANDEX_GEN_SEARCH_ENDPOINT,
+  YandexGenSearchParseError,
+  buildYandexGenSearchBody,
+  parseYandexGenSearchResponse,
+  type YandexGenSearchAnswer,
+} from "./yandex-gen-search";
 import type { SearchProvider, SurfaceMethodResult } from "./search-provider";
 import type {
   AvailabilityStatus,
+  ProviderErrorCode,
   ProviderRunResult,
   SearchProviderRequest,
   SearchProviderResult,
 } from "./types";
 import { domainOf } from "./types";
+import { resolveSearchDepth } from "./search-depth";
 import type { ProviderCapabilities } from "../search-surfaces/types";
 
 const MAX_PER_PAGE = 10;
+
+/**
+ * Потолок глубины на один запрос.
+ *
+ * API отдаёт по десять результатов на страницу и листается постранично, так что
+ * глубина ограничена не форматом ответа, а здравым смыслом: пять страниц — это
+ * уже вдвое глубже, чем смотрит человек. Аудит просит двадцать.
+ */
+const YANDEX_MAX_RESULTS_PER_QUERY = 50;
 
 function decodeEntities(value: string): string {
   return value
@@ -105,10 +123,11 @@ export class YandexSearchProvider implements SearchProvider {
       };
     }
 
-    const limit = Math.min(
-      request.limit ?? providerConfig.yandex.resultsPerQuery,
-      providerConfig.yandex.resultsPerQuery
-    );
+    const limit = resolveSearchDepth({
+      requested: request.limit,
+      fallback: providerConfig.yandex.resultsPerQuery,
+      max: YANDEX_MAX_RESULTS_PER_QUERY,
+    });
     const results: SearchProviderResult[] = [];
 
     try {
@@ -239,3 +258,68 @@ export class YandexSearchProvider implements SearchProvider {
 }
 
 export const yandexSearchProvider = new YandexSearchProvider();
+
+// ---------------------------------------------------------------------------
+// Нейро-ответ (GenSearch) — та же учётная запись, тот же ключ, тот же каталог
+// ---------------------------------------------------------------------------
+
+/**
+ * Исход одного вызова нейро-ответа.
+ *
+ * Пять состояний, и они не сводятся друг к другу: отказ модели — измеренный
+ * факт, а не пустая выдача; пустой ответ — не сбой; ненастроенный провайдер —
+ * не отказ. Слить их значило бы соврать на слайде о том, что произошло.
+ */
+export type YandexGenAnswerOutcome =
+  | { status: "SUCCESS"; answer: YandexGenSearchAnswer }
+  | { status: "NO_RESULTS"; answer: YandexGenSearchAnswer }
+  | { status: "REJECTED"; answer: YandexGenSearchAnswer }
+  | { status: "FAILED"; errorCode: ProviderErrorCode; message: string }
+  | { status: "NOT_CONFIGURED"; errorCode: "PROVIDER_NOT_CONFIGURED"; message: string };
+
+/**
+ * Один вызов `POST /v2/gen/search` по субъектному запросу.
+ *
+ * Разрешение — ключ: без пригодных `YANDEX_SEARCH_API_KEY` /
+ * `YANDEX_SEARCH_FOLDER_ID` функция в сеть не ходит вовсе и называет причину
+ * словами оператора. Вызов синхронный (секунды), поэтому бюджетов ожидания
+ * арсенкинского типа здесь нет — он живёт внутри шага базового сбора.
+ */
+export async function fetchYandexGenAnswer(query: string): Promise<YandexGenAnswerOutcome> {
+  const availability = getProviderAvailability("YANDEX");
+  if (availability.status !== "ENABLED") {
+    return {
+      status: "NOT_CONFIGURED",
+      errorCode: "PROVIDER_NOT_CONFIGURED",
+      message: availability.message ?? "Yandex connector unavailable.",
+    };
+  }
+  const cfg = providerConfig.yandex;
+  try {
+    const body = await postText(
+      YANDEX_GEN_SEARCH_ENDPOINT,
+      // Контур вопроса зафиксирован российским: наблюдение приписывается RU, и
+      // спрашивать турецкий индекс из-за настройки органики значило бы назвать
+      // чужую выдачу российской.
+      buildYandexGenSearchBody({ query, folderId: cfg.folderId ?? "", searchType: "SEARCH_TYPE_RU" }),
+      {
+        timeoutMs: cfg.timeoutMs,
+        // Secret travels in the header only; never logged, never in the URL.
+        headers: { Authorization: `Api-Key ${cfg.apiKey ?? ""}` },
+      }
+    );
+    const answer = parseYandexGenSearchResponse(body);
+    if (answer.isAnswerRejected) return { status: "REJECTED", answer };
+    if (!answer.answerText.trim()) return { status: "NO_RESULTS", answer };
+    return { status: "SUCCESS", answer };
+  } catch (err) {
+    if (err instanceof YandexGenSearchParseError) {
+      return { status: "FAILED", errorCode: "PROVIDER_INVALID_RESPONSE", message: err.message };
+    }
+    if (err instanceof ProviderHttpError) {
+      return { status: "FAILED", errorCode: err.code, message: err.message };
+    }
+    const mapped = toProviderError(err, "YANDEX");
+    return { status: "FAILED", errorCode: mapped.code, message: mapped.message };
+  }
+}

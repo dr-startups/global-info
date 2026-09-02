@@ -65,7 +65,31 @@ export interface OrionQuerySpec {
   internalReason: string;
   /** Stable order within the plan (1-based). */
   planRank: number;
+  /**
+   * Это само имя субъекта, а не производное написание.
+   *
+   * Все написания ФИО уходят в план с одним `purpose: "subject_lookup"`, то
+   * есть по назначению неразличимы. Какое из них человек набирает первым,
+   * знает только набор запросов (`search-surfaces/subject-query-set.ts`), и
+   * пометка едет отсюда до деки данными: таблица «ТОП-20 по запросу ФИО»
+   * обязана строиться по названному запросу, а не по тому, что оказался первым
+   * по алфавиту.
+   */
+  subjectNameQuery?: boolean;
 }
+
+/**
+ * Запрос набора аудита в том виде, в каком его принимает построитель плана.
+ *
+ * Строкой обойтись нельзя: вместе с текстом едет пометка «это само имя»,
+ * которую иначе пришлось бы вычислять здесь заново — сравнением с именем
+ * профиля. Такое сравнение ломается в латинском контуре, где запрос
+ * транслитерирован, а имя в профиле кириллическое.
+ */
+export type PlannedPrimaryQuery = {
+  query: string;
+  subjectNameQuery?: boolean;
+};
 
 export interface OrionQueryPlanOptions {
   /**
@@ -73,6 +97,16 @@ export interface OrionQueryPlanOptions {
    * Business, media and wikipedia anchors are added on top of this cap.
    */
   maxPrimaryPerRegion?: number;
+  /**
+   * Готовый набор запросов аудита на регион — то, что реально набирает
+   * проверяющий.
+   *
+   * Механические перестановки ФИО остаются страховкой: они не знают, что
+   * именно спрашивают о субъекте на самом деле. Когда набор собран из
+   * подсказок поисковика (`search-surfaces/subject-query-set.ts`), плановые
+   * строки строятся по нему, а перестановки не используются.
+   */
+  primaryQueriesByRegion?: Partial<Record<OrionRegionCode, PlannedPrimaryQuery[]>>;
   includeRiskProbes?: boolean;
   regions?: OrionRegionCode[];
 }
@@ -127,8 +161,9 @@ const CYR_TO_LAT: Record<string, string> = {
   ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
 };
 
-function hasCyrillic(value: string): boolean {
-  return /[\u0400-\u04FF]/.test(value);
+/** \u0415\u0441\u0442\u044C \u043B\u0438 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435 \u043A\u0438\u0440\u0438\u043B\u043B\u0438\u0446\u0430 \u2014 \u043F\u0440\u0438\u0437\u043D\u0430\u043A \u043F\u0438\u0441\u044C\u043C\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0430. */
+export function hasCyrillic(value: string): boolean {
+  return /[\u0400-\u04FF]/u.test(String(value ?? ""));
 }
 
 function normalizeQuery(q: string): string {
@@ -161,6 +196,12 @@ export function transliterateRuToEn(text: string): string {
     .join(" ");
 }
 
+/** Написание части имени латиницей: кириллица транслитерируется, остальное как есть. */
+function latinOf(part: string): string {
+  const value = part.trim();
+  return hasCyrillic(value) ? transliterateRuToEn(value) : value;
+}
+
 function resolveRegions(subject: QuerySubject, override?: OrionRegionCode[]): OrionRegionCode[] {
   if (override?.length) return [...override];
   const raw = (subject.targetRegions ?? []).map((r) => r.toUpperCase());
@@ -179,7 +220,7 @@ function toSubjectProfile(subject: QuerySubject): OrionQuerySubjectProfile {
   const aliases = (subject.aliases ?? []).map((a) => a.trim()).filter(Boolean);
   const latinAliases = aliases.filter((a) => !hasCyrillic(a));
   const cyrAliases = aliases.filter((a) => hasCyrillic(a));
-  const latinFull = hasCyrillic(subject.fullName) ? transliterateRuToEn(subject.fullName) : subject.fullName;
+  const latinFull = latinOf(subject.fullName);
   const latinVariants = Array.from(new Set([latinFull, ...latinAliases].filter(Boolean)));
   const cyrillicVariants = Array.from(
     new Set([hasCyrillic(subject.fullName) ? subject.fullName.trim() : "", ...cyrAliases].filter(Boolean))
@@ -212,9 +253,24 @@ function toSubjectProfile(subject: QuerySubject): OrionQuerySubjectProfile {
   };
 }
 
+/**
+ * Фамилия — якорь личности, и в латинице тоже.
+ *
+ * Якорями были кириллическая фамилия и полное латинское написание целиком.
+ * Из-за этого запрос из подсказок зарубежного контура — «kirkorov filipp
+ * songs» — считался запросом без привязки к субъекту и вычёркивался из плана:
+ * в ОАЭ оставались только механические строки «Имя Фамилия company/news».
+ */
 function hasStrongIdentityAnchor(query: string, profile: OrionQuerySubjectProfile): boolean {
   const q = normalizeQuery(query);
-  const strong = [profile.fullName, profile.lastName, ...profile.latinVariants, ...profile.cyrillicVariants]
+  const strong = [
+    profile.fullName,
+    profile.lastName,
+    transliterateRuToEn(profile.fullName),
+    transliterateRuToEn(profile.lastName),
+    ...profile.latinVariants,
+    ...profile.cyrillicVariants,
+  ]
     .map(normalizeQuery)
     .filter(Boolean);
   return strong.some((t) => q.includes(t));
@@ -234,6 +290,7 @@ function mkRow(input: {
   maxResultsHint: number;
   internalReason: string;
   profile: OrionQuerySubjectProfile;
+  subjectNameQuery?: boolean;
 }): OrionQuerySpec | null {
   const queryText = input.queryText.trim();
   if (!queryText) return null;
@@ -258,6 +315,7 @@ function mkRow(input: {
       clientVisible: false,
       internalReason: input.internalReason,
       planRank: 0,
+      ...(input.subjectNameQuery ? { subjectNameQuery: true } : {}),
     };
   }
   const queryId = `qp-${stableHash(
@@ -280,6 +338,7 @@ function mkRow(input: {
     clientVisible: false,
     internalReason: input.internalReason,
     planRank: 0,
+    ...(input.subjectNameQuery ? { subjectNameQuery: true } : {}),
   };
 }
 
@@ -296,28 +355,39 @@ function dedupeSpecs(specs: OrionQuerySpec[]): OrionQuerySpec[] {
   return out.map((row, idx) => ({ ...row, planRank: idx + 1 }));
 }
 
-function ruBaseVariants(profile: OrionQuerySubjectProfile): string[] {
+/**
+ * Механические перестановки ФИО — страховка на случай, когда набора запросов
+ * нет. Пометки «это само имя» они не несут: перестановка не знает, какую
+ * строку человек набирает первой, и выдать одну из них за основную значило бы
+ * назначить признак вместо того, чтобы его знать.
+ */
+function ruBaseVariants(profile: OrionQuerySubjectProfile): PlannedPrimaryQuery[] {
   const out: string[] = [];
   const { firstName, lastName, patronymic, fullName } = profile;
   if (lastName && firstName && patronymic) out.push(`${lastName} ${firstName} ${patronymic}`);
   if (firstName && patronymic && lastName) out.push(`${firstName} ${patronymic} ${lastName}`);
   if (fullName) out.push(fullName);
-  return Array.from(new Set(out.filter(Boolean)));
+  return Array.from(new Set(out.filter(Boolean))).map((query) => ({ query }));
 }
 
-function enBaseVariants(profile: OrionQuerySubjectProfile): string[] {
+/**
+ * Латинские написания имени — страховка, когда подсказок поисковика нет.
+ *
+ * Части берутся разобранными, а не по местам в строке. Пока строка резалась по
+ * индексам, в зарубежный контур уходило «Nazarovich Umar» — имя субъекта без
+ * фамилии, купленное живым прогоном. Раньше перестановки собирались ещё и так,
+ * будто части идут по-западному, и появлялись «Durov Valerevich» и «Valerevich
+ * Durov Pavel» — сочетания, которых человек не набирает: отчество за пределами
+ * русскоязычной среды не используют вовсе. Остаются два написания: полное и
+ * привычное западному читателю «Имя Фамилия».
+ */
+function enBaseVariants(profile: OrionQuerySubjectProfile): PlannedPrimaryQuery[] {
   const out = new Set<string>();
   for (const v of profile.latinVariants) out.add(v);
-  const p = (profile.latinVariants[0] ?? "").split(/\s+/).filter(Boolean);
-  if (p.length >= 3) {
-    out.add(`${p[0]} ${p[2]}`);
-    out.add(`${p[0]} ${p[1]} ${p[2]}`);
-    out.add(`${p[2]} ${p[0]} ${p[1]}`);
-  } else if (p.length === 2) {
-    out.add(`${p[0]} ${p[1]}`);
-    out.add(`${p[1]} ${p[0]}`);
-  }
-  return [...out].filter(Boolean);
+  const first = latinOf(profile.firstName);
+  const last = latinOf(profile.lastName);
+  if (first && last) out.add(`${first} ${last}`);
+  return [...out].map((query) => ({ query }));
 }
 
 /**
@@ -334,14 +404,16 @@ export function buildOrionQueryPlanDetailed(
     `${profile.fullName}|${regions.join(",")}|${options.includeRiskProbes ? "risk1" : "risk0"}`
   )}`;
   const rows: OrionQuerySpec[] = [];
+  let cyrillicInLatinContour = 0;
 
   for (const region of regions) {
     if (region === "RU") {
-      const base = ruBaseVariants(profile).slice(0, maxPrimary);
+      const base = (options.primaryQueriesByRegion?.RU ?? ruBaseVariants(profile)).slice(0, maxPrimary);
       for (const b of base) {
         const subjectRow = mkRow({
           queryPlanId,
-          queryText: b,
+          queryText: b.query,
+          subjectNameQuery: b.subjectNameQuery,
           language: "ru",
           region,
           priority: "primary",
@@ -428,12 +500,28 @@ export function buildOrionQueryPlanDetailed(
       continue;
     }
 
-    const base = enBaseVariants(profile).slice(0, maxPrimary);
-    const context = Array.from(new Set(profile.regionHints)).slice(0, 2);
+    /*
+     * Зарубежный контур ищет латиницей.
+     *
+     * Набор запросов приходит из подсказок поисковика (`subject-query-set.ts`),
+     * и там же стоит основной фильтр письменности. Здесь — вторая застава: план
+     * решает, что уйдёт в поиск, и кириллическая строка с `gl=ae` меряет не тот
+     * интернет независимо от того, кто её принёс.
+     */
+    const requested = options.primaryQueriesByRegion?.[region] ?? enBaseVariants(profile);
+    const latinOnly = requested.filter((q) => !hasCyrillic(q.query));
+    if (latinOnly.length < requested.length) {
+      cyrillicInLatinContour += requested.length - latinOnly.length;
+    }
+    const base = (latinOnly.length > 0 ? latinOnly : enBaseVariants(profile)).slice(0, maxPrimary);
+    const context = Array.from(new Set(profile.regionHints))
+      .filter((hint) => !hasCyrillic(hint))
+      .slice(0, 2);
     for (const b of base) {
       const row = mkRow({
         queryPlanId,
-        queryText: b,
+        queryText: b.query,
+        subjectNameQuery: b.subjectNameQuery,
         language: "en",
         region,
         priority: "primary",
@@ -441,16 +529,18 @@ export function buildOrionQueryPlanDetailed(
         providerPreference: ["google", "serper"],
         requiredTokens: [profile.lastName].filter(Boolean),
         optionalTokens: [profile.firstName, profile.patronymic].filter(Boolean),
-        identityStrictness: b.split(/\s+/).length >= 3 ? "strict" : "balanced",
+        identityStrictness: b.query.split(/\s+/).length >= 3 ? "strict" : "balanced",
         maxResultsHint: 20,
         internalReason: "intl_transliteration_variant",
         profile,
       });
       if (row) rows.push(row);
       for (const hint of context) {
+        // Имя с региональной подсказкой — уже не само имя, а уточнение:
+        // пометка сюда не едет.
         const hinted = mkRow({
           queryPlanId,
-          queryText: `${b} ${hint}`.trim(),
+          queryText: `${b.query} ${hint}`.trim(),
           language: "en",
           region,
           priority: "primary",
@@ -546,6 +636,7 @@ export function buildOrionQueryPlanDetailed(
   const warnings: string[] = [];
   if (weakQuerySuppressedCount > 0) warnings.push("weak_identity_queries_suppressed");
   if (regionHintCount === 0) warnings.push("region_hints_missing");
+  if (cyrillicInLatinContour > 0) warnings.push("cyrillic_queries_dropped_in_latin_region");
   return {
     queryPlanId,
     plan,

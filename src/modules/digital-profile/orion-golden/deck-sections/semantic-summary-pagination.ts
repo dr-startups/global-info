@@ -5,8 +5,8 @@
  */
 
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
-import type { CanonicalThemeId } from "../contracts/canonical-claim";
 import { getClientTextFieldBudgets } from "../client/load-client-text-contract";
+import { themeBlockText } from "../analytics/client-summary-composer";
 
 export type SemanticBlockKind =
   | "overall"
@@ -21,7 +21,8 @@ export type SemanticBlock = {
   kind: SemanticBlockKind;
   /** Stable id for tests/trace (themeId or kind). */
   blockId: string;
-  themeId?: CanonicalThemeId;
+  /** Тема словаря или сюжет прочитанных страниц (`plot:<хэш>`). */
+  themeId?: string;
   heading?: string;
   /** Complete client text for this block (never mid-truncated). */
   text: string;
@@ -37,12 +38,19 @@ export type SummaryPagePlan = {
   overviewBlocks: SemanticBlock[];
   /** Continuation pages — each is an ordered list of whole semantic blocks. */
   continuationPages: SemanticBlock[][];
+  /**
+   * Блоки, чья **печатная** форма не влезла в бюджет буллета. В норме пуст:
+   * укладка меряет то же, что печатает. Непустым он бывает только если появился
+   * новый способ склейки в обход укладки — тогда виновник назван по имени.
+   */
+  overBudgetBlocks: Array<{ blockId: string; length: number; budget: number }>;
   /** Gates for Stage 6 stop criteria. */
   gates: {
     CLIENT_TEXT_TRUNCATIONS: number;
     CONTINUATION_ADJACENCY: boolean;
     SUMMARY_BLOCKS_PRESERVED: number;
     SUMMARY_BLOCKS_EMITTED: number;
+    SUMMARY_BLOCK_OVER_BUDGET: number;
   };
 };
 
@@ -54,11 +62,76 @@ function splitSentences(text: string): string[] {
 }
 
 /**
- * Pack sentences into chunks ≤ maxChars. A single over-long sentence stays whole
- * (no mid-sentence cut) — caller places it alone on a page.
+ * Границы внутри предложения, по которым его можно разложить на два абзаца, не
+ * потеряв ни слова. Порядок — от самой «крупной» паузы к самой мелкой.
+ */
+const CLAUSE_BOUNDARIES = ["; ", " — ", ": ", ", "];
+
+/**
+ * Разложить одно слишком длинное предложение по границам частей.
+ *
+ * Ничего не отбрасывается: части идут дальше отдельными блоками, а
+ * страничная разбивка уже умеет ставить их подряд. Если границ нет вовсе
+ * (одно длинное предложение без запятых), режем по пробелу — это по-прежнему
+ * не потеря текста, а перенос.
+ */
+export function splitOverlongSentence(sentence: string, maxChars: number): string[] {
+  const text = sentence.trim();
+  if (text.length <= maxChars) return text ? [text] : [];
+
+  for (const boundary of CLAUSE_BOUNDARIES) {
+    if (!text.includes(boundary)) continue;
+    const parts = text.split(boundary);
+    const chunks: string[] = [];
+    let buf = "";
+    for (let i = 0; i < parts.length; i += 1) {
+      // Разделитель остаётся при левой части: без него «а» и «б» слиплись бы.
+      const piece = i < parts.length - 1 ? `${parts[i]}${boundary.trimEnd()}` : parts[i]!;
+      const trial = buf ? `${buf} ${piece}` : piece;
+      if (buf && trial.length > maxChars) {
+        chunks.push(buf);
+        buf = piece;
+      } else {
+        buf = trial;
+      }
+    }
+    if (buf) chunks.push(buf);
+    if (chunks.every((c) => c.length <= maxChars)) return chunks;
+  }
+
+  // Последняя мера — граница слова.
+  const words = text.split(/\s+/u);
+  const chunks: string[] = [];
+  let buf = "";
+  for (const w of words) {
+    const trial = buf ? `${buf} ${w}` : w;
+    if (buf && trial.length > maxChars) {
+      chunks.push(buf);
+      buf = w;
+    } else {
+      buf = trial;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+/**
+ * Pack sentences into chunks ≤ maxChars.
+ *
+ * Одно предложение длиннее бюджета раскладывается по границам частей, а не
+ * остаётся целым. Прежде оно оставалось, и это роняло весь отчёт: на боевом
+ * прогоне 28.07 тема резюме вышла в 916 знаков при бюджете 900, проверка секций
+ * дала `bullet over budget on p03_executive: 916>900`, обязательная секция
+ * EXECUTIVE_SUMMARY получила FAILED — и сборка деки остановилась целиком.
+ * Отчёта не было вовсе из-за шестнадцати лишних знаков.
+ *
+ * Обещание в имени функции сохранено: ни одно слово не отбрасывается, длинное
+ * предложение переносится на соседний блок — страничная разбивка ставит их
+ * подряд.
  */
 export function packSentencesNoTruncate(text: string, maxChars: number): string[] {
-  const sentences = splitSentences(text);
+  const sentences = splitSentences(text).flatMap((s) => splitOverlongSentence(s, maxChars));
   if (sentences.length === 0) return [];
   const chunks: string[] = [];
   let buf = "";
@@ -75,11 +148,82 @@ export function packSentencesNoTruncate(text: string, maxChars: number): string[
   return chunks;
 }
 
+/** Как выглядит заголовок части: у продолжений он длиннее на одно слово. */
+const CONTINUATION_SUFFIX = " (продолжение)";
+
+/** Заголовок продолжения — задаётся здесь и здесь же учитывается в бюджете. */
+function continuationHeading(heading: string | undefined): string | undefined {
+  const h = (heading ?? "").trim();
+  return h ? `${h}${CONTINUATION_SUFFIX}` : undefined;
+}
+
+/**
+ * Что дека печатает для блока — **единственный ответ** на этот вопрос.
+ *
+ * До этого ответов было три: `formatSemanticBullet` в построителе резюме
+ * печатал, `bodyBudgetForTheme` пересказывал ту же склейку арифметикой, и
+ * третья копия жила в тесте. Пока три места отвечают на один вопрос, они
+ * расходятся — это и есть класс дефекта «мерилось одно, печаталось другое».
+ * Теперь печатает и меряется одна функция, и разойтись им негде.
+ */
+export function renderSemanticBlock(
+  block: Pick<SemanticBlock, "kind" | "heading" | "text">
+): string {
+  if (block.heading && block.kind === "theme") return themeBlockText(block.heading, block.text);
+  return block.text;
+}
+
+/**
+ * Сколько знаков тела влезает в бюджет буллета для блока такой формы.
+ *
+ * Накладные расходы не пересказываются арифметикой, а **замеряются** прогоном
+ * через `renderSemanticBlock`: поменяется склейка — поправка поедет за ней
+ * сама. Прежняя версия повторяла формат словами («точка и пробел из
+ * `themeBlockText`»), и следующая склейка вернула бы нас к отказу сборки.
+ */
+function bodyBudgetForBlock(
+  shape: { kind: SemanticBlockKind; heading?: string },
+  bulletBudget: number
+): number {
+  // Односимвольный образец: длина склейки минус его длина и есть накладные.
+  // Символ служебный, а не «x»: заголовок «x» совпал бы с началом тела,
+  // склейка ушла бы по ветке «тело уже начинается с темы», и накладные
+  // вышли бы нулевыми.
+  const probe = "\u0001";
+  const overhead = renderSemanticBlock({ ...shape, text: probe }).length - probe.length;
+  if (overhead <= 0) return bulletBudget;
+  // Абсурдно длинный заголовок не должен обнулить тело: лучше недобрать текста,
+  // чем выдать блок без содержания.
+  return Math.max(80, bulletBudget - overhead);
+}
+
+/**
+ * Бюджет тела темы с поправкой на заголовок.
+ *
+ * Укладка считала бюджет по `theme.body`, а в деку уходит склейка заголовка с
+ * телом (`themeBlockText` → «Заголовок. Тело»). Мерилось одно, печаталось
+ * другое — и на живом прогоне заказчика буллеты вышли в 901 и 922 знака при
+ * бюджете 900. Один лишний знак останавливал сборку всего отчёта.
+ *
+ * Поправка берётся по самому длинному варианту заголовка — с пометкой
+ * «(продолжение)»: части нарезаются заранее, и любая из них может оказаться
+ * продолжением. Лучше немного недобрать, чем не собрать отчёт.
+ */
+export function bodyBudgetForTheme(heading: string | undefined, bulletBudget: number): number {
+  return bodyBudgetForBlock(
+    { kind: "theme", heading: continuationHeading(heading) },
+    bulletBudget
+  );
+}
+
 function themeToBlocks(
   theme: ComposedClientSummary["sections"]["themes"][number],
   bulletBudget: number
 ): SemanticBlock[] {
-  const chunks = packSentencesNoTruncate(theme.body, bulletBudget);
+  const chunks = packSentencesNoTruncate(
+    theme.body,
+    bodyBudgetForTheme(theme.heading, bulletBudget)
+  );
   if (chunks.length <= 1) {
     return [
       {
@@ -87,7 +231,9 @@ function themeToBlocks(
         blockId: theme.themeId,
         themeId: theme.themeId,
         heading: theme.heading,
-        text: theme.body.trim(),
+        // Результат укладки, а не исходный текст: здесь стоял `theme.body`, и
+        // укладка выбрасывалась вместе со своим бюджетом.
+        text: (chunks[0] ?? theme.body).trim(),
         evidenceRefs: [...theme.evidenceRefs],
         articleTitles: [...theme.articleTitles],
         articleDomains: [...theme.articleDomains],
@@ -98,7 +244,7 @@ function themeToBlocks(
     kind: "theme" as const,
     blockId: `${theme.themeId}__part${i + 1}`,
     themeId: theme.themeId,
-    heading: i === 0 ? theme.heading : `${theme.heading} (продолжение)`,
+    heading: i === 0 ? theme.heading : continuationHeading(theme.heading),
     text,
     evidenceRefs: [...theme.evidenceRefs],
     articleTitles: i === 0 ? [...theme.articleTitles] : [],
@@ -106,26 +252,56 @@ function themeToBlocks(
   }));
 }
 
-function textBlock(
+/**
+ * Блок обычного текста — с той же укладкой, что и тема.
+ *
+ * Раньше текст уходил в деку целиком, минуя бюджет вовсе: замер до этой правки
+ * дал `isolated: 1500>900`, `databases: 1500>900`, `changes: 1500>900`,
+ * `next_steps: 1500>900`. Каждый из них — `bullet over budget`, FAILED у
+ * обязательной секции и отчёт, которого нет. Тема была нарезана, остальные
+ * четыре вида — нет, хотя печатаются тем же буллетом.
+ */
+function textBlocks(
   kind: SemanticBlockKind,
   blockId: string,
   text: string,
+  bulletBudget: number,
   evidenceRefs: string[] = []
-): SemanticBlock | null {
+): SemanticBlock[] {
   const t = text.trim();
-  if (!t) return null;
-  return {
+  if (!t) return [];
+  const chunks = packSentencesNoTruncate(t, bodyBudgetForBlock({ kind }, bulletBudget));
+  if (chunks.length <= 1) {
+    // Идентификатор односоставного блока прежний: короткий текст не должен
+    // менять ни имени блока, ни эталона.
+    return [
+      {
+        kind,
+        blockId,
+        text: (chunks[0] ?? t).trim(),
+        evidenceRefs,
+        articleTitles: [],
+        articleDomains: [],
+      },
+    ];
+  }
+  return chunks.map((chunk, i) => ({
     kind,
-    blockId,
-    text: t,
-    evidenceRefs,
+    blockId: i === 0 ? blockId : `${blockId}__part${i + 1}`,
+    text: chunk,
+    // Ссылки остаются при всех частях — как у тем: продолжение без источников
+    // выглядело бы утверждением без опоры.
+    evidenceRefs: [...evidenceRefs],
     articleTitles: [],
     articleDomains: [],
-  };
+  }));
 }
 
 /** Blocks per continuation page — a page of four bullets stops reading as a list. */
 export const MAX_BLOCKS_PER_CONTINUATION_PAGE = 3;
+
+/** Идентификатор блока, в который уходит нарратив, не влезший в карточки. */
+const NARRATIVE_OVERFLOW_BLOCK_ID = "overall_overflow";
 
 /**
  * Characters a continuation page may hold, as a multiple of the per-bullet
@@ -203,10 +379,98 @@ function packContinuationPages(blocks: SemanticBlock[], bulletBudget: number): S
 }
 
 /**
+ * Сколько предложений составленного резюме не доехало до разложенного плана.
+ *
+ * Это единственный ответ на вопрос «дошёл ли текст до клиента целиком», и по
+ * нему `assertSemanticSummaryGatesPass` останавливает сборку. Функция вынесена
+ * из укладки и экспортирована именно поэтому: укладка по построению ничего не
+ * выбрасывает, значит на законном входе метрика всегда ноль — и проверить, что
+ * она **умеет** дать не-ноль, можно только скормив ей план с потерей.
+ *
+ * Две вещи, которые сравнение обязано различать:
+ *
+ * — **Перенос — не потеря.** Сверхдлинное предложение раскладывается по частям
+ *   (`splitOverlongSentence`), и части становятся отдельными блоками:
+ *   «Источники: a.se, b.se,» и «c.se.». Пока сравнение шло по одной склейке
+ *   всех блоков подряд, такой перенос считался обрезкой — ворота останавливали
+ *   сборку ровно за то, ради чего разложение и делалось. Части одного блока
+ *   (общий идентификатор до `__part`) склеиваются обратно.
+ * — **Секции сравниваются порознь.** Блок, чей текст кончается кавычкой без
+ *   точки, склеивался в исходнике с первым предложением следующей секции —
+ *   такого «предложения» нет ни в одном блоке, и ворота падали на здоровом
+ *   прогоне.
+ */
+export function countClientTextTruncations(
+  summary: ComposedClientSummary,
+  plan: Pick<SummaryPagePlan, "overviewNarrative" | "overviewBlocks" | "continuationPages">
+): number {
+  const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
+  const sourceUnits = [
+    summary.sections.overallAssessment,
+    summary.sections.scope,
+    ...summary.sections.themes.map((t) => t.body),
+    summary.sections.isolatedItems,
+    summary.sections.internationalDatabases,
+    summary.sections.changesSinceBaseline,
+    summary.sections.nextSteps,
+  ];
+
+  const partsByBlock = new Map<string, string[]>();
+  for (const b of [...plan.overviewBlocks, ...plan.continuationPages.flat()]) {
+    const base = b.blockId.replace(/__part\d+$/u, "");
+    const parts = partsByBlock.get(base) ?? [];
+    parts.push(b.text);
+    partsByBlock.set(base, parts);
+  }
+  const emittedStreams = [
+    // Нарратив и его остаток — один поток: остаток продолжает те же предложения.
+    flat(
+      [
+        ...plan.overviewNarrative,
+        ...(partsByBlock.get(NARRATIVE_OVERFLOW_BLOCK_ID) ?? []),
+      ].join(" ")
+    ),
+    ...[...partsByBlock.entries()]
+      .filter(([base]) => base !== NARRATIVE_OVERFLOW_BLOCK_ID)
+      .map(([, parts]) => flat(parts.join(" "))),
+  ];
+
+  return sourceUnits
+    .flatMap((unit) => splitSentences(unit))
+    .filter((s) => !emittedStreams.some((stream) => stream.includes(flat(s)))).length;
+}
+
+/**
  * Build a page plan from a composed client summary.
  * Overview keeps overall + scope narrative and up to 3 lead theme blocks;
  * remaining blocks go to adjacent continuation pages (never dropped).
  */
+/**
+ * Заголовок не повторяется на соседних блоках одной страницы.
+ *
+ * Длинная тема нарезается на части, и каждая после первой получает
+ * «<тема> (продолжение)». Заголовок нужен, когда часть оторвана от начала темы:
+ * без него читатель страницы-продолжения не поймёт, о чём блок. Но две части,
+ * попавшие на одну страницу подряд, печатают его дважды — на живых отчётах
+ * 21–22.08 это видно на стр. 5 обоих: «Удары по складам Wildberries и риски для
+ * бизнеса (продолжение).» и «Руководство боксерскими организациями и конфликты
+ * вокруг IBA (продолжение).» стоят по два раза (пункт CX).
+ *
+ * Снимается только **повтор подряд**: первая часть темы на странице заголовок
+ * несёт всегда, иначе блок теряет связь со своей темой. Текст от этого только
+ * короче, поэтому бюджет буллета не задет — он и так считался по самому
+ * длинному варианту заголовка.
+ */
+function withoutRepeatedHeading(page: readonly SemanticBlock[]): SemanticBlock[] {
+  let previous: string | undefined;
+  return page.map((block) => {
+    const heading = (block.heading ?? "").trim();
+    const repeated = Boolean(heading) && heading === previous;
+    previous = heading || undefined;
+    return repeated ? { ...block, heading: undefined } : block;
+  });
+}
+
 export function paginateComposedClientSummary(
   summary: ComposedClientSummary,
   opts?: { leadThemeCount?: number }
@@ -219,11 +483,23 @@ export function paginateComposedClientSummary(
     themeToBlocks(t, budgets.bullet)
   );
   const trailing = [
-    textBlock("isolated", "isolated", summary.sections.isolatedItems, evidence),
-    textBlock("databases", "databases", summary.sections.internationalDatabases, evidence),
-    textBlock("changes", "changes", summary.sections.changesSinceBaseline, evidence),
-    textBlock("next_steps", "next_steps", summary.sections.nextSteps, evidence),
-  ].filter((b): b is SemanticBlock => Boolean(b));
+    ...textBlocks("isolated", "isolated", summary.sections.isolatedItems, budgets.bullet, evidence),
+    ...textBlocks(
+      "databases",
+      "databases",
+      summary.sections.internationalDatabases,
+      budgets.bullet,
+      evidence
+    ),
+    ...textBlocks(
+      "changes",
+      "changes",
+      summary.sections.changesSinceBaseline,
+      budgets.bullet,
+      evidence
+    ),
+    ...textBlocks("next_steps", "next_steps", summary.sections.nextSteps, budgets.bullet, evidence),
+  ];
 
   // Overview leads with up to N distinct themes (first part of each if split),
   // not N arbitrary blocks — a long theme must not consume all lead slots.
@@ -255,13 +531,27 @@ export function paginateComposedClientSummary(
   // Dashboard shows ≤3 narrative cards — overflow narrative sentences become blocks.
   const narrativeOverflow: SemanticBlock[] = [];
   if (overviewNarrative.length > 3) {
+    // Куски нарратива меряются бюджетом нарратива (1100), а печатаются буллетом
+    // (900) — и склеивались через `join(" ")` вовсе без бюджета. Замер до этой
+    // правки: `overall_overflow: 1796>900`, то есть два куска подряд. Остаток
+    // укладывается заново, уже по бюджету того поля, в котором он печатается.
     const overflowText = overviewNarrative.slice(3).join(" ");
     overviewNarrative = overviewNarrative.slice(0, 3);
-    const ob = textBlock("overall", "overall_overflow", overflowText, evidence);
-    if (ob) narrativeOverflow.push(ob);
+    narrativeOverflow.push(
+      ...textBlocks(
+        "overall",
+        NARRATIVE_OVERFLOW_BLOCK_ID,
+        overflowText,
+        budgets.bullet,
+        evidence
+      )
+    );
   }
 
-  const continuationPages = packContinuationPages([...narrativeOverflow, ...rest], budgets.bullet);
+  const continuationPages = packContinuationPages(
+    [...narrativeOverflow, ...rest],
+    budgets.bullet
+  ).map(withoutRepeatedHeading);
 
   const preserved =
     1 + // overall+scope source
@@ -272,33 +562,31 @@ export function paginateComposedClientSummary(
     (summary.sections.nextSteps.trim() ? 1 : 0);
   const emitted = overviewBlocks.length + continuationPages.reduce((n, p) => n + p.length, 0);
 
-  // Truncation = any source sentence missing from emitted text.
-  const sourceBlob = [
-    summary.sections.overallAssessment,
-    summary.sections.scope,
-    ...summary.sections.themes.map((t) => t.body),
-    summary.sections.isolatedItems,
-    summary.sections.internationalDatabases,
-    summary.sections.changesSinceBaseline,
-    summary.sections.nextSteps,
-  ].join("\n");
-  const emittedBlob = [
-    ...overviewNarrative,
-    ...overviewBlocks.map((b) => b.text),
-    ...continuationPages.flatMap((p) => p.map((b) => b.text)),
-  ].join("\n");
-  const sourceSentences = splitSentences(sourceBlob);
-  const truncations = sourceSentences.filter((s) => !emittedBlob.includes(s)).length;
+  const truncations = countClientTextTruncations(summary, {
+    overviewNarrative,
+    overviewBlocks,
+    continuationPages,
+  });
+
+  // Единственная проверка на том, что уходит в деку, и стоит она там, где
+  // выбирают работу, — в укладке. Ниже по течению `checkText` увидит ровно эти
+  // же строки, но уже как `bullet over budget` без имени блока и ценой всей
+  // обязательной секции.
+  const overBudgetBlocks = [...overviewBlocks, ...continuationPages.flat()]
+    .map((b) => ({ blockId: b.blockId, length: renderSemanticBlock(b).length, budget: budgets.bullet }))
+    .filter((x) => x.length > x.budget);
 
   return {
     overviewNarrative,
     overviewBlocks,
     continuationPages,
+    overBudgetBlocks,
     gates: {
       CLIENT_TEXT_TRUNCATIONS: truncations,
       CONTINUATION_ADJACENCY: true,
       SUMMARY_BLOCKS_PRESERVED: preserved,
       SUMMARY_BLOCKS_EMITTED: emitted,
+      SUMMARY_BLOCK_OVER_BUDGET: overBudgetBlocks.length,
     },
   };
 }
@@ -309,5 +597,17 @@ export function assertSemanticSummaryGatesPass(plan: SummaryPagePlan): void {
   }
   if (!plan.gates.CONTINUATION_ADJACENCY) {
     throw new Error("CONTINUATION_ADJACENCY=false");
+  }
+  // Блок, проскочивший мимо укладки, останавливает сборку здесь и по имени.
+  // Прежде такой блок доезжал до проверки секций, и заказчик получал
+  // `EXECUTIVE_SUMMARY:FAILED` — отчёт не собирался вовсе, а из текста отказа
+  // не было видно, какой именно блок виноват.
+  if (plan.gates.SUMMARY_BLOCK_OVER_BUDGET !== 0) {
+    const named = plan.overBudgetBlocks
+      .map((b) => `${b.blockId}: ${b.length}>${b.budget}`)
+      .join("; ");
+    throw new Error(
+      `SUMMARY_BLOCK_OVER_BUDGET=${plan.gates.SUMMARY_BLOCK_OVER_BUDGET} (${named})`
+    );
   }
 }

@@ -15,7 +15,11 @@
  */
 
 import { getComplianceProviderStatus, complianceProviderConfig } from "./config";
-import { buildOpenSanctionsMatchBody, mapOpenSanctionsResponse } from "./open-sanctions-mapping";
+import {
+  OPEN_SANCTIONS_QUERY_ID,
+  buildOpenSanctionsMatchBody,
+  mapOpenSanctionsResponse,
+} from "./open-sanctions-mapping";
 import { ProviderHttpError, postJson } from "../providers/http";
 import type { ComplianceProvider } from "./provider-interface";
 import type { ComplianceScreeningRequest, ComplianceScreeningResult } from "./types";
@@ -92,6 +96,9 @@ export const openSanctionsProvider: ComplianceProvider = {
         payload,
         minScore: cfg.minScore,
         webBaseUrl: cfg.webBaseUrl,
+        // Посланное берётся из самого тела запроса, а не собирается вторично:
+        // иначе рядом с ответом лежало бы то, что мы намеревались послать.
+        sentQuery: body.queries[OPEN_SANCTIONS_QUERY_ID]!.properties,
       });
       return { status: "SUCCESS", provider: NAME, hits };
     } catch (err) {

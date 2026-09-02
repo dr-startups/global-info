@@ -16,7 +16,8 @@ export type SearchSurfaceType =
   | "VIDEO_RESULT"
   | "KNOWLEDGE_BLOCK"
   | "SERP_SCREENSHOT"
-  | "MANUAL_NOTE";
+  | "MANUAL_NOTE"
+  | "AI_ANSWER";
 
 export type SearchSurfaceSource =
   | "MOCK"

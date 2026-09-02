@@ -16,6 +16,13 @@ export const ObservationDispositionKindSchema = z.enum([
   "EXCLUDE_OTHER_SUBJECT",
   "EXCLUDE_DUPLICATE",
   "EXCLUDE_INVALID",
+  /**
+   * Материал собран и годен, но не входит в предмет аудита: ниже ТОП-20 выдачи
+   * либо не поисковая выдача вовсе (подсказка, изображение, видео). Отдельная
+   * причина, а не `EXCLUDE_INVALID`: «негоден» и «вне области проверки» —
+   * разные утверждения, и клиенту они говорят разное.
+   */
+  "EXCLUDE_OUT_OF_SCOPE",
 ]);
 export type ObservationDispositionKind = z.infer<typeof ObservationDispositionKindSchema>;
 

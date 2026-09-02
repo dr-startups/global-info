@@ -1,26 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "UAE_PROFILE",
-  "sectionType": "UAE_PROFILE",
-  "fragmentKey": "UAE_IMAGES",
   "caseId": "cmreamy2t0002o30f29urzcog",
+  "contentHash": "sha256:5964eb3c805f61f21ab098e105ee37b7f5269389693b64ae8db0766433bcc288",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-images-analysis-v1",
-  "contentHash": "sha256:10813c648fae2a2abec77fd77a1c676b1b6a01a39594f9f21974d5366549af98",
-  "inputHash": "sha256:e4aa908603cd735921e63d4f93994141de56d08bbfb4997437512786def5638d:363a0451c9dd30a4",
-  "generatedAt": "2026-07-17T09:49:29.041Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53"
-  ],
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -117,14 +99,10 @@
     "inventory:ss-cmrebadwv00jhmm0fe4satb79",
     "inventory:ss-cmrebadwv00jimm0fq4orts40"
   ],
+  "fragmentKey": "UAE_IMAGES",
+  "generatedAt": "2026-09-02T12:26:21.559Z",
+  "inputHash": "sha256:7e81c0fc54437dbffa3465673aed7621aa89fb7fb1b34c0ed11e4fc37657f1c3:174de8136e96c7a7",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -221,19 +199,86 @@
       "inventory:ss-cmrebadwv00jhmm0fe4satb79",
       "inventory:ss-cmrebadwv00jimm0fq4orts40"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3,
+    "datasetCount": 94,
+    "displayedCount": 42
+  },
+  "promptVersion": "uae-images-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "inventory:ss-cmrebbrxv012rmm0fwdjuvdds",
+      "inventory:ss-cmrebbrxv012qmm0f57n71anx",
+      "inventory:ss-cmrebbrxw0138mm0fnmm4tlcc",
+      "inventory:ss-cmrebbrxw0139mm0ftayju0hh",
+      "inventory:ss-cmrebbrxv012pmm0fo9u3iecy",
+      "inventory:ss-cmrebbrxt010mmm0f2vke4nib",
+      "inventory:ss-cmrebbrxu011gmm0f6jldfpop",
+      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:ss-cmrebbrxu011pmm0fifloj91n",
+      "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
+      "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+      "inventory:ss-cmrebbrxv012omm0fc40akkn5",
+      "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
+      "inventory:ss-cmrebbrxv012smm0fa99x84cw",
+      "inventory:ss-cmrebavri00pdmm0fuh51djil",
+      "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+      "inventory:ss-cmrebavrk00s0mm0fs01gf05j",
+      "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
+      "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
+      "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
+      "inventory:ss-cmrebadww00kkmm0fq07yecsr",
+      "inventory:ss-cmrebadww00kjmm0f44znburo",
+      "inventory:ss-cmrebadww00kgmm0f6vf80654",
+      "inventory:ss-cmrebadwu00hsmm0fbmrnq07g",
+      "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+      "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+      "inventory:ss-cmrebadwu00hmmm0f08c3a5bh",
+      "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+      "inventory:ss-cmrebadwu00homm0f0sphydtu",
+      "inventory:ss-cmrebadwu00hpmm0fi6mbhp05",
+      "inventory:ss-cmrebadwu00hqmm0fs4t8xdl4",
+      "inventory:ss-cmrebadwu00hrmm0fmsk7mqiq",
+      "inventory:ss-cmrebadwu00htmm0fovl66x2d",
+      "inventory:ss-cmrebadwu00iamm0fbartlqub",
+      "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+      "inventory:ss-cmrebadwv00iumm0fje1armmu",
+      "inventory:ss-cmrebadwv00j7mm0frie1g2e0",
+      "inventory:ss-cmrebadwv00jhmm0fe4satb79",
+      "inventory:ss-cmrebadwv00jimm0fq4orts40"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "UAE_PROFILE",
+  "sectionType": "UAE_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p30_uae_images",
       "baseSlotId": "p30_uae_images",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "image-grid",
-      "title": "ОАЭ — изображения в поиске",
       "content": {
         "bullets": [
           "Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16  million to acquire a Moldovan facility with military potential, purportedly  under the EU's auspices • Интернет-издание Власть",
@@ -244,12 +289,36 @@
           "CyberCriminal.com | Sergei Glinka – CyberCriminal.com",
           "Относится к другому лицу: Glinka - Fragments from the opera \"Ruslan and Ludmila\""
         ],
-        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: cybercriminal.com, sledst.org, m.sledst.org.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: wikiart.org, instagram.com, facebook.com, youtube.com, pianista-superb.fandom.com"
+        "highlightExplanations": [
+          {
+            "clientReason": "Страница не читалась в этом прогоне. (vlasti.io/news/191197-sergey_glinka_a_previous_associate_of_sanctioned_oligarchs_allocated_16_million_to_acquire_a_moldovan_facility_with_military_potential_purportedly_under_the_eus).",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "Потенциально негативные публикации — ontheditch.com; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
+            "frameTone": "red"
+          }
+        ],
+        "sourceNote": "Источники — wikiart.org, instagram.com, facebook.com, youtube.com и ещё 27.",
+        "statusNote": "Изображений, ведущих на негативные источники, — 5; каждое требует сверки с первоисточником.",
+        "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+        "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 5.",
+        "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "inventory:ss-cmrebbrxv012rmm0fwdjuvdds",
         "inventory:ss-cmrebbrxv012qmm0f57n71anx",
@@ -264,11 +333,7 @@
         "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
         "inventory:ss-cmrebbrxv012nmm0f1n653sah",
         "inventory:ss-cmrebbrxv012omm0fc40akkn5",
-        "inventory:ss-cmrebbrxw0136mm0fskwehiro",
-        "inventory:ss-cmrebbrxw0135mm0fdebgamof",
-        "inventory:ss-cmrebbrxw0134mm0fv9q15l1o",
         "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
-        "inventory:ss-cmrebbrxw0137mm0f66se53po",
         "inventory:ss-cmrebbrxv012smm0fa99x84cw",
         "inventory:ss-cmrebavri00pdmm0fuh51djil",
         "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
@@ -276,9 +341,6 @@
         "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
         "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
         "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
-        "inventory:ss-cmrebadww00k6mm0f8oq71410",
-        "inventory:ss-cmrebadww00k7mm0f13g9ava4",
-        "inventory:ss-cmrebadww00k8mm0ftw5ljl4n",
         "inventory:ss-cmrebadww00k9mm0fmejxlqce",
         "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
         "inventory:ss-cmrebadww00kkmm0fq07yecsr",
@@ -308,85 +370,32 @@
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
+      "isContinuation": false,
       "metrics": {
-        "items": 49
+        "adverseImages": 5,
+        "items": 42
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p30_uae_images",
+      "templateId": "image-grid",
+      "title": "ОАЭ — изображения в поиске: 5 изображений ведут на негативные источники",
       "visualAssetRefs": [
         "uae_image_grid"
       ]
     }
   ],
-  "metrics": {
-    "datasetCount": 94,
-    "displayedCount": 49,
-    "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 3
-  },
-  "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "inventory:ss-cmrebbrxv012rmm0fwdjuvdds",
-      "inventory:ss-cmrebbrxv012qmm0f57n71anx",
-      "inventory:ss-cmrebbrxw0138mm0fnmm4tlcc",
-      "inventory:ss-cmrebbrxw0139mm0ftayju0hh",
-      "inventory:ss-cmrebbrxv012pmm0fo9u3iecy",
-      "inventory:ss-cmrebbrxt010mmm0f2vke4nib",
-      "inventory:ss-cmrebbrxu011gmm0f6jldfpop",
-      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
-      "inventory:ss-cmrebbrxu011pmm0fifloj91n",
-      "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
-      "inventory:ss-cmrebbrxv012nmm0f1n653sah",
-      "inventory:ss-cmrebbrxv012omm0fc40akkn5",
-      "inventory:ss-cmrebbrxw0136mm0fskwehiro",
-      "inventory:ss-cmrebbrxw0135mm0fdebgamof",
-      "inventory:ss-cmrebbrxw0134mm0fv9q15l1o",
-      "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
-      "inventory:ss-cmrebbrxw0137mm0f66se53po",
-      "inventory:ss-cmrebbrxv012smm0fa99x84cw",
-      "inventory:ss-cmrebavri00pdmm0fuh51djil",
-      "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
-      "inventory:ss-cmrebavrk00s0mm0fs01gf05j",
-      "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
-      "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
-      "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
-      "inventory:ss-cmrebadww00k6mm0f8oq71410",
-      "inventory:ss-cmrebadww00k7mm0f13g9ava4",
-      "inventory:ss-cmrebadww00k8mm0ftw5ljl4n",
-      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
-      "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
-      "inventory:ss-cmrebadww00kkmm0fq07yecsr",
-      "inventory:ss-cmrebadww00kjmm0f44znburo",
-      "inventory:ss-cmrebadww00kgmm0f6vf80654",
-      "inventory:ss-cmrebadwu00hsmm0fbmrnq07g",
-      "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
-      "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
-      "inventory:ss-cmrebadwu00hmmm0f08c3a5bh",
-      "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
-      "inventory:ss-cmrebadwu00homm0f0sphydtu",
-      "inventory:ss-cmrebadwu00hpmm0fi6mbhp05",
-      "inventory:ss-cmrebadwu00hqmm0fs4t8xdl4",
-      "inventory:ss-cmrebadwu00hrmm0fmsk7mqiq",
-      "inventory:ss-cmrebadwu00htmm0fovl66x2d",
-      "inventory:ss-cmrebadwu00iamm0fbartlqub",
-      "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
-      "inventory:ss-cmrebadwv00iumm0fje1armmu",
-      "inventory:ss-cmrebadwv00j7mm0frie1g2e0",
-      "inventory:ss-cmrebadwv00jhmm0fe4satb79",
-      "inventory:ss-cmrebadwv00jimm0fq4orts40"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

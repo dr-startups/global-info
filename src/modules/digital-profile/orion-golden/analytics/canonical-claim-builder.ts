@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { toDisplayDate } from "../../providers/published-date";
 import { publicDomainOf } from "./public-domain";
+import { clientSafeDomains } from "../../services/composite-serp-merge";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
 import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
@@ -28,6 +29,7 @@ import {
   themeLabelRu,
 } from "./canonical-themes";
 import { scoreMateriality } from "./materiality-scorer";
+import { sourceAttribution } from "../client/client-address";
 
 const ADVERSE_TEXT =
   /уголов|criminal|арест|санкц|sanction|корруп|corrupt|фбк|расследован|investigat|суд|court|офшор|offshore|pep|rca|скандал|scandal|yacht|рыбк|navalny|навальн|watch.?list|fraud|мошенн/iu;
@@ -86,7 +88,27 @@ function inferClaimKind(input: {
   subjectMatch: SubjectRelevanceDecision;
   adverse: boolean;
   text: string;
+  /** Типы доказательств, на которых стоит утверждение (данные, а не догадка). */
+  evidenceTypes?: string[];
 }): ClaimKind {
+  /*
+   * Природа записи берётся из данных, а не угадывается по домену.
+   *
+   * Здесь было только сопоставление домена со списком известных баз
+   * (`world-check|dowjones|lexis|…`). Совпадение из комплаенс-базы, у которого
+   * адрес профиля лежит на другом хосте, под регулярку не попадало и уезжало в
+   * `SOURCE_ALLEGATION` — наравне с публикацией. Ниже по течению это привело к
+   * тому, что имя из базы печаталось клиенту как заголовок найденного
+   * материала.
+   *
+   * Запись при этом всегда знала, что она такое: у неё `evidenceType`
+   * = `compliance_hit`. Это ровно правило «состояние — это данные, а не
+   * название» из ENGINEERING.md. Регулярка по домену осталась запасным
+   * вариантом для записей без типа.
+   */
+  if ((input.evidenceTypes ?? []).some((t) => String(t).toLowerCase() === "compliance_hit")) {
+    return "DATABASE_STATUS";
+  }
   if (input.domains.some((d) => OFFICIAL_DOMAIN.test(d))) return "OFFICIAL_RECORD";
   if (input.domains.some((d) => DATABASE_DOMAIN.test(d))) return "DATABASE_STATUS";
   if (input.adverse || /утверждает|сообщает|расследован|alleg/iu.test(input.text)) {
@@ -109,7 +131,7 @@ function qualificationFor(kind: ClaimKind, domains: string[]): string {
   switch (kind) {
     case "SOURCE_ALLEGATION":
       return domains.length
-        ? `Публикация (${domains.slice(0, 2).join(", ")}) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.`
+        ? `Публикация (${clientSafeDomains(domains).slice(0, 2).join(", ")}) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.`
         : "Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.";
     case "DATABASE_STATUS":
       return "Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.";
@@ -216,6 +238,7 @@ function buildFromFinding(input: {
     subjectMatch: f.subjectMatch,
     adverse,
     text: blob,
+    evidenceTypes: evidenceItems.map((i) => i.evidenceType),
   });
   // Media never becomes FACT.
   const kind: ClaimKind =
@@ -261,6 +284,9 @@ function buildFromFinding(input: {
   return {
     claimId: claimIdFor([f.findingId, themeIds.join(","), (f.evidenceRefs ?? []).join(",")]),
     subjectId: input.subjectId,
+    // Типы доказательств доносятся до текста: ниже по течению по ним решают,
+    // как назвать запись — публикацией, совпадением из базы или строкой выдачи.
+    evidenceTypes: [...new Set(evidenceItems.map((i) => i.evidenceType).filter(Boolean))],
     fullClaimText,
     displayExcerpt: semanticExcerpt(fullClaimText),
     claimKind: kind,
@@ -343,6 +369,7 @@ function buildOrphanMaterialClaims(input: {
       subjectMatch: entry.subjectDecision,
       adverse: true,
       text,
+      evidenceTypes: item?.evidenceType ? [item.evidenceType] : [],
     });
     const materiality = scoreMateriality({
       themeIds: ensuredThemes,
@@ -361,7 +388,7 @@ function buildOrphanMaterialClaims(input: {
     const fullClaimText = [
       themeLabelRu(ensuredThemes[0]!),
       entry.originalTitle
-        ? `«${entry.originalTitle}»${domains[0] ? ` — источник ${domains[0]}` : ""}`
+        ? `«${entry.originalTitle}»${sourceAttribution({ url: item?.sourceUrl, domain: domains[0] })}`
         : entry.originalSnippet.slice(0, 240),
     ]
       .filter(Boolean)
@@ -370,6 +397,7 @@ function buildOrphanMaterialClaims(input: {
     out.push({
       claimId: claimIdFor(["orphan", entry.rawObservationId, ensuredThemes.join(",")]),
       subjectId: input.subjectId,
+      evidenceTypes: item?.evidenceType ? [item.evidenceType] : [],
       fullClaimText,
       displayExcerpt: semanticExcerpt(fullClaimText),
       claimKind: kind === "FACT" ? "SOURCE_ALLEGATION" : kind,

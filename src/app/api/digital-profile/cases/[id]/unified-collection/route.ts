@@ -20,9 +20,11 @@ import {
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
 import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
+import { evaluateUnifiedPauseEligibility } from "@/modules/digital-profile/services/unified-collection-pause";
 import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profile/services/unified-gpt-copy-retry";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
+import { enabledArsenkinAgentNames } from "@/modules/digital-profile/agents/real/real-arsenkin-agents";
 import {
   NO_AUTO_RESUME,
   autoResumeState,
@@ -124,11 +126,21 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     recoveryAllowed: Boolean(recovery.recoveryAllowed),
     autoResume,
   });
+  const rebuild = await evaluateUnifiedReportRebuildEligibility({
+    caseId: id,
+    job,
+    // Шаги уже спрошены выше: пока конвейер вернётся к работе сам, звать
+    // пользователя нельзя ни к восстановлению, ни к пересборке (шаг 14).
+    autoResumePending: autoResume.pending,
+  });
   const actionState = {
     preserved,
     recoveryAllowed: needsUser,
     recoveryBlockerReason: recovery.recoveryBlockerReason ?? null,
     suggestionsMissingResult: Boolean(suggestionsGap.suggestionsMissingResult),
+    // Пересборка на уже собранных данных — бесплатная альтернатива новому
+    // сбору, и о ней надо знать до того, как предлагать заплатить.
+    rebuildAllowed: Boolean(rebuild.rebuildAllowed),
   };
   const fullAuditBlocked =
     Boolean(job) &&
@@ -144,8 +156,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL")
       ? await getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
-  const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
   const gptCopyRetry = await evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
+  // Пауза — единственное действие, доступное посреди работы: остальные кнопки
+  // ждут, пока прогон остановится сам (шаг 0027).
+  const pause = evaluateUnifiedPauseEligibility(job);
   return jsonOk({
     job: job
       ? {
@@ -170,6 +184,9 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
           completedAt: job.completedAt,
+          // Состав прогона называет сервер: в кабинете он был записан числом,
+          // и при трёх работающих агентах панель показывала «3/5».
+          arsenkinPlannedAgents: enabledArsenkinAgentNames(),
           arsenkinEnrichmentState: job.arsenkinEnrichmentState
             ? {
                 scheduledAgents: job.arsenkinEnrichmentState.scheduledAgents,
@@ -192,6 +209,8 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           autoResumeStep: autoResume.stepName,
           rebuildAllowed: rebuild.rebuildAllowed,
           rebuildBlockerReason: rebuild.rebuildBlockerReason,
+          pauseAllowed: pause.pauseAllowed,
+          pauseBlockerReason: pause.pauseBlockerReason,
           gptCopyRetryAllowed: gptCopyRetry.gptCopyRetryAllowed,
           gptCopyRetryBlockerReason: gptCopyRetry.gptCopyRetryBlockerReason,
           gptCopyFallbackFragmentCount: gptCopyRetry.fallbackFragmentCount,

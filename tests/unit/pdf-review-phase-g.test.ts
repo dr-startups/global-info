@@ -43,7 +43,8 @@ describe("G.1 — regional summary does not merge methodology into bullets", () 
           whyItMatters: "Тоже не должен.",
           whatToCheck: "Сверить статусы дел.",
           methodologyNote: "Метрики рассчитаны только по материалам…",
-          sourceNote: "Источники: dzen.ru.",
+          // Строки источников у дашборда метрик нет: печатать её негде, и
+          // ассемблер её на этот макет не кладёт.
           visualAssetRefs: [],
           evidenceRefs: [],
         } as never,
@@ -106,8 +107,13 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v16 (PDF-49 keep evidence quotes)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v16");
+  // Литерал версии заменён на «не ниже»: прибитая точная строка падала на
+  // каждом законном подъёме промпта. Смысл проверки — что правка PDF-49
+  // (не терять цитаты доказательств) не откачена вместе с версией.
+  it("версия промпта slide-copy не ниже PDF-49", () => {
+    const m = GPT_SLIDE_COPY_PROMPT_VERSION.match(/^gpt-slide-copy-v(\d+)$/u);
+    expect(m, `неожиданный формат версии: ${GPT_SLIDE_COPY_PROMPT_VERSION}`).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(16);
   });
 
   it("reflowThemeBullet restores flattened G.2b quote lines (PDF-43)", () => {
@@ -177,7 +183,7 @@ describe("G.3 / G.4 — executive and regional structure", () => {
       {}
     );
     const summary = out.slides.find((s) => s.templateId === "regional-summary")!;
-    expect(summary.content.narrative).toMatch(/проверяющий увидит/u);
+    expect(summary.content.narrative).toMatch(/собрано/u);
     expect(summary.content.kpis?.length).toBeGreaterThanOrEqual(3);
     expect(summary.content.whatWasFound).toBeUndefined();
   });

@@ -95,6 +95,25 @@ export function isQuotableEvidence(text: string | null | undefined): boolean {
 }
 
 /**
+ * Заголовок служебного блока выдачи — не публикация.
+ *
+ * «Картинки по запросу "Тимати биография"» — это подпись, которую поисковик
+ * рисует над плиткой изображений. Автора у неё нет, содержания тоже: она лишь
+ * повторяет запрос. На прогоне 14.08 такая строка стояла доказательством в
+ * пяти блоках отчёта, в том числе в резюме для руководства и в матрице рисков.
+ *
+ * Перечислены формы всех поверхностей, которые собирает конвейер, — картинки,
+ * видео, новости, похожие и связанные запросы, — в русском и английском виде:
+ * страница ОАЭ отдаёт те же блоки по-английски.
+ */
+const SURFACE_BLOCK_HEADING =
+  /^\s*(?:картинки|изображения|видео|новости|товары|карты)\s+по\s+запросу(?!\p{L})|^\s*(?:похожие|связанные|другие)\s+(?:запросы|результаты)(?!\p{L})|^\s*(?:images|videos|news|results)\s+for(?!\p{L})|^\s*(?:people\s+also\s+(?:ask|search\s+for)|related\s+searches|searches\s+related\s+to)(?!\p{L})/iu;
+
+export function looksLikeSurfaceBlockHeading(text: string | null | undefined): boolean {
+  return SURFACE_BLOCK_HEADING.test(String(text ?? ""));
+}
+
+/**
  * Похож ли текст на поисковый запрос, а не на заголовок публикации.
  *
  * Признаки: всё в нижнем регистре, нет конечной пунктуации, нет кавычек и
@@ -111,3 +130,68 @@ export function looksLikeSearchQuery(text: string | null | undefined): boolean {
   // Хотя бы одна заглавная буква — признак заголовка, а не строки поиска.
   return letters === letters.toLowerCase();
 }
+
+/**
+ * Цитата со страницы, годная для клиента.
+ *
+ * Заголовок выдачи поисковик режет по своей ширине, и в отчёте появлялись
+ * обрывки — «…бизнес, личная», «…в отношении него после», «lost his mansion in
+ * Germany due». Прочитанная страница даёт другое: целые предложения, которые
+ * аудитор вдобавок сверил с текстом дословно. Их и надо цитировать.
+ *
+ * Но не всё, что модель выделила цитатой, является фразой. С табличных
+ * страниц приходят выгрузки вида «События Участие в организациях 26 События ИП
+ * 2 Санкции 83» — набор ярлыков и чисел, из которого читатель не поймёт
+ * ничего. Такие отсеиваются по доле числовых слов: у предложения их единицы, у
+ * выгрузки — четверть и больше.
+ *
+ * Пустая строка означает «цитировать нечего»; вызывающий берёт следующий
+ * источник или обходится без цитаты.
+ */
+/**
+ * Машинная выгрузка, а не фраза.
+ *
+ * В отчёте 72 трижды стояло: «Темы: судебные и правовые материалы… источники:
+ * ext_gb_coh_psc, us_trade_csl, eu_fsf, ru_billionaires_2021, ru_navalny35» —
+ * идентификаторы наборов данных, поданные клиенту в кавычках как слова
+ * источника. Признак надёжный: в человеческой прозе подчёркивание между
+ * буквами не встречается, а в машинном имени оно и есть разделитель.
+ */
+const MACHINE_IDENTIFIER = /(?:^|\s)[\p{L}\d]+_[\p{L}\d_]+(?=\s|[,.;:)]|$)/u;
+
+export function looksLikeMachineDump(text: string | null | undefined): boolean {
+  return MACHINE_IDENTIFIER.test(String(text ?? ""));
+}
+
+export function pageQuoteForClient(text: string | null | undefined): string {
+  const body = String(text ?? "").replace(/\s+/gu, " ").trim();
+  if (body.length < MIN_PAGE_QUOTE_CHARS) return "";
+  if (looksLikeSearchQuery(body) || looksLikeSurfaceBlockHeading(body)) return "";
+  if (looksLikeMachineDump(body)) return "";
+  const tokens = body.split(" ").filter(Boolean);
+  if (tokens.length < MIN_PAGE_QUOTE_WORDS) return "";
+  const numeric = tokens.filter((t) => NUMERIC_TOKEN.test(t)).length;
+  if (numeric / tokens.length > MAX_NUMERIC_SHARE) return "";
+  if (DANGLING_QUOTE_TAIL.test(body)) return "";
+  // Относительное слово в самом хвосте — признак, что предложение продолжалось:
+  // «…theft of state property, which». Точки в конце не требуем: из ста сорока
+  // годных цитат прогона её имеют пятьдесят восемь процентов, а остальные
+  // кончаются законченными оборотами — «…признавшим дело сфабрикованным».
+  if (!/[.!?»]$/u.test(body) && RELATIVE_TAIL.test(body)) return "";
+  return body;
+}
+
+/** Короче этого цитата не несёт мысли, а только обрывок. */
+const MIN_PAGE_QUOTE_CHARS = 40;
+const MIN_PAGE_QUOTE_WORDS = 8;
+/** Доля слов-чисел, выше которой это выгрузка таблицы, а не фраза. */
+const MAX_NUMERIC_SHARE = 0.2;
+const NUMERIC_TOKEN = /^[^\p{L}]*\d[\d.,()\u2013\u2014-]*[^\p{L}]*$/u;
+/**
+ * Висящий хвост в конце цитаты. Границы через `\p{L}`: `\b` в JavaScript
+ * определён на ASCII и кириллический предлог не находит.
+ */
+const RELATIVE_TAIL =
+  /(?:^|[^\p{L}])(?:which|that|who|whose|where|when|because|котор(?:ый|ая|ое|ые|ого|ой|ом|ому|ым|ыми|ых|ую)|чей|потому|поскольку|если|чтобы|хотя)(?:\s+\S+)?\s*$/iu;
+const DANGLING_QUOTE_TAIL =
+  /(?:^|[^\p{L}\p{N}_])(?:и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при|после|перед|the|of|and|or|to|in|on|at|for|with|from|by|due)\s*$/iu;

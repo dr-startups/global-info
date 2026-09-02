@@ -8,20 +8,43 @@
  * Classifies evidence deterministically (R1.1.3 rules). No LLM, no scraping.
  */
 
-import { createHash } from "node:crypto";
 import { Prisma, SearchEngine } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import { providerConfig } from "../providers/config";
+import { organicSearchDepth, type OrganicSearchProvider } from "../providers/search-depth";
+/**
+ * Глубина аудита выдачи. Одно число на весь конвейер: столько же обещает
+ * клиенту таблица ТОП-20 (`SERP_TABLE_TOP_N`). Импортировать саму константу
+ * деки отсюда нельзя — сервис сбора не должен зависеть от слоя отчёта, — но
+ * тест сверяет оба числа между собой.
+ */
+export const SERP_AUDIT_DEPTH = 20;
+import {
+  SUBJECT_QUERY_LIMIT,
+  buildSubjectQuerySet,
+  plannedPrimaryQueries,
+  type SubjectQuerySet,
+} from "../search-surfaces/subject-query-set";
+import { serperAutocomplete } from "../providers/serper-surfaces";
 import { yandexSearchProvider } from "../providers/yandex-search-provider";
-import type { SearchProviderRequest, SearchProviderResult } from "../providers/types";
+import type {
+  ProviderRunResult,
+  SearchProviderRequest,
+  SearchProviderResult,
+  SerpDepthAudit,
+} from "../providers/types";
 import { normalizeUrl } from "./evidence-service";
+import { searchResultDedupHash } from "./search-result-identity";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import {
   buildOrionQueryPlanDetailed,
+  hasCyrillic,
   queriesForRegionPurpose,
+  transliterateRuToEn,
   type OrionQuerySpec,
   type OrionRegionCode,
+  type PlannedPrimaryQuery,
 } from "../search-surfaces/orion-query-plan";
 import { resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import { regionProfile, type RegionCollectionStatus } from "../search-surfaces/region-profiles";
@@ -40,10 +63,6 @@ import {
 import type { SearchSurfaceInput, SearchSurfaceType } from "../search-surfaces/types";
 import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
 import type { ProviderRuntimeMode } from "../types";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 export interface OrionProfileRunOptions {
   regions?: OrionRegionCode[];
@@ -71,6 +90,12 @@ export interface OrionRegionRunSummary {
 export interface OrionProfileRunResult {
   plan: OrionQuerySpec[];
   queryPlanId: string;
+  /**
+   * Набор запросов аудита по каждому региональному контуру — что именно
+   * спрашивали у поисковика и откуда взялся каждый запрос. Отчёт печатает
+   * этот набор клиенту: без него доля и глубина висят без знаменателя.
+   */
+  querySets: SubjectQuerySet[];
   regions: OrionRegionRunSummary[];
   organicInserted: number;
   surfacesInserted: number;
@@ -183,41 +208,94 @@ function serperItemToSurfaceInput(
   };
 }
 
-async function persistOrganicResults(
+/**
+ * `rawMetadata` строки органической выдачи — собирается в одном месте.
+ *
+ * Учёт глубины едет сюда потому, что смотреть на него будут по собранному
+ * кейсу: внутри адаптера он никому не виден, а по нему отличают «глубже ничего
+ * нет» от «провайдер параметр страницы проигнорировал и мы заплатили за дубли».
+ */
+export function organicRowMetadata(input: {
+  engine: SearchEngine;
+  orionRegion: OrionRegionCode;
+  querySpec: OrionQuerySpec;
+  result: SearchProviderResult;
+  depthAudit?: SerpDepthAudit;
+}): Record<string, unknown> {
+  const { engine, orionRegion, querySpec, result, depthAudit } = input;
+  return {
+    demo: false,
+    provider: result.provider,
+    query: querySpec.query,
+    orionQuery: querySpec.query,
+    queryId: querySpec.queryId,
+    queryPlanId: querySpec.queryPlanId,
+    queryPurpose: querySpec.purpose,
+    // Какое из написаний ФИО — само имя. Пометка приходит из набора запросов
+    // и едет дальше данными: слой деки иначе вычислял бы её заново, сравнивая
+    // запрос с именем профиля, а в латинском контуре запрос транслитерирован.
+    ...(querySpec.subjectNameQuery ? { subjectNameQuery: true } : {}),
+    providerPreference: querySpec.providerPreference,
+    identityStrictness: querySpec.identityStrictness,
+    orionRegion,
+    region: orionRegion,
+    // Глубина, которую просили у провайдера по этому запросу: настройка
+    // сама по себе её больше не определяет.
+    providerLimit:
+      organicSearchDepth({
+        provider: engine === "GOOGLE" ? "serper" : "yandex",
+        purpose: querySpec.purpose,
+        auditDepth: SERP_AUDIT_DEPTH,
+      }) ??
+      (engine === "GOOGLE"
+        ? providerConfig.google.resultsPerQuery
+        : providerConfig.yandex.resultsPerQuery),
+    ...(depthAudit ? { depthAudit } : {}),
+    ...(result.rawMetadata as object),
+  };
+}
+
+/**
+ * Пишет строки органической выдачи и уносит в каждую учёт глубины прогона.
+ *
+ * Экспортируется ради шва «учёт из адаптера → `rawMetadata` строки»: это
+ * единственное место, где одно соединяется с другим, и без проверки его можно
+ * было убрать, не покраснев ни одним тестом.
+ */
+export async function persistOrganicResults(
   caseId: string,
   engine: SearchEngine,
-  results: SearchProviderResult[],
+  run: ProviderRunResult,
   orionRegion: OrionRegionCode,
   querySpec: OrionQuerySpec
 ): Promise<number> {
   const source = engine === "GOOGLE" ? "real:GOOGLE" : "real:YANDEX";
-  const rows = results.map((r) => {
+  const rows = run.results.map((r) => {
     const normUrl = normalizeUrl(r.url);
     return {
       caseId,
       engine,
       url: r.url,
       normalizedUrl: normUrl,
-      dedupHash: sha256(`${normUrl}|${querySpec.query}|${orionRegion}`),
+      // Движок — часть идентичности строки: без него Яндекс, отработав по
+      // запросу первым, вычёркивал строки Google того же адреса.
+      dedupHash: searchResultDedupHash({
+        engine,
+        normalizedUrl: normUrl,
+        query: querySpec.query,
+        region: orionRegion,
+      }),
       title: r.title || null,
       snippet: r.snippet || null,
       rank: r.rank,
       source,
-      rawMetadata: {
-        demo: false,
-        provider: r.provider,
-        query: querySpec.query,
-        orionQuery: querySpec.query,
-        queryId: querySpec.queryId,
-        queryPlanId: querySpec.queryPlanId,
-        queryPurpose: querySpec.purpose,
-        providerPreference: querySpec.providerPreference,
-        identityStrictness: querySpec.identityStrictness,
+      rawMetadata: organicRowMetadata({
+        engine,
         orionRegion,
-        region: orionRegion,
-        providerLimit: providerConfig.google.resultsPerQuery,
-        ...(r.rawMetadata as object),
-      } as Prisma.InputJsonValue,
+        querySpec,
+        result: r,
+        depthAudit: run.depthAudit,
+      }) as Prisma.InputJsonValue,
     };
   });
   const inserted = await prisma.searchResult.createMany({ data: rows, skipDuplicates: true });
@@ -235,11 +313,6 @@ async function runRegionOrganic(
   let googleStatus = "NOT_QUERIED";
   let yandexStatus = "NOT_QUERIED";
   const profile = regionProfile(region);
-  const limit = Math.max(
-    providerConfig.google.resultsPerQuery,
-    providerConfig.yandex.resultsPerQuery,
-    20
-  );
   const runtime = resolveRuntimeStrategy({ mode: runtimeMode, requestedBy: runtimeMode ? "request" : "default" });
   const allowYandex = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "yandex");
   const allowGoogle = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "google");
@@ -252,6 +325,19 @@ async function runRegionOrganic(
 
   for (const spec of queries) {
     if (!organicPurposes.has(spec.purpose)) continue;
+    // Глубина заказывается на каждый провайдер отдельно: у одного она стоит
+    // денег, у другого нет (`organicSearchDepth`).
+    const withDepth = (
+      base: SearchProviderRequest,
+      provider: OrganicSearchProvider
+    ): SearchProviderRequest => {
+      const depth = organicSearchDepth({
+        provider,
+        purpose: spec.purpose,
+        auditDepth: SERP_AUDIT_DEPTH,
+      });
+      return depth === undefined ? base : { ...base, limit: depth };
+    };
     const req: SearchProviderRequest = {
       caseId,
       subjectFullName: subject.fullName,
@@ -259,15 +345,14 @@ async function runRegionOrganic(
       query: spec.query,
       language: spec.language,
       region: profile.googleGl,
-      limit,
     };
 
     const wantsYandex = spec.providerPreference.includes("yandex");
     if (wantsYandex && allowYandex && profile.yandexSupported && yandexReady()) {
-      const run = await yandexSearchProvider.search(req);
+      const run = await yandexSearchProvider.search(withDepth(req, "yandex"));
       if (run.status === "SUCCESS") {
         yandexStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec);
+        organic += await persistOrganicResults(caseId, "YANDEX", run, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         yandexStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_SUPPORTED";
       } else if (yandexStatus !== "COLLECTED") {
@@ -281,14 +366,12 @@ async function runRegionOrganic(
 
     const wantsGoogle = spec.providerPreference.includes("google") || spec.providerPreference.includes("serper");
     if (wantsGoogle && allowGoogle && googleReady()) {
-      const run = await externalGoogleSerpProvider.search({
-        ...req,
-        region: profile.googleGl,
-        language: profile.googleHl,
-      });
+      const run = await externalGoogleSerpProvider.search(
+        withDepth({ ...req, region: profile.googleGl, language: profile.googleHl }, "serper")
+      );
       if (run.status === "SUCCESS") {
         googleStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec);
+        organic += await persistOrganicResults(caseId, "GOOGLE", run, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         googleStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_QUERIED";
       } else if (googleStatus !== "COLLECTED") {
@@ -318,7 +401,18 @@ async function runRegionSurfaces(
     return { surfaces: [], googleStatus: "NOT_CONFIGURED" };
   }
 
-  const limit = Math.min(20, providerConfig.google.resultsPerQuery);
+  /*
+   * Глубина аудита — не настройка провайдера.
+   *
+   * Здесь стояло `min(20, resultsPerQuery)`: при умолчании в десять результатов
+   * Serper собирал ТОП-10, и обе Google-таблицы отчёта — Россия и ОАЭ —
+   * показывали десять строк там, где аудит обещает двадцать. Дыру закрывал
+   * Arsenkin со своей нумерацией, и в таблице появлялись чужие позиции.
+   *
+   * Аудит обещает ТОП-20, значит запрос обязан просить не меньше двадцати:
+   * `resultsPerQuery` остаётся способом попросить БОЛЬШЕ, но не меньше.
+   */
+  const limit = Math.max(SERP_AUDIT_DEPTH, providerConfig.google.resultsPerQuery);
   const all: SearchSurfaceInput[] = [];
   let anySuccess = false;
 
@@ -397,11 +491,125 @@ function deriveCollectionStatus(
   return { status: "NOT_QUERIED", message: "Region not queried in this run." };
 }
 
+/**
+ * Набор запросов аудита по региону: имя субъекта плюс самые популярные
+ * производные от него.
+ *
+ * Популярность спрашиваем у самого поисковика — одним вызовом автодополнения
+ * по имени. Это один платный запрос на контур, и он определяет, что вообще
+ * будет предметом аудита: остальные запросы плана (деловой, медийный,
+ * негативный) остаются источником тем риска, но метрику и таблицу позиций
+ * задаёт этот набор.
+ *
+ * Отказ автодополнения не ломает прогон: набор достраивается перестановками
+ * ФИО, и в артефакте видно, что подсказок не было.
+ */
+async function buildRegionQuerySet(
+  subject: CaseSubjectInfo,
+  region: OrionRegionCode,
+  capturedAt: string
+): Promise<SubjectQuerySet> {
+  const profile = regionProfile(region);
+  /*
+   * В зарубежном контуре субъекта ищут латиницей.
+   *
+   * Набор строился от кириллического ФИО во всех контурах, и в ОАЭ уходили
+   * запросы вида «киркоров филипп бедросович дети». Google с параметрами ОАЭ
+   * отвечал на них теми же русскими страницами, что и российский контур:
+   * раздел про ОАЭ повторял российский, а то, что о субъекте видно за
+   * рубежом, в отчёт не попадало.
+   */
+  const latinContour = profile.language !== "ru";
+  const searchName = latinContour ? latinNameOf(subject) : subject.fullName;
+  const variants = (subject.aliases ?? []).filter((a) => !latinContour || !hasCyrillic(a));
+  const parsed = parseSubjectName(searchName);
+  const suggestions: Array<{ text: string; engine: string; region: string; rank: number }> = [];
+  try {
+    const run = await serperAutocomplete(
+      {
+        caseId: subject.caseId ?? "",
+        subjectFullName: subject.fullName,
+        aliases: subject.aliases ?? [],
+        query: searchName,
+        language: profile.language,
+        region: profile.googleGl,
+        limit: SUBJECT_QUERY_LIMIT * 4,
+      },
+      region
+    );
+    if (run.status === "SUCCESS") {
+      for (const item of run.items) {
+        suggestions.push({
+          text: String(item.title ?? ""),
+          engine: "GOOGLE",
+          region,
+          rank: item.rank ?? suggestions.length + 1,
+        });
+      }
+    }
+  } catch {
+    // Подсказки — удобство, а не условие сбора: молча падаем на перестановки.
+  }
+  return buildSubjectQuerySet({
+    profile: {
+      fullName: searchName,
+      firstName: parsed.givenName ?? undefined,
+      lastName: parsed.surname ?? undefined,
+      patronymic: parsed.patronymic ?? undefined,
+      variants,
+    },
+    suggestions,
+    region,
+    language: profile.language,
+    capturedAt,
+    limit: SUBJECT_QUERY_LIMIT,
+  });
+}
+
+/**
+ * Латинское написание имени: готовое из псевдонимов, иначе транслитерация.
+ * Псевдоним предпочтительнее — его написал человек, знающий, как субъекта
+ * пишут в зарубежных источниках.
+ */
+function latinNameOf(subject: CaseSubjectInfo): string {
+  const alias = (subject.aliases ?? [])
+    .map((a) => String(a ?? "").trim())
+    .find((a) => a.length > 0 && !hasCyrillic(a));
+  if (alias) return alias;
+  return hasCyrillic(subject.fullName)
+    ? transliterateRuToEn(subject.fullName)
+    : subject.fullName;
+}
+
 export async function runOrionSearchProfile(
   caseId: string,
   options: OrionProfileRunOptions = {}
 ): Promise<OrionProfileRunResult> {
   const subject = await loadCaseSubject(caseId);
+  // Набор запросов собирается до плана: именно он определяет, выдачу по чему
+  // мы аудируем. Дата фиксации общая для всех контуров — это дата прогона.
+  const capturedAt = new Date().toISOString();
+  const plannedRegions =
+    options.regions ??
+    (
+      buildOrionQueryPlanDetailed(
+        {
+          fullName: subject.fullName,
+          aliases: subject.aliases,
+          targetRegions: subject.targetRegions,
+          location: subject.location,
+        },
+        { maxPrimaryPerRegion: 1, includeRiskProbes: false }
+      ).plan.map((q) => q.region)
+    ).filter((r, i, all) => all.indexOf(r) === i);
+  const querySets: SubjectQuerySet[] = [];
+  for (const region of plannedRegions) {
+    querySets.push(await buildRegionQuerySet(subject, region, capturedAt));
+  }
+  const primaryQueriesByRegion = Object.fromEntries(
+    querySets.map((set) => [set.region, plannedPrimaryQueries(set)])
+  ) as Partial<Record<OrionRegionCode, PlannedPrimaryQuery[]>>;
+
   const detailedPlan = buildOrionQueryPlanDetailed(
     {
       fullName: subject.fullName,
@@ -410,6 +618,7 @@ export async function runOrionSearchProfile(
       location: subject.location,
     },
     {
+      primaryQueriesByRegion,
       maxPrimaryPerRegion: options.maxPrimaryPerRegion ?? providerConfig.orion.maxPrimaryQueriesPerRegion,
       includeRiskProbes:
         options.includeRiskProbes ??
@@ -497,6 +706,7 @@ export async function runOrionSearchProfile(
   warnings.push(...detailedPlan.warnings);
   return {
     queryPlanId: detailedPlan.queryPlanId,
+    querySets,
     plan,
     regions: regionSummaries,
     organicInserted,

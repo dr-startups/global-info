@@ -9,6 +9,8 @@ export * from "./section-builders";
 export * from "./section-validation";
 export * from "./section-manifest";
 export * from "./deck-assembler";
+export * from "./continuation-slide";
+export * from "./measured-bullet-fit";
 export * from "./assembly-validation";
 export * from "./run-deck-build";
 export * from "./llm-slide-copy";

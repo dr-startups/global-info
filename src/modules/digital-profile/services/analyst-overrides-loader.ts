@@ -462,7 +462,7 @@ const THEME_BY_RISK: Record<string, string> = {
   adverse_media: "criminal_legal",
   reputation: "criminal_legal",
   business_conflict: "family_associates",
-  offshore: "offshore_corporate",
+  offshore: "offshore_structures",
   other: "criminal_legal",
 };
 
@@ -580,14 +580,4 @@ export function mergeGuaranteedFindings(input: {
       .filter((f) => f.subjectMatch === "SUBJECT_MATCH")
       .flatMap((f) => f.evidenceRefs),
   };
-}
-
-/** Whether item was manually marked neutral / excluded from adverse. */
-export function isAnalystNeutral(item: RawInventoryItem): boolean {
-  return (item.rawMetadata as Record<string, unknown> | undefined)?.analystNeutral === true;
-}
-
-/** Whether item was manually marked adverse. */
-export function isAnalystAdverse(item: RawInventoryItem): boolean {
-  return (item.rawMetadata as Record<string, unknown> | undefined)?.analystAdverse === true;
 }

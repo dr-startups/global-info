@@ -115,9 +115,28 @@ export async function evaluateLegacyRecoveryEligibility(input: {
 
     const enrichmentCount = job.enrichmentRunIds?.length ?? 0;
     const enrichmentComplete = Boolean(job.arsenkinEnrichmentState?.enrichmentComplete);
+    // Два разных вопроса, и их нельзя сводить в один предикат.
+    // `isRenderFailure` отвечает «не трогай эту джобу подводкой Arsenkin» и
+    // потому нарочно широк: чекпоинт RENDER и слова «render failed» в свободном
+    // тексте — достаточные поводы не красть прогон у рендера.
+    // `offersRenderResume` отвечает «предложи оператору повтор рендера» и потому
+    // узок: кнопка положена ровно тем отказам, которые рендером и лечатся.
+    // Широкий ключ приглашал бы чинить повтором `PREPARE_INPUT_MISSING` — то
+    // самое приглашение потратить время впустую, против которого написан
+    // `isDeterministicPrepareGate`.
+    const offersRenderResume =
+      job.lastErrorCode === "RENDER_FAILED" ||
+      // Ворота телеметрии рендерера: документ испорчен, собранное цело.
+      // Повторять нужно ровно рендер, поэтому все три кода идут тем же путём,
+      // что и `RENDER_FAILED`: подготовка возобновляется с чекпоинта RENDER, а
+      // не с нуля. Обрезанная строка комплаенса — тот же случай: после правки
+      // ёмкости страницы тот же самый рендер пройдёт.
+      job.lastErrorCode === "CONTENT_DROPPED_BY_RENDERER" ||
+      job.lastErrorCode === "RENDER_TELEMETRY_MISSING" ||
+      job.lastErrorCode === "COMPLIANCE_CARD_CLIPPED";
     const isRenderFailure =
       job.resumeCheckpoint === "RENDER" ||
-      job.lastErrorCode === "RENDER_FAILED" ||
+      offersRenderResume ||
       /render failed/i.test(job.lastError ?? "");
     // Ingest resume must not steal RENDER_FAILED jobs (isRenderFailure).
     // Job B pattern: FAILED_TERMINAL + composite present + enrichment never ingested.
@@ -214,6 +233,34 @@ export async function evaluateLegacyRecoveryEligibility(input: {
           recoveryAllowed: false,
           recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
           recoveryReason: null,
+        };
+      }
+      // Отказ рендера с целым составным набором: повторить нужно ровно рендер.
+      // Ворота телеметрии оставляют прогон терминальным, и без этой ветки повтор
+      // рендера ему здесь не предлагался бы вовсе. «Здесь» — существенно: прогону
+      // с конвейером шагов отвечает `planResumeFromSteps` по имени шага, до этой
+      // эвристики дело не доходит, и ветка работает только на прогонах без
+      // конвейера. Ветка идёт последней, чтобы не перехватывать случаи с
+      // собственным ответом — прежде всего детерминированный гейт подготовки,
+      // который повтором не лечится.
+      //
+      // ОТКРЫТО (бэклог AY): ветка не требует `enrichmentComplete`, как не требует
+      // его и близнец в `FAILED_RETRYABLE`. На прогоне Job B — обогащение
+      // зарегистрировано, в блобе джобы не завершено, составной набор есть — это
+      // уводит ответ от подводки Arsenkin к повтору рендера, то есть отчёт
+      // перерисуется поверх набора без оплаченных наблюдений. Верно ли это, не
+      // установлено; дописывать предусловие без красного теста нельзя — получится
+      // третий ответ на тот же вопрос, асимметричный близнецу.
+      if (
+        offersRenderResume &&
+        Boolean(job.compositeDatasetId) &&
+        Boolean(job.baseReportRunId) &&
+        enrichmentCount >= 5
+      ) {
+        return {
+          recoveryAllowed: true,
+          recoveryBlockerReason: null,
+          recoveryReason: "RENDER_RESUME",
         };
       }
       return {

@@ -26,6 +26,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { extractClientText, type ClientTextSnapshot } from "./lib/client-text-snapshot";
+import { toRendererPayload } from "../src/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import type { ReportDeckManifest } from "../src/modules/digital-profile/orion-golden/deck-sections/contracts";
+import type { RendererSlide } from "../src/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
+
 import {
   runCanonicalReportPrepare,
   type CanonicalPrepareInput,
@@ -45,14 +50,23 @@ import {
 import type { DatabaseProfileHitInput } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
 import type { AnalystOverridesBundle } from "../src/modules/digital-profile/services/analyst-overrides-loader";
 import type { EvidenceSupplementBundle } from "../src/modules/digital-profile/services/evidence-supplement-adapter";
+import { runWikipediaArticleReview } from "../src/modules/digital-profile/orion-golden/analytics/run-wikipedia-article-review";
 import {
   buildSurfacePanelSvg,
+  previewCachePath,
   svgToPngBase64,
 } from "../src/modules/digital-profile/orion-golden/assets/media-asset-svg";
+import type { CompositeObservation } from "../src/modules/digital-profile/services/composite-serp-merge";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
 const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
+/**
+ * Эталон клиентского текста. Числовой эталон рядом сверяет счётчики и метрики
+ * качества и переживает полную переписку формулировок незамеченной; этот —
+ * следит за словами. Нужен любой работе над текстом отчёта.
+ */
+const CLIENT_TEXT_BASELINE_PATH = join(FIXTURE_DIR, "client-text.baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
 const COMPLIANCE_HITS_PATH = join(FIXTURE_DIR, "compliance-hits.json");
 const ANALYST_OVERRIDES_PATH = join(FIXTURE_DIR, "analyst-overrides.json");
@@ -93,6 +107,14 @@ async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null
   ) as EvidenceSupplementBundle;
   // Fill empty imageData with a deterministic offline PNG (keeps git fixture small).
   for (const shot of bundle.serpScreenshots ?? []) {
+    // Снимок выдачи старше тридцати дней в отчёт не берётся — правило продукта
+    // (`SERP_SCREENSHOT_MAX_AGE_MS`), и оно верное. Но у фикстуры дата записана
+    // числом, поэтому кейс переставал проходить сам по себе через месяц после
+    // заморозки: 31 июля смок покраснел, ничего в коде не меняя. Золотой кейс
+    // проверяет логику отчёта, а не календарь, поэтому снимок датируется
+    // временем прогона — правило свежести при этом остаётся живым и проверяется
+    // отдельно (`serp-screenshot-freshness`).
+    shot.capturedAt = new Date().toISOString();
     if (shot.imageData && shot.imageData.length >= 80) continue;
     shot.imageData = await svgToPngBase64(
       buildSurfacePanelSvg({
@@ -107,6 +129,95 @@ async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null
     );
   }
   return bundle;
+}
+
+/**
+ * Купленный разбор статьи, подсеянный до подготовки.
+ *
+ * Модельная часть разбора офлайн не работает (и правильно: `NETWORK_CALLS=0`),
+ * а ветка печати фрагментов без неё осталась бы вне офлайн-контура целиком.
+ * Артефакт кладётся в каталог аналитики так же, как его положил бы прошлый
+ * прогон, — то есть заодно проверяется загрузчик реюза. Выбор фрагментов
+ * задан здесь, но дословность, привязка к разделу и аудит считаются настоящим
+ * кодом стадии: подделать проверенную цитату этим посевом нельзя.
+ */
+async function seedWikipediaArticleReview(
+  artifactsDir: string,
+  bundle: EvidenceSupplementBundle
+): Promise<void> {
+  const set = await runWikipediaArticleReview({
+    caseId: CASE_ID,
+    subject: { fullName: "Anders Holmström", aliases: [] },
+    checks: bundle.wikipediaChecks,
+    deps: {
+      env: {} as NodeJS.ProcessEnv,
+      call: async () => ({
+        subjectMatch: "subject",
+        fragments: [
+          {
+            quote:
+              "В 2019 году налоговая служба Швеции начала проверку операций фонда, " +
+              "завершившуюся доначислением платежей.",
+            category: "negative",
+            gloss: "налоговая проверка фонда в 2019 году",
+          },
+          {
+            quote:
+              "По состоянию на 2014 год компания насчитывала двенадцать сотрудников " +
+              "и работала только на скандинавском рынке.",
+            category: "needs_update",
+            gloss: "данные о компании на 2014 год",
+          },
+        ],
+      }),
+    },
+  });
+  writeJson(join(artifactsDir, "analytics", "wikipedia-article-review.json"), set);
+}
+
+/** Плиток на сетке: столько строк берёт `buildGrid` (`rows.slice(0, 6)`). */
+const GRID_TILE_CAPACITY = 6;
+/**
+ * Сколько RU-адресов получают превью: первая сетка целиком, второй — четыре из
+ * шести. Живой дефект был именно частичным (30 плиток при 16 превью), поэтому
+ * страница «часть плиток» обязана быть в контуре, а не только «всё» и «ничего».
+ */
+const SEEDED_RU_PREVIEWS = GRID_TILE_CAPACITY + 4;
+
+/**
+ * Детерминированные превью в кэше прогона — тем же приёмом, что и снимки
+ * выдачи выше.
+ *
+ * Сетка изображений рисует только полученные превью, а офлайн-прогон в сеть не
+ * ходит: без посева все сетки эталона выродились бы в текст, и отрисовка
+ * плиток выпала бы из офлайн-контура целиком. Эталон закрепляет три ветки
+ * сразу: полная страница (RU-1 и ОАЭ), частичная (RU-2: четыре плитки и строка
+ * о двух без превью) и честная деградация в текст (RU-3, ни одного превью).
+ * Кэш при этом не сеть: выборка читает его и при `NETWORK_CALLS=0`.
+ */
+async function seedImagePreviewCache(
+  artifactsDir: string,
+  rows: CompositeObservation[]
+): Promise<void> {
+  const imageUrls = (region: string, limit: number): string[] =>
+    rows
+      .filter((r) => r.surface === "images" && (r.region ?? "") === region)
+      .map((r) => r.imageUrl || r.url)
+      .filter((u): u is string => Boolean(u))
+      .slice(0, limit);
+  const seeded = [
+    ...imageUrls("RU", SEEDED_RU_PREVIEWS),
+    ...imageUrls("UAE", GRID_TILE_CAPACITY),
+  ];
+  const cacheDir = join(artifactsDir, "image-preview-cache");
+  mkdirSync(cacheDir, { recursive: true });
+  const png = await svgToPngBase64(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200">` +
+      `<rect width="320" height="200" fill="#dbe4f0"/>` +
+      `<rect x="120" y="40" width="80" height="80" rx="40" fill="#8fa7c4"/>` +
+      `<rect x="90" y="130" width="140" height="40" rx="8" fill="#8fa7c4"/></svg>`
+  );
+  for (const url of seeded) writeFileSync(previewCachePath(cacheDir, url), png, "utf8");
 }
 
 function assertEvidenceSupplementSlides(artifactsDir: string): void {
@@ -124,13 +235,53 @@ function assertEvidenceSupplementSlides(artifactsDir: string): void {
 
   const assembled = JSON.parse(
     readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
-  ) as { slides: Array<{ baseSlotId?: string; narrative?: string }> };
+  ) as { slides: Array<{ baseSlotId?: string; narrative?: string; bullets?: string[] }> };
   const p13 = assembled.slides.find((s) => s.baseSlotId === "p13_ru_wikipedia");
   assert.ok(p13, "p13_ru_wikipedia missing");
   assert.match(
     String(p13.narrative ?? ""),
     /проверк|Wikipedia/i,
     `p13 should mention Wikipedia check: ${p13.narrative}`
+  );
+  // Разбор статьи доезжает до листа: начало статьи дословно и отдельный блок
+  // фрагментов с рекомендациями. Метрики тут мало — проверяется напечатанное.
+  const wikiBullets = assembled.slides
+    .filter((s) => s.baseSlotId === "p13_ru_wikipedia")
+    .flatMap((s) => s.bullets ?? []);
+  assert.ok(
+    wikiBullets.some((b) => b.startsWith("Начало статьи (дословно): ")),
+    `p13 must print the article lead verbatim: ${JSON.stringify(wikiBullets).slice(0, 300)}`
+  );
+  assert.ok(
+    wikiBullets.some((b) => b.startsWith("Негативный фрагмент: ")),
+    "p13 must print the negative article fragment"
+  );
+  assert.ok(
+    wikiBullets.some((b) => b.includes("Рекомендация: ")),
+    "p13 fragments must carry a deterministic recommendation"
+  );
+}
+
+/**
+ * Артефакт решения о персоне пишется всегда — даже когда решения нет.
+ *
+ * «Блока нет» обязано значить ровно «решения нет», а не «артефакт потерялся»:
+ * иначе отсутствие ответа на вопрос «кого проверяли» неотличимо от пропажи. У
+ * золотого кейса панель персоны не собиралась, и артефакт обязан сказать это
+ * словами — не пропуском. База отсюда не читается: сборка идёт офлайн.
+ */
+function assertPersonaDecisionArtifact(artifactsDir: string): void {
+  const path = join(artifactsDir, "analytics", "persona-decision.json");
+  assert.ok(existsSync(path), "persona-decision.json missing");
+  const artifact = JSON.parse(readFileSync(path, "utf8")) as {
+    record: unknown;
+    note?: string;
+  };
+  assert.equal(artifact.record, null, "golden case has no persona decision");
+  assert.match(
+    String(artifact.note ?? ""),
+    /Решения по персоне у кейса нет/u,
+    `persona-decision.json must say in words that no decision exists: ${artifact.note}`
   );
 }
 
@@ -156,9 +307,17 @@ function assertComplianceSlides(artifactsDir: string): void {
     (p34!.whatWasFound ?? "").includes("Потенциальное совпадение"),
     `p34 Dow Jones card empty: ${p34!.whatWasFound}`
   );
+  // Хит LexisNexis золотого кейса подтверждён аналитиком (`MATCH_CONFIRMED`) —
+  // и страница обязана говорить об этом, а не звать его потенциальным. Прежде
+  // здесь требовалось «Потенциальное совпадение», то есть проверка закрепляла
+  // расхождение таблицы («Подтверждено») с прозой того же слайда.
   assert.ok(
-    (p35!.whatWasFound ?? "").includes("Потенциальное совпадение"),
+    (p35!.whatWasFound ?? "").includes("подтверждено аналитиком"),
     `p35 LexisNexis card empty: ${p35!.whatWasFound}`
+  );
+  assert.ok(
+    !(p35!.whatWasFound ?? "").includes("не подтверждено"),
+    `p35 подтверждённое совпадение названо неподтверждённым: ${p35!.whatWasFound}`
   );
 }
 
@@ -194,6 +353,7 @@ function stableQuality(summary: ReportQualitySummary): GoldenBaseline["quality"]
 export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   summary: ReportQualitySummary;
   baseline: GoldenBaseline;
+  clientText: ClientTextSnapshot;
   prepareOk: boolean;
 }> {
   const rows = buildGoldenCaseObservations();
@@ -241,6 +401,8 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   });
   writeJson(join(artifactsDir, "subject-identity-profile.json"), profile);
 
+  await seedImagePreviewCache(artifactsDir, rows);
+
   const merge = await mergeCompositeSerp({ manifest, fixtureBaseRows: rows });
   // Keep full fixture row set (merge may reshape; golden case measures prepare on our corpus).
   merge.observations = rows;
@@ -258,6 +420,9 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   // Freeze binding timestamp for determinism of any downstream hashes that might read it.
   binding.generatedAt = "2026-01-15T12:00:00.000Z";
 
+  const supplement = await loadEvidenceSupplement();
+  if (supplement) await seedWikipediaArticleReview(artifactsDir, supplement);
+
   const fakeRender: DeckRenderAdapter = async (r) => ({
     pdf: undefined,
     pptx: undefined,
@@ -274,15 +439,19 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     merge,
     subjectProfile: profile,
     render: fakeRender,
+    // Золотой кейс работает с фейковым рендерером и ничего не публикует —
+    // мерного прогона у него нет по построению, и он объявляет это явно.
+    measureBulletFit: null,
     gptCaller: null,
     complianceHits: loadComplianceHits(),
     analystOverrides: loadAnalystOverrides(),
-    evidenceSupplement: await loadEvidenceSupplement(),
+    evidenceSupplement: supplement,
   };
 
   const res = await runCanonicalReportPrepare(input);
   assertComplianceSlides(artifactsDir);
   assertEvidenceSupplementSlides(artifactsDir);
+  assertPersonaDecisionArtifact(artifactsDir);
   const overridesPath = join(artifactsDir, "analytics", "analyst-overrides-applied.json");
   assert.ok(existsSync(overridesPath), "analyst-overrides-applied.json missing");
   const overridesApplied = JSON.parse(readFileSync(overridesPath, "utf8")) as {
@@ -308,7 +477,37 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     quality: stableQuality(summary),
   };
 
-  return { summary, baseline, prepareOk: res.ok === true };
+  /*
+   * Снимок берётся с payload рендерера, а не со сборки деки.
+   *
+   * Сначала он снимался с `assembled-deck.json` — и пропустил ровно то, ради
+   * чего заводился: подписи «Что обнаружено / Почему важно / Что проверить»
+   * приклеивались к тексту позже, в `toRendererPayload`, то есть уже после
+   * снимка. Эталон не заметил их удаления. Клиент получает payload, поэтому
+   * сверять надо payload.
+   */
+  const assembledDeck = JSON.parse(
+    readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
+  ) as { slides?: RendererSlide[] };
+  const deckManifest = JSON.parse(
+    readFileSync(join(artifactsDir, "deck", "report-deck-manifest.json"), "utf8")
+  ) as ReportDeckManifest;
+  const clientPayload = toRendererPayload({
+    deckManifest,
+    rendererSlides: assembledDeck.slides ?? [],
+    subjectName: profile.displayName ?? CASE_ID,
+  });
+  // Слайды payload лежат в `deckManifest.finalSlides` — это форма контракта
+  // рендерера, а не наша: он принимает деку целиком.
+  const payloadDeck = (clientPayload as { deckManifest?: { finalSlides?: unknown } }).deckManifest;
+  const finalSlides = payloadDeck?.finalSlides;
+  assert.ok(
+    Array.isArray(finalSlides) && finalSlides.length > 0,
+    "renderer payload must carry finalSlides — иначе снимок клиентского текста пуст и ничего не проверяет"
+  );
+  const clientText = extractClientText({ slides: finalSlides });
+
+  return { summary, baseline, clientText, prepareOk: res.ok === true };
 }
 
 function printSummary(summary: ReportQualitySummary): void {
@@ -392,7 +591,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
   const dirA = mkdtempSync(join(tmpdir(), "golden-case-a-"));
   try {
-    const { summary, baseline, prepareOk } = await runGoldenCasePrepare(dirA);
+    const { summary, baseline, clientText, prepareOk } = await runGoldenCasePrepare(dirA);
     assert.equal(prepareOk, true, "canonical prepare must succeed");
     printSummary(summary);
 
@@ -400,13 +599,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       const dirB = mkdtempSync(join(tmpdir(), "golden-case-b-"));
       try {
         const second = await runGoldenCasePrepare(dirB);
-        const d = diffJson(baseline, second.baseline);
+        // Текст сверяется наравне со счётчиками: эталон формулировок имеет
+        // смысл, только если два прогона дают одни и те же слова.
+        const d = [
+          ...diffJson(baseline, second.baseline),
+          ...diffJson(clientText, second.clientText).map((l) => `clientText.${l}`),
+        ];
         if (d.length) {
           console.error("DETERMINISM FAIL — two runs differ:");
           for (const line of d.slice(0, 40)) console.error(`  ${line}`);
           return 1;
         }
-        console.log("determinism: OK (two runs identical)");
+        console.log("determinism: OK (two runs identical, включая клиентский текст)");
       } finally {
         rmSync(dirB, { recursive: true, force: true });
       }
@@ -414,7 +618,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
     if (updateBaseline) {
       writeJson(BASELINE_PATH, baseline);
+      writeJson(CLIENT_TEXT_BASELINE_PATH, clientText);
       console.log(`baseline updated: ${BASELINE_PATH}`);
+      console.log(`client text baseline updated: ${CLIENT_TEXT_BASELINE_PATH}`);
       return 0;
     }
 
@@ -433,6 +639,30 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return 1;
     }
     console.log("baseline: OK");
+
+    // Эталон клиентского текста. Отдельный от числового: переработка
+    // формулировок обязана быть видна как осознанная правка
+    // эталона, а не проехать незамеченной под зелёными счётчиками.
+    if (!existsSync(CLIENT_TEXT_BASELINE_PATH)) {
+      console.error(`client text baseline missing: ${CLIENT_TEXT_BASELINE_PATH}`);
+      console.error("Run with --update-baseline to create it.");
+      return 1;
+    }
+    const expectedText = JSON.parse(
+      readFileSync(CLIENT_TEXT_BASELINE_PATH, "utf8")
+    ) as ClientTextSnapshot;
+    const textDiffs = diffJson(expectedText, clientText);
+    if (textDiffs.length) {
+      console.error("CLIENT TEXT BASELINE MISMATCH:");
+      for (const line of textDiffs.slice(0, 60)) console.error(`  ${line}`);
+      console.error(`(всего расхождений: ${textDiffs.length})`);
+      console.error("Если формулировки менялись намеренно — перезапишите эталон:");
+      console.error("  NETWORK_CALLS=0 npx tsx scripts/run-golden-case-report.ts --update-baseline");
+      return 1;
+    }
+    console.log(
+      `client text baseline: OK (${clientText.slideCount} слайдов, ${clientText.totalChars} знаков)`
+    );
     return 0;
   } finally {
     rmSync(dirA, { recursive: true, force: true });

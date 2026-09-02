@@ -96,10 +96,49 @@ function failBatch(status: SurfaceFetchStatus, error?: string): SerperSurfaceBat
   return { status, items: [], error };
 }
 
+/**
+ * Готовый ответ Google — та самая поверхность, ради которой в отчёте есть
+ * страница «ИИ-ответы поисковых систем».
+ *
+ * Ответ приходит тем же вызовом, что и органика, отдельных денег не стоит, но
+ * полем `answerBox` мы не читали вовсе: страница отчёта сообщала «поверхность
+ * не собиралась», хотя ответ лежал в разобранном ответе провайдера.
+ * Пользователь такой блок видит первым и часто им и ограничивается — не
+ * показать его значит пропустить самое заметное.
+ */
+export function answerBoxItem(
+  raw: unknown,
+  ctx: { query: string; region: OrionRegionCode; language: string; capturedAt: string }
+): SerperSurfaceItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const box = raw as Record<string, unknown>;
+  const text = String(box.answer ?? box.snippet ?? "").trim();
+  // Без текста ответа показывать нечего: заголовок сам по себе не ответ.
+  if (!text) return null;
+  const url = String(box.link ?? "").trim() || null;
+  return {
+    kind: "knowledgePanel",
+    query: ctx.query,
+    region: ctx.region,
+    language: ctx.language,
+    rank: 1,
+    title: String(box.title ?? "").trim() || "Ответ поисковой системы",
+    snippet: text,
+    url,
+    domain: url ? domainOf(url) : null,
+    thumbnailUrl: null,
+    imageUrl: null,
+    videoUrl: null,
+    sourcePageUrl: url,
+    rawMetadataSafe: { source: "serper", surface: "answerBox", capturedAt: ctx.capturedAt },
+  };
+}
+
 export async function serperOrganicWithExtras(
   request: SearchProviderRequest,
   region: OrionRegionCode,
-  limit: number
+  /** `undefined` — глубина по умолчанию провайдера, то есть один кредит. */
+  limit?: number
 ): Promise<SerperSurfaceBatchResult> {
   if (!serperReady()) return failBatch("NOT_CONFIGURED", "Serper API key not configured");
   try {
@@ -183,6 +222,24 @@ export async function serperOrganicWithExtras(
         },
       });
     }
+
+    /*
+     * Готовый ответ Google — та самая поверхность, ради которой в отчёте есть
+     * страница «ИИ-ответы поисковых систем».
+     *
+     * Ответ приходит тем же вызовом, что и органика, отдельных денег не стоит,
+     * но полем `answerBox` мы не читали вовсе: страница отчёта сообщала
+     * «поверхность не собиралась», хотя ответ был в разобранном ответе
+     * провайдера. Пользователь такой блок видит первым и часто им и
+     * ограничивается — не показать его значит пропустить самое заметное.
+     */
+    const answer = answerBoxItem(raw.answerBox, {
+      query: request.query,
+      region,
+      language: request.language ?? profile.language,
+      capturedAt,
+    });
+    if (answer) items.push(answer);
 
     return { status: "SUCCESS", items };
   } catch (err) {
@@ -314,11 +371,25 @@ export async function serperAutocomplete(
   }
 }
 
-/** Convenience: fetch all Serper surfaces for one primary query. */
+/**
+ * Четыре поверхности одного запроса.
+ *
+ * `mediaLimit` — глубина картинок и видео: там она доезжает до страниц отчёта,
+ * и у `/images` сотня — допустимое значение.
+ *
+ * Органика этого батча глубины не просит вовсе, и причина наблюдаемая: у
+ * `/search` `num` больше десяти не бывает — провайдер сам называет это поле
+ * «maximum number of results per page» и допускает для типа `search` ровно одно
+ * значение, 10. То есть прежний `num: 20` в этом вызове просто игнорировался.
+ * Просить же глубину для строк, которые вызывающий выбрасывает, бессмысленно и
+ * помимо этого: из ответа нужны только связанные запросы и карточка знания.
+ * Позиционные таблицы собирает не этот батч, а `serperSearch` со своей
+ * постраничной глубиной.
+ */
 export async function serperAllSurfacesForQuery(
   request: SearchProviderRequest,
   region: OrionRegionCode,
-  limit: number
+  mediaLimit: number
 ): Promise<{
   organic: SerperSurfaceBatchResult;
   images: SerperSurfaceBatchResult;
@@ -326,9 +397,9 @@ export async function serperAllSurfacesForQuery(
   autocomplete: SerperSurfaceBatchResult;
 }> {
   const [organic, images, videos, autocomplete] = await Promise.all([
-    serperOrganicWithExtras(request, region, limit),
-    serperImageSearch(request, region, limit),
-    serperVideoSearch(request, region, limit),
+    serperOrganicWithExtras(request, region),
+    serperImageSearch(request, region, mediaLimit),
+    serperVideoSearch(request, region, mediaLimit),
     serperAutocomplete(request, region),
   ]);
   return { organic, images, videos, autocomplete };

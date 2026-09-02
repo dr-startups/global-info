@@ -120,6 +120,35 @@ def _classify_role(shape: Any, z: int) -> str:
     return "decorative"
 
 
+def _drawn_text(shape: Any) -> str:
+    """Нарисованный текст фигуры: рамка текста или ячейки таблицы.
+
+    Геометрия рядом читает только рамку — ей нужна длина текста для роли
+    фигуры, а таблицу она узнаёт по типу. Ворот следа поля обязан видеть
+    больше: у страницы выдачи почти весь текст лежит в ячейках таблицы, и без
+    них страница выглядела бы пустой.
+    """
+    try:
+        if getattr(shape, "has_text_frame", False) and shape.has_text_frame:
+            return (shape.text_frame.text or "").strip()
+        if getattr(shape, "has_table", False) and shape.has_table:
+            cells = [(cell.text or "").strip() for row in shape.table.rows for cell in row.cells]
+            return "\n".join(c for c in cells if c)
+    except Exception:  # noqa: BLE001
+        return ""
+    return ""
+
+
+def page_texts(pptx: Path) -> list[str]:
+    """Текст каждой страницы презентации — по одной строке на страницу."""
+    from pptx import Presentation
+
+    return [
+        "\n".join(t for t in (_drawn_text(shape) for shape in slide.shapes) if t)
+        for slide in Presentation(str(pptx)).slides
+    ]
+
+
 def _extract_shapes(slide: Any, page: int) -> list[dict[str, Any]]:
     shapes: list[dict[str, Any]] = []
     for z, shape in enumerate(slide.shapes):
@@ -299,7 +328,33 @@ def inspect_presentation(pptx: Path, *, expect_pages: int | None = None) -> dict
         try:
             telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
             for row in telemetry.get("entries") or telemetry.get("textBoxes") or []:
-                if row.get("clipped") is True:
+                dropped = int(row.get("droppedBullets") or 0) + int(row.get("droppedLines") or 0)
+                if dropped > 0:
+                    # Потеря содержимого — не то же самое, что вылезший за рамку
+                    # текст: до читателя блок не дошёл вовсе. Правило записано в
+                    # ENGINEERING.md и реализовано в TS-инспекторе
+                    # (`inspectLayoutTelemetry`), но прогон зовёт этот файл — и
+                    # здесь правила не было. Один вопрос, два ответа, причём
+                    # строгий ответ не исполнялся никогда: на эталонной деке
+                    # выброшенные буллеты страниц 11 и 29 докладывались как
+                    # `text-clipping`.
+                    clipping.append(
+                        {
+                            "page": int(row.get("page") or 0),
+                            "code": "CONTENT_DROPPED_BY_RENDERER",
+                            "severity": "CRITICAL",
+                            "detail": (
+                                f"рендерер выбросил содержимое: "
+                                f"блоков={row.get('droppedBullets') or 0} "
+                                f"строк={row.get('droppedLines') or 0} "
+                                f"requiredHeight={row.get('requiredHeight')} "
+                                f"availableHeight={row.get('availableHeight')} "
+                                f"name={row.get('name') or row.get('role')} "
+                                f"— страницу должна была разбить пагинация"
+                            ),
+                        }
+                    )
+                elif row.get("clipped") is True:
                     clipping.append(
                         {
                             "page": int(row.get("page") or 0),
@@ -409,18 +464,35 @@ def inspect(pptx: Path, *, expect_pages: int | None = None) -> dict[str, Any]:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "usage: inspect-first36-pptx-geometry.py <pptx> [--expect-pages=36]"}))
+        print(
+            json.dumps(
+                {"error": "usage: inspect-first36-pptx-geometry.py <pptx> [--expect-pages=36] [--texts]"}
+            )
+        )
         return 2
     pptx = Path(sys.argv[1])
     expect_pages: int | None = None
+    texts_only = False
     for arg in sys.argv[2:]:
         if arg.startswith("--expect-pages="):
             expect_pages = int(arg.split("=", 1)[1])
         elif arg == "--expect-pages":
             expect_pages = 36
+        elif arg == "--texts":
+            texts_only = True
     if not pptx.exists():
         print(json.dumps({"error": f"missing {pptx}"}))
         return 2
+    if texts_only:
+        # Отдельным режимом, а не полем отчёта геометрии: `geometry-report.json`
+        # лежит в эталоне, и текст всех страниц раздул бы его вдвое, меняясь от
+        # каждой правки формулировки.
+        try:
+            print(json.dumps(page_texts(pptx), ensure_ascii=False))
+            return 0
+        except Exception as exc:  # noqa: BLE001
+            print(json.dumps({"error": str(exc)}))
+            return 1
     try:
         print(json.dumps(inspect(pptx, expect_pages=expect_pages), ensure_ascii=False))
         return 0

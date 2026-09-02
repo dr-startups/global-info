@@ -1,20 +1,35 @@
 /**
  * Stage 5 — composed client summary output (deterministic composer).
- * Not wired to production renderer slides yet.
+ *
+ * This artifact reaches the client: the deck loads
+ * `composed-client-summary.json` (`load-deck-inputs`), paginates it
+ * semantically and prints it as the executive summary slides. Frozen v1 runs
+ * are read as-is, without schema validation, and keep working.
  */
 
 import { z } from "zod";
 import { ContractEnvelopeSchema } from "./common";
-import { CanonicalThemeIdSchema, MaterialityLevelSchema } from "./canonical-claim";
+import { MaterialityLevelSchema } from "./canonical-claim";
 
-export const COMPOSED_CLIENT_SUMMARY_SCHEMA_VERSION = "composed-client-summary-v1" as const;
+export const COMPOSED_CLIENT_SUMMARY_SCHEMA_VERSION = "composed-client-summary-v2" as const;
 
 export const ComposedThemeSectionSchema = z.object({
-  themeId: CanonicalThemeIdSchema,
+  /**
+   * Тема словаря (`criminal_judicial`) или сюжет прочитанных страниц
+   * (`plot:<хэш названия>`): у сюжета канонической темы нет и быть не может.
+   */
+  themeId: z.string().min(1),
+  /** Из какого мира блок: претензии выдачи или сюжет прочитанных страниц. */
+  kind: z.enum(["claims", "read_plot"]).default("claims"),
   heading: z.string().min(1),
   body: z.string().min(1),
-  materialityLevel: MaterialityLevelSchema,
-  evidenceRefs: z.array(z.string()).min(1),
+  /** Степень существенности — понятие мира претензий; сюжету её не выдумывают. */
+  materialityLevel: MaterialityLevelSchema.optional(),
+  /**
+   * Пустой список схема пропускает намеренно: блок без оснований ловят ворота
+   * `SUMMARY_UNSUPPORTED_ASSERTIONS` — с именем и числом, а не отказом разбора.
+   */
+  evidenceRefs: z.array(z.string()),
   articleTitles: z.array(z.string()),
   articleDomains: z.array(z.string()),
 });
@@ -37,7 +52,7 @@ export const ComposedClientSummarySchema = ContractEnvelopeSchema.extend({
     nextSteps: z.string().min(1),
   }),
   /** Themes that did not fit the lead block — still fully written, not shortened. */
-  continuationThemeIds: z.array(CanonicalThemeIdSchema),
+  continuationThemeIds: z.array(z.string()),
   gates: z.object({
     SUMMARY_MATERIAL_THEME_COVERAGE: z.number().min(0).max(100),
     SUMMARY_CONCRETE_EXAMPLES_PRESENT: z.boolean(),

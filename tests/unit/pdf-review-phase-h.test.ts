@@ -111,8 +111,10 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
       sourceUrl: "https://www.cnbc.com/deripaska-vtb",
       snippet: "",
     });
-    expect(scoreExampleForTheme(strong, financialTheme)).toBeGreaterThan(
-      scoreExampleForTheme(bare, financialTheme)
+    // Признак негатива у обоих одинаковый: сравнивается вес темы и заголовка,
+    // а негатив приносит вызывающий (у него он уже посчитан вердиктом).
+    expect(scoreExampleForTheme(strong, financialTheme, true)).toBeGreaterThan(
+      scoreExampleForTheme(bare, financialTheme, true)
     );
     const picked = pickClaimExamples([bare, strong], financialTheme, [bare, strong]);
     expect(picked).toHaveLength(1);
@@ -166,8 +168,12 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
 });
 
 describe("H.3 — GPT guard", () => {
-  it("slide-copy prompt is v16", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v16");
+  // См. pdf-review-phase-i: точная строка версии падала на любом подъёме
+  // промпта. Охраняется невозврат назад, а не конкретное число.
+  it("версия промпта slide-copy не откатывается назад", () => {
+    const m = GPT_SLIDE_COPY_PROMPT_VERSION.match(/^gpt-slide-copy-v(\d+)$/u);
+    expect(m, `неожиданный формат версии: ${GPT_SLIDE_COPY_PROMPT_VERSION}`).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(16);
   });
 
   it("rejectWeakQuoteLines catches bare FIO evidence quotes", () => {

@@ -21,23 +21,43 @@ export type FragmentPromptDef = {
   systemPrompt: string;
 };
 
+/**
+ * Кто пишет и по каким правилам.
+ *
+ * Персона была «старший аналитик due diligence», и модель добросовестно писала
+ * протоколом — тем самым канцеляритом, из-за которого отчёт нельзя прочитать
+ * как статью. Читатель отчёта — руководитель, а не следователь, поэтому пишет
+ * деловой журналист.
+ *
+ * Отсюда же убрана нижняя граница длины («не короче ~40% бюджета поля»). Это
+ * было прямое указание разводить воду там, где сказать нечего: заполнить поле
+ * важнее, чем сообщить факт. Ограничение осталось только сверху. Пустое
+ * состояние честнее выдуманного — это правило продукта, и оно сильнее
+ * требования плотности.
+ *
+ * Запреты (не добавлять фактов, не приписывать субъекту чужие материалы) —
+ * требования продукта, а не стиль, и сохранены дословно.
+ */
 const ANALYST_BASE = [
-  "Ты — старший аналитик reputational due diligence.",
+  "Ты — деловой журналист: пишешь для руководителя, который примет по тексту решение.",
+  "Пиши связным текстом, а не пунктами анкеты: короткие предложения, активный залог, конкретика вместо канцелярита.",
   "Используй только переданные scoped findings и claims; не добавляй фактов.",
-  "Каждый существенный тезис связывай с findingId.",
+  "Каждый существенный тезис опирается на переданный findingId.",
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset).",
   "Не называй материалы другого субъекта нейтральными данными проверяемого лица.",
-  // REMEDIATION §7.5 — density: fill all SlideBody fields with concrete scoped facts.
-  "Для страниц с данными заполняй все поля SlideBody (narrative, bullets, whatWasFound, whyItMatters, whatToCheck); опирайся на числа, домены и темы из scoped findings.",
-  "Тексты для страниц с данными не короче ~40% бюджета соответствующего поля, если есть материал для раскрытия.",
+  "Не пересказывай тему заголовка в первом предложении — читатель уже прочитал заголовок.",
+  "Пиши ровно столько, сколько есть материала: нет фактов — короче, а не водянистее.",
   "Верни только JSON по схеме SlideBody (narrative, bullets, whatWasFound, whyItMatters, whatToCheck, sourceNote).",
 ].join(" ");
 
 function llmPrompt(promptKey: string, topic: string): FragmentPromptDef {
   return {
     promptKey,
-    // v3: §7.5 density requirements in ANALYST_BASE.
-    promptVersion: `${promptKey}-v3`,
+    // v4: персона делового журналиста вместо аналитика, снята нижняя граница
+    // длины. Версия обязана расти вместе с текстом промпта — она входит в ключ
+    // кеша, и без подъёма переиспользовался бы текст, написанный по прежним
+    // правилам.
+    promptVersion: `${promptKey}-v4`,
     deterministic: false,
     systemPrompt: `${ANALYST_BASE} Тема фрагмента: ${topic}.`,
   };
@@ -71,7 +91,17 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   RU_SERP_SCREENSHOT: llmPrompt("ru-serp-screenshot-analysis", "анализ скриншота выдачи RU"),
   RU_SUGGESTIONS: llmPrompt("ru-suggestions-analysis", "анализ поисковых подсказок RU"),
   RU_IMAGES: llmPrompt("ru-images-analysis", "анализ изображений в выдаче RU"),
-  RU_IDENTITY_WIKIPEDIA: llmPrompt("ru-identity-analysis", "идентификация субъекта в Википедии/панелях знаний RU"),
+  /*
+   * Страницы фактических проверок модель не переписывает.
+   *
+   * Стадия копирайта переписывает ровно те поля, в которых у страницы
+   * Википедии лежат факты проверки, — и однажды выбросила из нарратива метод,
+   * дату и URL найденной статьи, хотя URL был в данных. Ценность этой страницы
+   * в дословности, а не в интонации; так же после шага F устроен комплаенс.
+   * Альтернатива «гвард, требующий от модели сохранить факты» отвергнута: это
+   * второе место, решающее, что обязано быть в тексте.
+   */
+  RU_IDENTITY_WIKIPEDIA: deterministicPrompt("ru-identity-analysis"),
   RU_KNOWLEDGE_AI: llmPrompt("ru-ai-analysis", "анализ AI-ответов поисковых систем RU"),
   RU_RELATED: llmPrompt("ru-related-analysis", "анализ связанных запросов RU"),
   UAE_SUMMARY: llmPrompt("uae-regional-summary", "региональный обзор UAE-поверхностей"),
@@ -80,7 +110,7 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   UAE_SERP_SCREENSHOT: llmPrompt("uae-serp-screenshot-analysis", "анализ скриншота выдачи UAE"),
   UAE_SUGGESTIONS: llmPrompt("uae-suggestions-analysis", "анализ поисковых подсказок UAE"),
   UAE_IMAGES: llmPrompt("uae-images-analysis", "анализ изображений в выдаче UAE"),
-  UAE_IDENTITY_WIKIPEDIA: llmPrompt("uae-identity-analysis", "идентификация субъекта в Википедии/панелях знаний UAE"),
+  UAE_IDENTITY_WIKIPEDIA: deterministicPrompt("uae-identity-analysis"),
   UAE_KNOWLEDGE_AI: llmPrompt("uae-ai-analysis", "анализ AI-ответов поисковых систем UAE"),
   UAE_RELATED: llmPrompt("uae-related-analysis", "анализ связанных запросов UAE"),
   COMPLIANCE_MAIN: deterministicPrompt("compliance-existing-content"),

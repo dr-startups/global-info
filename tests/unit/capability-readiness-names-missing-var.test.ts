@@ -34,10 +34,32 @@ const readiness = (env: Record<string, string | undefined>) =>
   new Map(describeCapabilityReadiness(env).map((c) => [c.capability, c]));
 
 describe("сводка готовности сборщиков", () => {
+  /**
+   * Единственное исключение из правила «в переменных живут только секреты».
+   *
+   * Чтение страниц открывает чужие сайты и гоняет их текст через модель — это
+   * деньги за каждый отчёт. Такое не должно включаться само у всякого, кто
+   * развернул продукт: решение о трате принимает человек. Исключение названо
+   * здесь поимённо, чтобы оно не разрослось молча.
+   */
+  const PAID_OPT_IN = "Чтение страниц (разбор ссылок ТОП-20)";
+
   it("одних секретов достаточно: все сборщики готовы без единого флага", () => {
     for (const c of describeCapabilityReadiness(SECRETS_ONLY)) {
+      if (c.capability === PAID_OPT_IN) continue;
       expect(c.ready, `${c.capability}: ${c.detail}`).toBe(true);
     }
+  });
+
+  it("чтение страниц выключено по умолчанию и говорит, чего не хватает", () => {
+    const entry = readiness(SECRETS_ONLY).get(PAID_OPT_IN);
+    expect(entry?.ready).toBe(false);
+    expect(entry?.detail).toContain("DIGITAL_PROFILE_LINK_READING");
+  });
+
+  it("с разрешением и ключом чтение страниц готово", () => {
+    const env = { ...SECRETS_ONLY, DIGITAL_PROFILE_LINK_READING: "true" };
+    expect(readiness(env).get(PAID_OPT_IN)?.ready).toBe(true);
   });
 
   it.each([

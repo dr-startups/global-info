@@ -18,6 +18,7 @@
 
 import type { RawInventoryItem } from "../orion-golden/types";
 import type {
+  NotShownRow,
   VisibleAssetItem,
   VisualAssetMeta,
   VisualAssetsBySlot,
@@ -25,13 +26,18 @@ import type {
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
 import { buildSyntheticSerpViewModelFromObservations } from "../serp-observation/synthetic-asset";
+import { serpMaterialKey } from "../serp-observation/material-key";
+import { analystDecisionOf } from "../orion-golden/analytics/item-adverse";
 import {
   filterObservationsForSyntheticSerp,
 } from "../serp-observation/filter-synthetic-serp-noise";
 import {
   selectVisibleObservationsForEngine,
 } from "../serp-observation/synthetic-asset";
-import { classifyObservationHighlight } from "../serp-observation/resolve-observation-highlights";
+import {
+  classifyObservationHighlight,
+  type ObservationVerdictByRef,
+} from "../serp-observation/resolve-observation-highlights";
 import type { PersistedSerpObservation } from "../serp-observation/types";
 import {
   buildImageGridSvg,
@@ -39,9 +45,13 @@ import {
   buildSurfacePanelSvg,
   fetchImagePreviewsWithBudget,
   svgToPngBase64,
+  type ImageGridItem,
   type ImagePreviewFetchOptions,
+  type PreviewFailureReason,
 } from "../orion-golden/assets/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import { YANDEX_GEN_ANSWER_URL_SCHEME } from "../providers/yandex-gen-search";
+import { plainAiAnswerText } from "../orion-golden/client/ai-answer-text";
 import {
   pickRealSerpScreenshot,
   type RealSerpScreenshotInput,
@@ -119,6 +129,23 @@ function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
+/**
+ * Первое наблюдение каждого материала, в порядке набора.
+ *
+ * Ключ общий с таблицей выдачи и с отбором строк для синтетического снимка:
+ * ответ на вопрос «одна ли это строка» в продукте один. Строка, не называющая
+ * материала, остаётся собой — иначе она пропала бы молча.
+ */
+function firstPerMaterial(items: RawInventoryItem[]): RawInventoryItem[] {
+  const seen = new Set<string>();
+  return items.filter((it) => {
+    const key = serpMaterialKey({ url: it.sourceUrl, title: it.title }, refOf(it));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function domainOf(url: string | undefined): string {
   if (!url || !/^https?:\/\//i.test(url)) return "";
   try {
@@ -154,13 +181,20 @@ function toSerpObservation(item: RawInventoryItem, rank: number): PersistedSerpO
   };
 }
 
-function toVisibleItem(item: RawInventoryItem): VisibleAssetItem {
-  const hl = classifyObservationHighlight({
-    url: item.sourceUrl ?? null,
-    domain: domainOf(item.sourceUrl) || null,
-    title: item.title ?? null,
-    snippet: item.snippet ?? null,
-  } as unknown as PersistedSerpObservation);
+function toVisibleItem(
+  item: RawInventoryItem,
+  verdictByRef?: ObservationVerdictByRef
+): VisibleAssetItem {
+  const hl = classifyObservationHighlight(
+    {
+      url: item.sourceUrl ?? null,
+      domain: domainOf(item.sourceUrl) || null,
+      title: item.title ?? null,
+      snippet: item.snippet ?? null,
+    } as unknown as PersistedSerpObservation,
+    verdictByRef?.[refOf(item)],
+    analystDecisionOf(item)
+  );
   return {
     ref: refOf(item),
     url: item.sourceUrl,
@@ -173,9 +207,44 @@ function toVisibleItem(item: RawInventoryItem): VisibleAssetItem {
   };
 }
 
+/** Тег в правой колонке панели — согласован с ярлыком таблицы выдачи. */
+export const OTHER_SUBJECT_PANEL_TAG = "о другом лице";
+
+/**
+ * Строка панели и её запись в артефакте — из одного решения.
+ *
+ * Строка о другом человеке печатается: панель воспроизводит то, что показывает
+ * поисковик, и спрятать её значило бы нарисовать выдачу, которой нет. Но
+ * рисуется она нейтральной и с тегом принадлежности вместо seed-запроса —
+ * красная рамка на ней спорила бы с числом в заголовке страницы, которое эту
+ * строку не считает. Признак негативной формулировки при этом сохраняется
+ * записью: страница называет исключение словами.
+ */
+export function panelRowWithOwnership(input: {
+  item: VisibleAssetItem;
+  decision?: string;
+  meta?: string;
+}): { visible: VisibleAssetItem; svg: { label: string; meta?: string; adverse: boolean } } {
+  const other = input.decision === "OTHER_SUBJECT";
+  const visible: VisibleAssetItem = {
+    ...input.item,
+    ...(other ? { adverse: false, adverseWording: input.item.adverse === true } : {}),
+    ...(input.decision ? { subjectDecision: input.decision } : {}),
+  };
+  return {
+    visible,
+    svg: {
+      label: String(input.item.title ?? "").trim(),
+      meta: other ? OTHER_SUBJECT_PANEL_TAG : input.meta,
+      adverse: visible.adverse === true,
+    },
+  };
+}
+
 function meta(
   asset: RendererAssetEntry,
-  visibleItems: VisibleAssetItem[]
+  visibleItems: VisibleAssetItem[],
+  notShown: NotShownRow[] = []
 ): VisualAssetMeta {
   const evidenceRefs = visibleItems.map((v) => v.ref);
   const evidenceDomains = [
@@ -189,6 +258,7 @@ function meta(
     evidenceRefs,
     evidenceDomains: evidenceDomains.length ? evidenceDomains : undefined,
     visibleItems,
+    ...(notShown.length ? { notShown } : {}),
   };
 }
 
@@ -225,6 +295,8 @@ async function buildSerpSnapshotAsset(input: {
   bind: (slotId: string, meta: VisualAssetMeta) => void;
   push: (asset: RendererAssetEntry) => void;
   slotId: string;
+  /** Решения по прочитанным страницам: рамки и легенда следуют им. */
+  verdictByRef?: ObservationVerdictByRef;
 }): Promise<boolean> {
   // Only engine-attributable rows can appear in a Yandex/Google column.
   const attributable = input.items.filter((it) => engineOf(it) !== null && it.sourceUrl);
@@ -242,8 +314,8 @@ async function buildSerpSnapshotAsset(input: {
   const filtered = filterObservationsForSyntheticSerp(allObs, input.subjectName);
   const visibleIds = new Set(
     [
-      ...selectVisibleObservationsForEngine(filtered, "YANDEX"),
-      ...selectVisibleObservationsForEngine(filtered, "GOOGLE"),
+      ...selectVisibleObservationsForEngine(filtered, "YANDEX", undefined, input.verdictByRef),
+      ...selectVisibleObservationsForEngine(filtered, "GOOGLE", undefined, input.verdictByRef),
     ].map((o) => o.id)
   );
   if (visibleIds.size === 0) return false;
@@ -253,20 +325,24 @@ async function buildSerpSnapshotAsset(input: {
     subjectName: input.subjectName,
     queryText: dominantQuery(attributable, input.subjectName),
     language: input.region === "UAE" ? "en" : "ru",
+    verdictByRef: input.verdictByRef,
   });
   const png = await renderSerpSnapshotPng(vm);
 
   const visibleItems = observations
     .filter((o) => visibleIds.has(o.obs.id))
-    .map((o) => toVisibleItem(o.item));
+    .map((o) => toVisibleItem(o.item, input.verdictByRef));
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: "serp_screenshot",
+    // Заголовок и подпись называют содержимое, а не способ его отрисовки:
+    // в снимке настоящие строки выдачи, и «синтетический» рядом с ними клиент
+    // читает как «выдумано». Источник данных остаётся в подвале самой картинки.
     title:
       input.region === "UAE"
-        ? "ОАЭ — синтетический снимок выдачи"
-        : "Россия — синтетический снимок выдачи",
-    caption: "Синтетический снимок на основе сохранённых результатов API",
+        ? "ОАЭ — результаты поисковой выдачи"
+        : "Россия — результаты поисковой выдачи",
+    caption: "Результаты поисковой выдачи на момент сбора",
     imageData: png.toString("base64"),
     evidenceRefs: visibleItems.map((v) => v.ref),
   };
@@ -287,6 +363,10 @@ async function buildListPanelAsset(input: {
   slotId: string;
   bind: (slotId: string, meta: VisualAssetMeta) => void;
   push: (asset: RendererAssetEntry) => void;
+  /** Принадлежность строк субъекту: решения subject-resolution по ссылкам. */
+  subjectDecisionByRef?: Record<string, string>;
+  /** Решения по прочитанным страницам: рамка на панели следует им. */
+  verdictByRef?: ObservationVerdictByRef;
   /** Test hook (§5.1): force this panel to throw. */
   injectFailureForAssetRef?: string;
 }): Promise<boolean> {
@@ -298,19 +378,23 @@ async function buildListPanelAsset(input: {
   }
   const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
   if (rows.length === 0) return false;
-  const visibleItems = rows.map(toVisibleItem);
+  // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
+  const drawn = rows.map((r) =>
+    panelRowWithOwnership({
+      item: toVisibleItem(r, input.verdictByRef),
+      decision: input.subjectDecisionByRef?.[refOf(r)],
+      meta: input.rowMeta?.(r),
+    })
+  );
+  const visibleItems = drawn.map((d) => d.visible);
   const png = await svgToPngBase64(
     buildSurfacePanelSvg({
       title: input.title,
       subtitle: input.subtitle,
       engineLabel: input.engineLabel,
-      items: rows.map((r, i) => ({
-        label: String(r.title).trim(),
-        meta: input.rowMeta?.(r),
-        // Same red-frame classifier the SERP snapshot uses: negative phrases
-        // are visibly marked on the panel itself (ORION style).
-        adverse: visibleItems[i].adverse,
-      })),
+      // Same red-frame classifier the SERP snapshot uses: negative phrases
+      // are visibly marked on the panel itself (ORION style).
+      items: drawn.map((d) => d.svg),
     })
   );
   const asset: RendererAssetEntry = {
@@ -335,11 +419,12 @@ export async function buildCanonicalVisualAssets(input: {
   subjectName: string;
   items: RawInventoryItem[];
   /**
-   * Fetch real image previews from item.imageUrl/sourceUrl for image grids.
-   * Defaults to live mode (NETWORK_CALLS !== "0"); every fetch is fail-safe —
-   * on any error the synthetic placeholder card is kept.
+   * Разрешена ли сеть за превью изображений. По умолчанию — по окружению
+   * (`NETWORK_CALLS`), и запретить оно может всегда. Выборку это не выключает:
+   * кэш прогона читается в любом случае, а некэшированный адрес получает отказ
+   * `offline` без запроса.
    */
-  fetchImagePreviews?: boolean;
+  allowImagePreviewNetwork?: boolean;
   /**
    * REMEDIATION §5.2 — disk cache dir for URL→preview (job artifacts).
    * Resume/rebuild skips network when the URL is already cached.
@@ -352,6 +437,22 @@ export async function buildCanonicalVisualAssets(input: {
    * the synthetic snapshot for p10 (RU) / p27 (UAE).
    */
   realSerpScreenshots?: RealSerpScreenshotInput[];
+  /**
+   * Принадлежность строк субъекту: `evidenceRef → решение subject-resolution`.
+   *
+   * Без карты поведение построителя прежнее — вызов без аналитики остаётся
+   * валидным. С картой строка о другом лице уходит на панель нейтральной.
+   */
+  subjectDecisionByRef?: Record<string, string>;
+  /**
+   * Решения по прочитанным страницам: `evidenceRef → тон, цитата, ярлык сюжета`.
+   *
+   * Без карты поведение прежнее — словарь заголовков. С картой красную рамку и
+   * легенду снимка назначает прочитанная страница, а словарь остаётся только
+   * для строк, которых не читали: два ответа на «негативна ли строка» на одном
+   * листе противоречили друг другу.
+   */
+  verdictByRef?: ObservationVerdictByRef;
   /** Optional clock for freshness tests. */
   nowMs?: number;
   /** Test-only (§5.1): throw inside the builder for this assetRef. */
@@ -360,13 +461,29 @@ export async function buildCanonicalVisualAssets(input: {
   // One sharp probe up front — missing natives → single SHARP_UNAVAILABLE.
   await assertSharpAvailable();
 
-  const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
+  /*
+   * Отказы превью считаются по причинам, а не тонут поштучно.
+   *
+   * Пустая плитка в отчёте говорит «источник не отдал изображение», и по ней
+   * не отличить запрет площадки от нашей ошибки. В отчёте 72 три плитки из
+   * шести были пустыми — Википедия, ТАСС, МГИМО, — и причина (запрос уходил
+   * без `User-Agent`, а Викимедиа отвечает на такие 403) не была видна нигде.
+   */
+  const previewFailures = new Map<string, number>();
   const previewOpts: ImagePreviewFetchOptions = {
     concurrency: 4,
     timeoutMs: 5000,
     budgetMs: 30_000,
     ...input.previewFetch,
     cacheDir: input.previewFetch?.cacheDir ?? input.previewCacheDir,
+    // Выборка не выключается: кэш — это уже купленные превью, и пересборка
+    // оплаченного прогона обязана их получить. Выключается только сеть — и
+    // тестовые опции перебивают выключатель лишь тогда, когда сказали об этом.
+    allowNetwork: input.previewFetch?.allowNetwork ?? input.allowImagePreviewNetwork,
+    onFailure: (_url, reason) => {
+      previewFailures.set(reason, (previewFailures.get(reason) ?? 0) + 1);
+      input.previewFetch?.onFailure?.(_url, reason);
+    },
   };
   const assets: RendererAssetEntry[] = [];
   const visualAssets: VisualAssetsBySlot = {};
@@ -417,7 +534,19 @@ export async function buildCanonicalVisualAssets(input: {
         const organic = by(
           (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
         );
-        const visibleItems = organic.slice(0, 10).map(toVisibleItem);
+        /*
+         * Настоящий скриншот перечисляет материалы, а не наблюдения.
+         *
+         * Рамок мы на нём не рисуем, и `visibleItems` здесь — утверждение о
+         * том, что читатель видит на снимке выдачи. Поисковик одну и ту же
+         * страницу дважды не показывает, а в наборе она лежит отдельным
+         * наблюдением на каждый запрос, которым найдена, — без сведения
+         * страница печатала бы два дословно одинаковых объяснения под одним
+         * результатом.
+         */
+        const visibleItems = firstPerMaterial(organic)
+          .slice(0, 10)
+          .map((it) => toVisibleItem(it, input.verdictByRef));
         const asset: RendererAssetEntry = {
           assetRef: `${assetRef}_real_${real.id}`,
           kind: "live_serp",
@@ -448,6 +577,7 @@ export async function buildCanonicalVisualAssets(input: {
         items: by((it) => surfaceOf(it) === "organic" && regionOf(it.region) === region),
         bind,
         push,
+        verdictByRef: input.verdictByRef,
       });
     });
     if (ok) counts.serpSnapshots += 1;
@@ -480,6 +610,8 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p11_ru_suggestions_yandex",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -505,6 +637,8 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p12_ru_suggestions_google",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -525,6 +659,8 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p28_uae_suggestions",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -555,6 +691,8 @@ export async function buildCanonicalVisualAssets(input: {
           slotId: relatedSlots[i],
           bind,
           push,
+          subjectDecisionByRef: input.subjectDecisionByRef,
+          verdictByRef: input.verdictByRef,
           injectFailureForAssetRef: input.injectFailureForAssetRef,
         })
       )
@@ -576,6 +714,8 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p32_uae_related",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
+        verdictByRef: input.verdictByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -597,7 +737,15 @@ export async function buildCanonicalVisualAssets(input: {
     slotId: string,
     title: string
   ): Promise<boolean> => {
-    const answer = rows.find((r) => String(r.snippet ?? "").trim());
+    // Сводкой панели становится тело ответа: у названного источника есть свой
+    // адрес, и его описание — не ответ поисковика. Панель рисует абзац с
+    // переносом по словам; полный ответ по-прежнему несёт текст страницы.
+    const answer =
+      rows.find(
+        (r) =>
+          String(r.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME) &&
+          String(r.snippet ?? "").trim()
+      ) ?? rows.find((r) => String(r.snippet ?? "").trim());
     if (!answer && rows.length === 0) return false;
     const facts = rows
       .filter((r) => r !== answer)
@@ -607,19 +755,23 @@ export async function buildCanonicalVisualAssets(input: {
     const png = await svgToPngBase64(
       buildKnowledgePanelSvg({
         title,
-        summary: String(answer?.snippet ?? answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
+        // Та же чистка, что у текста страницы: панель и страница не могут
+        // показывать один ответ по-разному.
+        summary:
+          plainAiAnswerText(answer?.snippet) ||
+          String(answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
         facts,
       })
     );
     const used = [answer, ...rows.filter((r) => r !== answer).slice(0, 4)].filter(
       (r): r is RawInventoryItem => Boolean(r)
     );
-    const visibleItems = used.map(toVisibleItem);
+    const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef));
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "knowledge_panel",
       title,
-      caption: "Ответ ИИ-поиска по запросам о субъекте (синтетическая карточка на основе API)",
+      caption: "Ответ ИИ-поиска по запросам о субъекте",
       imageData: png,
       evidenceRefs: visibleItems.map((v) => v.ref),
     };
@@ -676,6 +828,13 @@ export async function buildCanonicalVisualAssets(input: {
   const uaeImages = images.filter((it) => regionOf(it.region) === "UAE");
   const imageSlots = ["p14_ru_images_1", "p15_ru_images_2", "p16_ru_images_3", "p17_ru_images_4"];
   const ruImageChunks = chunk(ruImages, 6).slice(0, 4);
+  /**
+   * Первое разрешившееся RU-превью уходит на обложку (`cover_portrait`) —
+   * квадрат со скруглёнными углами справа от имени субъекта. Своего поиска
+   * ради обложки не делается: берётся уже собранное превью, и если его нет,
+   * обложка рисует абстрактную графику бренда, а не пустую рамку.
+   */
+  let coverPortraitPushed = false;
   const buildGrid = async (
     rows: RawInventoryItem[],
     assetRef: string,
@@ -684,33 +843,104 @@ export async function buildCanonicalVisualAssets(input: {
   ): Promise<boolean> => {
     if (rows.length === 0) return false;
     const slice = rows.slice(0, 6);
-    const previewUrls = slice.map((r) => r.imageUrl || r.sourceUrl);
-    const previews = fetchPreviews
-      ? await fetchImagePreviewsWithBudget(previewUrls, previewOpts)
-      : new Map<string, string | undefined>();
-    const gridItems = slice.map((r) => {
-      const hl = classifyObservationHighlight({
-        url: r.sourceUrl ?? null,
-        domain: domainOf(r.sourceUrl) || null,
-        title: r.title ?? null,
-        snippet: r.snippet ?? null,
-      } as unknown as PersistedSerpObservation);
-      const url = r.imageUrl || r.sourceUrl;
-      const previewBase64 = url ? previews.get(url) : undefined;
-      return {
-        title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
-        domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
-        previewBase64,
-        unavailableNote: previewBase64
-          ? undefined
-          : "Превью недоступно: источник не отдал изображение",
-        highlight: hl.isHighlighted,
-        frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
-        themeLabel: hl.themeTitle ?? undefined,
-      };
+    const urlOf = (r: RawInventoryItem) => r.imageUrl || r.sourceUrl;
+    /*
+     * Причина отказа — по адресу, а не только счётчиком прогона.
+     *
+     * Строка без превью на сетку не попадает, и страница обязана сказать, что
+     * именно осталось за кадром и почему: `offline` («мы не спрашивали») и
+     * `http_403` («площадка отказала») — разные новости для читателя.
+     */
+    const reasonByUrl = new Map<string, PreviewFailureReason>();
+    const previews = await fetchImagePreviewsWithBudget(slice.map(urlOf), {
+      ...previewOpts,
+      onFailure: (url, reason) => {
+        reasonByUrl.set(url, reason);
+        previewOpts.onFailure?.(url, reason);
+      },
     });
-    const png = await svgToPngBase64(buildImageGridSvg({ title, items: gridItems }));
-    const visibleItems = rows.slice(0, 6).map(toVisibleItem);
+    const drawnItems: Array<{ row: RawInventoryItem; item: ImageGridItem }> = [];
+    const notShown: NotShownRow[] = [];
+    for (const r of slice) {
+      // Решение по прочитанной странице действует и на сетке: без него плитка
+      // краснела по словарю там, где страницу открыли и признали благоприятной.
+      const hl = classifyObservationHighlight(
+        {
+          url: r.sourceUrl ?? null,
+          domain: domainOf(r.sourceUrl) || null,
+          title: r.title ?? null,
+          snippet: r.snippet ?? null,
+        } as unknown as PersistedSerpObservation,
+        input.verdictByRef?.[refOf(r)],
+        analystDecisionOf(r)
+      );
+      const url = urlOf(r);
+      const previewBase64 = url ? previews.get(url) : undefined;
+      if (!previewBase64) {
+        notShown.push({
+          ref: refOf(r),
+          adverse: hl.isHighlighted,
+          reason: (url ? reasonByUrl.get(url) : undefined) ?? "no_url",
+        });
+        continue;
+      }
+      drawnItems.push({
+        row: r,
+        item: {
+          title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
+          domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
+          previewBase64,
+          highlight: hl.isHighlighted,
+          frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
+          themeLabel: hl.themeTitle ?? undefined,
+        },
+      });
+    }
+    // Одна выборка кормит и краску, и счёт: `visibleItems` — ровно те строки,
+    // что попали в PNG, поэтому счётные строки страницы считают нарисованное.
+    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row, input.verdictByRef));
+    if (drawnItems.length === 0) {
+      // Рисовать нечего — ассета нет, страница уходит в текстовую ветку. Мета
+      // без картинки нужна ей, чтобы назвать словами, что найдено и не показано.
+      bind(slotId, {
+        assetRef,
+        kind: "image_grid",
+        title,
+        hasImage: false,
+        visibleItems: [],
+        ...(notShown.length ? { notShown } : {}),
+      });
+      /*
+       * Пропавшая поверхность слышна там же, где остальные потери ассетов.
+       *
+       * Одной строки в консоли мало: оператор судит о прогоне по
+       * `report-quality-summary`, и целая страница изображений, не доехавшая до
+       * документа, обязана быть в нём названа.
+       */
+      failed.push({
+        kind: "image_grid",
+        slotId,
+        assetRef,
+        reason: `превью не получено ни для одной из ${notShown.length} строк (${[
+          ...new Set(notShown.map((n) => n.reason)),
+        ].join(", ")})`,
+      });
+      return false;
+    }
+    const png = await svgToPngBase64(
+      buildImageGridSvg({ title, items: drawnItems.map((d) => d.item) })
+    );
+    if (!coverPortraitPushed) {
+      push({
+        assetRef: "cover_portrait",
+        kind: "cover_portrait",
+        title: "Портрет субъекта",
+        caption: "Фото из поисковой выдачи",
+        imageData: drawnItems[0]!.item.previewBase64,
+        evidenceRefs: [visibleItems[0]!.ref],
+      });
+      coverPortraitPushed = true;
+    }
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "image_grid",
@@ -720,7 +950,7 @@ export async function buildCanonicalVisualAssets(input: {
       evidenceRefs: visibleItems.map((v) => v.ref),
     };
     push(asset);
-    bind(slotId, meta(asset, visibleItems));
+    bind(slotId, meta(asset, visibleItems, notShown));
     return true;
   };
   for (let i = 0; i < ruImageChunks.length; i += 1) {
@@ -744,6 +974,15 @@ export async function buildCanonicalVisualAssets(input: {
     )
   ) {
     counts.imageGrids += 1;
+  }
+
+  // Строка о превью — рядом со строкой о чтении ссылок: обе отвечают на вопрос
+  // «чего в отчёте нет и почему».
+  if (previewFailures.size > 0) {
+    const parts = [...previewFailures.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, n]) => `${reason}: ${n}`);
+    console.log(`[digital-profile][превью] не получено изображений — ${parts.join(", ")}`);
   }
 
   return { assets, visualAssets, counts, failed };

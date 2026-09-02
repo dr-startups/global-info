@@ -94,7 +94,22 @@ export type CompositeBuildResult = {
   itemsByObservationKey: Map<string, RawInventoryItem[]>;
 };
 
-const DESTRUCTIVE_STATUSES = new Set(["NO_RESULTS", "ERROR", "HTTP_500", "500", "NOT_SUPPORTED"]);
+/**
+ * Статусы ячеек покрытия, которые записываются в provenance.
+ *
+ * Записываются, но ничего не удаляют: это единственный канал, которым
+ * дека узнаёт, что было с поверхностью. `NOT_COLLECTED` — вопрос не задавали
+ * (инструмент не входил в состав прогона); без него страница не отличила бы
+ * непроверенную поверхность от проверенной и пустой.
+ */
+const RECORDED_COVERAGE_STATUSES = new Set([
+  "NO_RESULTS",
+  "ERROR",
+  "HTTP_500",
+  "500",
+  "NOT_SUPPORTED",
+  "NOT_COLLECTED",
+]);
 
 export function isArsenkinItem(item: RawInventoryItem): boolean {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
@@ -163,15 +178,44 @@ function toRow(
 ): CompositeObservationRow {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
   const evidenceRefs = normalizeEvidenceRefs(meta.evidenceRefs, `inventory:${item.inventoryId}`);
+  const rawRank = typeof meta.rank === "number" ? meta.rank : Number(meta.rank);
+  const queryText = String(meta.queryText ?? meta.query ?? item.query ?? "").trim();
+  const queryPurpose = String(meta.queryPurpose ?? "").trim();
+  const rankSource = String(meta.rankSource ?? "").trim();
+  const ranksByProvider = ((): Record<string, number> | undefined => {
+    const raw = meta.ranksByProvider;
+    if (!raw || typeof raw !== "object") return undefined;
+    const pairs = Object.entries(raw as Record<string, unknown>)
+      .map(([provider, value]) => [provider, Number(value)] as const)
+      .filter(([, value]) => Number.isFinite(value) && value > 0)
+      .map(([provider, value]) => [provider, Math.trunc(value)] as const);
+    return pairs.length > 0 ? Object.fromEntries(pairs) : undefined;
+  })();
+  const surface = mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic"));
+  const snippet = String(item.snippet ?? "").trim();
   return {
     observationKey: key,
+    ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
+    // Источник позиции без позиции не существует: поле едет вместе с рангом.
+    ...(Number.isFinite(rawRank) && rawRank > 0 && rankSource ? { rankSource } : {}),
+    // Номера обоих чтений — ими лист объясняет пропуск номера в таблице. Поле
+    // необязательное: наборы, снятые до его проводки, его не несут, и ветка
+    // «номер занят материалом, показанным выше» у них не исполняется вовсе.
+    ...(ranksByProvider ? { ranksByProvider } : {}),
+    ...(queryText ? { query: queryText } : {}),
+    ...(queryPurpose ? { queryPurpose } : {}),
+    // Пометка живёт при своём запросе: без текста запроса она не значит
+    // ничего, а таблица строится по разрезу «запрос × поисковик».
+    ...(queryText && meta.subjectNameQuery === true ? { subjectNameQuery: true } : {}),
     provider: String(item.provider ?? "unknown").toLowerCase(),
     providers: [String(item.provider ?? "unknown").toLowerCase()],
     engine: mapEngineBucket(String(meta.engine ?? item.provider ?? "")),
-    surface: mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic")),
+    surface,
     region: mapRegionBucket(item.region),
     url: item.sourceUrl,
     title: item.title,
+    // Текст едет только у ответов ИИ-поиска: их страница печатает целиком.
+    ...(surface === "ai_answer" && snippet ? { snippet } : {}),
     domain: domainOf(item.sourceUrl) || undefined,
     evidenceRefs,
     provenanceOwner: owner,
@@ -180,6 +224,15 @@ function toRow(
 
 export function buildAnalyticsCompositeDataset(input: {
   caseId: string;
+  /**
+   * Идентификатор набора, отчеканенный при слиянии (`composite-<unifiedJobId>`).
+   * Параметр обязателен намеренно: пока у набора была вторая чеканка — здесь, —
+   * дека несла один идентификатор, а привязка джобы другой, и реюз собранной
+   * деки не срабатывал никогда. Значение по умолчанию воскресило бы второй
+   * ответ. Содержательный отпечаток набора при этом не потерян: он живёт
+   * отдельным полем `sourceHashes` ниже — это данные, а не идентичность.
+   */
+  datasetId: string;
   baseItems: RawInventoryItem[];
   enrichmentItems: RawInventoryItem[];
   binding: ArsenkinReportBindingV2 | null;
@@ -263,7 +316,7 @@ export function buildAnalyticsCompositeDataset(input: {
 
   // Non-OK coverage statuses are recorded but never remove evidence.
   const nonOkCoverageCells = input.coverageRows.filter((c) =>
-    DESTRUCTIVE_STATUSES.has(String(c.status ?? "").toUpperCase())
+    RECORDED_COVERAGE_STATUSES.has(String(c.status ?? "").toUpperCase())
   );
   if (nonOkCoverageCells.length > 0) {
     warnings.push(`non-ok-coverage-cells:${nonOkCoverageCells.length} (recorded, not destructive)`);
@@ -276,11 +329,6 @@ export function buildAnalyticsCompositeDataset(input: {
     warnings.push(`INVARIANT_VIOLATION base=${baseCount} composite=${compositeCount}`);
   }
 
-  const datasetId = `composite-${input.caseId}-${createHash("sha256")
-    .update([...rows.keys()].sort().join("\n"))
-    .digest("hex")
-    .slice(0, 12)}`;
-
   const sourceHashes = [
     `sha256:${createHash("sha256")
       .update(JSON.stringify(observations.map((o) => o.observationKey).sort()))
@@ -290,7 +338,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const dataset: CompositeDataset = CompositeDatasetSchema.parse({
     schemaVersion: COMPOSITE_DATASET_SCHEMA_VERSION,
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     sourceHashes,
     evidenceRefs: observations.slice(0, 50).flatMap((o) => o.evidenceRefs.slice(0, 1)),
     baseReportRunId: input.baseReportRunId,
@@ -305,7 +353,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const provenance: CompositeSerpProvenance = {
     schemaVersion: "composite-serp-provenance-v1",
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     baseReportRunId: input.baseReportRunId,
     enrichmentRunIds,
     baseCount,
@@ -319,7 +367,7 @@ export function buildAnalyticsCompositeDataset(input: {
   const providerDelta: ProviderDelta = {
     schemaVersion: "provider-delta-v1",
     caseId: input.caseId,
-    datasetId,
+    datasetId: input.datasetId,
     baseCount,
     arsenkinObservationCount: input.enrichmentItems.length,
     duplicateCount,

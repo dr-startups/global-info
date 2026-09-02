@@ -21,6 +21,7 @@ import {
   type P1P2Account,
 } from "../contracts/representative-evidence";
 import { classifyCanonicalThemes, themeLabelRu } from "./canonical-themes";
+import { sourceAttribution } from "../client/client-address";
 
 const MATERIAL_LEVELS = new Set<MaterialityLevel>(["CRITICAL", "HIGH", "MEDIUM"]);
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
@@ -101,9 +102,14 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
   } else if (full.length > 0) {
     candidate = full.replace(/\s+/gu, " ");
   } else if (claim.originalTitle.trim()) {
-    candidate = `«${claim.originalTitle.trim()}»${
-      claim.sourceDomains[0] ? ` — источник ${claim.sourceDomains[0]}` : ""
-    }. Материал учтён в трассе доказательств.`;
+    // Источник берётся у самого заголовка (`originalUrl`/`originalDomain`), а
+    // не первым из общего списка доменов: `sourceDomains` собирает домены всей
+    // находки, и его порядок к заголовку отношения не имеет — так карточка
+    // ТАСС однажды вышла под именем news.mail.ru.
+    candidate = `«${claim.originalTitle.trim()}»${sourceAttribution({
+      url: claim.originalUrl ?? undefined,
+      domain: claim.originalDomain ?? claim.sourceDomains[0],
+    })}. Материал учтён в трассе доказательств.`;
   } else {
     candidate = "Материал учтён в трассе доказательств.";
   }
@@ -128,9 +134,10 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
   // Do not word-slice through a quote — fall back to title description.
   if (claim.originalTitle.trim()) {
     return finalizeExcerpt(
-      `«${claim.originalTitle.trim()}»${
-        claim.sourceDomains[0] ? ` — источник ${claim.sourceDomains[0]}` : ""
-      }. Полный текст сохранён в evidence/trace.`
+      `«${claim.originalTitle.trim()}»${sourceAttribution({
+        url: claim.originalUrl ?? undefined,
+        domain: claim.originalDomain ?? claim.sourceDomains[0],
+      })}. Полный текст сохранён в evidence/trace.`
     );
   }
   return finalizeExcerpt(candidate.slice(0, maxChars).trim());
@@ -146,9 +153,24 @@ function finalizeExcerpt(text: string): string {
   return t;
 }
 
+/**
+ * Адрес в конце строки — не проза, и его последнее слово не предлог.
+ *
+ * `rupep.org/a` кончается английским артиклем, `example.com/news/in` —
+ * предлогом: детектор обрыва читал их как незаконченную фразу и объявлял
+ * целую строку обрезанной. Полная скобка в конце — это завершённая вставка, а
+ * не обрыв, поэтому снимается целиком.
+ */
+function withoutTrailingAddress(text: string): string {
+  return text.replace(/\s*\([^()]*\)\s*$/u, "").trim();
+}
+
 function countSemanticTruncations(excerpt: string, full: string): number {
   if (!excerpt) return 1;
-  if (DANGLING_EXCERPT.test(excerpt.replace(/[.!?…»)]+$/u, "").trim())) return 1;
+  // Адрес снимается ДО знаков препинания: иначе закрывающая скобка уже
+  // срезана, скобка не парная и вставка не находится.
+  if (DANGLING_EXCERPT.test(withoutTrailingAddress(excerpt).replace(/[.!?…»)]+$/u, "").trim()))
+    return 1;
   // Mid-cut marker: excerpt ends with letter and full continues with letter without boundary.
   if (/[A-Za-zА-Яа-яЁё]$/u.test(excerpt) && full.length > excerpt.length + 5) {
     // Allowed only if we intentionally used title fallback ending with period.

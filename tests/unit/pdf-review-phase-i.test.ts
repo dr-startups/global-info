@@ -1,7 +1,7 @@
 /**
  * PDF review 46 — phase I (fit without mid-cuts / footer bleed).
  * - I.1: Unicode dangling + SERP «…» titles rejected
- * - I.3: denser pagination (2 regional / 3 matrix / 3 exec cont)
+ * - I.3: denser pagination (2 regional / matrix by registry / 3 exec cont)
  * - I.4: fitStructuredBullet keeps meta numbers whole
  */
 
@@ -83,7 +83,7 @@ describe("I.3 — pagination density", () => {
     expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(2);
   });
 
-  it("risk matrix packs 3 cards per page", () => {
+  it("risk matrix packs cards by the template registry capacity", () => {
     // Partial fixture: only the fields the packing rule reads. Cast through
     // unknown so the omission is explicit rather than an unchecked assertion.
     const mk = (id: string): Finding =>
@@ -97,13 +97,12 @@ describe("I.3 — pagination density", () => {
         evidenceRefs: [],
         recommendedAction: "x",
       }) as unknown as Finding;
-    const pages = packRiskMatrixPages(
-      [mk("a"), mk("b"), mk("c"), mk("d"), mk("e")],
-      []
-    );
-    expect(pages).toHaveLength(2);
-    expect(pages[0]).toHaveLength(3);
-    expect(pages[1]).toHaveLength(2);
+    // Ёмкость страницы матрицы объявлена в реестре и больше нигде: литерал
+    // здесь был четвёртым ответом на тот же вопрос.
+    const capacity = DECK_TEMPLATE_REGISTRY["risk-matrix"].maxTableRowsPerSlide;
+    const findings = Array.from({ length: capacity }, (_, i) => mk(`f${i}`));
+    expect(packRiskMatrixPages(findings, [])).toHaveLength(1);
+    expect(packRiskMatrixPages([...findings, mk("tail")], [])).toHaveLength(2);
   });
 
   it("continuation template caps theme bullets at 3", () => {
@@ -163,8 +162,17 @@ describe("I.4 — structured fit preserves meta", () => {
 });
 
 describe("I.5 — versions", () => {
-  it("bumps GPT slide-copy prompt", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v16");
+  /*
+   * Проверка была прибита к литералу «gpt-slide-copy-v16» и падала на любом
+   * подъёме версии — то есть ровно тогда, когда с промптом поступали правильно.
+   * Охранять нужно другое: версия не должна откатиться ниже точки, на которой
+   * закреплены прежние правки промпта, иначе кеш вернёт текст по старым
+   * правилам.
+   */
+  it("версия промпта slide-copy не откатывается назад", () => {
+    const m = GPT_SLIDE_COPY_PROMPT_VERSION.match(/^gpt-slide-copy-v(\d+)$/u);
+    expect(m, `неожиданный формат версии: ${GPT_SLIDE_COPY_PROMPT_VERSION}`).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(16);
   });
 });
 

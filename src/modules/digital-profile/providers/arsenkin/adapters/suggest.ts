@@ -167,15 +167,14 @@ export function selectCanonicalSuggestQuery(input: {
       scored.push({ query: q, score, reason });
       continue;
     }
-    // Yandex: prefer localized Cyrillic canonical full name.
+    // Yandex: prefer localized Cyrillic canonical full name. A reversed FIO
+    // gets no rank of its own — it is not a spelling of the name, and scoring
+    // it just below canonical once made the paid suggest task ask for it.
     let score = 10;
     let reason = "yandex-eligible";
     if (primaryLocalized && normKey(q) === normKey(primaryLocalized)) {
       score = 100;
       reason = "canonical-localized-primary";
-    } else if (primaryLocalized && normKey(q) === normKey([...primaryLocalized.split(/\s+/)].reverse().join(" "))) {
-      score = 90;
-      reason = "canonical-localized-reversed";
     } else if (cyr) {
       score = 50;
       reason = "cyrillic-identity";

@@ -15,6 +15,7 @@ const SURFACE_TYPE_MAP: Record<string, EvidenceSurfaceType> = {
   IMAGE_RESULT: "IMAGE_RESULT",
   VIDEO_RESULT: "VIDEO_RESULT",
   KNOWLEDGE_BLOCK: "KNOWLEDGE_BLOCK",
+  AI_ANSWER: "AI_ANSWER",
 };
 
 export async function loadCaseEvidenceItems(caseId: string): Promise<{

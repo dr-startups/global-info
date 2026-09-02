@@ -17,12 +17,20 @@
  * sourceFindingIds/evidenceRefs, re-stamp schemaVersion v3, recompute the
  * content hash and write a complete v3 pack.
  *
+ * Hash formula: the pack is identified by `contentHashOf` — the same canonical
+ * form the product writes. A truly legacy pack, whose hash was computed over the
+ * raw key order, therefore fails the hash check and is left untouched: the
+ * reported reason says so in those words («записан прежней формулой хэша или
+ * правлен руками; пересоберите деку»), because for such a run rebuilding the
+ * deck is the answer — not looking for an intruder. Keeping the old formula here
+ * for that case would restore the second answer this migration now shares with
+ * production.
+ *
  * Usage:
  *   npx tsx scripts/migrate-section-packs-v2-to-v3.ts --allow-legacy-packs <deckOutputRoot>
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -31,13 +39,11 @@ import {
   ReportSectionManifestSchema,
   SECTION_PACK_SCHEMA_VERSION,
   SectionPackV2Schema,
+  contentHashOf,
+  writeSectionPackFile,
   type LegacySectionPackV2,
   type SectionPackV2,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
-
-function contentHashOf(slides: unknown): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
-}
 
 type MigrationOutcome = {
   fragmentKey: string;
@@ -65,7 +71,15 @@ function migratePack(input: {
   }
   const recomputed = contentHashOf(legacy.slides);
   if (recomputed !== legacy.contentHash) {
-    return { reject: `content hash mismatch (tampered): ${legacy.contentHash} != ${recomputed}` };
+    // Не «взлом»: так же выглядит пакет, записанный прежней формулой хэша, а это
+    // почти вся популяция, ради которой скрипт существует. Исход fail-closed —
+    // пакет не трогаем, — но причину оператор должен прочитать как «пересобрать
+    // деку», а не как «искать злоумышленника».
+    return {
+      reject:
+        `content hash mismatch: ${legacy.contentHash} != ${recomputed} — ` +
+        "пакет записан прежней формулой хэша или правлен руками; пересоберите деку",
+    };
   }
   const entry = manifest.entries.find((e) => e.fragmentKey === legacy.fragmentKey);
   if (!entry) {
@@ -92,24 +106,11 @@ function migratePack(input: {
   return { pack: parsed.data };
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
-  if (!args.includes("--allow-legacy-packs")) {
-    console.error(
-      "refusing to run without --allow-legacy-packs (offline migration only; never available in production runtime)"
-    );
-    process.exit(2);
-  }
-  const outputRoot = args.find((a) => !a.startsWith("--"));
-  if (!outputRoot) {
-    console.error("usage: migrate-section-packs-v2-to-v3.ts --allow-legacy-packs <deckOutputRoot>");
-    process.exit(2);
-  }
-
+/** Migrate every persisted pack in one deck output root (lineage-safe). */
+export function migrateSectionPacksInDir(outputRoot: string): MigrationOutcome[] {
   const manifestPath = join(outputRoot, "report-section-manifest.json");
   if (!existsSync(manifestPath)) {
-    console.error(`owning manifest not found: ${manifestPath}`);
-    process.exit(2);
+    throw new Error(`owning manifest not found: ${manifestPath}`);
   }
   const manifest = ReportSectionManifestSchema.parse(
     JSON.parse(readFileSync(manifestPath, "utf8"))
@@ -140,9 +141,26 @@ function main(): void {
       outcomes.push({ fragmentKey: key, path, result: "REJECTED", reason: reject });
       continue;
     }
-    writeFileSync(path, JSON.stringify(pack, null, 2), "utf8");
+    writeSectionPackFile(path, pack);
     outcomes.push({ fragmentKey: key, path, result: "MIGRATED" });
   }
+  return outcomes;
+}
+
+function main(): void {
+  const args = process.argv.slice(2);
+  if (!args.includes("--allow-legacy-packs")) {
+    console.error(
+      "refusing to run without --allow-legacy-packs (offline migration only; never available in production runtime)"
+    );
+    process.exit(2);
+  }
+  const outputRoot = args.find((a) => !a.startsWith("--"));
+  if (!outputRoot) {
+    console.error("usage: migrate-section-packs-v2-to-v3.ts --allow-legacy-packs <deckOutputRoot>");
+    process.exit(2);
+  }
+  const outcomes = migrateSectionPacksInDir(outputRoot);
 
   const migrated = outcomes.filter((o) => o.result === "MIGRATED").length;
   const already = outcomes.filter((o) => o.result === "ALREADY_V3").length;

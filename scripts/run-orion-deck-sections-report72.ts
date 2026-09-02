@@ -9,29 +9,43 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pythonInterpreter } from "./lib/python";
+import { pagesDirectoryMismatch } from "./lib/deck-pages";
 import {
-  runDeckBuild,
+  loadDeckInputsFromAnalyticsDir,
+  runDeckBuildMeasured,
   toRendererPayload,
   buildCoverageReconciliation,
   DECK_TEMPLATE_REGISTRY,
   TEMPLATE_LAYOUT_VERSION,
   RED_MARKER_LABEL,
+  type CanonicalDeckInputs,
   type RendererAssetEntry,
   type ScopedEvidenceIndex,
-  type MetricSnapshot,
   type VisualAssetsBySlot,
   type V72PageInventoryItem,
+  type BulletMeasureAdapter,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
-import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
-import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
-import type { SurfaceAnalysis } from "../src/modules/digital-profile/orion-golden/contracts/surface-analysis";
+import { createLocalPythonMeasureAdapter } from "../src/modules/digital-profile/services/render-deck-artifacts";
+import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
+import { normalizeForCompare } from "../src/modules/digital-profile/orion-golden/deck-sections/text-compare";
+import { scanDeckForLeakedIdentifiers } from "../src/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
+import type {
+  ExecutiveSummaryExtras,
+  UncategorizedMaterialsExtras,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
+import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
+import { serpMaterialKey } from "../src/modules/digital-profile/serp-observation/material-key";
+import { evidenceRowVerdict } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
+import { panelRowWithOwnership } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
 import {
   DECK_ASSET_FIXTURE_MISSING,
   DECK_ASSET_FIXTURE_PATH,
 } from "./deck-asset-fixture-path";
+import { CLIENT_TEXT_FIELDS } from "./lib/client-text-snapshot";
 
 const ANALYTICS_DIR = join(process.cwd(), "baselines", "report-72", "artifacts", "analytics");
 const OUTPUT_ROOT = join(process.cwd(), "baselines", "report-72", "artifacts", "deck-sections");
@@ -44,6 +58,22 @@ const RUN_DIR = join(
   "orion-canary-1783980828528"
 );
 const BASELINE_PATH = join(process.cwd(), "baselines", "report-72", "baseline.json");
+
+/** Субъект эталонного прогона — один ответ на сборку и на пейлоад рендера. */
+const SUBJECT_NAME = "Сергей Глинка";
+
+/**
+ * Мерный прогон локальным python — та же реализация, что у продукта.
+ *
+ * Приёмка обязана собирать деку тем же циклом: иначе она мерит раскладку,
+ * которой живой путь никогда не выпустит.
+ *
+ * Интерпретатор ищется в момент вызова, а не при импорте: этот модуль
+ * импортируют офлайн-юниты ради загрузчика входов и разбора ворот, а
+ * `npm run ci` обязан проходить без рендерера — и без Python.
+ */
+const measureWithLocalPython: BulletMeasureAdapter = (payload) =>
+  createLocalPythonMeasureAdapter(pythonInterpreter())(payload);
 
 /**
  * Binding of EXISTING report assets (report-assets.json of the source run) to
@@ -71,58 +101,53 @@ const SLOT_ASSET_BINDING: Record<string, string[]> = {
   p32_uae_related: ["uae_related"],
 };
 
-type CompositeObservationRow = {
-  surface: string;
-  region: string;
-  engine?: string;
-  url?: string;
-  title?: string;
-  domain?: string;
-  evidenceRefs: string[];
-};
-
-let compositeObservationIndexCache: Map<string, CompositeObservationRow> | null = null;
-
-/** Ref → composite observation row (url/domain/engine) for asset resolution. */
-function compositeObservationIndex(): Map<string, CompositeObservationRow> {
-  if (compositeObservationIndexCache) return compositeObservationIndexCache;
-  const file = readJson<{ observations: CompositeObservationRow[] }>(
-    join(ANALYTICS_DIR, "composite-serp-observations.json")
-  );
-  const byRef = new Map<string, CompositeObservationRow>();
-  for (const o of file.observations) for (const r of o.evidenceRefs) byRef.set(r, o);
-  compositeObservationIndexCache = byRef;
-  return byRef;
-}
-
 /**
- * Resolve the rows actually visible on a bound asset, including the adverse
- * (red-frame) marking. The marking is reproduced with the SAME pure highlight
- * classifier the synthetic SERP snapshot generator used — no re-analysis, no
- * network, no DB.
+ * Строки, видимые на привязанном ассете, вместе с красной рамкой.
+ *
+ * Индекс здесь тот же, которым построители печатают страницу: собственный
+ * индекс скрипта не разрешал `inventory:`-ссылки, и панель с четырьмя
+ * запросами отдавала ноль строк с текстом — а страница рядом печатала
+ * «0 связанных запросов». Рамка воспроизводится тем же чистым классификатором,
+ * которым её ставил генератор снимка, — без пересчёта, без сети и без базы.
+ *
+ * Принадлежность применяется той же функцией, что и у продукта, и только к
+ * панелям-спискам: снимки выдачи и сетки картинок остаются ownership-blind,
+ * как их рисует `buildCanonicalVisualAssets`.
  */
-function resolveVisibleItems(evidenceRefs: string[] | undefined): VisibleAssetItem[] | undefined {
+function resolveVisibleItems(
+  evidenceRefs: string[] | undefined,
+  evidenceIndex: ScopedEvidenceIndex,
+  kind: string
+): VisibleAssetItem[] | undefined {
   if (!evidenceRefs?.length) return undefined;
-  const byRef = compositeObservationIndex();
   return evidenceRefs.map((ref) => {
-    const o = byRef.get(ref);
-    if (!o) return { ref };
-    const hl = classifyObservationHighlight({
-      url: o.url ?? null,
-      domain: o.domain ?? null,
-      title: o.title ?? null,
-      snippet: null,
-    } as unknown as PersistedSerpObservation);
-    return {
+    const e = evidenceIndex[ref];
+    if (!e) return { ref };
+    // Реконструкция обязана быть не слабее продукта: словарь читает сниппет, а
+    // решение по прочитанной странице сильнее словаря. Пока сюда ехали
+    // `snippet: null` и ни одного вердикта, ворота были слепы к целому классу
+    // срабатываний — и зелены на данных, где продукт повёл бы себя иначе.
+    const hl = classifyObservationHighlight(
+      {
+        url: e.url ?? null,
+        domain: e.domain ?? null,
+        title: e.title ?? null,
+        snippet: e.snippet ?? null,
+      } as unknown as PersistedSerpObservation,
+      evidenceRowVerdict(e)
+    );
+    const item: VisibleAssetItem = {
       ref,
-      url: o.url,
-      domain: o.domain,
-      title: o.title,
-      engine: o.engine,
-      region: o.region,
+      url: e.url,
+      domain: e.domain,
+      title: e.title,
+      engine: e.engine,
+      region: e.region,
       adverse: hl.isHighlighted,
       themeTitle: hl.themeTitle ?? undefined,
     };
+    if (kind !== "surface_panel") return item;
+    return panelRowWithOwnership({ item, decision: e.subjectDecision }).visible;
   });
 }
 
@@ -141,7 +166,7 @@ export class MissingDeckAssetFixture extends Error {
  * (а его нет у всех, кроме одной машины), берётся обезличенная фикстура из
  * baselines. Если нет ни того ни другого — ошибка с объяснением, а не ENOENT.
  */
-export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
+export function loadReportAssets(evidenceIndex: ScopedEvidenceIndex): {
   assets: RendererAssetEntry[];
   visualAssets: VisualAssetsBySlot;
 } {
@@ -163,23 +188,19 @@ export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
       .filter((a): a is RendererAssetEntry => Boolean(a))
       .map((a) => {
         const evidenceRefs = Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : undefined;
-        const visibleItems = resolveVisibleItems(evidenceRefs);
-        // Domains actually visible on the asset: from the resolved rows first,
-        // falling back to the run's full evidence index (the fragment's scoped
-        // slice may not contain the exact observation ids the synthetic
-        // snapshot was built from).
-        const resolvedDomains = (visibleItems ?? [])
-          .map((v) => v.domain)
-          .filter((d): d is string => Boolean(d));
-        const indexDomains = evidenceIndex
-          ? (evidenceRefs ?? [])
-              .map((r) => evidenceIndex[r]?.domain)
-              .filter((d): d is string => Boolean(d))
-          : [];
-        const evidenceDomains = [...new Set([...resolvedDomains, ...indexDomains])];
+        const kind = String(a.kind ?? "visual");
+        const visibleItems = resolveVisibleItems(evidenceRefs, evidenceIndex, kind);
+        // Домены, видимые на ассете: из разрешённых строк. Второй перебор по
+        // индексу здесь стоял, пока индексов было два, и добавить он уже ничего
+        // не может — строки разрешаются тем же индексом.
+        const evidenceDomains = [
+          ...new Set(
+            (visibleItems ?? []).map((v) => v.domain).filter((d): d is string => Boolean(d))
+          ),
+        ];
         return {
           assetRef: a.assetRef,
-          kind: String(a.kind ?? "visual"),
+          kind,
           title: String(a.title ?? a.assetRef),
           // В фикстуре байтов нет — там уже посчитанный признак.
           hasImage: Boolean(a.imageData) || Boolean(a.storageKey) || a.hasImage === true,
@@ -193,148 +214,18 @@ export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
   return { assets, visualAssets };
 }
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
-export function loadReport72DeckInputs() {
-  const bundle = readJson<VerifiedFindingBundle>(join(ANALYTICS_DIR, "verified-finding-bundle.json"));
-  const ambiguous = readJson<Finding[]>(join(ANALYTICS_DIR, "ambiguous-findings.json"));
-  const surfaceAnalysis = readJson<Record<string, SurfaceAnalysis>>(
-    join(ANALYTICS_DIR, "surface-analysis.json")
-  );
-  const executiveSummary = readJson<{
-    verdict: string;
-    executiveConclusion: string;
-    keyFindings: Array<{
-      findingId: string;
-      title: string;
-      factualBasis: string;
-      clientImpact: string;
-      recommendedAction: string;
-    }>;
-    priorityActions: string[];
-    identityCaveats: string[];
-    dataLimitations: string[];
-  }>(join(ANALYTICS_DIR, "executive-summary.json"));
-  const binding = readJson<{
-    baseReportRunId: string;
-    datasetId: string;
-    caseId: string;
-  }>(join(ANALYTICS_DIR, "report-data-binding.json"));
-  const providerDelta = readJson<{
-    baseCount: number;
-    arsenkinObservationCount: number;
-  }>(join(ANALYTICS_DIR, "provider-delta.json"));
-  const observations = readJson<{
-    observations: CompositeObservationRow[];
-    baseCount: number;
-    compositeCount: number;
-  }>(join(ANALYTICS_DIR, "composite-serp-observations.json"));
-  const subjectResolution = readJson<{
-    items: Array<{ decision: string }>;
-  }>(join(ANALYTICS_DIR, "subject-resolution.json"));
-
-  // Merge verified + ambiguous findings: appendix scope needs AMBIGUOUS items,
-  // KPI protection is enforced by fragment scopes and section QA.
-  const mergedBundle: VerifiedFindingBundle = {
-    ...bundle,
-    findings: [...bundle.findings, ...ambiguous],
-  };
-
-  const surfaceUnits = Object.values(surfaceAnalysis).flatMap((sa) => sa.units);
-
-  const evidenceIndex: ScopedEvidenceIndex = {};
-  const knownEvidenceRefs = new Set<string>();
-  const perRegionCounts: Record<string, number> = {};
-  for (const obs of observations.observations) {
-    const regionKey = obs.region === "RU" ? "RU" : "UAE";
-    perRegionCounts[regionKey] = (perRegionCounts[regionKey] ?? 0) + 1;
-    for (const ref of obs.evidenceRefs) {
-      knownEvidenceRefs.add(ref);
-      evidenceIndex[ref] = {
-        url: obs.url,
-        domain: obs.domain,
-        title: obs.title,
-        kind: obs.surface,
-        region: obs.region,
-        engine: obs.engine,
-      };
-    }
-  }
-  for (const f of mergedBundle.findings) for (const r of f.evidenceRefs) knownEvidenceRefs.add(r);
-
-  // Enrich compliance database hits with typed match metadata from the run's
-  // existing evidence inventory (provider, category, score, review status) —
-  // needed for evidence-backed compliance tables instead of bare titles.
-  const inventoryPath = join(RUN_DIR, "full-evidence-inventory.json");
-  if (existsSync(inventoryPath)) {
-    const inventory = readJson<{
-      items: Array<{
-        inventoryId?: string;
-        evidenceType?: string;
-        rawMetadata?: {
-          provider?: string;
-          matchType?: string;
-          matchScore?: number;
-          reviewStatus?: string;
-        };
-      }>;
-    }>(inventoryPath);
-    for (const item of inventory.items ?? []) {
-      if (item.evidenceType !== "compliance_hit" || !item.inventoryId) continue;
-      const ref = `inventory:${item.inventoryId}`;
-      const entry = evidenceIndex[ref];
-      if (!entry) continue;
-      entry.providerLabel = item.rawMetadata?.provider;
-      entry.matchCategory = item.rawMetadata?.matchType;
-      entry.matchScore = item.rawMetadata?.matchScore;
-      entry.reviewStatus = item.rawMetadata?.reviewStatus;
-    }
-  }
-  for (const u of surfaceUnits) {
-    for (const r of u.evidenceRefs) knownEvidenceRefs.add(r);
-    for (const c of u.claims) for (const r of c.evidenceRefs) knownEvidenceRefs.add(r);
-  }
-
-  const decisions = subjectResolution.items.reduce<Record<string, number>>((acc, i) => {
-    acc[i.decision] = (acc[i.decision] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
-  const metricSnapshot: MetricSnapshot = {
-    metricSnapshotId: `${binding.datasetId}-metrics`,
-    datasetId: binding.datasetId,
-    reportRunId: binding.baseReportRunId,
-    baseCount: observations.baseCount,
-    enrichmentCount: providerDelta.arsenkinObservationCount,
-    compositeCount: observations.compositeCount,
-    // Replay loader: inventory tallies OK for baseline parity; live path uses
-    // loadDeckInputsFromAnalyticsDir (observation-scoped KPI).
-    subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
-    likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
-    ambiguousCount: decisions.AMBIGUOUS ?? 0,
-    otherSubjectCount: decisions.OTHER_SUBJECT ?? 0,
-    adverseFindingCount: bundle.findings.filter(
-      (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2
-    ).length,
-    perRegionCounts,
-  };
-
-  return {
-    caseId: binding.caseId,
-    reportRunId: binding.baseReportRunId,
-    sourceDatasetId: binding.datasetId,
-    mergedBundle,
-    surfaceUnits,
-    evidenceIndex,
-    knownEvidenceRefs,
-    metricSnapshot,
-    executiveSummary,
-    baseCountBefore: providerDelta.baseCount,
-    baseCountAfter: observations.baseCount,
-  };
+/**
+ * Вход деки — тем же загрузчиком, что и у продукта.
+ *
+ * Здесь стоял второй загрузчик: индекс он строил из сырых `obs.evidenceRefs`,
+ * KPI считал по решениям инвентаря и `composite-serp-provenance.json` не читал
+ * вовсе. Приёмка мерила деку тем, чего продукт никогда не собирает, — и
+ * приняла страницу, где под снимком панели с четырьмя запросами стояло
+ * «0 связанных запросов». В скрипте остаётся только фикстура самого прогона:
+ * субъект, привязка ассетов, рендер и ворота.
+ */
+export function loadReport72DeckInputs(): CanonicalDeckInputs {
+  return loadDeckInputsFromAnalyticsDir(ANALYTICS_DIR);
 }
 
 async function main(): Promise<void> {
@@ -342,27 +233,55 @@ async function main(): Promise<void> {
   const { assets, visualAssets } = loadReportAssets(inputs.evidenceIndex);
   mkdirSync(OUTPUT_ROOT, { recursive: true });
 
-  const result = runDeckBuild({
+  const result = await runDeckBuildMeasured({
     ctx: {
       caseId: inputs.caseId,
       reportRunId: inputs.reportRunId,
       sourceDatasetId: inputs.sourceDatasetId,
-      contentVersion: "deck-sections-v14",
-      subject: { displayName: "Сергей Глинка", aliases: ["Sergey Glinka"] },
+      // Версия содержимого — та же, что у продукта. Здесь стоял литерал
+      // «deck-sections-v14», и он не двигался, пока ключ уехал на v45: пакеты
+      // секций переиспользуются по совпадению версии, поэтому эталонная дека
+      // тридцать одну версию подряд собиралась из содержимого, построенного
+      // 12:07 в день заморозки. Замер: журнал сборки давал REUSED_CACHE 20 из
+      // 22. Любая правка построителя в этот эталон не доезжала — и проверять
+      // её было нечем.
+      contentVersion: DECK_CONTENT_VERSION,
+      subject: { displayName: SUBJECT_NAME, aliases: ["Sergey Glinka"] },
       bundle: inputs.mergedBundle,
       surfaceUnits: inputs.surfaceUnits,
       metricSnapshot: inputs.metricSnapshot,
       evidenceIndex: inputs.evidenceIndex,
-      extras: { executiveSummary: inputs.executiveSummary, visualAssets },
+      // Состав extras — тот же, что у живого пути: приёмка обязана мерить то,
+      // что печатает продукт, а не собственный набор входов.
+      extras: {
+        executiveSummary: inputs.executiveSummary as unknown as ExecutiveSummaryExtras,
+        composedClientSummary:
+          (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
+        surfaceCollectionHints: inputs.surfaceCollectionHints,
+        complianceScreenings: inputs.complianceScreenings,
+        personaDecision: inputs.personaDecision ?? undefined,
+        uncategorizedMaterials:
+          (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
+        visualAssets,
+      },
     },
     bundleForValidation: inputs.mergedBundle,
     knownEvidenceRefs: inputs.knownEvidenceRefs,
     outputRoot: OUTPUT_ROOT,
     baseObservationCountBefore: inputs.baseCountBefore,
     baseObservationCountAfter: inputs.baseCountAfter,
+    // Наблюдения для сверки печатной таблицы выдачи — вход тех же ворот, что
+    // работают на живом пути.
+    serpObservations: inputs.serpObservations,
+    subjectName: SUBJECT_NAME,
+    assets,
+    // Реплей собирает деку тем же циклом, что и продукт: мера идёт локальным
+    // транспортом. Отсутствие меры в приёмочном прогоне — отказ, а не пропуск:
+    // иначе приёмка мерила бы деку, которую живой путь никогда не соберёт.
+    measure: measureWithLocalPython,
   });
 
-  // Coverage reconciliation: 36 canonical slots + 43 v72 baseline pages.
+  // Coverage reconciliation: canonical slots + 43 v72 baseline pages.
   const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as {
     pageInventory: { value: V72PageInventoryItem[] };
   };
@@ -376,7 +295,7 @@ async function main(): Promise<void> {
   writeFileSync(reconciliationPath, JSON.stringify(reconciliation, null, 2), "utf8");
   console.log("=== COVERAGE RECONCILIATION ===");
   console.log(
-    `baseSlotCoverage=${reconciliation.baseSlotCoverage}/36 pages=${reconciliation.physicalPageCount} continuations=${reconciliation.continuationCount} failed=${reconciliation.failed}`
+    `baseSlotCoverage=${reconciliation.baseSlotCoverage}/${reconciliation.requiredBaseSlotCount} pages=${reconciliation.physicalPageCount} continuations=${reconciliation.continuationCount} failed=${reconciliation.failed}`
   );
   console.log(JSON.stringify(reconciliation.checks));
   if (reconciliation.failed) {
@@ -422,6 +341,9 @@ async function main(): Promise<void> {
   if (result.assemblyValidation && !result.assemblyValidation.passed) {
     console.log("issues:", result.assemblyValidation.issues);
   }
+  // Объявленный пропуск обязан быть видимым: тихо пропущенная проверка
+  // выглядит ровно так же, как пройденная.
+  for (const skip of result.assemblyValidation?.skipped ?? []) console.log(`skip: ${skip}`);
 
   // Static template layer report (g: concrete registry per SlideKind).
   const templateReport = {
@@ -516,15 +438,17 @@ async function main(): Promise<void> {
   const ruShotFooter = ruShot?.sourceNote ?? "";
   const uaeShotText = slideText(uaeShot);
   const RU_CRIMINAL_DOMAINS = ["audit-it.ru", "x.com", "m.sledst.org", "sledst.org"];
-  const internalTokenRegex = /orion-canary|cmreamy|reportRunId|datasetId|inventory:|obs-[a-z0-9]{6,}/u;
-  const internalTokenHits = rSlides.filter((s) =>
-    internalTokenRegex.test(
-      JSON.stringify([s.title, s.narrative, s.bullets, s.table?.rows])
-        .replace(/\[finding-[^\]]*\]/gu, "")
-        .replace(/evidence:[^"]*/gu, "")
-        .replace(/inventory:[^"]*/gu, "")
-    )
-  );
+  /*
+   * «Что видит клиент» — один ответ на весь проект (`clientVisibleStrings`), и
+   * шаблон утёкших идентификаторов живёт рядом с остальными правилами о
+   * клиентском тексте. Пока скрипт держал свой список полей, он смотрел четыре
+   * поля слайда из шестнадцати и не видел ни панелей, ни плиток, ни полосы
+   * адреса — то есть ворота были зелёными по построению на всём, что мимо
+   * заголовка, нарратива, буллетов и ячеек таблицы.
+   */
+  const internalTokenSlideKeys = [
+    ...new Set(scanDeckForLeakedIdentifiers(rSlides).map((f) => f.slide)),
+  ];
   const pageLevelChecks = {
     version: "deck-page-level-checks-v1",
     tocNoPerLinePageCounts: result.assembly.deckManifest.toc.every(
@@ -547,8 +471,8 @@ async function main(): Promise<void> {
       .filter((s) => s.emptyStateReason)
       .every((s) => Boolean(s.narrative || (s.bullets ?? []).length > 0)),
     continuationsAdjacent: result.assemblyValidation?.checks.continuationAdjacency ?? false,
-    noInternalTokensInClientCopy: internalTokenHits.length === 0,
-    internalTokenSlides: internalTokenHits.map((s) => s.slideKey),
+    noInternalTokensInClientCopy: internalTokenSlideKeys.length === 0,
+    internalTokenSlides: internalTokenSlideKeys,
     // Sidebar evidence-scope gates (fail closed):
     page13FooterListsHighlightDomains:
       ruShotFooter.includes("x.com") && ruShotFooter.includes("rupep.org"),
@@ -569,14 +493,50 @@ async function main(): Promise<void> {
   console.log("=== PAGE-LEVEL CHECKS ===");
   console.log(JSON.stringify(pageLevelChecks, null, 2));
 
+  /*
+   * Дека не собралась — это провал приёмки, а не повод её пропустить.
+   *
+   * Весь блок ворот стоит под условием «ошибок сборки нет», поэтому худший из
+   * исходов — отказ обязательной секции и `pageCount: 0` — уходил из прогона
+   * нулевым кодом возврата и без единой напечатанной проверки. Ровно тот
+   * случай, ради которого раннер смоков считает провалом прогон без единой
+   * выполненной проверки.
+   */
+  if (result.assembly.errors.length > 0) {
+    console.error(
+      `\nПРИЁМКА НЕ ПРОЙДЕНА: дека не собралась, ошибок сборки — ${result.assembly.errors.length}`
+    );
+    for (const err of result.assembly.errors.slice(0, 10)) console.error(`  ${err}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  /*
+   * Прогон без единой выполненной проверки — провал, а не успех.
+   *
+   * `SKIP_RENDER=1` выключает рендер, а вместе с ним и весь блок из 26 ворот:
+   * скрипт молча заканчивался нулём, ничего не проверив. Это та же форма, что
+   * этажом выше у несобранной деки, и то же правило, по которому раннер смоков
+   * считает провалом прогон без проверок. Пропуск объявляется словами и красит
+   * прогон — иначе его не отличить от пройденного.
+   */
+  if (process.env.SKIP_RENDER === "1") {
+    console.error("# SKIP приёмочные ворота — рендер выключен (SKIP_RENDER=1)");
+    console.error("ПРИЁМКА НЕ ВЫПОЛНЕНА: ни одно из ворот не проверялось");
+    process.exitCode = 1;
+    return;
+  }
+
   // Render through the EXISTING local python renderer (no second renderer).
-  if (result.assembly.errors.length === 0 && process.env.SKIP_RENDER !== "1") {
+  {
     const payload = toRendererPayload({
       deckManifest: result.assembly.deckManifest,
       rendererSlides: result.assembly.rendererSlides,
-      subjectName: "Сергей Глинка",
+      subjectName: SUBJECT_NAME,
       assets,
     });
+    const finalSlides = (payload.deckManifest as { finalSlides: Array<Record<string, unknown>> })
+      .finalSlides;
     const payloadPath = join(OUTPUT_ROOT, "render-payload.json");
     writeFileSync(payloadPath, JSON.stringify(payload), "utf8");
     const pptxPath = join(OUTPUT_ROOT, "rendered-client.pptx");
@@ -586,14 +546,14 @@ async function main(): Promise<void> {
     if (existsSync(pagesDir)) rmSync(pagesDir, { recursive: true, force: true });
     console.log("=== RENDER (existing local python renderer) ===");
     const out = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["scripts/render-orion-golden-artifacts.py", payloadPath, pptxPath, pdfPath, pagesDir],
       { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } }
     );
     console.log(out.trim());
     // Contact sheet from rendered pages.
     const contactOut = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["-X", "utf8", "scripts/build-contact-sheet.py", pagesDir, join(OUTPUT_ROOT, "contact-sheet.png")],
       { cwd: process.cwd(), encoding: "utf8" }
     );
@@ -606,7 +566,7 @@ async function main(): Promise<void> {
     let manualVisualPassed = false;
     try {
       execFileSync(
-        "python",
+        pythonInterpreter(),
         [
           "-X",
           "utf8",
@@ -634,10 +594,17 @@ async function main(): Promise<void> {
 
     // Geometry report through the EXISTING inspector.
     const geometryJson = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["-X", "utf8", "scripts/inspect-first36-pptx-geometry.py", pptxPath],
       { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
     );
+    // Телеметрию пишет сам рендер (рядом с PNG); её же читает инспектор выше.
+    const layoutTelemetryPath = join(OUTPUT_ROOT, "layout-telemetry.json");
+    const layoutTelemetry = existsSync(layoutTelemetryPath)
+      ? (JSON.parse(readFileSync(layoutTelemetryPath, "utf8")) as {
+          entries?: Array<Record<string, unknown>>;
+        })
+      : null;
     const geometryPath = join(OUTPUT_ROOT, "geometry-report.json");
     writeFileSync(geometryPath, geometryJson, "utf8");
     const geometry = JSON.parse(geometryJson) as {
@@ -646,6 +613,57 @@ async function main(): Promise<void> {
       clipping: unknown[];
       emptyPages: unknown[];
     };
+
+    // Текст страниц PDF — тем же fitz, что и подсчёт страниц. Читается один
+    // раз: ворота сверяют по нему то, что действительно напечатано.
+    const pdfPageTexts: string[] = existsSync(pdfPath)
+      ? (JSON.parse(
+          execFileSync(
+            pythonInterpreter(),
+            [
+              "-X",
+              "utf8",
+              "-c",
+              "import fitz,sys,json;print(json.dumps([p.get_text() for p in fitz.open(sys.argv[1])]))",
+              pdfPath,
+            ],
+            { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+          )
+        ) as string[])
+      : [];
+
+    // Нарисованный текст страниц — из готового PPTX, тем же инспектором,
+    // который читает геометрию. Инструмент намеренно не тот, что верстает
+    // страницу: проверка вёрстки её собственной мерой подтверждает сама себя.
+    const pptxPageTexts = ((): string[] => {
+      const raw = JSON.parse(
+        execFileSync(
+          pythonInterpreter(),
+          ["-X", "utf8", "scripts/inspect-first36-pptx-geometry.py", pptxPath, "--texts"],
+          { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
+        )
+      ) as unknown;
+      // Инспектор без python-pptx отдаёт объект с ошибкой: тогда следов нет ни
+      // у одного поля, и ворот краснеет — проверка без входа не пропуск.
+      return Array.isArray(raw) ? (raw as string[]) : [];
+    })();
+    const fieldsWithoutTrace = textFieldsWithoutTraceOnTheirPage(
+      finalSlides,
+      (page) => pptxPageTexts[page - 1] ?? ""
+    );
+    console.log("=== TEXT FIELDS ON THEIR PAGE ===");
+    if (fieldsWithoutTrace.length === 0) {
+      console.log(`след на своей странице оставили все поля ${finalSlides.length} слайдов`);
+    } else {
+      console.error(
+        `CRITICAL: полей без следа на своей странице — ${fieldsWithoutTrace.length}`
+      );
+      for (const miss of fieldsWithoutTrace.slice(0, 25)) {
+        console.error(
+          `  CRITICAL стр.${miss.page} ${miss.slideKey} ${miss.field}: «${miss.text.slice(0, 90)}»`
+        );
+      }
+    }
 
     // Content report: client-copy level facts across the assembled deck.
     const redMarkerRows = result.assembly.rendererSlides
@@ -664,6 +682,13 @@ async function main(): Promise<void> {
     const contentPath = join(OUTPUT_ROOT, "content-report.json");
     writeFileSync(contentPath, JSON.stringify(contentReport, null, 2), "utf8");
 
+    // Повторы адресов считаются до карты ворот: провалившийся ворот обязан
+    // назвать страницы и адреса, а не только своё имя.
+    const repeatedAddresses = repeatedSerpTableAddresses(result.assembly.rendererSlides);
+    for (const repeat of repeatedAddresses) {
+      console.error(`  ПОВТОР АДРЕСА В ТАБЛИЦЕ: ${repeat}`);
+    }
+
     // Acceptance report: aggregated gate summary for this deck build.
     const acceptance = {
       version: "deck-sections-acceptance-v1",
@@ -674,7 +699,8 @@ async function main(): Promise<void> {
         manifestNotBlocked: !result.manifest.buildBlocked,
         assemblyValidation: result.assemblyValidation?.passed ?? false,
         coverageReconciliation: !reconciliation.failed,
-        baseSlotCoverage36: reconciliation.baseSlotCoverage === 36,
+        baseSlotCoverageComplete:
+          reconciliation.baseSlotCoverage === reconciliation.requiredBaseSlotCount,
         geometryClean:
           geometry.overlaps.length === 0 &&
           geometry.overflow.length === 0 &&
@@ -693,22 +719,76 @@ async function main(): Promise<void> {
         regionScopeIsolation: result.assemblyValidation?.checks.regionScopeIsolation ?? false,
         sourceFooterFromSidebarEvidence:
           result.assemblyValidation?.checks.sourceFooterFromSidebarEvidence ?? false,
+        // Страница не спорит со своей панелью. Отсутствие ключа — отказ, а не
+        // пропуск: проверка без входа выглядит точно так же, как пройденная.
+        panelPagesMatchDrawnRows:
+          result.assemblyValidation?.checks.panelPagesMatchDrawnRows ?? false,
+        // Печатная таблица выдачи сходится с наблюдениями. Сверять нечем —
+        // это **пропуск**, отдельный исход сводки: выданный за проход, он
+        // делает ворот неотличимым от работающего.
+        serpTableMatchesObservations: assemblyGateOutcome(
+          result.assemblyValidation,
+          "serpTableMatchesObservations",
+          "сверка печатной таблицы выдачи"
+        ),
+        // Карточные страницы матрицы обязаны отчитаться о нарисованном:
+        // без их телеметрии CONTENT_DROPPED_BY_RENDERER судить нечего.
+        riskMatrixTelemetryPresent: riskMatrixTelemetryPresent(
+          result.assembly.rendererSlides,
+          layoutTelemetry
+        ),
+        // Сводная комплаенс-таблица называет базы. Ожидаемое число строк
+        // считается по наблюдениям артефактов, а не по выходу построителя:
+        // ворота, меряющие тем же индексом, зелены вакуумно.
+        complianceRowsNameTheirBases: complianceRowsNameTheirBases(
+          result.assembly.rendererSlides,
+          ANALYTICS_DIR
+        ),
+        // Один адрес — одна строка своей таблицы: у первой единица счёта
+        // «движок × регион», у второй — регион. Деку без единого напечатанного
+        // адреса ворота считают непроверенной: пропуск громче прохода.
+        serpTableAddressesPrintedOnce:
+          printedSerpAddressCount(result.assembly.rendererSlides) > 0 &&
+          repeatedAddresses.length === 0,
+        // Строка о другом лице печатается с пометкой на всех поверхностях,
+        // кроме приложения: без неё запрос про композитора-однофамильца
+        // читается как запрос о субъекте.
+        noOtherSubjectInNeutralRows: pageLevelChecks.noOtherSubjectInNeutralRows,
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
+        // Страницы регионов говорят о чтении. На эталоне это честная ветка
+        // «не читались» — ворота не вакуумны, а числовую ветку закрепляют
+        // юниты и смок: артефактов чтения у report-72 нет.
+        regionalPagesCarryReadingStatus: regionalPagesCarryReadingStatus(finalSlides),
+        // Переданное текстовое поле оставило след на своей странице. Ворот
+        // ловит не обрезку, а исчезновение: поле, которое шаблон не рисует,
+        // уезжает в рендерер и пропадает молча — ни телеметрии, ни отказа.
+        // Дека без слайдов — отказ, а не пропуск.
+        everyTextFieldReachesItsPage: finalSlides.length > 0 && fieldsWithoutTrace.length === 0,
+        // Методология страницы проверки доехала до листа, а не только до
+        // полезной нагрузки: этот зазор и пропустил регресс.
+        wikipediaCheckTextInPdf: wikipediaCheckTextInPdf(
+          result.assembly.rendererSlides,
+          (page) => pdfPageTexts[page - 1] ?? ""
+        ),
+        // Число страниц меряется декой, а не числом файлов: каталог
+        // дописывается, и пропавшая страница вместе с лишней давали прежний
+        // счёт при зелёном вороте (замер: `page-13.png` → `page-99.png`).
         pageParity: (() => {
           if (!existsSync(pdfPath)) return false;
           const pdfPages = Number(
             execFileSync(
-              "python",
+              pythonInterpreter(),
               ["-X", "utf8", "-c", `import fitz,sys;print(len(fitz.open(sys.argv[1])))`, pdfPath],
               { encoding: "utf8" }
             ).trim()
           );
-          const pngPages = readdirSync(pagesDir).filter((f) => f.endsWith(".png")).length;
-          return (
-            pdfPages === result.assembly.deckManifest.pageCount &&
-            pngPages === result.assembly.deckManifest.pageCount
+          const pagesComplaint = pagesDirectoryMismatch(
+            readdirSync(pagesDir),
+            result.assembly.deckManifest.pageCount
           );
+          if (pagesComplaint) console.log(`pageParity: ${pagesComplaint}`);
+          return pdfPages === result.assembly.deckManifest.pageCount && pagesComplaint === null;
         })(),
       },
       notes: [
@@ -722,7 +802,446 @@ async function main(): Promise<void> {
     console.log(`PDF:  ${existsSync(pdfPath) ? pdfPath : "(fitz fallback not produced)"}`);
     console.log(`geometry: overlaps=${geometry.overlaps.length} overflow=${geometry.overflow.length} clipping=${geometry.clipping.length} empty=${geometry.emptyPages.length}`);
     console.log(`acceptance gates: ${JSON.stringify(acceptance.gates)}`);
+
+    // Переполнение и потеря содержимого — отказ сборки, а не примечание.
+    // Ворота считались, писались в файл и печатались, но прогон завершался
+    // нулём при любом их значении: `geometryClean: false` держался так с
+    // начала переработки и никого не останавливал. Зелёный код возврата при
+    // красных воротах — это приёмка, которая ничего не принимает.
+    const summary = acceptanceGateSummary(acceptance.gates);
+    if (summary.failed.length > 0) {
+      console.error(
+        `\nПРИЁМКА НЕ ПРОЙДЕНА: ${summary.failed.length} из ${summary.total} ворот — ${summary.failed.join(", ")}`
+      );
+      if (summary.skipped.length > 0) {
+        console.error(`Не выполнено: ${summary.skipped.join(", ")}`);
+      }
+      console.error(`Подробности: ${acceptancePath}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(summary.line);
   }
+}
+
+/**
+ * В сводной комплаенс-таблице каждая строка называет свою базу.
+ *
+ * На прогоне 72 три записи (Dow Jones, LexisNexis, World-Check) схлопывались
+ * дедупом в одну строку «База данных | — | — | —»: провайдер приходит в
+ * наблюдении полем `engine`, а построитель читал только обогащение, которого в
+ * замороженных артефактах нет. Ожидаемое число строк берётся из самих
+ * наблюдений — если считать его по выходу построителя, ворота подтвердят любую
+ * поломку сами себе. Отсутствие входа — отказ, а не пропуск.
+ */
+/**
+ * Повторно напечатанные адреса в таблицах выдачи.
+ *
+ * Единственный сторож работы «ключ материала предпочитает адрес» на уровне
+ * напечатанного: юниты ключа видят пары ключей, но не видят таблицу, и возврат
+ * заголовочного приоритета вернул бы шесть пар строк «Россия — Яндекс» молча —
+ * по закоммиченным пакетам такой проверке считать нельзя, по свежесобранной
+ * деке можно и нужно. Единица — таблица одного движка одного региона
+ * (`sectionKey|serpEngine`): между движками и регионами один адрес законен,
+ * у каждой таблицы своя выдача. Сравнение — тем же ключом, каким строки сводит
+ * сама таблица (`serpMaterialKey`): два написания одного адреса — одна строка,
+ * как бы их ни напечатали.
+ */
+type SerpAddressSlide = {
+  slideKey?: string;
+  sectionKey?: string;
+  metrics?: Record<string, unknown>;
+  table?: { headers?: string[]; rows: string[][] } | null;
+};
+
+/**
+ * Напечатанные адреса листа и единица счёта, которой они принадлежат.
+ *
+ * Адрес читается **из колонки «Ссылка»** — оттуда же, откуда его читает
+ * клиент; полосы под строкой больше нет. Номер колонки берётся из заголовков
+ * самого листа, а не числом: у двух таблиц выдачи он разный (у первой вторая
+ * колонка, у второй первая), и записанное число указывало бы на чужую.
+ *
+ * Единица счёта у таблиц разная. Первая — таблица одного движка одного региона:
+ * между движками один адрес законен, у каждого своя выдача. Вторая одна на
+ * регион и движком не разделена вовсе, поэтому её единица — регион; поделив её
+ * по движку, ворот пропустил бы повтор внутри одной напечатанной таблицы.
+ */
+function serpTableAddresses(slide: SerpAddressSlide): { tableId: string; printed: string[] } | null {
+  const headers = slide.table?.headers ?? [];
+  const column = headers.indexOf("Ссылка");
+  if (column < 0 || !slide.table) return null;
+  const isExtraTable = Number(slide.metrics?.serpExtraQueries ?? 0) === 1;
+  const tableId = isExtraTable
+    ? `${String(slide.sectionKey ?? "")}|дополнительные запросы`
+    : `${String(slide.sectionKey ?? "")}|${String(slide.metrics?.serpEngine ?? "")}`;
+  return {
+    tableId,
+    printed: slide.table.rows.map((row) => String(row[column] ?? "").trim()),
+  };
+}
+
+/**
+ * Сколько адресов дека напечатала в таблицах выдачи.
+ *
+ * Ноль — отказ, а не пропуск: ворот без входа выглядит точно так же, как
+ * пройденный, и дека без единого адреса однажды прошла бы приёмку молча.
+ */
+export function printedSerpAddressCount(rendererSlides: ReadonlyArray<SerpAddressSlide>): number {
+  let count = 0;
+  for (const slide of rendererSlides) {
+    for (const printed of serpTableAddresses(slide)?.printed ?? []) if (printed) count += 1;
+  }
+  return count;
+}
+
+export function repeatedSerpTableAddresses(
+  rendererSlides: ReadonlyArray<SerpAddressSlide>
+): string[] {
+  const repeats: string[] = [];
+  const firstPrinted = new Map<string, string>();
+  for (const slide of rendererSlides) {
+    const table = serpTableAddresses(slide);
+    if (!table) continue;
+    for (const printed of table.printed) {
+      // Пустая ячейка адреса — отдельная беда (её ловит сверка печати с
+      // наблюдениями), но не повтор: две строки без адреса не «одна страница».
+      if (!printed) continue;
+      const key = `${table.tableId}|${serpMaterialKey({ url: printed })}`;
+      const first = firstPrinted.get(key);
+      if (first === undefined) {
+        firstPrinted.set(key, printed);
+        continue;
+      }
+      repeats.push(
+        `${String(slide.slideKey ?? "")}: адрес «${printed}» уже напечатан в этой таблице (${first})`
+      );
+    }
+  }
+  return repeats;
+}
+
+export function complianceRowsNameTheirBases(
+  rendererSlides: ReadonlyArray<{
+    baseSlotId?: string;
+    isContinuation?: boolean;
+    table?: { headers?: string[]; rows: string[][] };
+  }>,
+  analyticsDir: string
+): boolean {
+  const observationsPath = join(analyticsDir, "composite-serp-observations.json");
+  if (!existsSync(observationsPath)) return false;
+  const observations = (
+    JSON.parse(readFileSync(observationsPath, "utf8")) as {
+      observations?: Array<{ surface?: string; engine?: string; title?: string }>;
+    }
+  ).observations ?? [];
+  const expected = new Set(
+    observations
+      .filter((o) => o.surface === "compliance_hit")
+      .map((o) => `${String(o.engine ?? "").toUpperCase()}|${String(o.title ?? "").toLowerCase()}`)
+  );
+  // Строки сводки собираются со всех её листов: сводная таблица разбивается по
+  // своему потолку, и первый лист несёт не все записи. Продолжения того же
+  // слота, на которых стоят карточки записей, узнаются по колонкам — у них
+  // «Параметр | Значение».
+  const rows = rendererSlides
+    .filter(
+      (s) =>
+        s.baseSlotId === "p33_compliance_toc" && s.table?.headers?.[0] === "База данных"
+    )
+    .flatMap((s) => s.table?.rows ?? []);
+  if (expected.size === 0) return false;
+  if (rows.length !== expected.size) return false;
+  // «База данных» — подпись колонки; в ячейке она означает, что базу не назвали.
+  return rows.every((row) => Boolean(row[0]?.trim()) && row[0] !== "База данных");
+}
+
+/**
+ * Каждая карточная страница матрицы отчиталась о нарисованном.
+ *
+ * Правило «выброшенное рендерером содержимое поднимает
+ * CONTENT_DROPPED_BY_RENDERER» исполняется только там, куда поступает
+ * телеметрия. Карточная сетка матрицы записей не писала — и страница теряла
+ * тему при зелёной приёмке. Отсутствие записи (или самой телеметрии) — отказ,
+ * а не пропуск: проверка без входа выглядит ровно так же, как пройденная,
+ * поэтому и дека без страниц матрицы считается непроверенной.
+ */
+export function riskMatrixTelemetryPresent(
+  rendererSlides: ReadonlyArray<{ template?: string; pageNumber?: number }>,
+  telemetry: { entries?: Array<Record<string, unknown>> } | null | undefined
+): boolean {
+  const riskPages = rendererSlides
+    .filter((s) => String(s.template ?? "").startsWith("orion_golden_risk_matrix"))
+    .map((s) => s.pageNumber);
+  if (riskPages.length === 0) return false;
+  const reported = new Set(
+    (telemetry?.entries ?? [])
+      .filter((e) => String(e.name ?? "").startsWith("orion_risk_matrix"))
+      .map((e) => Number(e.page))
+  );
+  return riskPages.every((page) => reported.has(Number(page)));
+}
+
+/**
+ * Страницы регионов несут строку о чтении в полезной нагрузке рендерера.
+ *
+ * Носитель фразы — `statusNote`, и он проходит длинную цепочку: построитель →
+ * пакет → ассемблер → полезная нагрузка → лист. На живом прогоне 76 фраза
+ * умирала в середине этой цепочки молча, поэтому проверяется именно то, что
+ * получает рендерер. Отсутствие поля — провал, а не пропуск: страница региона
+ * без слов о чтении выглядит ровно так же, как страница, где чтения не было.
+ */
+export function regionalPagesCarryReadingStatus(
+  finalSlides: ReadonlyArray<Record<string, unknown>>
+): boolean {
+  const pages = finalSlides.filter(
+    (s) =>
+      String(s.template ?? "") === "orion_golden_metrics_dashboard" &&
+      /_summary$/u.test(String(s.baseSlotId ?? "")) &&
+      s.isContinuation !== true
+  );
+  if (pages.length === 0) return false;
+  return pages.every((s) => /прочитан|читал/iu.test(String(s.statusNote ?? "")));
+}
+
+/**
+ * Текст страницы проверки Википедии доехал до PDF.
+ *
+ * Ровно этот зазор «payload → PDF» пропустил регресс при 22 зелёных воротах:
+ * методология лежала в полезной нагрузке целиком, а на листе её не было —
+ * ножницы рендерера вернули на длинном буллете пустую строку. Сверяется голова
+ * нарратива слайда с текстом **той** страницы PDF, где он стоит.
+ *
+ * Сравнение — без пробелов и пунктуации: fitz рвёт строки и переносит слова, и
+ * подстрока «в лоб» дала бы ложный провал. Продолжения не проверяются: нарратив
+ * принадлежит первой странице блока, и требовать его голову с каждой страницы
+ * шаблона значило бы валить приёмку на здоровой деке с пятью строками выдачи.
+ */
+export function wikipediaCheckTextInPdf(
+  rendererSlides: ReadonlyArray<{
+    template?: string;
+    pageNumber?: number;
+    narrative?: string;
+    isContinuation?: boolean;
+  }>,
+  pageText: (pageNumber: number) => string
+): boolean {
+  const slides = rendererSlides.filter(
+    (s) => s.template === "orion_golden_wikipedia_check" && !s.isContinuation
+  );
+  if (slides.length === 0) return false;
+  return slides.every((s) => {
+    const head = String(s.narrative ?? "").split(/(?<=[.!?])\s/u)[0] ?? "";
+    if (head.length < 40) return false;
+    return compactForCompare(pageText(Number(s.pageNumber))).includes(compactForCompare(head));
+  });
+}
+
+/** Одна форма для сверки с текстом PDF: буквы и цифры, без пробелов. */
+function compactForCompare(text: string): string {
+  return normalizeForCompare(text).replace(/\s+/gu, "");
+}
+
+/**
+ * Что из поля обязано найтись на листе.
+ *
+ * Обложка составляет заголовок сама: служебную приставку «Отчёт о цифровом
+ * профиле — » она отбрасывает и печатает хвост после тире (ветка
+ * `orion_golden_cover` в `renderer/orion_golden_render/slides.py`). Требовать
+ * от неё начала поля значило бы краснеть на замысле, а снять заголовок обложки
+ * с проверки — перестать сторожить единственное место листа, где стоит имя
+ * субъекта.
+ */
+function drawnPartOfTextField(template: string, field: string, value: string): string {
+  if (template === "orion_golden_cover" && field === "title") {
+    return value.split(/\s+[—–-]\s+/u).pop() ?? value;
+  }
+  return value;
+}
+
+/**
+ * Поле, которое ищется на листе: имя, переданный текст и равноправные замены.
+ *
+ * Замены нужны там, где лист печатает **одно из двух** — иначе ворот краснеет
+ * на законной ветке рендерера (см. `panelTextFields`). У обычного поля их нет.
+ */
+type TextFieldCheck = [field: string, value: unknown, alternatives: unknown[]];
+
+/** Поле нагрузки, которого на его странице не нашлось. */
+export type TextFieldWithoutTrace = {
+  slideKey: string;
+  page: number;
+  field: string;
+  text: string;
+};
+
+/**
+ * Сколько знаков начала поля ищется на листе.
+ *
+ * Столько же требует ворот страницы проверки Википедии: голова короче начинает
+ * случайно совпадать с соседним текстом, длиннее — краснеть на законной
+ * обрезке. Поле короче этого сравнивается целиком.
+ */
+const TRACE_HEAD_CHARS = 40;
+
+/**
+ * Каждое переданное текстовое поле оставило след на своей странице.
+ *
+ * Нагрузка говорит, что на странице напечатано; нарисованный текст читается из
+ * готового PPTX — вторым инструментом, а не тем, который эту страницу верстает.
+ * Между ними живёт молчаливая потеря: поле доезжает до рендерера целым, а его
+ * ветка на листе не исполняется. Так `sourceNote` страницы выдачи ехал
+ * единственным буллетом на 18 страницах эталона и не был напечатан ни на одной:
+ * при непустой таблице `elif bullets` не выполняется.
+ *
+ * Утверждение намеренно слабое — «поле не исчезло целиком». Рендерер законно
+ * переносит, склеивает и режет по словам, а обрезку судит ворот телеметрии
+ * (`services/render-telemetry-gate.ts`); требование дословного совпадения
+ * краснело бы на здоровом прогоне, и ворот выключили бы.
+ *
+ * Перечень полей — снимок клиентского текста (`lib/client-text-snapshot.ts`)
+ * плюс две добавки: каждый элемент списка отдельно (у списка пропадает не всё
+ * поле, а одна строка) и блоки панели из `visualAnalysis`, которых снимок не
+ * видит вовсе. Второе означает, что клиентский текст шестнадцати панельных
+ * слайдов не закреплён ни одним текстовым эталоном, — это записано строкой в
+ * описи пробелов.
+ */
+export function textFieldsWithoutTraceOnTheirPage(
+  finalSlides: ReadonlyArray<Record<string, unknown>>,
+  pageText: (pageNumber: number) => string
+): TextFieldWithoutTrace[] {
+  const out: TextFieldWithoutTrace[] = [];
+  for (const slide of finalSlides) {
+    const page = Number(slide.pageNumber);
+    const drawn = compactForCompare(pageText(page));
+    const template = String(slide.template ?? "");
+    /** След оставил хотя бы один из вариантов, которыми лист печатает блок. */
+    const traced = (field: string, variants: readonly unknown[]): boolean =>
+      variants.some((value) => {
+        if (typeof value !== "string") return false;
+        const head = compactForCompare(drawnPartOfTextField(template, field, value)).slice(
+          0,
+          TRACE_HEAD_CHARS
+        );
+        return head.length > 0 && drawn.includes(head);
+      });
+    const bullets = Array.isArray(slide.bullets) ? (slide.bullets as unknown[]) : [];
+    const fields: TextFieldCheck[] = [
+      ...CLIENT_TEXT_FIELDS.map((field) => [field, slide[field], []] as TextFieldCheck),
+      ...bullets.map((value, i) => [`bullets[${i}]`, value, []] as TextFieldCheck),
+      ...panelTextFields(slide),
+    ];
+    for (const [field, value, alternatives] of fields) {
+      if (typeof value !== "string") continue;
+      if (!compactForCompare(value)) continue;
+      if (traced(field, [value, ...alternatives])) continue;
+      out.push({ slideKey: String(slide.slideKey ?? ""), page, field, text: value });
+    }
+  }
+  return out;
+}
+
+/**
+ * Клиентские блоки панельного макета — и чем лист вправе их заменить.
+ *
+ * У панелей (`orion_golden_surface_panel`, `orion_golden_image_grid`,
+ * `orion_golden_serp_screenshot`, `orion_golden_knowledge_panel`) клиентского
+ * текста на верхнем уровне слайда нет вовсе: он лежит внутри `visualAnalysis`.
+ * Ворот читал верхний уровень и потому проверял на таких слайдах ровно одно
+ * поле — заголовок; замер по нагрузке эталона это и показал: 16 слайдов из 61.
+ * Ровно там и живёт молчаливая потеря: на прогоне 91 панель подсказок не
+ * напечатала «Что сделать» и вывод о собранном наборе, а сказать об этом было
+ * некому.
+ *
+ * Средний блок панель печатает **либо** «что показывает экран», **либо**
+ * объяснения рамок — что именно, решают набор рамок и то, нашлась ли для
+ * страницы картинка (узкая панель против карточек во всю ширину). Поэтому у
+ * него объявлены равноправные варианты: требовать оба значило бы краснеть на
+ * законной ветке, а ворот, красный на здоровой деке, выключают.
+ */
+function panelTextFields(slide: Record<string, unknown>): TextFieldCheck[] {
+  const analysis = slide.visualAnalysis;
+  if (!analysis || typeof analysis !== "object") return [];
+  const a = analysis as Record<string, unknown>;
+  const explanations = Array.isArray(a.highlightExplanations)
+    ? (a.highlightExplanations as Array<Record<string, unknown>>).map((e) => e?.clientReason)
+    : [];
+  const actions = Array.isArray(a.recommendedActions) ? (a.recommendedActions as unknown[]) : [];
+  return [
+    ["visualAnalysis.headlineConclusion", a.headlineConclusion, []],
+    ["visualAnalysis.whatIsVisible", a.whatIsVisible, explanations],
+    ["visualAnalysis.clientMeaning", a.clientMeaning, []],
+    ...actions.map(
+      (value, i) => [`visualAnalysis.recommendedActions[${i}]`, value, []] as TextFieldCheck
+    ),
+    ["visualAnalysis.provenanceLabel", a.provenanceLabel, []],
+  ];
+}
+
+/**
+ * Исход ворота: пройден, провален или **не выполнялся**.
+ *
+ * Третье значение заведено потому, что пропуск, выданный за проход, невидим:
+ * сводка печатала «28 из 28» на деке, где одну сверку выполнить было нечем.
+ */
+export type AcceptanceGateOutcome = boolean | "SKIP";
+
+/**
+ * Ворота, которые не пройдены.
+ *
+ * Пустой набор ворот — тоже отказ: «0 провалено из 0» неотличимо от «не
+ * проверяли», а это ровно тот исход, ради которого писался раннер смоков.
+ * Пропуск отказом не считается — он свой исход и назван отдельно.
+ */
+export function failedAcceptanceGates(
+  gates: Record<string, AcceptanceGateOutcome>
+): string[] {
+  const names = Object.keys(gates);
+  if (names.length === 0) return ["<ворота не вычислены>"];
+  return names.filter((k) => gates[k] !== true && gates[k] !== "SKIP");
+}
+
+/**
+ * Сводка приёмки одной строкой — та, которую читает человек.
+ *
+ * Считается здесь, а не печатается по месту: «пройдено N из M» и список
+ * пропусков обязаны быть одним ответом, иначе сводка снова разойдётся с
+ * содержимым `acceptance-report.json`.
+ */
+export function acceptanceGateSummary(gates: Record<string, AcceptanceGateOutcome>): {
+  total: number;
+  passed: number;
+  failed: string[];
+  skipped: string[];
+  line: string;
+} {
+  const names = Object.keys(gates);
+  const failed = failedAcceptanceGates(gates);
+  const skipped = names.filter((k) => gates[k] === "SKIP");
+  const passed = names.filter((k) => gates[k] === true).length;
+  const line =
+    skipped.length > 0
+      ? `приёмка: пройдено ${passed} из ${names.length} ворот; пропущено ${skipped.length}: ${skipped.join(", ")}`
+      : `приёмка: пройдено ${passed} из ${names.length} ворот`;
+  return { total: names.length, passed, failed, skipped, line };
+}
+
+/**
+ * Исход ворота, посчитанного проверкой сборки.
+ *
+ * Ключа нет, а сверка объявила пропуск — это пропуск. Ключа нет и пропуска не
+ * объявлено — отказ: проверка без входа выглядит точно так же, как пройденная.
+ */
+function assemblyGateOutcome(
+  validation: { checks: Record<string, boolean>; skipped: string[] } | null | undefined,
+  key: string,
+  skipMarker: string
+): AcceptanceGateOutcome {
+  const value = validation?.checks[key];
+  if (typeof value === "boolean") return value;
+  if (validation?.skipped.some((s) => s.includes(skipMarker))) return "SKIP";
+  return false;
 }
 
 const isDirectRun = process.argv[1]?.replace(/\\/gu, "/").endsWith("run-orion-deck-sections-report72.ts");

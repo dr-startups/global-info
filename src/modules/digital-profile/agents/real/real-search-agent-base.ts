@@ -12,10 +12,10 @@
  *    never touch mock rows (different source / dedupHash).
  */
 
-import { createHash } from "node:crypto";
 import { prisma } from "@/server/prisma/client";
 import type { Prisma, SearchEngine } from "@prisma/client";
 import { normalizeUrl } from "../../services/evidence-service";
+import { searchResultDedupHash } from "../../services/search-result-identity";
 import { buildPersonSearchQueries } from "../../providers/query-builder";
 import type { SearchProvider } from "../../providers/search-provider";
 import type { SearchProviderResult } from "../../providers/types";
@@ -29,10 +29,6 @@ import type {
   SavedEvidenceSummary,
 } from "../types";
 import type { AgentNameValue } from "../../types";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 /**
  * Decides whether adverse ("negative") queries are permitted for a case.
@@ -112,7 +108,10 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         engine: this.engine,
         url: r.url,
         normalizedUrl: normUrl,
-        dedupHash: sha256(normUrl),
+        // Движок в хеше: один и тот же адрес, найденный обоими поисковиками,
+        // это два факта. Хеш по одному адресу вычёркивал строки того агента,
+        // который отработал вторым.
+        dedupHash: searchResultDedupHash({ engine: this.engine, normalizedUrl: normUrl }),
         title: r.title || null,
         snippet: r.snippet || null,
         rank: r.rank,

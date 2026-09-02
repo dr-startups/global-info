@@ -16,6 +16,13 @@ export type ComplianceProviderKind = "REAL" | "MANUAL" | "MOCK";
 
 export type ComplianceRiskType =
   | "SANCTIONS"
+  /**
+   * The provider's `sanction.linked`: the person is connected to a sanctioned
+   * entity but is not listed anywhere. A type of its own rather than
+   * `SANCTIONS` or `WATCHLIST` — the report goes to a bank, where an
+   * approximate label about a person is a false statement, not a rounding.
+   */
+  | "SANCTION_LINKED"
   | "PEP"
   | "ADVERSE_MEDIA"
   | "WATCHLIST"

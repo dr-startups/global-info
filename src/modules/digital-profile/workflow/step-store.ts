@@ -129,9 +129,25 @@ export async function claimNextStep(input: {
      WHERE s."id" = (
        SELECT c."id"
          FROM "dp_workflow_steps" AS c
-        WHERE c."state" IN ('PENDING', 'WAITING', 'RUNNING')
+        -- Состояние FAILED здесь обязательно. Повторяемый отказ пишет ровно
+        -- «повторить тогда-то, шаг не закончен» (applyStepOutcome: state
+        -- FAILED, nextRunAt = now + backoff, finished false), и кабинет по тем
+        -- же данным обещает пользователю «продолжится само» (autoResumeState
+        -- берёт PENDING, WAITING и FAILED). Выборка же читала три состояния из
+        -- четырёх — и назначенный повтор не наступал никогда.
+        --
+        -- Поймано на боевом прогоне 28.07: база собрана, Arsenkin отдал 522
+        -- наблюдения, а прогон четырнадцать минут стоял на 35 процентах с
+        -- ARSENKIN_ENRICHMENT state=FAILED attempts=1/10 nextRunAt=17:58:16.
+        -- Пользователю оставалось дожимать руками — при обратном правиле.
+        --
+        -- Исчерпанный отказ сюда не попадает: у него nextRunAt = null, и
+        -- условие ниже его отсекает. Это и есть граница между «повторим сами»
+        -- и «нужно решение оператора».
+        WHERE c."state" IN ('PENDING', 'WAITING', 'RUNNING', 'FAILED')
           AND c."nextRunAt" IS NOT NULL
           AND c."nextRunAt" <= ${now}
+          AND c."attempts" < c."maxAttempts"
           AND (c."leaseUntil" IS NULL OR c."leaseUntil" <= ${now})
           AND (${input.jobId ?? null}::text IS NULL OR c."jobId" = ${input.jobId ?? null})
           AND NOT EXISTS (
@@ -196,6 +212,34 @@ export async function completeStep(input: {
     if (!next || next.state !== "PENDING" || next.nextRunAt) return;
     await tx.workflowStep.update({ where: { id: next.id }, data: { nextRunAt: now } });
   });
+}
+
+/**
+ * Продлевает лизу работающего шага.
+ *
+ * Лиза выдаётся на две минуты, а сборка отчёта идёт шесть: чтение ста
+ * двадцати страниц, разбор моделью, отрисовка. По истечении лизы шаг снова
+ * становится свободным, и второй воркер берёт его в работу — тот же отчёт
+ * собирается второй раз параллельно. На живом прогоне это видно по логу:
+ * чтение ссылок отработало дважды с промежутком ровно в лизу, то есть за один
+ * отчёт заплачено дважды.
+ *
+ * Продление идёт только своей лизы: `leaseOwner` в условии обязателен, иначе
+ * воркер, у которого шаг уже отобрали, вернул бы его себе.
+ */
+export async function renewStepLease(
+  stepId: string,
+  ownerId: string,
+  leaseMs: number,
+  deps: { prisma?: PrismaClient; now?: () => Date } = {}
+): Promise<boolean> {
+  const prisma = deps.prisma ?? (await getPrisma());
+  const now = deps.now?.() ?? new Date();
+  const res = await prisma.workflowStep.updateMany({
+    where: { id: stepId, leaseOwner: ownerId },
+    data: { leaseUntil: new Date(now.getTime() + leaseMs) },
+  });
+  return res.count > 0;
 }
 
 /** Освобождает лизу, не меняя состояния — для аварийного выхода из тика. */

@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { ArsenkinRequestError, type ArsenkinClient } from "./client";
 import { acquireArsenkinAccountSlot } from "./account-rate-limit";
+import { withArsenkinSubmitSlot } from "./task-slots";
 import { computeLimitsSpent } from "./cost";
 import { hashProviderRequest, type ProviderTaskStore } from "./provider-task-store";
 import { buildSubmitFailureDiagnostics } from "./submit-failure-diagnostics";
@@ -40,6 +41,33 @@ export type EnsureArsenkinTaskInput = {
 
 export function maxArsenkinSubmitRetries(env: NodeJS.ProcessEnv = process.env): number {
   return Math.max(1, Number(env.ARSENKIN_MAX_SUBMIT_RETRIES ?? 5) || 5);
+}
+
+/**
+ * Сколько раз ждать после `429`.
+ *
+ * У «слишком много запросов» и у настоящего отказа разная природа, и мерить их
+ * одним счётчиком нельзя. Пять быстрых попыток с паузой в пять секунд — это
+ * двадцать пять секунд терпения на провайдера, который сам сказал «позже», при
+ * том что его же задачи идут по полторы минуты. На боевом прогоне этого хватило,
+ * чтобы задача умерла с `submit_retry_exhausted`, хотя не случилось ничего,
+ * кроме занятости аккаунта.
+ *
+ * Ожидание — не попытка: у отказа свой счёт, у ожидания свой.
+ */
+export function maxArsenkinRateLimitRetries(env: NodeJS.ProcessEnv = process.env): number {
+  return Math.max(1, Number(env.ARSENKIN_MAX_RATE_LIMIT_RETRIES ?? 20) || 20);
+}
+
+/**
+ * Пауза после `429`: растёт с числом отказов, но не дольше минуты.
+ *
+ * Прежние неизменные пять секунд означали, что мы стучимся в занятый аккаунт с
+ * той же частотой, с какой он отказывает.
+ */
+export function rateLimitBackoffMs(attempts: number): number {
+  const n = Math.max(0, Number(attempts ?? 0));
+  return Math.min(60_000, 5_000 * 2 ** Math.min(n, 4));
 }
 
 /** RATE_LIMITED without externalTaskId is a submit-retry state, never a poll state. */
@@ -99,7 +127,7 @@ function submitFailedState(
     return {
       state: "RATE_LIMITED",
       errorCode: classified.errorCode,
-      nextPollAt: new Date(Date.now() + 5_000),
+      nextPollAt: new Date(Date.now() + rateLimitBackoffMs(attempts)),
       completedAt: null,
       attempts: attempts + 1,
     };
@@ -210,7 +238,10 @@ export async function ensureArsenkinTask(
     data: input.data,
   };
   const requestHash = hashProviderRequest(requestJson);
-  const maxRetries = input.maxSubmitRetries ?? maxArsenkinSubmitRetries();
+  // Бюджет ожидания после `429`. Переопределение вызывающего
+  // (`maxSubmitRetries`) исторически управляло именно им: другие исходы
+  // отправки терминальны сразу и счётчика не спрашивают.
+  const maxRateLimitWaits = input.maxSubmitRetries ?? maxArsenkinRateLimitRetries();
   let row = await store.findByRequestHash(input.reportRunId, requestHash);
   if (!row) {
     // Тот же запрос уже оплачен и выполнен в соседнем прогоне этого же сбора —
@@ -255,10 +286,14 @@ export async function ensureArsenkinTask(
   }
 
   if (isSubmitRetryRateLimited(row)) {
-    if (row.attempts >= maxRetries) {
+    // У ожидания свой счёт: `429` значит «аккаунт занят», а не «запрос
+    // негоден». Мерить его тем же бюджетом, что и настоящие отказы, значило
+    // хоронить задачу через двадцать пять секунд занятости — что и случилось
+    // на боевом прогоне.
+    if (row.attempts >= maxRateLimitWaits) {
       return store.updateState(row.id, {
         state: "FAILED",
-        errorCode: "submit_retry_exhausted",
+        errorCode: "submit_rate_limited_too_long",
         nextPollAt: null,
         completedAt: new Date(),
       });
@@ -281,6 +316,29 @@ export async function ensureArsenkinTask(
     return row;
   }
 
+  // Постановка задачи — по одной на процесс. Провайдер режет именно
+  // одновременные `/set`: четыре разом дали `429` на все четыре и падение
+  // стадии с `submit_retry_exhausted`. Выигрыша в параллельной постановке нет —
+  // `/set` занимает доли секунды, минуты уходят на ожидание, а оно параллельно.
+  return withArsenkinSubmitSlot(() => submitQueuedArsenkinTask(client, store, input, row));
+}
+
+async function submitQueuedArsenkinTask(
+  client: ArsenkinClient,
+  store: ProviderTaskStore,
+  input: EnsureArsenkinTaskInput,
+  queued: ProviderTaskRecord
+): Promise<ProviderTaskRecord> {
+  // Время берётся здесь, а не до очереди отправки: аренда на отправку считается
+  // от этого момента, и со временем, замеренным до ожидания в очереди, она
+  // получилась бы короче на длину ожидания — вплоть до `submit_lease_expired`.
+  const now = new Date();
+  const requestJson: ArsenkinSetTaskRequest = {
+    tools_name: input.toolName,
+    data: input.data,
+  };
+  const requestHash = hashProviderRequest(requestJson);
+  let row = queued;
   const workerId = input.workerId ?? `arsenkin-submit-${process.pid}-${randomUUID().slice(0, 8)}`;
   const claimed = await store.claimForSubmission(
     row.id,
@@ -478,7 +536,6 @@ export async function waitForArsenkinTaskCompletion(
   input: EnsureArsenkinTaskInput,
   waitTimeoutMs: number
 ): Promise<ProviderTaskRecord> {
-  const maxRetries = input.maxSubmitRetries ?? maxArsenkinSubmitRetries();
   let row = await ensureArsenkinTask(client, store, input);
   const started = Date.now();
   while (row.state !== "DONE" && row.state !== "FAILED" && row.state !== "CANCELLED") {

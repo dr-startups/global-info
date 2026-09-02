@@ -18,6 +18,7 @@ import {
 const SUBJECT = {
   lastName: "Дуров",
   lastNameVariants: ["Durov"],
+  firstNames: ["Павел"],
   patronymics: ["Валерьевич"],
 };
 
@@ -56,6 +57,7 @@ describe("чужое отчество рядом с фамилией — дру�
       hasPatronymicConflict("Дурова Мария Сергеевна", {
         lastName: "Дурова",
         lastNameVariants: [],
+        firstNames: ["Мария"],
         patronymics: ["Валерьевна"],
       })
     ).toBe(true);

@@ -5,7 +5,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { resolveRegionLabelFromArsenkinRequest } from "../providers/arsenkin/regions";
+import {
+  arsenkinRegionIdToLabel,
+  resolveRegionLabelFromArsenkinRequest,
+  seTypeToEngine,
+} from "../providers/arsenkin/regions";
 import {
   isArsenkinClientEvidenceObservation,
   type ArsenkinIngestedObservation,
@@ -155,6 +159,115 @@ function withProvenance(
   };
 }
 
+/** Что мы сами попросили у check-top: запросы, поисковики и глубину. */
+export type SearchTopRequestShape = {
+  queries: string[];
+  se: Array<{ type: number; region: number }>;
+  depth: number;
+};
+
+export function readSearchTopRequest(requestJson: unknown): SearchTopRequestShape | null {
+  if (!isPlainObject(requestJson)) return null;
+  const data = isPlainObject(requestJson.data) ? requestJson.data : requestJson;
+  const queries = Array.isArray(data.queries)
+    ? data.queries.map((q) => asString(q)).filter(Boolean)
+    : [];
+  const se = (Array.isArray(data.se) ? data.se : [])
+    .filter(isPlainObject)
+    .map((s) => ({ type: Number(s.type), region: Number(s.region) }))
+    .filter((s) => Number.isFinite(s.type));
+  const depth = Number(data.depth);
+  if (queries.length === 0 || se.length === 0 || !Number.isFinite(depth) || depth <= 0) return null;
+  return { queries, se, depth: Math.trunc(depth) };
+}
+
+/**
+ * Написание запроса — то, которым он отправлялся, а не эхо провайдера.
+ *
+ * Arsenkin возвращает запрос нормализованным в нижний регистр. Пока в
+ * наблюдение писалось эхо, один запрос жил в корпусе двумя написаниями
+ * (в живом прогоне 57 строк «тиньков олег юрьевич» против 24 «Тиньков Олег
+ * Юрьевич»), а печатная форма выбирает самое частое — то есть нижний регистр.
+ * Сверяем без учёта регистра и лишних пробелов; строку, которой в заявке нет,
+ * оставляем как пришла: придумывать написание, которого мы не отправляли,
+ * нельзя. Сырое эхо остаётся в `responseJson` задачи.
+ */
+function queryMatchKey(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function requestedSpellings(request: SearchTopRequestShape | null): Map<string, string> {
+  const byKey = new Map<string, string>();
+  for (const q of request?.queries ?? []) {
+    const key = queryMatchKey(q);
+    if (key && !byKey.has(key)) byKey.set(key, q);
+  }
+  return byKey;
+}
+
+function spellAsRequested(echo: string, spellings: Map<string, string>): string {
+  if (!echo) return echo;
+  return spellings.get(queryMatchKey(echo)) ?? echo;
+}
+
+/**
+ * Разложить плоский ответ check-top обратно на блоки «запрос × поисковик».
+ *
+ * Ответ приходит одним списком, а на деле это склейка блоков: для каждого
+ * запроса подряд идут результаты каждого поисковика из `se`. Раньше позиция
+ * считалась сквозным индексом по всему списку — и второй блок получал позиции
+ * 21–40, третий 41–60. Для аудита ТОП-20 это означало, что всё, кроме первого
+ * блока, объявлялось «ниже двадцатой» и выбрасывалось из предмета аудита. На
+ * живом прогоне так ушла вся двадцатка Google по России и два запроса из трёх
+ * по ОАЭ.
+ *
+ * Границу блоков даёт сам ответ: у строки записан её запрос, и он меняется на
+ * стыке. Внутри запроса блоки поисковиков режутся по глубине, которую мы
+ * запросили. Когда длина не делится ровно — угадывать нельзя: позиция всё
+ * равно считается внутри запроса, а поисковик остаётся неназванным, и об этом
+ * говорит предупреждение.
+ */
+export function attributeSearchTopRows(
+  itemQueries: string[],
+  request: SearchTopRequestShape | null
+): { rows: Array<{ rank: number; seIndex: number | null }>; warnings: string[] } {
+  const rows: Array<{ rank: number; seIndex: number | null }> = [];
+  const warnings: string[] = [];
+
+  // Границы блоков — по смене запроса. Пустой запрос у всех строк означает,
+  // что провайдер его не прислал: тогда весь ответ — один блок.
+  const groups: Array<{ query: string; from: number; to: number }> = [];
+  for (let i = 0; i < itemQueries.length; i += 1) {
+    const q = itemQueries[i] ?? "";
+    const last = groups[groups.length - 1];
+    if (last && last.query === q) last.to = i;
+    else groups.push({ query: q, from: i, to: i });
+  }
+
+  for (const g of groups) {
+    const size = g.to - g.from + 1;
+    const seCount = request?.se.length ?? 0;
+    const depth = request?.depth ?? 0;
+    let assign: (offset: number) => { rank: number; seIndex: number | null };
+
+    if (seCount === 1) {
+      assign = (offset) => ({ rank: offset + 1, seIndex: 0 });
+    } else if (seCount > 1 && depth > 0 && size === depth * seCount) {
+      assign = (offset) => ({ rank: (offset % depth) + 1, seIndex: Math.floor(offset / depth) });
+    } else if (seCount > 1 && depth > 0 && size <= depth) {
+      // Пришло меньше, чем на один поисковик: это первый блок и есть.
+      assign = (offset) => ({ rank: offset + 1, seIndex: 0 });
+    } else {
+      if (seCount > 1) warnings.push(`SEARCH_TOP:ENGINE_SPLIT_AMBIGUOUS:${size}/${seCount}`);
+      assign = (offset) => ({ rank: offset + 1, seIndex: null });
+    }
+
+    for (let offset = 0; offset < size; offset += 1) rows.push(assign(offset));
+  }
+
+  return { rows, warnings };
+}
+
 function adaptSearchTop(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
@@ -169,7 +282,22 @@ function adaptSearchTop(
     return { ok: true, emptyValid: true, observations: [], warnings: ["SEARCH_TOP:EMPTY_VALID"] };
   }
   const observations: ArsenkinIngestedObservation[] = [];
-  for (const raw of items.slice(0, 50)) {
+  const warnings: string[] = [];
+  const request = readSearchTopRequest(requestJson);
+
+  // Предел на число строк считается по тому, что мы попросили, а не круглым
+  // числом. Прежде здесь стояло `slice(0, 50)`, и ответ на три запроса по
+  // двадцать позиций обрезался на пятидесятой — треть выдачи ОАЭ пропадала
+  // молча, ещё до всякого анализа.
+  const expected = request
+    ? request.queries.length * request.se.length * request.depth
+    : items.length;
+  if (items.length > expected) {
+    warnings.push(`SEARCH_TOP:MORE_ITEMS_THAN_REQUESTED:${items.length}/${expected}`);
+  }
+  const used = items.slice(0, Math.max(expected, 1));
+
+  for (const raw of used) {
     if (!isPlainObject(raw)) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "SEARCH_TOP item must be object" };
     }
@@ -182,18 +310,42 @@ function adaptSearchTop(
         message: "SEARCH_TOP item requires url or title",
       };
     }
-    const query = asString(raw.query ?? response.query ?? "");
+  }
+
+  const spellings = requestedSpellings(request);
+  const itemQueries = used.map((raw) =>
+    spellAsRequested(asString((raw as Record<string, unknown>).query ?? response.query ?? ""), spellings)
+  );
+  const attribution = attributeSearchTopRows(itemQueries, request);
+  warnings.push(...attribution.warnings);
+
+  for (const [index, raw] of used.entries()) {
+    const item = raw as Record<string, unknown>;
+    const url = asString(item.url ?? item.link);
+    const title = asString(item.title ?? item.name);
+    const query = itemQueries[index] ?? "";
+    const attr = attribution.rows[index] ?? { rank: index + 1, seIndex: null };
+    const se = attr.seIndex != null ? request?.se[attr.seIndex] : undefined;
+    // Позицию, присланную провайдером явно, уважаем; иначе она восстановлена
+    // из порядка внутри блока «запрос × поисковик».
+    const reportedRank = Number(item.position ?? item.rank ?? item.pos ?? NaN);
     observations.push(
       withProvenance(
         {
           kind: "organic",
           surface: "organic",
-          region: resolveObservationRegion(raw.region, response.region, requestJson),
-          engine: "ARSENKIN",
+          region: se
+            ? arsenkinRegionIdToLabel(se.region) ??
+              resolveObservationRegion(item.region, response.region, requestJson)
+            : resolveObservationRegion(item.region, response.region, requestJson),
+          // Поисковик известен из нашей же заявки: `se` выбираем мы. Когда
+          // блоки не разложились — источник не называем, а не угадываем.
+          engine: se ? seTypeToEngine(se.type) : "ARSENKIN",
           query,
           url: url || undefined,
           title: title || undefined,
-          snippet: asString(raw.snippet ?? raw.description) || undefined,
+          snippet: asString(item.snippet ?? item.description) || undefined,
+          rank: Number.isFinite(reportedRank) && reportedRank > 0 ? reportedRank : attr.rank,
           sourceUrlOrQuery: url || query || null,
         },
         ctx,
@@ -202,7 +354,7 @@ function adaptSearchTop(
       )
     );
   }
-  return { ok: true, emptyValid: false, observations, warnings: [] };
+  return { ok: true, emptyValid: false, observations, warnings };
 }
 
 function adaptSuggestions(

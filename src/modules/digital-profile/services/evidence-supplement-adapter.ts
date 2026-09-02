@@ -21,7 +21,60 @@ export type WikipediaCheckInput = {
   lastChecked?: string | Date | null;
   /** e.g. "real:WIKIPEDIA" vs demo — prefer real when ranking. */
   checkedBy?: string | null;
+  /**
+   * Запрос, которым спрашивали языковой раздел. Страница проверки печатает его
+   * дословно: «статья не найдена» верно ровно про тот запрос, который ушёл в
+   * API. Поле поднимается из снимка ответа провайдера (`snapshot.raw.query`) —
+   * где именно оно лежит, знает только этот модуль.
+   */
+  query?: string | null;
+  /**
+   * Полный плейнтекст найденной статьи (`prop=extracts&explaintext`) — вход
+   * разбора по существу. Поднимается из снимка тем же правилом, что и запрос.
+   */
+  articleText?: string | null;
+  /** Как статья нашлась: `search` или `langlink`. */
+  foundVia?: string | null;
+  /** Раздел-источник межъязыковой ссылки, по которой найдена эта статья. */
+  langlinkOf?: { language?: string | null; title?: string | null } | null;
+  /** Снимок ответа провайдера, как его записал агент проверки. */
+  snapshot?: unknown;
 };
+
+/**
+ * Поля записи, которые лежат в снимке ответа провайдера.
+ *
+ * Где именно они лежат (`snapshot.raw.*`), знает только этот модуль: страница,
+ * разбор и индекс доказательств читают уже поля записи. Явно заданное поле
+ * снимком не переписывается — офлайн-фикстура задаёт их напрямую и снимка не
+ * несёт.
+ */
+function snapshotString(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || null;
+}
+
+export function withWikipediaSnapshotFields(row: WikipediaCheckInput): WikipediaCheckInput {
+  const raw = (row.snapshot as { raw?: Record<string, unknown> } | null)?.raw ?? {};
+  const langlink = raw.langlinkOf as { language?: string; title?: string } | undefined;
+  return {
+    ...row,
+    query: row.query ?? snapshotString(raw.query),
+    articleText: row.articleText ?? snapshotString(raw.articleText),
+    foundVia: row.foundVia ?? snapshotString(raw.foundVia),
+    langlinkOf: row.langlinkOf ?? (langlink?.language && langlink?.title ? langlink : null),
+  };
+}
+
+/**
+ * Идентификатор материала записи проверки — одна форма на весь проект.
+ *
+ * Её строят адаптер, загрузчик входов деки и стадия разбора; разъехавшись, они
+ * не сломали бы ни один тип — страница просто замолчала бы о разборе.
+ */
+export function wikipediaCheckInventoryId(id: string): string {
+  return `wiki-${id}`;
+}
 
 /** Resolved screenshot ready to bind into p10 / p27. */
 export type RealSerpScreenshotInput = {
@@ -108,7 +161,7 @@ export function adaptWikipediaCheckToInventoryItem(input: {
       ? `Wikipedia (${row.language ?? "en"}): статья найдена`
       : `Wikipedia (${row.language ?? "en"}): статья не найдена`);
   return {
-    inventoryId: `wiki-${row.id}`,
+    inventoryId: wikipediaCheckInventoryId(row.id),
     caseId,
     reportRunId,
     source: "wikipedia_check",
@@ -125,14 +178,26 @@ export function adaptWikipediaCheckToInventoryItem(input: {
       : "Фактическая проверка Wikipedia: статья не найдена.",
     sourceUrl: row.url ?? undefined,
     classification: row.exists ? "SUBJECT_MATCH" : "NOT_FOUND",
+    /*
+     * Принадлежность найденной статьи здесь не решается.
+     *
+     * До 20.08.2026 адаптер ставил каждой записи `identityFromReview: true` и
+     * `reviewStatus: exists ? "MATCH_CONFIRMED" : "PENDING"`, а классификатор
+     * по этой мете отдавал `SUBJECT_MATCH @0.95`. То есть «принадлежность
+     * подтверждена» выводилась из того же `exists`, который она обязана
+     * проверять: на живом кейсе так подтверждалась статья о дворянском роде, а
+     * ветка тёзки была недостижима при живых юнитах. Решает классификатор по
+     * тексту заголовка; статья межъязыковой ссылки наследует решение
+     * статьи-источника — это та же сущность, и двух ответов о ней быть не может.
+     */
     rawMetadata: {
       surface: "wikipedia",
       wikipediaExists: row.exists,
       language: row.language ?? undefined,
       pageTitle: row.pageTitle ?? undefined,
-      skipTextClassifier: true,
-      identityFromReview: true,
-      reviewStatus: row.exists ? "MATCH_CONFIRMED" : "PENDING",
+      ...(row.foundVia === "langlink" && row.langlinkOf?.language
+        ? { identityFromLanglink: { sourceLanguage: String(row.langlinkOf.language) } }
+        : {}),
       evidenceRefs: [`wikipediaCheck:${row.id}`],
     },
   };
@@ -192,13 +257,15 @@ export async function loadWikipediaChecksFromPrisma(input: {
     orderBy: [{ lastChecked: "desc" }],
   });
   // Prefer real checks, then exists=true, keep stable order otherwise.
-  return [...rows].sort((a, b) => {
-    const realA = String(a.checkedBy ?? "").startsWith("real") ? 1 : 0;
-    const realB = String(b.checkedBy ?? "").startsWith("real") ? 1 : 0;
-    if (realA !== realB) return realB - realA;
-    if (Boolean(a.exists) !== Boolean(b.exists)) return a.exists ? -1 : 1;
-    return 0;
-  });
+  return [...rows]
+    .sort((a, b) => {
+      const realA = String(a.checkedBy ?? "").startsWith("real") ? 1 : 0;
+      const realB = String(b.checkedBy ?? "").startsWith("real") ? 1 : 0;
+      if (realA !== realB) return realB - realA;
+      if (Boolean(a.exists) !== Boolean(b.exists)) return a.exists ? -1 : 1;
+      return 0;
+    })
+    .map(withWikipediaSnapshotFields);
 }
 
 export async function loadSerpScreenshotsFromPrisma(input: {
@@ -284,7 +351,11 @@ export async function resolveEvidenceSupplement(input: {
 
   // Fail-closed regardless of source (fixture or prisma): mock-era checks
   // never enter inventory, evidence-supplement.json or slide source lines.
-  wikipediaChecks = wikipediaChecks.filter((w) => !isMockWikipediaCheck(w));
+  // Поля снимка разворачиваются один раз здесь: обе дороги — фикстура и база —
+  // обязаны дать записи одной формы.
+  wikipediaChecks = wikipediaChecks
+    .filter((w) => !isMockWikipediaCheck(w))
+    .map(withWikipediaSnapshotFields);
 
   const wikipediaItems = adaptWikipediaChecksToInventory({
     rows: wikipediaChecks,

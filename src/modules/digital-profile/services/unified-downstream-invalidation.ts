@@ -14,6 +14,21 @@ export type DownstreamInvalidationReport = {
   contentHashEpoch: string;
 };
 
+/**
+ * Имя стоп-маркера выводится здесь и только здесь.
+ *
+ * Читает маркеры загрузчик реюза собранной деки, а пишет их этот модуль. Пока
+ * обе стороны чеканили строку сами, переименование артефакта или смена суффикса
+ * оставляли бы тесты зелёными, а единственную защиту от реюза доингестной деки
+ * — выключенной.
+ */
+export function staleMarkerFileName(artifact: string): string {
+  return `${artifact}.stale.json`;
+}
+
+/** Артефакт собранной деки: по его маркеру отказывает реюз. */
+export const ASSEMBLED_DECK_ARTIFACT = "assembled-deck.json";
+
 const STALE_ARTIFACT_MARKERS = [
   "composite-serp-observations.json",
   "composite-serp-provenance.json",
@@ -21,7 +36,7 @@ const STALE_ARTIFACT_MARKERS = [
   "provider-surface-coverage.json",
   "unified-collection-summary.json",
   "base-observation-coverage.json",
-  "assembled-deck.json",
+  ASSEMBLED_DECK_ARTIFACT,
   "report-deck-manifest.json",
   "report-section-manifest.json",
   "section-build-log.json",
@@ -59,16 +74,22 @@ export async function invalidateDownstreamAfterEnrichmentIngest(input: {
   const epoch = `invalidated-${Date.now().toString(36)}`;
   const markedStale: string[] = [];
   for (const name of STALE_ARTIFACT_MARKERS) {
-    const path = await writeUnifiedArtifact(input.job.caseId, input.job.unifiedJobId, `${name}.stale.json`, {
-      version: "downstream-stale-marker-v1",
-      artifact: name,
-      reason: input.reason,
-      previousCompositeDatasetId: input.previousCompositeDatasetId ?? input.job.compositeDatasetId,
-      previousContentHash: input.previousContentHash ?? null,
-      contentHashEpoch: epoch,
-      markedAt: new Date().toISOString(),
-      doNotReuse: true,
-    });
+    const path = await writeUnifiedArtifact(
+      input.job.caseId,
+      input.job.unifiedJobId,
+      staleMarkerFileName(name),
+      {
+        version: "downstream-stale-marker-v1",
+        artifact: name,
+        reason: input.reason,
+        previousCompositeDatasetId:
+          input.previousCompositeDatasetId ?? input.job.compositeDatasetId,
+        previousContentHash: input.previousContentHash ?? null,
+        contentHashEpoch: epoch,
+        markedAt: new Date().toISOString(),
+        doNotReuse: true,
+      }
+    );
     markedStale.push(path);
   }
 

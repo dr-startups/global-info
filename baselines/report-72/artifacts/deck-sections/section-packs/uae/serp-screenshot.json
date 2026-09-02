@@ -1,27 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "UAE_PROFILE",
-  "sectionType": "UAE_PROFILE",
-  "fragmentKey": "UAE_SERP_SCREENSHOT",
   "caseId": "cmreamy2t0002o30f29urzcog",
+  "contentHash": "sha256:2871d164e511d9790873509bc062c12893f1c51a5b60b689eecf124ae061df9e",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-serp-screenshot-analysis-v1",
-  "contentHash": "sha256:083be1341281522c783c4721f2c3b33b31dd5b496a6c74cb5ba582a324636d12",
-  "inputHash": "sha256:f2a911466d9a6953604a113f4f1a83607a5c9fbe353bf1dd7da868ceb92995e1:dc7ccd121ca0dee1",
-  "generatedAt": "2026-07-17T09:49:29.040Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53",
-    "finding-offshore_corporate-subject_match-1b4c64c7"
-  ],
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -109,15 +90,10 @@
     "serp_observation:cmrjsczk2007lvd9g7fldgn6p",
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
+  "fragmentKey": "UAE_SERP_SCREENSHOT",
+  "generatedAt": "2026-09-02T12:26:21.557Z",
+  "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:3625c96bfaedac6e",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53",
-      "finding-offshore_corporate-subject_match-1b4c64c7"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -205,33 +181,71 @@
       "serp_observation:cmrjsczk2007lvd9g7fldgn6p",
       "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53",
+      "finding-offshore_corporate-subject_match-1b4c64c7"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
+  "metrics": {
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 1,
+    "datasetCount": 85,
+    "displayedCount": 10
+  },
+  "promptVersion": "uae-serp-screenshot-analysis-v4",
+  "provenance": {
+    "evidenceRefs": [
+      "serp_observation:cmrjsczgv005lvd9gp9aryn4c",
+      "serp_observation:cmrjsczh1005pvd9gnuu5e9j7",
+      "serp_observation:cmrjsczh7005tvd9gr00bvdq8",
+      "serp_observation:cmrjsczhd005xvd9g1xmh3ysu",
+      "serp_observation:cmrjsczhk0061vd9gszwpvqsg",
+      "serp_observation:cmrjsczhq0065vd9gjcs2xkqz",
+      "serp_observation:cmrjsczhx0069vd9gxll5vo22",
+      "serp_observation:cmrjsczi3006dvd9g5asx5cky",
+      "serp_observation:cmrjsczia006hvd9gp5b7y3wz",
+      "serp_observation:cmrjsczig006lvd9gjdgb1i2n"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ]
+  },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "UAE_PROFILE",
+  "sectionType": "UAE_PROFILE",
   "slides": [
     {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p27_uae_serp_visual",
       "baseSlotId": "p27_uae_serp_visual",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "serp-screenshot-analysis",
-      "title": "ОАЭ — снимок выдачи",
       "content": {
-        "narrative": "Состояние первой страницы выдачи (ОАЭ / международный). Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
-        "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (rupep.org); остальные результаты — нейтральные или деловые.",
-        "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
-        "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: средний; уверенность 90%.",
-        "sourceNote": "Источники: rupep.org (результаты на снимке).",
         "highlightExplanations": [
           {
-            "clientReason": "«PEP / RCA / watchlist-сигналы» — выделенный результат rupep.org; уровень: средний.",
+            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
             "frameTone": "red"
           }
-        ]
+        ],
+        "narrative": "Состояние первой страницы выдачи (ОАЭ / международный). Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
+        "sourceNote": "Источники на снимке — rupep.org.",
+        "statusNote": "Тема подтверждена, уровень внимания — средний; оценка достоверна.",
+        "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+        "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (rupep.org); остальные результаты — нейтральные или деловые.",
+        "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет."
       },
+      "continuationIndex": null,
+      "continuationOf": null,
       "evidenceRefs": [
         "serp_observation:cmrjsczgv005lvd9gp9aryn4c",
         "serp_observation:cmrjsczh1005pvd9gnuu5e9j7",
@@ -247,47 +261,33 @@
       "findingIds": [
         "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
+      "isContinuation": false,
       "metrics": {
-        "screenshots": 0,
-        "adverseHighlights": 1
+        "adverseHighlights": 1,
+        "screenshots": 0
       },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "UAE_PROFILE",
+      "slideId": "p27_uae_serp_visual",
+      "templateId": "serp-screenshot-analysis",
+      "title": "ОАЭ — снимок выдачи",
       "visualAssetRefs": [
         "uae_provider_serp_synserp_mrjsdba7_1de34deb20"
       ]
     }
   ],
-  "metrics": {
-    "datasetCount": 85,
-    "displayedCount": 10,
-    "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 1
-  },
-  "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
-    "evidenceRefs": [
-      "serp_observation:cmrjsczgv005lvd9gp9aryn4c",
-      "serp_observation:cmrjsczh1005pvd9gnuu5e9j7",
-      "serp_observation:cmrjsczh7005tvd9gr00bvdq8",
-      "serp_observation:cmrjsczhd005xvd9g1xmh3ysu",
-      "serp_observation:cmrjsczhk0061vd9gszwpvqsg",
-      "serp_observation:cmrjsczhq0065vd9gjcs2xkqz",
-      "serp_observation:cmrjsczhx0069vd9gxll5vo22",
-      "serp_observation:cmrjsczi3006dvd9g5asx5cky",
-      "serp_observation:cmrjsczia006hvd9gp5b7y3wz",
-      "serp_observation:cmrjsczig006lvd9gjdgb1i2n"
-    ]
-  },
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53",
+    "finding-offshore_corporate-subject_match-1b4c64c7"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

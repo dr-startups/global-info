@@ -7,10 +7,8 @@ import {
   reflowThemeBullet,
   themedClaim,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
-import {
-  mergeSerpRowsByMaterial,
-  serpMaterialKey,
-} from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import { serpMaterialKey } from "../../src/modules/digital-profile/serp-observation/material-key";
+import { mergeSerpRowsByMaterial } from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import { countIdentityByObservation } from "../../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import {
   boilerplateShape,
@@ -235,10 +233,12 @@ describe("C11 — пустая поверхность не отвечает за
 describe("D7 — одна страница выдачи это одна строка таблицы", () => {
   const scoped = {
     evidenceIndex: {
+      // Повторное наблюдение — тот же адрес: ключ материала читает адрес, а
+      // написание (схема, `www.`, хвостовой слэш) различать ключи не должно.
       a: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "https://ru.wikipedia.org/wiki/x" },
-      b: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "https://ru.wikipedia.org/wiki/x?utm=1" },
+      b: { domain: "ru.wikipedia.org", title: "Дуров, Павел Валерьевич", url: "http://ru.wikipedia.org/wiki/x/" },
       c: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://youtube.com/watch?v=1" },
-      d: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://youtube.com/watch?v=1&t=2" },
+      d: { domain: "youtube.com", title: "Durov's Genius Schemes", url: "https://www.youtube.com/watch?v=1" },
       e: { domain: "forbes.ru", title: "Павел Дуров", url: "https://forbes.ru/1" },
     },
   } as never;
@@ -261,7 +261,18 @@ describe("D7 — одна страница выдачи это одна стро
     ).not.toBe(serpMaterialKey({ domain: "rbc.ru", title: "Второй" }));
   });
 
-  it("без заголовка материал опознаётся по адресу", () => {
+  it("пустой домен значит то же, что отсутствующий", () => {
+    // Два написания одной и той же строки обязаны дать один ключ: при переносе
+    // ключа из построителей `??` держал пустую строку как значение, и запись
+    // `domain: ""` переставала опознаваться по адресу.
+    const url = "https://rbc.ru/a";
+    expect(serpMaterialKey({ domain: "", url })).toBe(serpMaterialKey({ url }));
+    expect(serpMaterialKey({ domain: "", url, title: "Т" })).toBe(
+      serpMaterialKey({ url, title: "Т" })
+    );
+  });
+
+  it("материал опознаётся по адресу, и написание адреса ключа не меняет", () => {
     expect(serpMaterialKey({ domain: "rbc.ru", url: "https://rbc.ru/a/" })).toBe(
       serpMaterialKey({ domain: "rbc.ru", url: "http://www.rbc.ru/a" })
     );

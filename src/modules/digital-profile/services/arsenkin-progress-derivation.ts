@@ -41,7 +41,10 @@
  *    не видно — норма и не тревога.
  */
 
-import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
+import {
+  ARSENKIN_REAL_AGENT_NAMES,
+  enabledArsenkinAgentNames,
+} from "../agents/real/real-arsenkin-agents";
 import type { ArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
 
 /** Состояния, в которых задача ещё в работе. */
@@ -171,19 +174,32 @@ export function deriveEnrichmentProgress(input: {
     else completedAgents.push(agent);
   }
 
+  // Полнота меряется по **составу прогона**, а не по длине каталога.
+  //
+  // Здесь стояло `scheduledAgents.length === ARSENKIN_REAL_AGENT_NAMES.length`,
+  // то есть «все пять». Составом по умолчанию работают трое, и
+  // условие не могло стать истинным никогда. На боевом прогоне 28.07 это
+  // выглядело так: три агента отдали 522 наблюдения, все задачи DONE, а
+  // состояние показывало `pendingAgents` из пяти и `enrichmentComplete: false`.
+  // Стадия ждала продвижения, которого уже не могло быть, счётчик простоя дошёл
+  // до сорока и прогон упал с `ARSENKIN_POLL_ATTEMPTS_EXCEEDED`.
+  //
+  // Отключённый составом агент не отправляется и не ждётся (0f0b2b1) — значит и
+  // в знаменателе полноты ему делать нечего.
+  const composition = enabledArsenkinAgentNames();
+  const expected = composition.length > 0 ? composition : [...ARSENKIN_REAL_AGENT_NAMES];
+  const missing = expected.filter((a) => !scheduledAgents.includes(a));
+
   return {
     scheduledAgents,
     completedAgents,
     failedAgents,
     pendingAgents,
     observationCount: Math.max(0, Number(input.observationCount ?? 0)),
-    // То же правило, что в `buildArsenkinEnrichmentState`: все пять агентов
-    // терминальны и ни один не упал. Приём нагрузки отсюда не виден, поэтому
-    // полнота здесь — необходимое условие, а не достаточное.
+    // Приём нагрузки отсюда не виден, поэтому полнота здесь — необходимое
+    // условие, а не достаточное.
     enrichmentComplete:
-      scheduledAgents.length === ARSENKIN_REAL_AGENT_NAMES.length &&
-      pendingAgents.length === 0 &&
-      failedAgents.length === 0,
+      missing.length === 0 && pendingAgents.length === 0 && failedAgents.length === 0,
   };
 }
 

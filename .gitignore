@@ -65,3 +65,10 @@ __pycache__/
 
 # Artifacts of the Playwright MCP browser session
 .playwright-mcp/
+
+# Локальные разрешения Claude Code: пути машины, идентификаторы реальных дел и
+# SQL по ним — заметки конкретной машины, не общие для проекта.
+/.claude/settings.local.json
+
+# временные рабочие деревья — не репозиторий, а инструмент
+/.claude/worktrees/

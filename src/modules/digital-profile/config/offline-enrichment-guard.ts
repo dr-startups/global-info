@@ -2,6 +2,8 @@
  * REMEDIATION §8.2 — prevent silent offline enrichment in deploy-like envs.
  */
 
+import { boolSetting } from "./defaults";
+
 type Env = Record<string, string | undefined>;
 
 /** Machine-readable job.warning + quality-panel key. */
@@ -30,10 +32,17 @@ export function isNetworkCallsDisabled(env: Env = process.env): boolean {
   return String(env.NETWORK_CALLS ?? "").trim() === "0";
 }
 
-/** Same semantics as Arsenkin flags: only 1/true enable live enrichment. */
+/**
+ * Включено ли обогащение — тем же способом, каким это читает рабочий код.
+ *
+ * Раньше здесь стояло сырое чтение переменной, и при незаданном
+ * `ARSENKIN_ENABLED` (значение по умолчанию — включено) прогон помечался как
+ * офлайновый. Отметка доезжала до клиента: в панели качества печаталось
+ * «Обогащение выполнялось в офлайн-режиме — страницы подсказок/AI будут
+ * пустыми», хотя обогащение отрабатывало и страницы были полными.
+ */
 export function isArsenkinEnvEnabled(env: Env = process.env): boolean {
-  const v = String(env.ARSENKIN_ENABLED ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
+  return boolSetting("ARSENKIN_ENABLED", env as NodeJS.ProcessEnv);
 }
 
 /**

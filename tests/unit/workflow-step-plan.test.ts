@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STEP_MAX_WAIT_MS,
+  STAGE_OWNER,
   UNIFIED_PIPELINE,
   applyStepOutcome,
   deriveJobStage,
@@ -338,5 +339,21 @@ describe("реестр конвейера", () => {
   it("имена уникальны", () => {
     const names = UNIFIED_PIPELINE.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("внутренняя стадия названа стадией шага, который в реестре есть", () => {
+    // Владелец не найден — позиция внутренней стадии станет нулевой, и шаг,
+    // который джоба переросла, никогда не признается сделанным. Отказа при
+    // этом не будет: прогон просто ждёт до исчерпания `maxWaitMs`.
+    for (const [inner, owner] of STAGE_OWNER) {
+      expect(
+        UNIFIED_PIPELINE.some((d) => d.stage === owner),
+        `владелец стадии ${inner} (${owner}) должен быть шагом реестра`
+      ).toBe(true);
+      expect(
+        UNIFIED_PIPELINE.some((d) => d.stage === inner),
+        `${inner} — стадия внутри шага, своего шага у неё нет`
+      ).toBe(false);
+    }
   });
 });

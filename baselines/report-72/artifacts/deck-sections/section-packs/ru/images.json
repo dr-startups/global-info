@@ -1,26 +1,8 @@
 {
-  "schemaVersion": "section-pack-v3",
-  "sectionId": "RU_PROFILE",
-  "sectionType": "RU_PROFILE",
-  "fragmentKey": "RU_IMAGES",
   "caseId": "cmreamy2t0002o30f29urzcog",
+  "contentHash": "sha256:946a9dd354adcbcbdedcf27232ef227a4ff4b5feb7eec30295d4da984ceb1bcf",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "reportRunId": "orion-canary-1783980828528",
-  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
-  "promptVersion": "ru-images-analysis-v1",
-  "contentHash": "sha256:0aebdfb212e31fba9347674d2be552a1109ee0a360d04e74c8e7b1e57000cd55",
-  "inputHash": "sha256:d6f892a51c697e035ecc4282446020d97f6a51bf996e6bf20140b97978ffe5f3:7039e4c61a30431e",
-  "generatedAt": "2026-07-17T09:49:29.038Z",
-  "required": true,
-  "status": "READY",
-  "sourceFindingIds": [
-    "finding-criminal_legal-subject_match-16447175",
-    "finding-security_scrutiny-subject_match-0ae970c7",
-    "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-business_profile-subject_match-a59d6fee",
-    "finding-family_associates-subject_match-a4427a53"
-  ],
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
     "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -105,14 +87,10 @@
     "inventory:ss-cmreatcmu00dgo30fflszlnxd",
     "inventory:ss-cmreatcmu00dfo30fvbdk8sur"
   ],
+  "fragmentKey": "RU_IMAGES",
+  "generatedAt": "2026-09-02T12:26:21.552Z",
+  "inputHash": "sha256:122258a9e739d7ebddcdcd2baf10a6c757b0e96aeb40eea4aef04e76e5f63fae:0b6e419644bbbc8d",
   "inputs": {
-    "findingIds": [
-      "finding-criminal_legal-subject_match-16447175",
-      "finding-security_scrutiny-subject_match-0ae970c7",
-      "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-business_profile-subject_match-a59d6fee",
-      "finding-family_associates-subject_match-a4427a53"
-    ],
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
       "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
@@ -197,193 +175,23 @@
       "inventory:ss-cmreatcmu00dgo30fflszlnxd",
       "inventory:ss-cmreatcmu00dfo30fvbdk8sur"
     ],
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53"
+    ],
     "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
   },
-  "slides": [
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p14_ru_images_1",
-      "baseSlotId": "p14_ru_images_1",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "image-grid",
-      "title": "Россия — изображения (1)",
-      "content": {
-        "bullets": [
-          "Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16  миллионов евро на захват молдавского завода с военными возможностями под  покровительством ЕС • Портал Компромат"
-        ],
-        "whatWasFound": "«Деловой профиль»: уровень внимания — низкий — материалы на этой странице: bitva.wiki, peoples.ru, osnmedia.ru.",
-        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
-        "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "statusNote": "Статус: подтверждённая тема; уровень: низкий; уверенность 90%.",
-        "sourceNote": "Источники: directmedia.ru, labirint.ru, klerk.ru, instagram.com, osnmedia.ru"
-      },
-      "evidenceRefs": [
-        "inventory:ss-cmrebao1g00o1mm0fqthrmtng",
-        "inventory:ss-cmrebao1h00oamm0fjojlfbcd",
-        "inventory:ss-cmrebao1h00oqmm0f2nnebnu2",
-        "inventory:ss-cmreb9zi000dtmm0fjnzmserz",
-        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
-        "inventory:ss-cmreb9zhz00cgmm0fhw9gg7pw",
-        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
-        "inventory:ss-cmreb9zhz00cimm0fl7ivs51s",
-        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5"
-      ],
-      "findingIds": [
-        "finding-business_profile-subject_match-a59d6fee"
-      ],
-      "metrics": {
-        "items": 9
-      },
-      "visualAssetRefs": [
-        "ru_image_grid"
-      ]
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p15_ru_images_2",
-      "baseSlotId": "p15_ru_images_2",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "image-grid",
-      "title": "Россия — изображения (2)",
-      "content": {
-        "bullets": [
-          "Относится к другому лицу: Михаил Глинка"
-        ],
-        "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: repost.news, rumafia.io.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
-        "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%.",
-        "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru"
-      },
-      "evidenceRefs": [
-        "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
-        "inventory:ss-cmreb9zhz00clmm0fi4t5xqf5",
-        "inventory:ss-cmreb9zhz00cmmm0fe8e8wbux",
-        "inventory:ss-cmreb9zhz00d4mm0fxymwd6nt",
-        "inventory:ss-cmreb9zhz00d5mm0fmq6l6rxo",
-        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
-        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
-        "inventory:ss-cmreb9zhz00dfmm0f21fea3zp",
-        "inventory:ss-cmreb9zi000dsmm0fiw9y3gna"
-      ],
-      "findingIds": [
-        "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-business_profile-subject_match-a59d6fee"
-      ],
-      "metrics": {
-        "items": 9
-      },
-      "visualAssetRefs": [
-        "ru_image_grid_2"
-      ]
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p16_ru_images_3",
-      "baseSlotId": "p16_ru_images_3",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "image-grid",
-      "title": "Россия — изображения (3)",
-      "content": {
-        "bullets": [
-          "Относится к другому лицу: Михаил Глинка.Биография"
-        ],
-        "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: kartoteka.news.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
-        "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%.",
-        "sourceNote": "Источники: youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru, cadethistory.ru"
-      },
-      "evidenceRefs": [
-        "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
-        "inventory:ss-cmreb9zi000dwmm0frv1ga16q",
-        "inventory:ss-cmreb9zi000e9mm0fizup46pp",
-        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
-        "inventory:ss-cmreb9zi000emmm0fe9rm3ci1",
-        "inventory:ss-cmreb9zi000enmm0fggf4bj6n",
-        "inventory:ss-cmreb9zi000eomm0fza8634az",
-        "inventory:ss-cmreb9zi100f8mm0ft6huvw2e",
-        "inventory:ss-cmreb9zi100f9mm0fo8ub4a5g"
-      ],
-      "findingIds": [
-        "finding-security_scrutiny-subject_match-0ae970c7"
-      ],
-      "metrics": {
-        "items": 9
-      },
-      "visualAssetRefs": [
-        "ru_image_grid_3"
-      ]
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p17_ru_images_4",
-      "baseSlotId": "p17_ru_images_4",
-      "sectionId": "RU_PROFILE",
-      "isContinuation": false,
-      "continuationOf": null,
-      "continuationIndex": null,
-      "templateId": "image-grid",
-      "title": "Россия — изображения (4)",
-      "content": {
-        "bullets": [],
-        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: kompromat1.online.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: fb.ru, piter.tv, kompromat1.online, images.example"
-      },
-      "evidenceRefs": [
-        "inventory:ss-cmreb9zhz00chmm0fbxdmtjn0",
-        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
-        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
-        "inventory:ss-cmreatcmu00djo30founkwl3w",
-        "inventory:ss-cmreatcmu00dio30fe6q5jpov",
-        "inventory:ss-cmreatcmu00dho30ftfaxini2",
-        "inventory:ss-cmreatcmu00deo30fh5ct8g2h",
-        "inventory:ss-cmreatcmu00dgo30fflszlnxd",
-        "inventory:ss-cmreatcmu00dfo30fvbdk8sur"
-      ],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-business_profile-subject_match-a59d6fee",
-        "finding-family_associates-subject_match-a4427a53"
-      ],
-      "metrics": {
-        "items": 9
-      },
-      "visualAssetRefs": [
-        "ru_image_grid_4"
-      ]
-    }
-  ],
   "metrics": {
-    "datasetCount": 82,
-    "displayedCount": 36,
     "adverseDatasetCount": 3,
-    "adverseDisplayedCount": 3
+    "adverseDisplayedCount": 3,
+    "datasetCount": 82,
+    "displayedCount": 33
   },
+  "promptVersion": "ru-images-analysis-v4",
   "provenance": {
-    "providers": [
-      "arsenkin",
-      "google",
-      "dow_jones",
-      "yandex",
-      "multi"
-    ],
-    "reportRunIds": [
-      "orion-canary-1783980828528"
-    ],
     "evidenceRefs": [
       "inventory:ss-cmrebao1g00o1mm0fqthrmtng",
       "inventory:ss-cmrebao1h00oamm0fjojlfbcd",
@@ -404,14 +212,11 @@
       "inventory:ss-cmreb9zhz00dfmm0f21fea3zp",
       "inventory:ss-cmreb9zi000dsmm0fiw9y3gna",
       "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
-      "inventory:ss-cmreb9zi000dwmm0frv1ga16q",
       "inventory:ss-cmreb9zi000e9mm0fizup46pp",
       "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
       "inventory:ss-cmreb9zi000emmm0fe9rm3ci1",
       "inventory:ss-cmreb9zi000enmm0fggf4bj6n",
-      "inventory:ss-cmreb9zi000eomm0fza8634az",
       "inventory:ss-cmreb9zi100f8mm0ft6huvw2e",
-      "inventory:ss-cmreb9zi100f9mm0fo8ub4a5g",
       "inventory:ss-cmreb9zhz00chmm0fbxdmtjn0",
       "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
       "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
@@ -421,10 +226,209 @@
       "inventory:ss-cmreatcmu00deo30fh5ct8g2h",
       "inventory:ss-cmreatcmu00dgo30fflszlnxd",
       "inventory:ss-cmreatcmu00dfo30fvbdk8sur"
+    ],
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
     ]
   },
+  "reportRunId": "orion-canary-1783980828528",
+  "required": true,
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
+  "slides": [
+    {
+      "baseSlotId": "p14_ru_images_1",
+      "content": {
+        "bullets": [
+          "Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16  миллионов евро на захват молдавского завода с военными возможностями под  покровительством ЕС • Портал Компромат"
+        ],
+        "sourceNote": "Источники — directmedia.ru, labirint.ru, klerk.ru, instagram.com и ещё 5.",
+        "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
+        "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — klerk.ru, osnmedia.ru и bitva.wiki.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [
+        "inventory:ss-cmrebao1g00o1mm0fqthrmtng",
+        "inventory:ss-cmrebao1h00oamm0fjojlfbcd",
+        "inventory:ss-cmrebao1h00oqmm0f2nnebnu2",
+        "inventory:ss-cmreb9zi000dtmm0fjnzmserz",
+        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+        "inventory:ss-cmreb9zhz00cgmm0fhw9gg7pw",
+        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+        "inventory:ss-cmreb9zhz00cimm0fl7ivs51s",
+        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5"
+      ],
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee"
+      ],
+      "isContinuation": false,
+      "metrics": {
+        "adverseImages": 0,
+        "items": 9
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p14_ru_images_1",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (1): негативных источников нет",
+      "visualAssetRefs": [
+        "ru_image_grid"
+      ]
+    },
+    {
+      "baseSlotId": "p15_ru_images_2",
+      "content": {
+        "bullets": [
+          "Относится к другому лицу: Михаил Глинка"
+        ],
+        "sourceNote": "Источники — eg.ru, argumentiru.com, kiosk-31.ru, noi.md и ещё 5.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
+        "whatWasFound": "«Внимание по линии безопасности / оборонный контур» — высокий уровень внимания. Материалы по теме на этой странице — repost.news и rumafia.io.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [
+        "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+        "inventory:ss-cmreb9zhz00clmm0fi4t5xqf5",
+        "inventory:ss-cmreb9zhz00cmmm0fe8e8wbux",
+        "inventory:ss-cmreb9zhz00d4mm0fxymwd6nt",
+        "inventory:ss-cmreb9zhz00d5mm0fmq6l6rxo",
+        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+        "inventory:ss-cmreb9zhz00dfmm0f21fea3zp",
+        "inventory:ss-cmreb9zi000dsmm0fiw9y3gna"
+      ],
+      "findingIds": [
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-business_profile-subject_match-a59d6fee"
+      ],
+      "isContinuation": false,
+      "metrics": {
+        "adverseImages": 0,
+        "items": 9
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p15_ru_images_2",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (2): негативных источников нет",
+      "visualAssetRefs": [
+        "ru_image_grid_2"
+      ]
+    },
+    {
+      "baseSlotId": "p16_ru_images_3",
+      "content": {
+        "bullets": [
+          "Относится к другому лицу: Михаил Глинка.Биография"
+        ],
+        "sourceNote": "Источники — youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru и ещё 2.",
+        "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
+        "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
+        "whatWasFound": "«Внимание по линии безопасности / оборонный контур» — высокий уровень внимания. Материалы по теме на этой странице — kartoteka.news.",
+        "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [
+        "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+        "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+        "inventory:ss-cmreb9zi000emmm0fe9rm3ci1",
+        "inventory:ss-cmreb9zi000enmm0fggf4bj6n",
+        "inventory:ss-cmreb9zi100f8mm0ft6huvw2e"
+      ],
+      "findingIds": [
+        "finding-security_scrutiny-subject_match-0ae970c7"
+      ],
+      "isContinuation": false,
+      "metrics": {
+        "adverseImages": 0,
+        "items": 6
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p16_ru_images_3",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (3): негативных источников нет",
+      "visualAssetRefs": [
+        "ru_image_grid_3"
+      ]
+    },
+    {
+      "baseSlotId": "p17_ru_images_4",
+      "content": {
+        "bullets": [],
+        "highlightExplanations": [
+          {
+            "clientReason": "Страница не читалась в этом прогоне. (kompromat1.online/articles/364300-byvshij_partner_oligarhov_nahodjashchihsja_pod_sanktsijami_sergej_glinka_16_millionov_evro_na_zahvat_moldavskogo_zavoda_s_voennymi_vozmozhnostjami_pod).",
+            "frameTone": "red"
+          }
+        ],
+        "sourceNote": "Источники — fb.ru, piter.tv и kompromat1.online.",
+        "statusNote": "Изображений, ведущих на негативные источники, — 1; каждое требует сверки с первоисточником.",
+        "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+        "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 1.",
+        "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты."
+      },
+      "continuationIndex": null,
+      "continuationOf": null,
+      "evidenceRefs": [
+        "inventory:ss-cmreb9zhz00chmm0fbxdmtjn0",
+        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+        "inventory:ss-cmreatcmu00djo30founkwl3w",
+        "inventory:ss-cmreatcmu00dio30fe6q5jpov",
+        "inventory:ss-cmreatcmu00dho30ftfaxini2",
+        "inventory:ss-cmreatcmu00deo30fh5ct8g2h",
+        "inventory:ss-cmreatcmu00dgo30fflszlnxd",
+        "inventory:ss-cmreatcmu00dfo30fvbdk8sur"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "isContinuation": false,
+      "metrics": {
+        "adverseImages": 1,
+        "items": 9
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p17_ru_images_4",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (4): 1 изображение ведёт на негативный источник",
+      "visualAssetRefs": [
+        "ru_image_grid_4"
+      ]
+    }
+  ],
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53"
+  ],
+  "status": "READY",
   "validation": {
-    "passed": true,
-    "issues": []
+    "issues": [],
+    "passed": true
   }
 }

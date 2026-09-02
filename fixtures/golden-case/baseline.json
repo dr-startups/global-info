@@ -1,9 +1,9 @@
 {
   "version": "golden-case-baseline-v1",
-  "observationCount": 314,
+  "observationCount": 341,
   "observationStats": {
-    "total": 314,
-    "organic:organic:RU": 129,
+    "total": 341,
+    "organic:organic:RU": 152,
     "organic:organic:UAE": 41,
     "suggestion:autocomplete:RU": 36,
     "suggestion:autocomplete:UAE": 18,
@@ -11,7 +11,7 @@
     "paa:related:UAE": 12,
     "other:images:RU": 16,
     "other:images:UAE": 8,
-    "other:ai_answer:RU": 8,
+    "other:ai_answer:RU": 12,
     "other:ai_answer:UAE": 4,
     "other:wikipedia:RU": 6,
     "other:knowledge_block:RU": 4,
@@ -25,17 +25,17 @@
     "counts": {
       "dbSearchResults": null,
       "dbSurfaceItems": null,
-      "manifestIds": 302,
-      "manifestDeltaCount": 302,
+      "manifestIds": 329,
+      "manifestDeltaCount": 329,
       "manifestCorpusCount": 0,
-      "compositeObservations": 314,
-      "subjectMatch": 298,
+      "compositeObservations": 341,
+      "subjectMatch": 324,
       "likelySubject": 3,
-      "ambiguous": 2,
+      "ambiguous": 3,
       "otherSubject": 5,
       "insufficient": 6,
       "verifiedFindings": 5,
-      "ambiguousFindings": 2,
+      "ambiguousFindings": 1,
       "appliedOverrides": 3
     },
     "gpt": {
@@ -56,23 +56,35 @@
     },
     "visuals": {
       "built": 15,
-      "failed": 0,
-      "warning": null,
+      "failed": 1,
+      "warning": "visual-asset-partial-failures:1 (p16_ru_images_3:превью не получено ни для одной из 4 строк (offline))",
+      "failures": [
+        {
+          "kind": "image_grid",
+          "slotId": "p16_ru_images_3",
+          "assetRef": "ru_image_grid_3",
+          "reason": "превью не получено ни для одной из 4 строк (offline)"
+        }
+      ],
       "byKind": {
         "serpSnapshots": 2,
         "suggestionPanels": 2,
         "relatedPanels": 4,
         "aiPanels": 3,
-        "imageGrids": 4
+        "imageGrids": 3
       }
     },
     "slides": {
-      "total": 49,
-      "withContent": 45,
+      "total": 79,
+      "withContent": 74,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",
           "reason": "no-suggestions"
+        },
+        {
+          "slotId": "p16_ru_images_3",
+          "reason": "VISUAL_ASSET_UNAVAILABLE"
         },
         {
           "slotId": "p17_ru_images_4",

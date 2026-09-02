@@ -119,7 +119,13 @@ describe("source lines exclude mock domains (A.1 defense-in-depth)", () => {
       findings: [],
       supportDomains: new Map(),
     } as never);
-    expect(line).toBe("Источники: en.wikipedia.org, rbc.ru");
+    // Проверка охраняет то, ради чего написана, — демо-домен не доходит до
+    // клиента, а настоящие остаются. Точная строка здесь не при чём: она
+    // ломала тест на каждой правке формулировки.
+    expect(line).not.toMatch(/\.example\b/u);
+    expect(line).not.toContain("wikipedia-mock");
+    expect(line).toContain("en.wikipedia.org");
+    expect(line).toContain("rbc.ru");
   });
 
   it("sourceLine drops .example domains from findings and evidence", () => {
@@ -133,6 +139,10 @@ describe("source lines exclude mock domains (A.1 defense-in-depth)", () => {
       },
     } as unknown as ScopedFragmentInput;
     const line = sourceLine(scoped);
-    expect(line).toBe("Источники: dzen.ru, rbc.ru");
+    // Как и выше: охраняется отсутствие демо-доменов, а не формулировка.
+    expect(line).not.toMatch(/\.example\b/u);
+    expect(line).not.toContain("mock");
+    expect(line).toContain("dzen.ru");
+    expect(line).toContain("rbc.ru");
   });
 });

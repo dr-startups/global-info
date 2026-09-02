@@ -156,6 +156,78 @@ function clientFieldTexts(pack: ClientSummaryPack): string[] {
   return out;
 }
 
+describe("следующие проверки не повторяют друг друга", () => {
+  /*
+   * На живом отчёте 21.08 список «Следующие проверки» шёл так:
+   *   2) Подготовить согласованную позицию для KYC и партнёрских запросов.
+   *   4) Подготовить единый пакет документов для KYC и партнёрских запросов.
+   * Один вопрос — «что готовить к KYC» — и два ответа подряд в нумерованном
+   * списке. Строка «согласованная позиция» стояла в `recommendedChecks`
+   * каждой темы, хотя одинакова у всех тем и ничего о теме не говорит:
+   * `collapseRecommendations` склеивает по форме предложения, а формы у этих
+   * двух строк разные, поэтому обе доезжали до клиента (пункт CR).
+   */
+  it("подготовка к KYC названа один раз", () => {
+    const corruption = item(CASE_A, {
+      title: "Тестов Иван уголовное дело о взятке",
+      sourceUrl: "https://news.example/corruption-1",
+    });
+    const politics = item(CASE_A, {
+      title: "Тестов Иван политические связи и госконтракты",
+      sourceUrl: "https://news.example/politics-1",
+    });
+    const sanctions = item(CASE_A, {
+      title: "Тестов PEP watchlist санкции RuPEP",
+      sourceUrl: "https://rupep.org/person/2",
+    });
+    const force = new Map(
+      [corruption, politics, sanctions].map((it) => [
+        `inventory:${it.inventoryId}`,
+        "SUBJECT_MATCH" as const,
+      ])
+    );
+    const { pack } = buildPack(CASE_A, SUBJECT_A, [corruption, politics, sanctions], force);
+
+    const kyc = pack.nextSteps.filter((s) => /^Подготовить/u.test(s));
+    expect(kyc).toHaveLength(1);
+    // Оба обещания сохранены — дубль снят склейкой, а не выбрасыванием одного.
+    expect(kyc[0]).toContain("позицию");
+    expect(kyc[0]).toContain("пакет документов");
+  });
+
+  it("без сюжетов основания называются основаниями", () => {
+    // Второй конец правила CP: когда перечисляются рубрики словаря — те же,
+    // что стоят строками матрицы, — заголовок остаётся прежним. Меняется он
+    // только там, где перечисляются сюжеты прочитанных страниц.
+    const corruption = item(CASE_A, {
+      title: "Тестов Иван уголовное дело о взятке",
+      sourceUrl: "https://news.example/corruption-3",
+    });
+    const force = new Map([
+      [`inventory:${corruption.inventoryId}`, "SUBJECT_MATCH" as const],
+    ]);
+    const { pack } = buildPack(CASE_A, SUBJECT_A, [corruption], force);
+    expect(pack.overallAssessment.conclusion).toContain("Основные основания:");
+    expect(pack.overallAssessment.conclusion).not.toContain("Основные сюжеты");
+  });
+
+  it("проверка темы говорит о теме, а не о KYC вообще", () => {
+    const corruption = item(CASE_A, {
+      title: "Тестов Иван уголовное дело о взятке",
+      sourceUrl: "https://news.example/corruption-2",
+    });
+    const force = new Map([
+      [`inventory:${corruption.inventoryId}`, "SUBJECT_MATCH" as const],
+    ]);
+    const { pack } = buildPack(CASE_A, SUBJECT_A, [corruption], force);
+    for (const t of pack.materialThemes) {
+      for (const c of t.recommendedChecks) {
+        expect(c).toContain(t.clientTitle);
+      }
+    }
+  });
+});
+
 describe("client-summary-pack Stage 4", () => {
   it("validates sample contract", () => {
     const parsed = validateStage1Contract("ClientSummaryPack", sampleClientSummaryPack());

@@ -205,7 +205,10 @@ describe("проверенные факты доходят до текста р�
     expect(themesWithFacts.length).toBeGreaterThan(0);
 
     const theme = themesWithFacts[0]!;
-    expect(theme.conclusion).toContain("установлено");
+    // Вывод темы — само утверждение факта, без трафарета «Установлено:»:
+    // публикация сообщает, а не устанавливает. Домен здесь демонстрационный и
+    // клиенту не называется, поэтому скобочной отсылки в выводе нет.
+    expect(theme.conclusion).toBe("Источник сообщает о задержании проверяемого лица.");
     expect(theme.concreteClaims.join(" ")).toContain("Цитата:");
     // Перечень заголовков «В выборке: «...»» вытеснен фактами.
     expect(theme.concreteClaims.some((c) => c.startsWith("В выборке:"))).toBe(false);
@@ -225,7 +228,7 @@ describe("проверенные факты доходят до текста р�
     expect(pack.materialThemes.length).toBeGreaterThan(0);
     for (const theme of pack.materialThemes) {
       expect(theme.concreteClaims.length).toBeGreaterThan(0);
-      expect(theme.conclusion).toContain("найдены конкретные материалы");
+      expect(theme.conclusion.toLowerCase()).toContain("найдены конкретные материалы");
     }
   });
 });

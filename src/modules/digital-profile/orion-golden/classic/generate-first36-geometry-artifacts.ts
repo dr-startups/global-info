@@ -422,64 +422,111 @@ export function inspectMissingVisualAssets(
   return issues;
 }
 
-export function inspectLayoutTelemetry(telemetryPath: string | null | undefined): GeometryIssue[] {
-  if (!telemetryPath || !existsSync(telemetryPath)) return [];
+/** Строка телеметрии разметки: набор полей фиксирован (`record_text_layout`). */
+export type LayoutTelemetryRow = Record<string, unknown>;
+
+/**
+ * Чтение файла телеметрии отделено от суда над ним.
+ *
+ * Нечитаемый файл и файл без потерь — разные ответы, а не один пустой список:
+ * живые ворота обязаны отличить «проверено, потерь нет» от «проверить не
+ * удалось». Строки проверяются на форму здесь же, чтобы разбор ниже не мог
+ * упасть на первой битой записи и оставить остальные неосмотренными.
+ */
+export type LayoutTelemetryRead =
+  | { ok: true; rows: LayoutTelemetryRow[] }
+  | { ok: false; missing: boolean; detail: string };
+
+export function readLayoutTelemetryRows(
+  telemetryPath: string | null | undefined
+): LayoutTelemetryRead {
+  if (!telemetryPath || !existsSync(telemetryPath)) {
+    return { ok: false, missing: true, detail: "файла нет" };
+  }
+  let parsed: { entries?: unknown; textBoxes?: unknown };
   try {
-    const raw = JSON.parse(readFileSync(telemetryPath, "utf-8")) as {
-      entries?: Array<Record<string, unknown>>;
-      textBoxes?: Array<Record<string, unknown>>;
+    parsed = JSON.parse(readFileSync(telemetryPath, "utf-8")) as {
+      entries?: unknown;
+      textBoxes?: unknown;
     };
-    const rows = raw.entries ?? raw.textBoxes ?? [];
-    const issues: GeometryIssue[] = [];
-    for (const row of rows) {
-      const dropped = Number(row.droppedBullets ?? 0) + Number(row.droppedLines ?? 0);
-      if (dropped > 0) {
-        // Не то же самое, что вылезший за рамку текст: содержимое до читателя
-        // не дошло вовсе. Прежде рендерер выбрасывал лишние блоки молча —
-        // подали четыре, нарисовалось два, и узнать было неоткуда
-        // (шаг 16, 07.6).
-        issues.push({
-          page: Number(row.page ?? 0),
-          code: "CONTENT_DROPPED_BY_RENDERER",
-          severity: "CRITICAL",
-          detail:
-            `рендерер выбросил содержимое: блоков=${row.droppedBullets ?? 0} ` +
-            `строк=${row.droppedLines ?? 0} requiredHeight=${row.requiredHeight} ` +
-            `availableHeight=${row.availableHeight} — страницу должна была разбить пагинация`,
-        });
-      } else if (row.clipped === true) {
-        const name = String(row.name ?? row.role ?? "").toLowerCase();
-        const code = name.includes("status")
-          ? "TABLE_STATUS_CLIPPED"
-          : name.includes("table")
-            ? "TABLE_ROW_PARTIALLY_VISIBLE"
-            : "text-clipping";
-        issues.push({
-          page: Number(row.page ?? 0),
-          code,
-          severity: "CRITICAL",
-          detail: `text clipping requiredHeight=${row.requiredHeight} availableHeight=${row.availableHeight} name=${row.name ?? row.role ?? ""}`,
-        });
-      } else if (row.measurementUncertain === true) {
-        issues.push({
-          page: Number(row.page ?? 0),
-          code: "TABLE_WORD_BREAK",
-          severity: "WARNING",
-          detail: "font measurement unavailable; clipping not proven",
-        });
-      }
-    }
-    return issues;
   } catch (err) {
+    return {
+      ok: false,
+      missing: false,
+      detail: err instanceof Error ? err.message : String(err),
+    };
+  }
+  const rows = parsed.entries ?? parsed.textBoxes ?? [];
+  if (!Array.isArray(rows)) {
+    return { ok: false, missing: false, detail: "список записей не массив" };
+  }
+  const bad = rows.findIndex(
+    (row) => row === null || typeof row !== "object" || Array.isArray(row)
+  );
+  if (bad >= 0) {
+    return { ok: false, missing: false, detail: `запись ${bad} не объект` };
+  }
+  return { ok: true, rows: rows as LayoutTelemetryRow[] };
+}
+
+/** Единственный судья телеметрии: и приёмка, и живые ворота зовут его. */
+export function classifyLayoutTelemetryRows(rows: LayoutTelemetryRow[]): GeometryIssue[] {
+  const issues: GeometryIssue[] = [];
+  for (const row of rows) {
+    const dropped = Number(row.droppedBullets ?? 0) + Number(row.droppedLines ?? 0);
+    if (dropped > 0) {
+      // Не то же самое, что вылезший за рамку текст: содержимое до читателя
+      // не дошло вовсе. Прежде рендерер выбрасывал лишние блоки молча —
+      // подали четыре, нарисовалось два, и узнать было неоткуда
+      // (шаг 16, 07.6).
+      issues.push({
+        page: Number(row.page ?? 0),
+        code: "CONTENT_DROPPED_BY_RENDERER",
+        severity: "CRITICAL",
+        detail:
+          `рендерер выбросил содержимое: блоков=${row.droppedBullets ?? 0} ` +
+          `строк=${row.droppedLines ?? 0} requiredHeight=${row.requiredHeight} ` +
+          `availableHeight=${row.availableHeight} — страницу должна была разбить пагинация`,
+      });
+    } else if (row.clipped === true) {
+      const name = String(row.name ?? row.role ?? "").toLowerCase();
+      const code = name.includes("status")
+        ? "TABLE_STATUS_CLIPPED"
+        : name.includes("table")
+          ? "TABLE_ROW_PARTIALLY_VISIBLE"
+          : "text-clipping";
+      issues.push({
+        page: Number(row.page ?? 0),
+        code,
+        severity: "CRITICAL",
+        detail: `text clipping requiredHeight=${row.requiredHeight} availableHeight=${row.availableHeight} name=${row.name ?? row.role ?? ""}`,
+      });
+    } else if (row.measurementUncertain === true) {
+      issues.push({
+        page: Number(row.page ?? 0),
+        code: "TABLE_WORD_BREAK",
+        severity: "WARNING",
+        detail: "font measurement unavailable; clipping not proven",
+      });
+    }
+  }
+  return issues;
+}
+
+export function inspectLayoutTelemetry(telemetryPath: string | null | undefined): GeometryIssue[] {
+  const read = readLayoutTelemetryRows(telemetryPath);
+  if (!read.ok) {
+    if (read.missing) return [];
     return [
       {
         page: 0,
         code: "telemetry-read-error",
         severity: "WARNING",
-        detail: err instanceof Error ? err.message : String(err),
+        detail: read.detail,
       },
     ];
   }
+  return classifyLayoutTelemetryRows(read.rows);
 }
 
 export function summarizeGeometrySeverity(issues: GeometryIssue[]): GeometrySeverity {

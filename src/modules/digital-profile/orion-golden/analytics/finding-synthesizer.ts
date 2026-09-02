@@ -8,6 +8,10 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+  clientSafeDomains,
+} from "../../services/composite-serp-merge";
+import { pickDistinctTitles } from "./distinct-stories";
 import type { RawInventoryItem } from "../types";
 import type { RiskLevel } from "../contracts/common";
 import {
@@ -26,13 +30,22 @@ import type { SubjectResolutionItem } from "../contracts/subject-resolution";
 import {
   getAdversePatterns,
   getFindingThemes,
+  isAccusingTheme,
   resolveFindingThemesConfig,
   type ThemeDef,
 } from "../../config/finding-themes";
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
-import { looksLikeSearchQuery } from "./client-quote-hygiene";
-import { themeHitIsNegated } from "./negated-theme-hit";
+import {
+  looksLikeMachineDump,
+  looksLikeSearchQuery,
+  looksLikeSurfaceBlockHeading,
+} from "./client-quote-hygiene";
+import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
+import { sourceAttribution } from "../client/client-address";
+import { readableSnippet, resolveItemAdverse, resolveItemReadFavourably } from "./item-adverse";
+import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
+import { pluralRu } from "../../report/i18n/plural-ru";
 
 export type { ThemeDef };
 
@@ -95,27 +108,30 @@ function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
 }
 
+/**
+ * Материал глазами словаря темы: заголовок и сниппет, как у предиката строки.
+ *
+ * Служебный `classification` сюда не входит по той же причине, по какой он не
+ * входит в ответ «негативен ли материал»: у строк выдачи он записан самим
+ * предикатом негатива, а у остальных — четвёртым словарём. Адреса нет вовсе:
+ * у словаря есть левая граница и нет правой, поэтому раздел сайта в пути
+ * (`…/court/…`, `…/investigations/…`) читался как текст публикации и давал
+ * нейтральному заголовку криминальную тему.
+ */
+function themeMatchText(item: RawInventoryItem): string {
+  return [item.title, readableSnippet(item)].filter(Boolean).join(" ");
+}
+
+/**
+ * Материал глазами словарей качества утверждения.
+ *
+ * Адрес здесь остаётся намеренно, и это не то же, что тема материала: у
+ * `positivePatterns` доменное слово стоит прямо в списке (`forbes`), и читать
+ * им адрес — способ, которым они работают. У темы иначе: её площадки вынесены
+ * в собственный список (`ThemeDef.domains`), и словарь темы адреса не видит.
+ */
 function itemText(item: RawInventoryItem): string {
-  return [item.title, item.snippet, item.classification, item.sourceUrl]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function itemIsAdverse(item: RawInventoryItem): boolean {
-  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
-  if (meta.analystNeutral === true) return false;
-  if (meta.analystAdverse === true) return true;
-  return getAdversePatterns().test(itemText(item));
-}
-
-/** Russian plural form: 1 публикация, 2 публикации, 5 публикаций. */
-export function pluralRu(n: number, one: string, few: string, many: string): string {
-  const abs = Math.abs(n) % 100;
-  const last = abs % 10;
-  if (abs > 10 && abs < 20) return many;
-  if (last === 1) return one;
-  if (last >= 2 && last <= 4) return few;
-  return many;
+  return [themeMatchText(item), item.classification, item.sourceUrl].filter(Boolean).join(" ");
 }
 
 /**
@@ -129,8 +145,10 @@ const CLIENT_THEME_FRAMING: Record<string, string> = {
     "Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA)",
   political_exposure:
     "Найдены материалы о политической и публичной экспозиции субъекта",
-  offshore_corporate:
-    "Найдены публикации об офшорных и корпоративных структурах владения",
+  offshore_structures:
+    "Найдены публикации об офшорных структурах и юрисдикциях с особым режимом",
+  corporate_ownership:
+    "Найдены материалы о владении компаниями и структуре собственности",
   family_associates:
     "Найдены материалы о семейных и деловых связях субъекта",
   financial_claims:
@@ -140,15 +158,25 @@ const CLIENT_THEME_FRAMING: Record<string, string> = {
     "Найдены материалы с акцентом на безопасность и оборонный контур",
 };
 
-const CLIENT_THEME_WHY: Record<string, string> = {
+/**
+ * Пояснение «почему это важно» — шаблонная присказка темы.
+ *
+ * Экспортируется, потому что сборщик деки вычищает повторы только по объявленным
+ * присказкам ([[boilerplate-commentary]]): всё, чего нет в таком списке,
+ * неприкосновенно. Раньше вычистка сравнивала предложения вслепую и снимала
+ * цитаты вместе с источниками.
+ */
+export const CLIENT_THEME_WHY: Record<string, string> = {
   criminal_legal:
     "Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки.",
   pep_rca_watchlist:
     "Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
   political_exposure:
     "Это усиливает вопросы к связям, влиянию и приемлемости контрагента для сделки.",
-  offshore_corporate:
+  offshore_structures:
     "Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.",
+  corporate_ownership:
+    "Само по себе владение компаниями претензией не является, но состав долей и историю сделок обычно просят подтвердить документами.",
   family_associates:
     "Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
   financial_claims:
@@ -159,27 +187,69 @@ const CLIENT_THEME_WHY: Record<string, string> = {
     "Для международных проверок это зона повышенного внимания.",
 };
 
-export type ClaimEvidenceExample = { title: string; domain: string };
+/**
+ * Присказка темы по её идентификатору — с ответом для темы, которой в
+ * справочнике нет (файл переопределения вправе завести свою).
+ *
+ * Спрашивают её двое: глобальное утверждение и региональная пересборка блока
+ * темы. Пока второй отбирал присказку регулярным выражением по первому слову
+ * строки, две записи из восьми под перечень начал не подходили — «Для KYC…» и
+ * «Для международных проверок…», — и страница офшоров у банка оставалась без
+ * единственного предложения о том, зачем ей эта тема.
+ */
+export function clientThemeWhy(themeId: string | undefined): string {
+  return (
+    (themeId ? CLIENT_THEME_WHY[themeId] : undefined) ??
+    "Для банка, инвестора или контрагента это сигнал к углублённой проверке."
+  );
+}
+
+/**
+ * Строка счёта темы — одна формулировка на отчёт.
+ *
+ * Её печатают и глобальное утверждение (по всему корпусу темы), и региональная
+ * страница (по материалам своего региона). Единица счёта у них разная, а
+ * предложение обязано быть одним: соседние листы одного раздела, называющие
+ * одно и то же двумя разными фразами, читаются как разные сущности.
+ */
+export function themeScaleLine(count: number, adverseCount: number): string {
+  const total = pluralRu(count, "материал", "материала", "материалов");
+  return adverseCount > 0
+    ? `Всего по теме: ${count} ${total}, с негативным контекстом — ${adverseCount}.`
+    : `Всего по теме: ${count} ${total}.`;
+}
+
+/**
+ * Пример-свидетельство для клиентского текста.
+ *
+ * `url` рядом с доменом — не дублирование: источник называется полным адресом
+ * («источник (msk1.ru/text/world/2026/02/02/76244926)»), а домен остаётся
+ * запасным ответом для материала, у которого адреса нет вовсе.
+ */
+export type ClaimEvidenceExample = { title: string; domain: string; url?: string };
 
 /**
  * PDF-46 I.1 — JS `\b` does NOT treat Cyrillic as word chars, so «…Путина в»
  * / «…из-за» never matched. Use Unicode letter boundaries + multi-word tails.
  */
 const DANGLING_TAIL_RE =
-  /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при)\s*$/iu;
+  /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|due|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при|после|перед)\s*$/iu;
 const SERP_TRUNCATED_RE = /(?:\.\.\.|…)\s*$/u;
 const BIO_SEO_RE = /биограф(?:ия|ии)?|личная жизнь|фото|новости|карьера|wiki(?:pedia)?/iu;
-const ADVERSE_THEME_IDS = new Set([
-  "criminal_legal",
-  "pep_rca_watchlist",
-  "political_exposure",
-  "offshore_corporate",
-  "family_associates",
-  "financial_claims",
-  "security_scrutiny",
-]);
 const STRONG_DOMAIN_RE =
   /reuters\.|nytimes\.|justice\.gov|treasury\.gov|ofac\.|europa\.eu|bbc\.|theguardian\.|kommersant\.|rbc\.ru|vedomosti\.|cnbc\.|ft\.com|wsj\.|bloomberg\./iu;
+
+/**
+ * Несёт ли тема риск — то есть может ли SEO-биография быть её доказательством.
+ *
+ * Список идентификаторов рядом с кодом отвечал на этот вопрос вторым голосом и
+ * перечислял ровно все темы, кроме делового профиля, — то есть все, у которых
+ * уровень не нулевой. Список при этом не видел тем из файла переопределения, а
+ * каталог видит: признак живёт там же, где сама тема.
+ */
+function themeCarriesRisk(theme: ThemeDef): boolean {
+  return theme.baseRisk !== "none";
+}
 
 /** True for titles that are only a person name (no risk essence). */
 function looksLikeBarePersonName(title: string): boolean {
@@ -277,11 +347,29 @@ export function snippetToClientHeadline(snippet: string): string {
  * Never publish «…visa over» / «…из-за» / «…Фамилии,».
  */
 export function quoteForClaim(title: string, budget = 220): string {
-  const raw = String(title ?? "").trim();
+  /*
+   * Многоточие посреди заголовка — тот же обрыв, что и в конце.
+   *
+   * Поисковик режет заголовок и приклеивает подпись издания: «Геннадий
+   * Тимченко: биография предпринимателя... - Новости Mail». Признак обрыва
+   * ловил многоточие только в конце строки, и такой заголовок проходил как
+   * целый — в отчёте 75 он стоял в резюме для руководства и в матрице рисков.
+   * Всё, что идёт после многоточия, — подпись, а не содержание: отрезаем её и
+   * дальше разбираем строку как обычный обрезанный заголовок.
+   */
+  const raw = String(title ?? "")
+    .trim()
+    .replace(/(\.\.\.|…)\s*[-–—|·]\s*[^-–—|·]{1,40}$/u, "$1");
   const t = cleanExampleTitle(raw);
   if (!t || t.length < 12 || hasDanglingTail(t) || isIncompleteClientQuote(t)) return "";
+  // Идентификаторы наборов данных — не слова источника: «…источники:
+  // ext_gb_coh_psc, us_trade_csl, eu_fsf» стояло в отчёте цитатой трижды.
+  if (looksLikeMachineDump(t)) return "";
   // SERP «…» titles: keep only when clean recovered a complete sentence.
   if (SERP_TRUNCATED_RE.test(raw) && !/[.!?»]$/u.test(t)) return "";
+  // Многоточие уцелело внутри строки после чистки — заголовок разорван так,
+  // что целого предложения из него не собрать.
+  if (/(\.\.\.|…)/u.test(t)) return "";
   if (t.length <= budget) return t;
   const slice = t.slice(0, budget);
   const cut = Math.max(
@@ -319,6 +407,9 @@ export function isWeakExampleTitle(
   // на живом прогоне «дуров суд сегодня» попало в приложение как доказательство
   // криминальной темы (шаг 15, E5).
   if (looksLikeSearchQuery(t)) return true;
+  // Подпись служебного блока выдачи («Картинки по запросу "…"») повторяет
+  // запрос и ничего не утверждает: цитировать её как материал нельзя.
+  if (looksLikeSurfaceBlockHeading(t)) return true;
   // PDF-46 I.1 — provider-truncated SERP «…»: weak unless a full sentence remains.
   if (SERP_TRUNCATED_RE.test(raw.trim()) && !/[.!?»]$/u.test(t)) return true;
 
@@ -330,34 +421,47 @@ export function isWeakExampleTitle(
   }
 
   // SEO biography blurbs as the only “evidence” for an adverse theme.
-  if (
-    opts?.theme &&
-    ADVERSE_THEME_IDS.has(opts.theme.themeId) &&
-    BIO_SEO_RE.test(t) &&
-    !themeHit
-  ) {
+  if (opts?.theme && themeCarriesRisk(opts.theme) && BIO_SEO_RE.test(t) && !themeHit) {
     return true;
   }
 
   // Энциклопедический зачин («<Имя> — российский предприниматель…») отвечает
   // на вопрос «кто это», а не «что произошло», и доказательством темы риска
   // быть не может (шаг 15, E6).
-  if (opts?.theme && ADVERSE_THEME_IDS.has(opts.theme.themeId) && !themeHit) {
+  if (opts?.theme && themeCarriesRisk(opts.theme) && !themeHit) {
     if (looksLikeEncyclopedicLead(t)) return true;
   }
 
   return false;
 }
 
-/** PDF-44 H.1 — rank evidence for client quotes (theme hit in title beats snippet-only). */
-export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): number {
+/**
+ * PDF-44 H.1 — rank evidence for client quotes (theme hit in title beats snippet-only).
+ *
+ * Негативность приходит признаком, а не считается здесь заново: её уже
+ * посчитал тот, кто собирает находку, — и посчитал с вердиктом прочитанной
+ * страницы, которого у ранжировщика нет.
+ */
+export function scoreExampleForTheme(
+  item: RawInventoryItem,
+  theme: ThemeDef,
+  /**
+   * Негативен ли материал. Обязателен намеренно: со значением по умолчанию
+   * вызов из двух аргументов молча означал бы «не негатив», а раньше он
+   * означал «спроси словарь».
+   */
+  adverse: boolean
+): number {
   const title = cleanExampleTitle(String(item.title ?? ""));
   const snippet = String(item.snippet ?? "").trim();
   const domain = domainOf(item.sourceUrl);
   let score = 0;
   if (theme.keywords.test(title)) score += 8;
   else if (snippet && theme.keywords.test(snippet)) score += 3;
-  if (itemIsAdverse(item)) score += 2;
+  // Пол-ступени сверх целой шкалы: негативный материал выигрывает у равного по
+  // прочим признакам и у того, кто на две ступени выше по длине заголовка, но
+  // совпадению темы в заголовке (восемь ступеней) не перечит.
+  if (adverse) score += 2.5;
   const tokens = title.split(/\s+/u).filter(Boolean).length;
   if (tokens >= 6) score += 2;
   else if (tokens >= 4) score += 1;
@@ -377,10 +481,40 @@ export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): n
 /**
  * PDF-44 H.2 — pick a client-facing quote: strong title, else theme-relevant snippet.
  */
+/**
+ * Поверхности, у которых нет заголовка публикации.
+ *
+ * ИИ-ответ, поисковая подсказка и связанный запрос — не статьи: цитировать у
+ * них нечего. В поле `title` лежит служебная строка поверхности, и когда она
+ * шла в доказательства наравне с заголовками, в отчёт попадали строки вида
+ * «AI overview: Имя Фамилия and Компания (RU) #3» — как будто это найденная
+ * публикация о субъекте.
+ *
+ * Тема при этом не пропадает: без цитат утверждение собирается по числу
+ * материалов и доменам, а сами поверхности показываются в своих разделах.
+ */
+const NON_QUOTABLE_EVIDENCE_TYPES = new Set([
+  "ai_answer",
+  "suggestion",
+  "related_query",
+  /*
+   * Проверка Википедии — наш результат, а не публикация.
+   *
+   * У записи без статьи заголовок собираем мы сами: «Wikipedia (en): статья не
+   * найдена». В отчётах 73 и 75 эта строка стояла в кавычках доказательством
+   * темы «Деловой профиль» — отсутствие статьи предъявлялось как найденный
+   * материал.
+   */
+  "wikipedia_check",
+]);
+
 export function resolveExampleQuote(
   item: RawInventoryItem,
   theme: ThemeDef
 ): ClaimEvidenceExample | null {
+  if (NON_QUOTABLE_EVIDENCE_TYPES.has(String(item.evidenceType ?? "").toLowerCase())) {
+    return null;
+  }
   const domain = domainOf(item.sourceUrl);
   const title = cleanExampleTitle(String(item.title ?? ""));
   const rawTitle = String(item.title ?? "");
@@ -392,7 +526,7 @@ export function resolveExampleQuote(
       !hasDanglingTail(q) &&
       !isIncompleteClientQuote(q)
     ) {
-      return { title: q, domain };
+      return { title: q, domain, url: item.sourceUrl };
     }
   }
 
@@ -413,7 +547,7 @@ export function resolveExampleQuote(
       !isIncompleteClientQuote(headline)
     ) {
       const q = quoteForClaim(headline, 220) || (headline.length <= 220 ? headline : "");
-      if (q && !isIncompleteClientQuote(q)) return { title: q, domain };
+      if (q && !isIncompleteClientQuote(q)) return { title: q, domain, url: item.sourceUrl };
     }
   }
   return null;
@@ -426,11 +560,11 @@ export function pickClaimExamples(
   adverseItems: RawInventoryItem[] = []
 ): ClaimEvidenceExample[] {
   const adverseSet = new Set(adverseItems);
-  const ranked = [...items].sort((a, b) => {
-    const sa = scoreExampleForTheme(a, theme) + (adverseSet.has(a) ? 0.5 : 0);
-    const sb = scoreExampleForTheme(b, theme) + (adverseSet.has(b) ? 0.5 : 0);
-    return sb - sa;
-  });
+  const ranked = [...items].sort(
+    (a, b) =>
+      scoreExampleForTheme(b, theme, adverseSet.has(b)) -
+      scoreExampleForTheme(a, theme, adverseSet.has(a))
+  );
   const examples: ClaimEvidenceExample[] = [];
   const seen = new Set<string>();
   for (const i of ranked) {
@@ -463,16 +597,15 @@ export function buildClientFacingClaim(input: {
   const baseFraming =
     CLIENT_THEME_FRAMING[input.theme.themeId] ??
     `Найдены публикации по теме «${input.theme.label}»`;
-  const why =
-    CLIENT_THEME_WHY[input.theme.themeId] ??
-    "Для банка, инвестора или контрагента это сигнал к углублённой проверке.";
+  const why = clientThemeWhy(input.theme.themeId);
 
-  let examples = (input.examples ?? [])
+  let examples: ClaimEvidenceExample[] = (input.examples ?? [])
     .map((e) => ({
       title: cleanExampleTitle(e.title),
       domain: String(e.domain ?? "")
         .replace(/^www\./iu, "")
         .trim(),
+      url: e.url,
     }))
     .filter(
       (e) =>
@@ -494,17 +627,26 @@ export function buildClientFacingClaim(input: {
   // PDF-46/47 — up to 2 full quotes (never mid-cut); second evidence is kept
   // when it adds a distinct risk angle (e.g. FБК/Приходько + Guardian).
   const quoteLines: string[] = [];
-  for (const e of examples.slice(0, 2)) {
+  // Два примера — но про разные сюжеты.
+  //
+  // Здесь стояло `examples.slice(0, 2)`: два первых подряд, без вопроса, не
+  // одна ли это публикация. В отчёте о Тинькове (28.07, стр.5) так вышло —
+  // «Oleg Tinkov Net Worth…» и «Oleg Tinkov: Oleg Tinkov Net Worth… -
+  // Goodreturns» с одного goodreturns.in: одна статья предъявлена как два
+  // свидетельства, и читатель видит одно предложение дважды подряд.
+  //
+  // Правило общее с построителем региональных резюме — оно одно на оба места.
+  for (const e of pickDistinctTitles(examples, 2)) {
     const q = quoteForClaim(e.title, 220);
     if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
-    quoteLines.push(e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`);
+    // Источник называется полным адресом: домен читается как «где-то на сайте
+    // есть, ищите сами» (замечание владельца к отчёту 20.08). Демо-имена не
+    // называются ни адресом, ни доменом — это внутри `sourceAttribution`.
+    quoteLines.push(`«${q}»${sourceAttribution({ url: e.url, domain: e.domain })}`);
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
-  const scale =
-    input.adverseCount > 0
-      ? `Всего по теме: ${input.itemsCount} ${total}, с негативным контекстом — ${input.adverseCount}.`
-      : `Всего по теме: ${input.itemsCount} ${total}.`;
+  const scale = themeScaleLine(input.itemsCount, input.adverseCount);
 
   // Domain anchors stay on quote lines («…» — источник domain) — do NOT append
   // «(в т.ч. материалы на …)» to framing: long parentheticals get mid-clipped by
@@ -512,15 +654,15 @@ export function buildClientFacingClaim(input: {
   const framing = baseFraming;
   const anchorDomains = [
     ...new Set(
-      [
+      clientSafeDomains([
         ...examples.map((e) => e.domain),
         ...(input.domains ?? []).map((d) => d.replace(/^www\./iu, "").trim()),
-      ].filter(Boolean)
+      ])
     ),
   ].slice(0, 2);
 
   if (quoteLines.length === 0) {
-    const domainHint = (input.domains ?? []).filter(Boolean).slice(0, 3).join(", ");
+    const domainHint = clientSafeDomains(input.domains ?? []).slice(0, 3).join(", ");
     const gap = domainHint
       ? `По теме ${input.itemsCount} ${total} в источниках ${domainHint}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
       : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`;
@@ -539,6 +681,26 @@ export function buildClientFacingClaim(input: {
 /** Названия справочных площадок, приклеиваемые к заголовку карточки. */
 const REFERENCE_SOURCE_SUFFIX =
   /\s*[-–—]\s*(?:Википедия|Wikipedia|Wikidata|Циклопедия|Рувики|RuWiki|Энциклопедия[^-–—]*|ПЕРСОНА\s+ТАСС|Telegram\s+Вики|[A-Za-zА-Яа-яЁё ]{0,20}Вики(?:педия)?)\s*$/iu;
+
+/**
+ * Кончается ли текст концом предложения, а не точкой внутри числа или инициала.
+ *
+ * Точка — не всегда граница: «$18.4 billion», «Фонд А.Усманова», «1.4B». Взяв
+ * её за конец предложения, восстановление обрезанного заголовка давало
+ * «Благотворительный Фонд А.» и «Alisher Usmanov is worth is an estimated
+ * $18.» — обрывки, ради устранения которых восстановление и делалось.
+ */
+export function endsWithSentence(text: string): boolean {
+  const t = String(text ?? "").trim();
+  if (!t) return false;
+  if (/[!?…»]$/u.test(t)) return true;
+  if (!/\.$/u.test(t)) return false;
+  // Десятичный разделитель: «$18.», «1.».
+  if (/\d\.$/u.test(t)) return false;
+  // Инициал: «Фонд А.», «J.».
+  if (/(?:^|[\s(«"])\p{Lu}\.$/u.test(t)) return false;
+  return true;
+}
 
 export function cleanExampleTitle(raw: string): string {
   let t = String(raw ?? "").replace(/\s+/gu, " ").trim();
@@ -561,41 +723,40 @@ export function cleanExampleTitle(raw: string): string {
   // Search engines truncate long titles with an ellipsis: drop the broken
   // last fragment when a complete sentence remains before it.
   const m = t.match(/^(.*[.!?…»])\s*[^.!?…»]*(?:\.\.\.|…)$/u);
-  if (m && m[1].length >= 20) t = m[1].trim();
+  if (m && m[1].length >= 20 && endsWithSentence(m[1].trim())) t = m[1].trim();
   return t.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim();
-}
-
-/** Join whole titles while the segment fits the budget — never a mid-title cut. */
-export function joinTitlesWithinBudget(titles: string[], budget: number): string {
-  const kept: string[] = [];
-  let used = 0;
-  for (const t of titles) {
-    const extra = (kept.length > 0 ? 3 : 0) + t.length; // " · " separator
-    if (used + extra > budget) break;
-    kept.push(t);
-    used += extra;
-  }
-  if (kept.length === 0 && titles.length > 0) {
-    // Single overlong title: keep it whole up to the budget word boundary.
-    const slice = titles[0].slice(0, budget);
-    const cut = slice.lastIndexOf(" ");
-    return (cut > budget * 0.5 ? slice.slice(0, cut) : slice).trim();
-  }
-  return kept.join(" · ");
 }
 
 /**
  * One evidence item may support multiple genuinely different claims: it is
  * matched against EVERY theme, not consumed by the first/highest-priority one.
+ *
+ * Тему называют два разных ответа: слова темы читают текст материала, площадки
+ * темы отвечают по адресу отдельным списком. Смешивать их в одну строку сверки
+ * нельзя — раздел сайта в пути тогда становится темой публикации.
  */
-function themesFor(item: RawInventoryItem): ThemeDef[] {
-  const text = itemText(item);
-  return getFindingThemes().filter(
-    // Материал, утверждающий отсутствие («не было выставленных претензий»),
-    // темой риска не является: иначе отчёт говорит противоположное источнику
-    // (шаг 15, J1).
-    (theme) => theme.keywords.test(text) && !themeHitIsNegated(text, theme.keywords)
-  );
+function themesFor(
+  item: RawInventoryItem,
+  /** Страницу прочитали и признали благоприятной (и человек с этим не спорил). */
+  favourablyRead: boolean
+): ThemeDef[] {
+  const text = themeMatchText(item);
+  const url = String(item.sourceUrl ?? "");
+  return getFindingThemes().filter((theme) => {
+    // Обвиняющая тема не берёт благоприятно прочитанную страницу — ни в состав,
+    // ни в счёт, ни в уровень. Тему назначает словарь по заголовку, а решение
+    // вынесено по тексту страницы и знает, что там на самом деле; у ярлыка
+    // «Офшорные структуры» цена ошибки прямая — субъекту предлагают убирать
+    // материал, который о нём ничего такого не говорит. Описательной темы это
+    // не касается: для неё нейтральная публикация и есть доказательство.
+    if (favourablyRead && isAccusingTheme(theme)) return false;
+    if (theme.domains?.test(url)) return true;
+    // Материал, утверждающий отсутствие («не было выставленных претензий»,
+    // «обвинения не подтвердились»), темой риска не является: иначе отчёт
+    // говорит противоположное источнику. Совпадение по площадке так не
+    // снимается — отрицание относится к словам, а не к тому, что это за сайт.
+    return theme.keywords.test(text) && !dictionaryHitIsNegated(text, theme.keywords);
+  });
 }
 
 /** Same evidence + same normalized claim must collapse into one contribution. */
@@ -625,14 +786,15 @@ function promotionFor(risk: RiskLevel, confidence: number): PromotionPriority {
 
 function detectContradictions(
   themeId: string,
-  items: RawInventoryItem[]
+  items: RawInventoryItem[],
+  /** Негативные материалы темы — те же, по которым считается её уровень. */
+  adverse: RawInventoryItem[]
 ): { contradictions: FindingContradiction[]; limitations: string[] } {
   const contradictions: FindingContradiction[] = [];
   const limitations: string[] = [];
 
   const cfg = resolveFindingThemesConfig();
   const unverified = items.filter((i) => cfg.unverifiedClaimPatterns.test(itemText(i)));
-  const adverse = items.filter((i) => itemIsAdverse(i));
   const positive = items.filter((i) => cfg.positivePatterns.test(itemText(i)));
 
   if (unverified.length > 0) {
@@ -683,6 +845,12 @@ export function synthesizeFindings(input: {
   sourceHashes: string[];
   /** Coverage-driven limitations, e.g. "images (UAE): NOT_COLLECTED". */
   coverageLimitations?: string[];
+  /**
+   * Решения по прочитанным страницам. Уровень темы обязан их знать: материал,
+   * чью страницу открыли и признали благоприятной, негативом не считается —
+   * иначе отчёт предлагает субъекту убирать то, что говорит о нём хорошо.
+   */
+  verdictByRef?: ObservationVerdictByRef;
 }): FindingSynthesisResult {
   const themeAssignments = new Map<string, string[]>();
   const byDecisionTheme = new Map<string, RawInventoryItem[]>(); // `${decision}|${themeId}`
@@ -709,7 +877,7 @@ export function synthesizeFindings(input: {
     // SUBJECT_MATCH/LIKELY without keyword hits → uncategorized (§3.2), not a
     // finding (never enters the risk matrix). AMBIGUOUS without hits still gets
     // a review theme so they reach «Требует подтверждения» / appendix (§2.1).
-    let themes = themesFor(item);
+    let themes = themesFor(item, resolveItemReadFavourably(item, input.verdictByRef));
     if (themes.length === 0) {
       if (decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") {
         if (!seenUncategorizedRefs.has(ref)) {
@@ -774,7 +942,7 @@ export function synthesizeFindings(input: {
     subjectMatch: "SUBJECT_MATCH" | "LIKELY_SUBJECT" | "AMBIGUOUS" | "OTHER_SUBJECT"
   ): Finding => {
     const theme = FINDING_THEMES.find((t) => t.themeId === themeId)!;
-    const adverseItems = items.filter((i) => itemIsAdverse(i));
+    const adverseItems = items.filter((i) => resolveItemAdverse(i, input.verdictByRef));
     const risk = riskFor(theme, adverseItems.length, items.length);
     const evidenceRefs = items.map(refOf);
     const domains = [...new Set(items.map((i) => domainOf(i.sourceUrl)).filter(Boolean))];
@@ -789,7 +957,7 @@ export function synthesizeFindings(input: {
         )
       ),
     ];
-    const { contradictions, limitations } = detectContradictions(themeId, items);
+    const { contradictions, limitations } = detectContradictions(themeId, items, adverseItems);
     if (subjectMatch === "AMBIGUOUS") {
       limitations.push("Принадлежность части свидетельств проверяемому лицу не установлена однозначно.");
     }

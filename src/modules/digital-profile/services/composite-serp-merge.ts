@@ -1,3 +1,4 @@
+import { domainToUnicode } from "node:url";
 /**
  * Composite SERP merge: base (manifest IDs only) + Arsenkin enrichment.
  * Dedupes client rows while preserving multi-provider provenance.
@@ -36,6 +37,62 @@ export type CompositeObservation = {
   snippet?: string;
   suggestion?: string;
   question?: string;
+  /**
+   * Вид строки внутри своей поверхности: сам ответ (`answer_text`), названный
+   * им источник (`answer_source`) или пометка о пустоте (`absent`,
+   * `answer_rejected`). Пишет его сборщик — он единственный знает наверняка, и
+   * гадать по словам там, где вид известен, не нужно.
+   */
+  contentKind?: string;
+  /**
+   * Позиция материала в выдаче — то, по чему определяется ТОП-20.
+   *
+   * До этого позиция терялась на слиянии: провайдеры её пишут
+   * (`SearchResult.rank`, порядок массива у Arsenkin), а composite-строка её не
+   * несла, и аналитика не могла отличить первую строку выдачи от сороковой.
+   * При склейке дубликатов остаётся лучшая (минимальная) позиция: материал
+   * виден там, где он выше.
+   */
+  rank?: number;
+  /**
+   * Позиция по каждому провайдеру отдельно.
+   *
+   * Провайдеры нумеруют одну и ту же выдачу по-разному: Яндекс считает все
+   * блоки (плитка картинок занимает место), Arsenkin — только органику. Пока
+   * позиции сливались минимумом, две системы координат смешивались: материал,
+   * второй у Яндекса и первый у Arsenkin, становился первым и сталкивался с
+   * чужой первой позицией, а вторая пустела. В отчёте 73 таблица ТОП-20 имела
+   * дубли на местах 1, 7, 10 и дыры на 9, 13, 17.
+   *
+   * Разложенные по провайдерам позиции позволяют выбрать одну систему координат
+   * и объяснить выбор.
+   */
+  ranksByProvider?: Record<string, number>;
+  /**
+   * Чья позиция записана в `rank` — имя провайдера из `ranksByProvider`.
+   *
+   * Таблица ТОП-20 отчёта имеет право печатать только позиции родного
+   * поисковика: список Яндекса — из выдачи Яндекса, список Google — из
+   * Serper. Обогатитель здесь не участвует — обогащать в списке выдачи
+   * нечего, а его собственная нумерация (без спецблоков) дырявит таблицу
+   * чужими местами.
+   */
+  rankSource?: string;
+  /**
+   * Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …).
+   * Нужно, чтобы отличать выдачу по имени субъекта от целевых проб.
+   */
+  queryPurpose?: string;
+  /**
+   * Запрос этой строки — само имя субъекта, а не производное написание.
+   *
+   * Пометку ставит набор запросов (`search-surfaces/subject-query-set.ts`), и
+   * дальше она едет данными: таблица «ТОП-20 по запросу ФИО» строится по
+   * названному запросу, а не по тому, что оказался первым по алфавиту. Наборы,
+   * собранные до её появления, поля не несут — тогда работает запасное правило,
+   * и страница называет, что запрос выбран нами.
+   */
+  subjectNameQuery?: boolean;
   providers: string[];
   primaryProvider: string;
   evidenceRefs: string[];
@@ -81,10 +138,94 @@ export type CompositeMergeResult = {
 export const MOCK_URL_PATTERN = /example\.|\.example\b|\.invalid\b/i;
 
 /** Domain-only variant for source lines («Источники: …») and evidence domains. */
+/**
+ * Позиция в одной системе отсчёта — той, которой принадлежит выдача.
+ *
+ * Место в выдаче имеет смысл только внутри нумерации одного поисковика.
+ * Обогатитель (Arsenkin) идёт поверх чужой выдачи и нумерует её по-своему;
+ * брать у него позицию значит смешивать шкалы. Поэтому позицию задаёт
+ * поисковик — сначала тот, что признан основным, затем любой другой поисковик,
+ * и лишь если поисковик её не сообщил вовсе, берётся то, что есть: иначе
+ * старые наборы данных, собранные одним обогатителем, потеряли бы таблицу
+ * целиком.
+ */
+export function rankInOneScale(row: {
+  rank?: number;
+  primaryProvider?: string;
+  ranksByProvider?: Record<string, number>;
+}): { rank: number; source: string } | undefined {
+  const ranks = row.ranksByProvider ?? {};
+  const isEngine = (p: string): boolean => /yandex|serper|google/i.test(p);
+  const primary = row.primaryProvider ?? "";
+  if (primary && typeof ranks[primary] === "number") {
+    return { rank: ranks[primary], source: primary };
+  }
+  const engine = Object.entries(ranks).find(([p]) => isEngine(p));
+  if (engine) return { rank: engine[1], source: engine[0] };
+  const entries = Object.entries(ranks);
+  if (entries.length > 0) {
+    const best = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
+    return { rank: best[1], source: best[0] };
+  }
+  // Строка до разложения по провайдерам: источник позиции неизвестен.
+  return typeof row.rank === "number" ? { rank: row.rank, source: "unknown" } : undefined;
+}
+
 export function isMockClientDomain(domain: string | null | undefined): boolean {
   const d = String(domain ?? "").trim();
   if (!d) return false;
   return MOCK_URL_PATTERN.test(d) || /(^|\.)mock(\.|-)|-mock\./i.test(d);
+}
+
+/**
+ * Домены, которые можно назвать клиенту.
+ *
+ * Фильтр применялся только в двух строках источников, а домены попадают в
+ * клиентский текст ещё из полудюжины мест — цитаты доказательств, вывод по
+ * странице, представительные свидетельства. На золотом кейсе через них
+ * протекало 56 упоминаний демо-доменов. Отбор теперь один на всех: имя демо-
+ * данных не должно оказаться в отчёте, который показывают клиенту.
+ */
+export function clientSafeDomains(domains: Array<string | null | undefined>): string[] {
+  return domains
+    .map((d) => String(d ?? "").trim())
+    .filter((d) => d.length > 0 && d !== "—" && !isMockClientDomain(d))
+    // Кириллические зоны хранятся в punycode: `xn--h1ajim.xn--p1ai` вместо
+    // «руни.рф». В отчёте о Тинькове (28.07, стр.20) клиент читал машинную
+    // запись. Отбор и показ — один вопрос, поэтому читаемый вид даётся здесь,
+    // а не приписывается в каждом из тридцати мест печати.
+    //
+    // Сверка с индексом доказательств не ломается: она приводит обе формы к
+    // punycode (`normalizeDomainForCompare` в проверке секций), а перевод
+    // обратим.
+    .map((d) => toReadableDomain(d));
+}
+
+/** Punycode → читаемая запись; всё прочее без изменений. */
+function toReadableDomain(domain: string): string {
+  if (!domain.includes("xn--")) return domain;
+  return domainToUnicode(domain) || domain;
+}
+
+/**
+ * Домен в том виде, в каком его читает человек.
+ *
+ * Кириллические зоны хранятся в punycode: `xn--h1ajim.xn--p1ai` вместо
+ * «руни.рф». В отчёте о Тинькове (28.07, стр.20) клиент видел именно машинную
+ * запись. Формально она верна, но документ показывают человеку.
+ *
+ * Отбор тот же, что и у `clientSafeDomain`: демо-имя не называется. Перевод
+ * обратим (`domainToASCII`), поэтому сверка с индексом доказательств, где
+ * домены лежат в punycode, продолжает работать — см.
+ * `cyrillic-domain-is-readable-and-verifiable`.
+ */
+export function clientReadableDomain(domain: string | null | undefined): string | null {
+  return clientSafeDomain(domain);
+}
+
+/** Одиночный домен: `null`, если называть его клиенту нельзя. */
+export function clientSafeDomain(domain: string | null | undefined): string | null {
+  return clientSafeDomains([domain])[0] ?? null;
 }
 
 /** Fail-closed mock/demo filter for SearchResult and SearchSurfaceItem rows. */
@@ -152,6 +293,9 @@ function surfaceOfBaseSurfaceType(type: string): string {
   if (t.includes("RELATED") || /PAA|PEOPLE.?ALSO/i.test(t)) return "related";
   if (t.includes("IMAGE")) return "images";
   if (t.includes("VIDEO")) return "video";
+  // Генеративный ответ проверяется до KNOWLEDGE: это разные наблюдения, и
+  // общая ветка увела бы ответ на страницу «панель знаний».
+  if (t.includes("AI_ANSWER")) return "ai_answer";
   if (t.includes("KNOWLEDGE")) return "knowledge_block";
   if (t.includes("SCREENSHOT")) return "serp_screenshot";
   if (t.includes("ORGANIC")) return "organic";
@@ -182,6 +326,20 @@ function preferRisk(a: string | null | undefined, b: string | null | undefined):
   return rank(a) >= rank(b) ? a ?? null : b ?? null;
 }
 
+/**
+ * Чеканка идентификатора составного набора — одна на систему.
+ *
+ * Идентификатор отвечает на вопрос происхождения: «принадлежит ли артефакт
+ * текущему набору этой джобы». Пока у набора была вторая чеканка — по
+ * содержимому, в аналитике, — дека и привязка джобы носили разные
+ * идентификаторы, и повторный рендер платил за полную пересборку. Содержательный
+ * отпечаток набора живёт отдельно, полем `sourceHashes`: это данные, а не
+ * идентичность.
+ */
+export function compositeDatasetIdFor(unifiedJobId: string): string {
+  return `composite-${unifiedJobId}`;
+}
+
 export async function mergeCompositeSerp(input: {
   prisma?: PrismaClient | null;
   manifest: BaseCollectionManifest;
@@ -196,6 +354,8 @@ export async function mergeCompositeSerp(input: {
     suggestion?: string;
     question?: string;
     kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
+    /** Позиция в выдаче (1-based) — порядок элементов ответа провайдера. */
+    rank?: number;
     /** Producing Arsenkin tool (ai-serp / check-h / …) — used as surface hint. */
     tool?: string | null;
     /** Fine-grained surface when adapter sets it (ai_answer / organic / …). */
@@ -221,7 +381,18 @@ export async function mergeCompositeSerp(input: {
   const add = (row: CompositeObservation, provider: string) => {
     const existing = map.get(row.key);
     if (!existing) {
-      map.set(row.key, { ...row, providers: [...row.providers] });
+      // Позиция первого провайдера тоже записывается за ним: без этого
+      // материал, впервые увиденный поисковиком и позже дополненный
+      // обогатителем, получал бы позицию обогатителя.
+      const ranksByProvider =
+        typeof row.rank === "number" && Number.isFinite(row.rank)
+          ? { ...(row.ranksByProvider ?? {}), [provider]: row.rank }
+          : row.ranksByProvider;
+      map.set(row.key, {
+        ...row,
+        providers: [...row.providers],
+        ...(ranksByProvider ? { ranksByProvider } : {}),
+      });
       return;
     }
     const providers = Array.from(new Set([...existing.providers, ...row.providers, provider]));
@@ -237,6 +408,13 @@ export async function mergeCompositeSerp(input: {
       existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
     }
     if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
+    // Позиция запоминается за тем провайдером, который её сообщил. Сводить их
+    // минимумом нельзя — это разные системы отсчёта (см. `ranksByProvider`).
+    if (typeof row.rank === "number" && Number.isFinite(row.rank)) {
+      existing.ranksByProvider = { ...(existing.ranksByProvider ?? {}), [provider]: row.rank };
+    }
+    if (!existing.queryPurpose && row.queryPurpose) existing.queryPurpose = row.queryPurpose;
+    if (!existing.subjectNameQuery && row.subjectNameQuery) existing.subjectNameQuery = true;
     // Prefer fine-grained Arsenkin surfaces (ai_answer) over generic organic.
     if (
       row.surface &&
@@ -283,6 +461,20 @@ export async function mergeCompositeSerp(input: {
             where: { id: { in: resultIds } },
             include: { query: true },
           });
+    // Подсказка манифеста годится только когда поисковик в прогоне был один:
+    // это знание о прогоне, а не о строке, и подставлять его каждой строке
+    // подряд значит переклеивать ярлыки. Ровно так вся выдача Google однажды
+    // стала яндексовой (см. `resolveSerpProviderAttribution`).
+    const manifestSearchProviders = [
+      ...new Set(
+        (input.manifest.actualProviders ?? [])
+          .map((p) => String(p.providerId ?? ""))
+          .filter((id) => /yandex|serper|google/i.test(id))
+      ),
+    ];
+    const unambiguousManifestProvider =
+      manifestSearchProviders.length === 1 ? manifestSearchProviders[0]! : null;
+
     for (const r of results) {
       if (isMockBaseRow({ source: r.source, title: r.title, url: r.url })) {
         skippedMockBaseIds.push(r.id);
@@ -295,9 +487,7 @@ export async function mergeCompositeSerp(input: {
       const attr = resolveSerpProviderAttribution({
         observationProvider:
           meta && typeof meta.provider === "string" ? meta.provider : null,
-        manifestProviderHint:
-          input.manifest.actualProviders?.find((p) => /yandex|serper|google/i.test(p.providerId ?? ""))
-            ?.providerId ?? null,
+        manifestProviderHint: unambiguousManifestProvider,
         agentRunProvider:
           meta && typeof meta.agentRunProvider === "string" ? meta.agentRunProvider : null,
         providerTaskLineage:
@@ -312,15 +502,35 @@ export async function mergeCompositeSerp(input: {
       const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       if (provider === "serper") serper += 1;
-      const key = organicKey("RU", engine, r.query?.queryText ?? "", r.url ?? "");
+      // Регион и запрос берутся из того, что записал сборщик
+      // (`orion-search-profile-service`: `orionRegion`, `query`, `queryPurpose`,
+      // `rank`). Раньше здесь стояло `region: "RU"` литералом, и вся базовая
+      // органика ОАЭ читалась как российская — на отчёте это выглядело как
+      // одинаковая выдача в двух регионах. Запрос брался из связи `query`,
+      // которой у строк ORION-профиля нет, поэтому текст запроса терялся.
+      const rm = (r.rawMetadata ?? {}) as Record<string, unknown>;
+      const queryText =
+        String(rm.query ?? rm.orionQuery ?? r.query?.queryText ?? "").trim() || "";
+      const region =
+        normalizeCompositeRegion(
+          typeof rm.orionRegion === "string"
+            ? rm.orionRegion
+            : typeof rm.region === "string"
+              ? rm.region
+              : null
+        ) ?? "RU";
+      const key = organicKey(region, engine, queryText, r.url ?? "");
       add(
         {
           key,
           kind: "organic",
           surface: "organic",
-          region: "RU",
+          region,
           engine,
-          query: r.query?.queryText ?? "",
+          query: queryText,
+          rank: typeof r.rank === "number" && r.rank > 0 ? r.rank : undefined,
+          queryPurpose: String(rm.queryPurpose ?? "").trim() || undefined,
+          subjectNameQuery: rm.subjectNameQuery === true ? true : undefined,
           url: r.url ?? undefined,
           title: r.title ?? undefined,
           snippet: r.snippet ?? undefined,
@@ -377,6 +587,8 @@ export async function mergeCompositeSerp(input: {
         (s as { imageUrl?: string | null; thumbnailUrl?: string | null }).imageUrl ??
         (s as { thumbnailUrl?: string | null }).thumbnailUrl ??
         null;
+      const surfaceMeta = (s.rawMetadata ?? {}) as Record<string, unknown>;
+      const contentKind = String(surfaceMeta.contentKind ?? "").trim();
       const surfaceTs = s.capturedAt ?? s.createdAt;
       const surfaceCollectedAt =
         surfaceTs instanceof Date ? surfaceTs.toISOString() : undefined;
@@ -390,6 +602,7 @@ export async function mergeCompositeSerp(input: {
           query: s.query ?? undefined,
           title: s.title ?? undefined,
           snippet: s.snippet ?? undefined,
+          ...(contentKind ? { contentKind } : {}),
           suggestion: kind === "suggestion" ? String(s.title ?? s.snippet ?? "") : undefined,
           question: kind === "paa" ? String(s.title ?? "") : undefined,
           url: s.url ?? undefined,
@@ -481,6 +694,7 @@ export async function mergeCompositeSerp(input: {
         snippet: obs.snippet,
         suggestion: obs.suggestion,
         question: obs.question,
+        rank: typeof obs.rank === "number" && obs.rank > 0 ? obs.rank : undefined,
         providers: ["arsenkin"],
         primaryProvider: "arsenkin",
         evidenceRefs: obs.providerTaskId ? [`providerTask:${obs.providerTaskId}`] : [],
@@ -497,10 +711,13 @@ export async function mergeCompositeSerp(input: {
     if (row.providers.includes("yandex") || row.providers.includes("serper")) {
       row.primaryProvider = row.providers.includes("yandex") ? "yandex" : "serper";
     }
+    const scaled = rankInOneScale(row);
+    row.rank = scaled?.rank;
+    row.rankSource = scaled?.source;
   }
 
   const observations = [...map.values()];
-  const compositeDatasetId = `composite-${input.manifest.unifiedJobId}`;
+  const compositeDatasetId = compositeDatasetIdFor(input.manifest.unifiedJobId);
   const baseCount = input.manifest.baseCount;
   if (observations.length < Math.min(baseCount, observations.length) && baseCount > 0) {
     // soft check — hard fail is in report-ready gates when compositeBaseCount < baseCount

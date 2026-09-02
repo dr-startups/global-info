@@ -1,0 +1,240 @@
+import { describe, expect, it } from "vitest";
+import { buildRelatedQueriesFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/related";
+import { buildSuggestionsFragment } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/suggestions";
+import {
+  panelComposition,
+  panelCompositionLine,
+  panelRows,
+  type FragmentExtras,
+} from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
+import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
+import { isDataRowTemplate } from "@/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
+
+/**
+ * Приёмка: на панели десять подсказок, в описании рядом «показано 7»; на
+ * панели две строки связанных запросов, в описании «показаны 3». Клиент
+ * сверяет текст с картинкой, поэтому числа обязаны браться с картинки.
+ */
+function scopedSurface(
+  surface: string,
+  rows: Array<{ text: string; decision?: string }>
+): ScopedFragmentInput {
+  const evidenceIndex: Record<string, unknown> = {};
+  rows.forEach((r, i) => {
+    evidenceIndex[`inventory:s${i}`] = {
+      title: r.text,
+      domain: "yandex.ru",
+      url: `https://yandex.ru/?q=${i}`,
+      region: "RU",
+      subjectDecision: r.decision,
+    };
+  });
+  return {
+    findings: [],
+    surfaceUnits: [
+      {
+        surface,
+        region: "RU",
+        engine: "YANDEX",
+        claims: [],
+        metrics: [],
+        evidenceRefs: rows.map((_, i) => `inventory:s${i}`),
+      },
+    ],
+    evidenceIndex,
+    scope: {},
+    metricSnapshot: {},
+  } as unknown as ScopedFragmentInput;
+}
+
+function extrasWithPanel(slotId: string, visible: Array<{ i: number; adverse?: boolean }>, titles: string[]): FragmentExtras {
+  return {
+    visualAssets: {
+      [slotId]: [
+        {
+          assetRef: `${slotId}-panel`,
+          kind: "surface_panel",
+          // Без картинки слайд уходит в запасную карточку и заголовок-вывод
+          // не ставит — а проверяем мы именно согласие заголовка с панелью.
+          hasImage: true,
+          visibleItems: visible.map((v) => ({
+            ref: `inventory:s${v.i}`,
+            title: titles[v.i],
+            adverse: v.adverse === true,
+          })),
+        },
+      ],
+    },
+  } as unknown as FragmentExtras;
+}
+
+describe("описание считает строки панели", () => {
+  it("на панели три связанных запроса — в описании три, а не свой набор", () => {
+    const titles = ["Где сейчас Фридман?", "Чем владеет Фридман?", "Кто такой Фридман?", "Дети Фридмана"];
+    const scoped = scopedSurface(
+      "paa_related",
+      titles.map((t) => ({ text: t, decision: "SUBJECT_MATCH" }))
+    );
+    const extras = extrasWithPanel("p22_ru_related_3", [{ i: 0 }, { i: 1 }], titles);
+    const { slides } = buildRelatedQueriesFragment("RU_RELATED", "RU_PROFILE", "Россия", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p22_ru_related_3")!;
+    expect(page.content.bullets).toEqual(["Где сейчас Фридман?", "Чем владеет Фридман?"]);
+    expect(page.content.whatWasFound).toContain("на панели — 2 связанных запроса");
+    expect(page.content.whatWasFound).toContain("Собрано 4");
+  });
+
+  it("подсказки: показано столько, сколько нарисовано, с разбором по принадлежности", () => {
+    const titles = [
+      "фридман михаил маратович",
+      "фридман михаил маратович биография",
+      "фридман пётр иванович",
+      "михаил фридман санкции",
+    ];
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "SUBJECT_MATCH" },
+      { text: titles[2]!, decision: "OTHER_SUBJECT" },
+      { text: titles[3]!, decision: "SUBJECT_MATCH" },
+    ]);
+    const extras = extrasWithPanel(
+      "p11_ru_suggestions_yandex",
+      [{ i: 0 }, { i: 1 }, { i: 2 }, { i: 3, adverse: true }],
+      titles
+    );
+    const { slides } = buildSuggestionsFragment("RU_SUGGESTIONS", "RU_PROFILE", "Россия", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p11_ru_suggestions_yandex")!;
+    expect(page.content.bullets).toHaveLength(4);
+    const said = page.content.whatWasFound ?? "";
+    expect(said).toContain("На панели — 4 подсказки");
+    expect(said).toContain("3 относятся к субъекту");
+    expect(said).toContain("1 — о других лицах");
+    expect(said).toContain("С негативной формулировкой — 1");
+  });
+});
+
+describe("строки панели", () => {
+  const scoped = scopedSurface("suggestions", [
+    { text: "первая", decision: "SUBJECT_MATCH" },
+    { text: "вторая", decision: "OTHER_SUBJECT" },
+  ]);
+
+  it("повтор строки на панели не удваивает счёт", () => {
+    const extras = extrasWithPanel("slot", [{ i: 0 }, { i: 0 }, { i: 1 }], ["первая", "вторая"]);
+    expect(panelRows("slot", extras, scoped)).toHaveLength(2);
+  });
+
+  it("без панели строк нет — и числа берутся из другого источника", () => {
+    expect(panelRows("slot", {} as FragmentExtras, scoped)).toEqual([]);
+  });
+});
+
+describe("формулировка состава", () => {
+  it("без разбора по принадлежности не выдумывает «требуют уточнения»", () => {
+    const line = panelCompositionLine({
+      composition: panelComposition([
+        { ref: "a", text: "a", adverse: false },
+        { ref: "b", text: "b", adverse: false },
+      ]),
+      collected: 2,
+      nounOne: "подсказка",
+      nounFew: "подсказки",
+      nounMany: "подсказок",
+    });
+    expect(line).toBe("На панели — 2 подсказки. Негативных формулировок нет.");
+  });
+
+  it("называет собранное отдельно, когда показано не всё", () => {
+    const line = panelCompositionLine({
+      composition: panelComposition([
+        { ref: "a", text: "a", adverse: true, decision: "SUBJECT_MATCH" },
+      ]),
+      collected: 45,
+      nounOne: "подсказка",
+      nounFew: "подсказки",
+      nounMany: "подсказок",
+    });
+    expect(line).toBe(
+      "Собрано 45, на панели — 1 подсказка: 1 относится к субъекту. С негативной формулировкой — 1."
+    );
+  });
+});
+
+describe("негативные строки", () => {
+  it("считаются по красной рамке панели, чтобы заголовок и текст не спорили", () => {
+    const titles = ["иванов суд", "иванов интервью"];
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "SUBJECT_MATCH" },
+    ]);
+    // Панель ничего красным не выделила, хотя в тексте строки есть слово «суд».
+    const extras = extrasWithPanel("p11_ru_suggestions_yandex", [{ i: 0 }, { i: 1 }], titles);
+    const rows = panelRows("p11_ru_suggestions_yandex", extras, scoped);
+    expect(rows.filter((r) => r.adverse)).toHaveLength(0);
+  });
+});
+
+describe("списки поверхностей не чистятся как проза", () => {
+  it("строки-данные не подпадают под вычистку повторов", () => {
+    // Вычистка заведена против пояснения темы, напечатанного в отчёте
+    // трижды. Подсказка Google, дословно совпавшая с подсказкой Яндекса, —
+    // это два факта, а не повтор: на прогоне из десяти строк панели на
+    // странице оставалось три.
+    for (const template of ["related-queries", "suggestions", "ai-overview", "image-grid", "serp-table"]) {
+      expect(isDataRowTemplate(template)).toBe(true);
+    }
+  });
+
+  it("страницы с нашей прозой вычищаются по-прежнему", () => {
+    for (const template of ["regional-summary", "risk-matrix", "executive-summary", "finding-cards"]) {
+      expect(isDataRowTemplate(template)).toBe(false);
+    }
+  });
+});
+
+describe("статус страницы не спорит с панелью", () => {
+  const titles = ["timur ildarovich yunusov", "yunusov", "yunus yunusov"];
+
+  it("панель без негатива — статус говорит о панели, а собранное называет отдельно", () => {
+    // Стр. 44 прогона 14.08: заголовок «негативных формулировок нет» и рядом
+    // «на этой странице 1 негативный заголовок». Числа были про разные наборы —
+    // десять строк панели и сорок четыре собранные строки.
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "LIKELY_SUBJECT" },
+      { text: titles[2]!, decision: "OTHER_SUBJECT" },
+      // Четвёртая строка собрана, но на панель не попала — и она негативная.
+      { text: "yunusov суд", decision: "SUBJECT_MATCH" },
+    ]);
+    (scoped.evidenceIndex["inventory:s3"] as { adverse?: boolean }).adverse = true;
+    const extras = extrasWithPanel("p28_uae_suggestions", [{ i: 0 }, { i: 1 }, { i: 2 }], titles);
+    const { slides } = buildSuggestionsFragment("UAE_SUGGESTIONS", "UAE_PROFILE", "ОАЭ", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p28_uae_suggestions")!;
+    const status = page.content.statusNote ?? "";
+    /*
+     * Статус говорит о панели, заголовок — о собранном наборе (решение
+     * владельца 31.08.2026): лист называется выводом, а вывод о подсказках
+     * делается о том, что показывает поисковик, а не о том, что влезло на
+     * картинку. Спора между ними нет: одно предложение прямо объясняет другое.
+     */
+    expect(status).toContain("Среди показанных строк негативных формулировок нет");
+    expect(page.title).toContain("1 негативная формулировка");
+    expect(String(page.content.whatWasFound ?? "")).toContain("в собранном наборе — 1");
+    expect(status).not.toContain("1 негативный заголовок");
+  });
+
+  it("негатив на панели — статус называет его числом с панели", () => {
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "SUBJECT_MATCH" },
+    ]);
+    const extras = extrasWithPanel(
+      "p28_uae_suggestions",
+      [{ i: 0, adverse: true }, { i: 1 }],
+      titles
+    );
+    const { slides } = buildSuggestionsFragment("UAE_SUGGESTIONS", "UAE_PROFILE", "ОАЭ", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p28_uae_suggestions")!;
+    expect(page.content.statusNote).toContain("1 подсказка с негативной формулировкой");
+    expect(page.title).toContain("1 негативная формулировка");
+  });
+});

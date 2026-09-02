@@ -16,6 +16,9 @@ except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
 from .common import (
+    TYPE_SCALE_PT,
+    FS_LEAD,
+    FS_SUBTITLE,
     ACCENT,
     ACCENT_SOFT,
     BODY_COLOR,
@@ -30,6 +33,7 @@ from .common import (
     FS_CAPTION,
     GOOD_BG,
     MARGIN_X,
+    METRIC_ACCENT,
     MUTED_COLOR,
     NAVY,
     RISK_BG,
@@ -47,10 +51,33 @@ from .common import (
     _fit_text_to_height,
     _resolve_image_bytes,
     _safe,
+    _wrapped_line_count,
     measure_text_height,
     plural_ru,
+    record_bullet_measure,
     record_text_layout,
 )
+from .layout_cleeq import level_step
+
+#: Поля ячейки python-pptx: по 0.1″ с каждой стороны. Перенос случается по
+#: полезной ширине, а не по ширине колонки.
+CELL_MARGINS_EMU = 2 * 91_440
+
+#: Кегль бейджа статуса — на полступени крупнее подписи; тем же и меряется.
+BADGE_PT = 9.5
+
+#: Суффикс ключа страницы у мерной записи таблицы.
+#:
+#: Мера таблицы и мера пути буллетов лежат в одном списке вердикта, и ключом в
+#: нём служит ключ страницы. Без суффикса перекладка буллетов нашла бы запись
+#: таблицы по имени страницы и прочитала бы числа про строки таблицы как числа
+#: про блоки списка. Суффикс разводит два вопроса, не трогая ни форму записи,
+#: ни версию вердикта (`orion-bullet-measure-v1`): рендерер прошлой версии
+#: просто не пишет этих строк, и приложение остаётся с раскладкой сида.
+#:
+#: Знака «#» в ключах страниц деки нет, поэтому с настоящим ключом суффикс
+#: столкнуться не может.
+TABLE_MEASURE_KEY_SUFFIX = "#table"
 
 try:
     from client_text_contract import sidebar_check_failures
@@ -104,6 +131,68 @@ def _sidebar_sanitize_field(ctx: _Ctx, field: str, text: str) -> str:
     return SIDEBAR_SAFE_FALLBACK
 
 
+def _sidebar_loss(
+    ctx: _Ctx,
+    field: str,
+    kind: str,
+    avail: int,
+    needed: int,
+    size: float,
+    w: int,
+    lost: str,
+) -> None:
+    """Потеря текста на панели — вслух: предупреждением и записью разметки.
+
+    Обе ветки укладки панели молчали. Необязательный блок, у которого не влезло
+    даже первое предложение, выбрасывался целиком, а блок, из которого осталась
+    часть предложений, укорачивался — и ни то ни другое не оставляло следа: на
+    прогоне 91 (стр. 46) страница подсказок не напечатала «Что сделать» и вывод
+    о собранном наборе, а в `layout-telemetry.json` не было ни одной записи об
+    этой странице при 62 записях по деке.
+
+    Выброс целого блока и обрезка хвоста — разные исходы, и объявляются они
+    по-разному. Выброшенный блок ставит `dropped_lines=1`, то есть поднимает
+    `CONTENT_DROPPED_BY_RENDERER` — блокер выдачи: страница, на которой клиент
+    видит риск и не видит, что с ним делать, до него не уезжает. Обрезка
+    остаётся клипом, то есть предупреждением на живом пути: часть предложений
+    напечатана, а `clipped` на текстовых путях к тому же остаётся предсказанием
+    консервативной меры (запас ×1,18), и блокировка по нему останавливала бы
+    здоровые прогоны.
+
+    Прежняя редакция не трогала `dropped_*` вовсе, и решение было обратным —
+    оно принималось, когда блок выбрасывался снизу, то есть по случайности
+    порядка отрисовки. Теперь снизу уступает менее важный блок, а бюджет
+    колонки объявлен построителем (`SIDEBAR_COLUMN_CHAR_BUDGET`): на обоих
+    известных корпусах записей «выброшен» ноль, и цена блокера — ноль
+    остановленных прогонов.
+
+    `text_length` меряет **потерянное**, а не весь блок: на обрезке часть
+    предложений напечатана, и запись про «700 знаков» там, где до клиента не
+    доехало 300, врёт оператору в ту же сторону, что и молчание.
+    """
+    ctx.warnings.append(f"sidebar-qa:p{ctx.page}:{field}:{kind}")
+    record_text_layout(
+        page=ctx.page,
+        name=f"orion_sidebar_{field}_p{ctx.page}",
+        role="sidebar",
+        font_family=FONT,
+        font_size_pt=size,
+        box_width=w,
+        box_height=max(0, avail),
+        available_height=max(0, avail),
+        required_height=needed,
+        measured_lines=0,
+        text_length=len(lost),
+        clipped=True,
+        # Блокером выдачи становится выброс **содержательного** блока: правило
+        # заводилось про страницу, где клиент видит риск и не видит, что с ним
+        # делать. Подпись источников под это не подпадает — это мелкая строка
+        # происхождения в запасной полосе, и её невлезание остаётся клипом,
+        # то есть предупреждением оператору, а не отказом отдать отчёт.
+        dropped_lines=1 if kind == "dropped" and field != "provenanceLabel" else 0,
+    )
+
+
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
     """Unified client sidebar panel (v57): one column, no stacked framed cards."""
     analysis = slide.get("visualAnalysis") or {}
@@ -118,7 +207,12 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     if not isinstance(explanations, list):
         explanations = []
     actions = analysis.get("recommendedActions") or []
-    action = _safe(actions[0]) if isinstance(actions, list) and actions else ""
+    # Рисуются **все** рекомендации, а не первая: остальные молча пропадали, а
+    # ворот приёмки проверяет каждую — на нагрузке с двумя рекомендациями он
+    # краснел бы на ветке рендерера, а не на дефекте.
+    action = (
+        " ".join(x for x in (_safe(a) for a in actions) if x) if isinstance(actions, list) else ""
+    )
     provenance = _safe(analysis.get("provenanceLabel") or "")
     more_n = int(analysis.get("moreSignalsCount") or 0)
 
@@ -155,6 +249,24 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     max_bottom = min(y + h, CONTENT_BOTTOM) - pad
     ctx.card(y, h=min(h, max_bottom - y + pad), x=x, w=w, fill=CARD_BG)
 
+    # Пол под «Что сделать»: место для рекомендации держится заранее, и
+    # вычитается оно из всех блоков, кроме неё самой.
+    #
+    # Это ответ не на вопрос «сколько влезает» — на него отвечает объявленная
+    # ёмкость колонки в построителе, — а на другой: **кто уступает место,
+    # когда его не хватает**. Раньше уступал тот, кто ниже, то есть сама
+    # рекомендация: на семи страницах живого прогона клиент видел риск и не
+    # видел, что с ним делать. Теперь уступает тот, кто менее важен.
+    #
+    # После объявленного бюджета колонки пол почти никогда не срабатывает — он
+    # и не редактор, а страховка от того, что оценка «знаки → EMU» промахнётся
+    # на латинице или на адресах.
+    action_reserve = (
+        measure_text_height(action, w - 2 * pad, 11, line_spacing=1.2) + 200_000 + gap
+        if action
+        else 0
+    )
+
     def write_block(
         title: str | None,
         body: str,
@@ -171,10 +283,14 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         # Prefer complete text; do not ellipsis-clip sidebar
         fitted = body
         needed = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
-        avail = max_bottom - cy - 160_000 - title_h
+        # Вывод места рекомендации не уступает: он выше её в объявленном
+        # порядке важности, и страница без вывода не читается вовсе.
+        reserve = 0 if required or field == "recommendedActions" else action_reserve
+        avail = max_bottom - cy - 160_000 - title_h - reserve
         # PDF-36 D.3 — shrink the font 1–1.5 pt before dropping sentences.
         if needed > avail:
-            for candidate in (size - 1, size - 1.5):
+            # Только ступени шкалы: «минус полтора пункта» её нарушало.
+            for candidate in [x for x in reversed(TYPE_SCALE_PT) if x < size]:
                 if candidate < 9.5:
                     break
                 cand_h = measure_text_height(fitted, w - 2 * pad, candidate, line_spacing=1.2)
@@ -201,9 +317,14 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
                     )
                     fitted = SIDEBAR_SAFE_FALLBACK
                 else:
+                    _sidebar_loss(ctx, field, "dropped", avail, needed, size, w, body)
                     return
             else:
-                fitted = " ".join(kept)
+                kept_text = " ".join(kept)
+                _sidebar_loss(
+                    ctx, field, "truncated", avail, needed, size, w, body[len(kept_text) :]
+                )
+                fitted = kept_text
         if title:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(220_000))
             tf = box.text_frame
@@ -213,7 +334,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r.text = title
             r.font.name = FONT
             r.font.bold = bold_title
-            r.font.size = Pt(10.5)
+            r.font.size = Pt(FS_BODY)
             r.font.color.rgb = NAVY
             cy += 200_000
         bh = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
@@ -228,7 +349,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         r.font.color.rgb = BODY_COLOR
         cy += bh + gap
 
-    write_block(None, headline, field="headlineConclusion", size=12, required=True)
+    write_block(None, headline, field="headlineConclusion", size=FS_BODY, required=True)
     write_block(mid_title, mid_body, field="whatIsVisible", size=11)
     if meaning and meaning != mid_body and meaning != headline:
         write_block("Что это значит", meaning, field="clientMeaning", size=11)
@@ -236,6 +357,20 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         write_block("Что сделать", action, field="recommendedActions", size=11)
     if provenance:
         # Fine print, no frame
+        if cy >= max_bottom - 80_000:
+            # Ветка достижима только когда обязательный вывод не поместился и
+            # заменён запасной фразой: у прочих блоков в запасе остаётся
+            # 160 000 EMU, и подпись после них влезает всегда.
+            _sidebar_loss(
+                ctx,
+                "provenanceLabel",
+                "dropped",
+                max_bottom - cy,
+                measure_text_height(provenance, w - 2 * pad, FS_CAPTION, line_spacing=1.2),
+                FS_CAPTION,
+                w,
+                provenance,
+            )
         if cy < max_bottom - 80_000:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(min(cy, max_bottom - 120_000)), Emu(w - 2 * pad), Emu(140_000))
             tf = box.text_frame
@@ -244,23 +379,53 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r = p.add_run()
             r.text = provenance
             r.font.name = FONT
-            r.font.size = Pt(8.5)
+            r.font.size = Pt(FS_CAPTION)
             r.font.color.rgb = MUTED_COLOR
 
 
 
 def _tone_fill(tone: str) -> RGBColor:
-    return {"risk": RISK_BG, "warn": WARN_BG, "good": GOOD_BG, "accent": ACCENT_SOFT}.get(tone, CARD_BG)
+    """Подложка карточки по тону.
+
+    Словарей тонов в проекте два, и это осознанно: плитки метрик говорят
+    `risk|warn|good|accent`, а клиентская шкала риска — `danger|warn|neutral`
+    (`orion-golden/client/risk-scale.ts`). Знать надо оба: `danger` был
+    рендереру неизвестен и красился дефолтом, то есть **белым**, — и карточка
+    «Высокий» выходила единственной без тревожного фона, при пяти красных
+    делениях шкалы (пункт BX бэклога).
+
+    `neutral` красится белым намеренно: нижняя ступень тревоги не несёт.
+    """
+    return {
+        "risk": RISK_BG,
+        "danger": RISK_BG,
+        "warn": WARN_BG,
+        "good": GOOD_BG,
+        "accent": ACCENT_SOFT,
+        "neutral": CARD_BG,
+    }.get(tone, CARD_BG)
 
 
 def _tone_value_color(tone: str) -> RGBColor:
-    return {"risk": TONE_RISK, "warn": TONE_WARN, "good": TONE_GOOD}.get(tone, NAVY)
+    # Нейтральная метрика окрашена брендовым зелёным: цифра — то, ради чего
+    # плитку смотрят, и она обязана быть заметнее подписи под ней.
+    return {
+        "risk": TONE_RISK,
+        "warn": TONE_WARN,
+        "good": TONE_GOOD,
+        "neutral": METRIC_ACCENT,
+    }.get(tone, METRIC_ACCENT)
 
 
 def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, width: int, cols: int = 2) -> int:
     items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))][:6]
     if not items:
         return y
+    # Геометрия плитки осталась прежней намеренно. В cleeq-варианте плитка выше
+    # (900 000) и с большим зазором (100 000); замер показал цену: на стр.30
+    # рендерер выбросил две строки (1 494 449 при 1 294 368), потому что ёмкость
+    # страницы в строках объявлена в TS-шаблоне и откалибрована по нынешней
+    # высоте обвязки. Воздух вокруг цифр не стоит потерянного содержимого.
     gap = 80_000
     card_w = (width - gap * (cols - 1)) // cols
     card_h = 780_000
@@ -274,16 +439,21 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         # Keep room for Russian status phrases like «Данные не собраны» / «0 / 10».
         value = _clip_words(_safe(m.get("value")), 36)
         label = _clip_words(_safe(m.get("label")), 28)
-        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone), border=None)
-        # Tone stripe on the left edge (design v2) — reads at a glance.
+        # Белая плитка на мятном листе + скруглённая полоса тона: плитка
+        # читается как отдельная плоскость, а не как заливка тоном.
+        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=WHITE, border=None, radius=0.1)
         stripe = ctx.slide.shapes.add_shape(
-            5, Emu(cx + 45_000), Emu(row_y + 120_000), Emu(45_000), Emu(card_h - 240_000)
+            5, Emu(cx + 55_000), Emu(row_y + 120_000), Emu(60_000), Emu(card_h - 240_000)
         )
         stripe.fill.solid()
         stripe.fill.fore_color.rgb = _tone_value_color(tone)
         stripe.line.fill.background()
+        try:
+            stripe.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
         box = ctx.slide.shapes.add_textbox(
-            Emu(cx + 160_000), Emu(row_y + 100_000), Emu(card_w - 230_000), Emu(card_h - 180_000)
+            Emu(cx + 180_000), Emu(row_y + 100_000), Emu(card_w - 250_000), Emu(card_h - 180_000)
         )
         tf = box.text_frame
         tf.word_wrap = True
@@ -292,14 +462,14 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         r0.text = value
         r0.font.name = FONT
         r0.font.bold = True
-        r0.font.size = Pt(20 if len(value) <= 10 else 13 if len(value) <= 22 else 10)
+        r0.font.size = Pt(FS_LEAD if len(value) <= 10 else FS_SUBTITLE if len(value) <= 22 else FS_BODY)
         r0.font.color.rgb = _tone_value_color(tone)
         p1 = tf.add_paragraph()
         p1.space_before = Pt(5)
         r1 = p1.add_run()
         r1.text = label
         r1.font.name = FONT
-        r1.font.size = Pt(10.5)
+        r1.font.size = Pt(FS_BODY)
         r1.font.color.rgb = MUTED_COLOR
     rows = (len(items) + cols - 1) // cols
     return y + rows * card_h + max(0, rows - 1) * gap
@@ -319,7 +489,7 @@ def _render_status_badge(ctx: _Ctx, badge: dict[str, Any] | None, x: int, y: int
     r.text = _clip_words(_safe(badge.get("label")), 48)
     r.font.name = FONT
     r.font.bold = True
-    r.font.size = Pt(14)
+    r.font.size = Pt(FS_SUBTITLE)
     r.font.color.rgb = _tone_value_color(tone)
     return y + h
 
@@ -412,7 +582,7 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
             min_h=340_000,
             max_h=1_200_000,
             tone="accent",
-            body_size=12,
+            body_size=FS_BODY,
         )
         y += 110_000
     gap = 110_000
@@ -475,11 +645,19 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
         )
         y += 90_000
     if provenance and y < CONTENT_BOTTOM - 200_000:
-        ctx.body(provenance, y, max_h=300_000, color=MUTED_COLOR, font_size=8.5)
+        ctx.body(provenance, y, max_h=300_000, color=MUTED_COLOR, font_size=FS_CAPTION)
 
 
 def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
-    """Word-aware line estimate mirroring TS search-results-pagination.ts."""
+    """Грубая оценка числа строк с потолком `max_lines`.
+
+    Единственный потребитель — плашка темы в карточке матрицы рисков
+    (`executive.py`), где потолок и есть смысл: плашка не вправе расти выше
+    трёх строк. Высоты таблиц считает не она, а `_wrapped_line_count` — тем же
+    переносом и тем же шрифтом, которыми рисуют; здешняя модель занижала строку
+    (потолок «две строки» при 10 pt на ячейке, которую красят 9-м), и таблица
+    уезжала ниже поля при «чистой» объявленной геометрии.
+    """
     text = (text or "").strip()
     if not text:
         return 1
@@ -500,18 +678,72 @@ def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_line
     return min(lines, max_lines)
 
 
+#: Цвет точки по ступени: danger / warn / neutral клиентской шкалы.
+_STEP_DOT_COLORS = {
+    "high": RGBColor(0xB9, 0x1C, 0x1C),
+    "medium": RGBColor(0xC2, 0x41, 0x0C),
+    "low": RGBColor(0x64, 0x74, 0x8B),
+}
+
+
 def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     s = (status or "").strip().lower()
     # C.4 — negative/sanction values must never carry a green marker.
     if "нежелат" in s or "негатив" in s or "санкц" in s or "критич" in s:
         return "●", RGBColor(0xB9, 0x1C, 0x1C)
     # LIKELY_SUBJECT (§2.1) and manual-review statuses — amber, not green.
-    if "вероятн" in s or "проверк" in s or "требует" in s or "pep" in s:
+    # «Не подтверждено», «статус не зафиксирован», «Не проверено» — незакрытый
+    # вопрос, а не риск и не «всё в порядке»: янтарный. Проверяется до ветки
+    # «подтверждено» ниже, иначе отрицание попало бы в неё по подстроке.
+    #
+    # «Не проверено» — оценка строки выдачи, чью страницу не открывали. Без
+    # своей ветки она красилась серым — тем же цветом, что «Нейтральный», и
+    # разница между «проверили, чисто» и «не заходили» пропадала на листе.
+    if (
+        "вероятн" in s
+        or "проверк" in s
+        or "не провер" in s
+        or "требует" in s
+        or "pep" in s
+        or "не подтвержд" in s
+        or "не зафиксирован" in s
+    ):
         return "●", RGBColor(0xC2, 0x41, 0x0C)
+    # Подтверждённое аналитиком совпадение — подтверждённый комплаенс-риск.
+    # Зелёная точка здесь читалась бы как одобрение (то же правило, что для
+    # «санкц»), а незнакомое слово в этой функции зелёное по умолчанию.
+    if "подтвержд" in s:
+        return "●", RGBColor(0xB9, 0x1C, 0x1C)
+    # Материал о другом лице занимает своё место в выдаче, но оценкой субъекта
+    # не является: полый маркер и серый цвет отличают его и от негатива, и от
+    # зелёного «всё в порядке». Зелёный здесь читался бы как одобрение
+    # однофамильца.
+    if "друго" in s:
+        return "○", RGBColor(0x94, 0xA3, 0xB8)
+    # Слова клиентской шкалы. Ступень узнаёт то же место, что и шкала делений,
+    # — второго словаря ступеней в рендерере нет.
+    step = level_step(s)
+    if step:
+        return "●", _STEP_DOT_COLORS[step]
+    # Зелёный достаётся по имени. Единственный его владелец — «Позитивный»:
+    # так называется маркер в легенде таблицы. Пока зелёный был умолчанием,
+    # легенда обещала маркер, которого эта функция не знала вовсе.
+    if "позитив" in s:
+        return "●", RGBColor(0x04, 0x78, 0x57)
     # E.6 — neutral verdicts read gray, green stays for explicit positives.
     if "нейтрал" in s or s in {"·", "—", "-", ""}:
         return "●", RGBColor(0x64, 0x74, 0x8B)
-    return "●", RGBColor(0x04, 0x78, 0x57)
+    # Незнакомый статус — серый, а не зелёный.
+    #
+    # Зелёный был умолчанием, и любое слово, которого функция не знает, читалось
+    # в отчёте для банка как «всё в порядке». Опасность была записана в
+    # комментариях дважды и один раз уже стоила ветки: «Подтверждено
+    # аналитиком» красилось зелёным, пока для него не завели своё правило.
+    #
+    # Замер на живом прогоне 22.08: все шесть встреченных значений попадают в
+    # названные ветки — то есть зелёный достижим только незнакомым словом.
+    # Неизвестность не благополучие (пункт V).
+    return "●", RGBColor(0x64, 0x74, 0x8B)
 
 
 def _add_search_table(
@@ -520,11 +752,32 @@ def _add_search_table(
     headers: list[str],
     rows: list[list[str]],
     groups: list[dict[str, Any]] | None = None,
+    *,
+    bottom: int | None = None,
+    declared_top: int | None = None,
 ) -> None:
     """
     Grouped SERP position table. Renders EVERY row the slide carries (no cap) —
     TS pagination already guaranteed geometric fit. Query is shown as a compact
     group-header band (spec §4), status as a colored badge (spec §5).
+
+    Полосы адреса под строкой больше нет: адрес вернулся в колонку «Ссылка», и
+    печатать его вторым способом значило бы печатать один факт дважды. Ветка
+    полосы снята вместе с параметром `row_addresses` — её единственным входом
+    были страницы выдачи, а они теперь пятиколоночные с адресом в ячейке.
+    Оставить её «на всякий случай» — завести мёртвый путь, который следующий
+    читатель примет за живой.
+
+    `bottom` — низ бюджета страницы (низ белой сцены). Превышение пишется
+    событием разметки уровня CRITICAL: таблица, нарисованная ниже поля, — это
+    та же тихая потеря содержимого, что и невлезший буллет.
+
+    `declared_top` — **объявленный** верх таблицы, от которого считается бюджет
+    меры. Он не равен `y`: фактический верх зависит от длины вводного абзаца, а
+    его переписывает стадия 2 уже **после** того, как мера снята. Ёмкость,
+    выведенная из факта, была бы верна для черновика и завышена для готовой
+    страницы — то есть таблица уехала бы мимо поля. Верх не объявлен (или не
+    объявлен низ) — меры нет вовсе, и построитель остаётся с раскладкой сида.
     """
     # Body layout is 4 cols: Позиция | Домен | Заголовок | Статус.
     # If TS sends a leading «Запрос» column, drop it — query lives in group bands.
@@ -533,7 +786,7 @@ def _add_search_table(
     if len(hdr) >= 5 and re.search(r"запрос|query", hdr[0], re.I):
         hdr = hdr[1:]
         data_rows = [r[1:] if len(r) > 1 else r for r in data_rows]
-    cols = max(1, min(4, len(hdr)))
+    cols = max(1, min(5, len(hdr)))
     headers = hdr
     groups = groups or []
 
@@ -553,25 +806,130 @@ def _add_search_table(
         for r in data_rows:
             plan.append(("data", r))
 
-    # Column widths (Позиция | Домен | Заголовок | Статус) — spec §4 proportions.
-    # Two-column tables (Параметр | Значение) need a readable label column, and
-    # a textual first column (e.g. «База данных») needs more than the numeric
-    # position width.
+    # Ширины колонок выбираются по смыслу заголовков, а не по их длине.
+    # Прежний признак `len(headers[0]) > 3` был прокси вопроса «первая колонка
+    # номерная?», и прокси ошибался в обе стороны: «Тема» (4 буквы) уходила в
+    # номерную ветку и получала 14 % ширины при двух счётчиках на 86 %, а
+    # «Поз.» — в текстовую и получала 14 % под двузначное число.
     if cols == 2:
         prop = [0.24, 0.76]
-    elif headers and len(str(headers[0]).strip()) > 3:
-        prop = [0.14, 0.26, 0.42, 0.18][:cols]
-    else:
+    elif cols == 5 and re.search(r"^\s*№", str(headers[0])):
+        # Первая таблица выдачи: № | Ссылка | Заголовок | Тип источника | Оценка.
+        #
+        # Признак ветки — колонка «№», и он выбран не случайно: **у второй
+        # таблицы выдачи колонки позиции нет вовсе**, это решение владельца и
+        # оно закреплено юнитом. Значит признак не сломается от переименования
+        # любой другой колонки — в отличие от признака по «Найдено по запросу»,
+        # который жил бы ровно до первой правки формулировки.
+        #
+        # Прежние доли `[0.05, 0.22, 0.44, 0.15, 0.14]` — те самые, при которых
+        # адрес не открывался: 22 % это 229 px полезных, куда входит 62 знака.
+        # Новые померены `_wrapped_line_count` на корпусе прогона 72 и на
+        # предельных значениях построителя, а не подобраны:
+        #
+        #   0.05 «№»            — двузначное число;
+        #   0.34 «Ссылка»       — 328 px полезных: адрес корпуса ложится в
+        #                         1…3 строки у 45 строк из 46, предел 165
+        #                         знаков самым широким знаком — 7 строк, из
+        #                         которых и выведена ёмкость листа;
+        #   0.27 «Заголовок»    — 257 px: предел 95 знаков не больше 5 строк;
+        #   0.20 «Тип источника» — 186 px: «Официальный сайт / госресурс» в одну
+        #                         строку (0.18 даёт две);
+        #   0.14 «Оценка»       — 125 px: «● Нежелательный» в одну строку (0.13
+        #                         даёт две).
+        prop = [0.05, 0.34, 0.27, 0.20, 0.14]
+    elif cols == 5:
+        # Вторая таблица выдачи: Ссылка | Заголовок | Найдено по запросу | Тип
+        # источника | Оценка. Номера строк здесь нет.
+        #
+        # Доли **уравнивают три широкие колонки**: при пределах построителей
+        # (`SERP_ADDRESS_MAX_CHARS` 165, `SERP_TITLE_MAX_CHARS` 95,
+        # `SERP_FOUND_BY_MAX_CHARS` 80 — все три режут в самом построителе) и
+        # самом широком знаке 9 pt каждая из них даёт ровно семь нарисованных
+        # строк, то есть худшая законная строка второй таблицы равна худшей
+        # строке первой и ёмкость листа у обеих одна.
+        #
+        #   0.30 «Ссылка»            — 287 px полезных: тот же предел адреса 165
+        #                              знаков, что и у первой таблицы (он один на
+        #                              обе и берётся по этой, узкой, колонке);
+        #   0.20 «Заголовок»         — 186 px: 95 знаков в 7 строк;
+        #   0.16 «Найдено по запросу» — 145 px: 80 знаков в 7 строк;
+        #   0.20 «Тип источника»     — 186 px: «Официальный сайт / госресурс» в одну;
+        #   0.14 «Оценка»            — 125 px: «● Нежелательный» в одну.
+        #
+        # Замер отвергает доли `[0.30, 0.22, 0.14, 0.20, 0.14]`: при 0.14 запрос
+        # предельной длины даёт **восемь** строк (1 173 480 EMU), ёмкость падает
+        # до 2, и число листов второй таблицы удваивается.
+        prop = [0.30, 0.20, 0.16, 0.20, 0.14]
+    elif cols == 3:
+        # Текст плюс счётчики («Тема | Публикаций | Из них нежелательных»):
+        # ведёт текстовая колонка. 0.60 держит тему предельной длины (120
+        # символов, 868 px при 10pt) в двух строках, 0.20 вмещает самый длинный
+        # заголовок счётчика в одну.
+        prop = [0.60, 0.20, 0.20]
+    elif cols == 4 and re.search(r"баз[аы]\s+данных", str(headers[0]), re.I):
+        # Комплаенс-сводка: «База данных | Тип совпадения | Совпадение по имени
+        # | Статус проверки». Общая четырёхколоночная ветка отдавала 42 %
+        # ширины третьей колонке и 18 % статусу, где стоит самая длинная
+        # законная строка отчёта — «Не подтверждено (статус в артефактах
+        # прогона не зафиксирован)»: она не влезала в две строки, LibreOffice
+        # тянул строку по содержимому и таблица уезжала вниз. Доли выверены
+        # настоящими метриками шрифта, а не моделью `_title_line_estimate`
+        # (у той потолок — две строки, и на длинной ячейке она молчит).
+        #
+        # Ветка узнаётся по первой колонке, а не по словам третьей: третья
+        # печатала «Оценку совпадения», теперь печатает имя записи, и признак,
+        # завязанный на неё, молча отправил бы таблицу в общую ветку —
+        # заголовки прежние, ширины чужие. Имени нужна ширина под трёхчастное
+        # ФИО заглавными («КИРИЛЛ СЕРГЕЕВИЧ КУЛЕБАКИН») в одну строку.
+        prop = [0.14, 0.26, 0.26, 0.34]
+    elif headers and re.search(r"^\s*(№|поз)", str(headers[0]), re.I):
         prop = [0.07, 0.22, 0.53, 0.18][:cols]
+    else:
+        prop = [0.14, 0.26, 0.42, 0.18][:cols]
     widths = [max(500_000, int(CONTENT_W * p)) for p in prop]
     leftover = CONTENT_W - sum(widths)
     if leftover != 0 and widths:
         widths[2 if cols > 2 else len(widths) - 1] += leftover
-    title_col_w = widths[2] if cols > 2 else widths[-1]
+
+    # C.4 — the colored status badge belongs only to a genuine status column;
+    # generic value columns («Значение», «Комментарий») stay plain text so
+    # negative categories never receive a misleading green marker.
+    last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
+    # E.6 — «Оценка» is the SERP verdict column and must carry the badge too.
+    badge_last_col = bool(re.search(r"статус|риск|провер|оценк", last_header, re.I))
+
+    def _is_badge(col: int) -> bool:
+        return col == cols - 1 and badge_last_col
+
+    def _cell_font_pt(col: int) -> float:
+        """Кегль ячейки — тот, которым её и красят: у бейджа он свой."""
+        return BADGE_PT if _is_badge(col) else float(FS_CAPTION)
+
+    def _painted(col: int, value: str) -> str:
+        """Текст ячейки в том виде, в каком он будет нарисован.
+
+        У бейджа впереди точка и пробел — два знака, которых мера не видела.
+        Щель та же, что была у кегля: меряем одно, рисуем другое.
+        """
+        return f"{_status_tone(value)[0]} {value}" if _is_badge(col) else value
+
+    def _cell_height(text: str, width_emu: int, pt: float) -> int:
+        """Сколько займёт ячейка: настоящий перенос по полезной ширине."""
+        lines = _wrapped_line_count(text, max(1, width_emu - CELL_MARGINS_EMU), pt)
+        return lines * int(pt * EMU_PER_PT * 1.2)
 
     # Per-row heights.
-    body_pt = 10.0
-    line_h = int(body_pt * EMU_PER_PT * 1.2)
+    #
+    # Высота считается тем же переносом и тем же шрифтом, которыми ячейку
+    # рисуют (`_wrapped_line_count`), и **тем кеглем, которым она красится**.
+    # Прежде здесь стояла своя модель с потолком в две строки при 10 pt, а
+    # красили при 9: строка в три нарисованных строки объявлялась двумя,
+    # LibreOffice тянул её по содержимому, таблица уезжала вниз — и объявленная
+    # геометрия при этом оставалась «чистой».
+    #
+    # Поля ячейки python-pptx (0.1″ с каждой стороны) вычитаются: перенос
+    # случается по полезной ширине, а не по ширине колонки.
     pad = int(6 * EMU_PER_PT)
     header_h = int(26 * EMU_PER_PT)
     group_h = int(18 * EMU_PER_PT)
@@ -582,11 +940,68 @@ def _add_search_table(
         elif kind == "group":
             heights.append(group_h)
         else:
-            lines = _title_line_estimate(str(payload[2]) if len(payload) > 2 else "", title_col_w, body_pt)
-            heights.append(lines * line_h + pad)
+            # Высота строки — по самой высокой ячейке, по всем колонкам сразу.
+            # Списка «измеряемых колонок» здесь нет намеренно: он расходился с
+            # пропорциями (мерили колонку 2 — а текст жил в колонке 0) и строка
+            # объявлялась в разы ниже своего содержимого.
+            heights.append(
+                max(
+                    _cell_height(
+                        _painted(c, str(payload[c]) if c < len(payload) else ""),
+                        widths[c],
+                        _cell_font_pt(c),
+                    )
+                    for c in range(cols)
+                )
+                + pad
+            )
 
     table_rows = len(plan)
     table_h = sum(heights)
+    # Бюджет листа — низ белой сцены, а не низ слайда.
+    #
+    # Прежде отрисовщик бюджета не знал вовсе: `slides.py` звал `content_stage`
+    # и выбрасывал возвращаемое значение, а таблица рисовала ту высоту, которая
+    # получилась. Нарисованное мимо страницы — та же тихая потеря содержимого,
+    # что и невлезший буллет, поэтому превышение объявляется событием CRITICAL
+    # (`TABLE_ROW_PARTIALLY_VISIBLE`), а не остаётся молча на растре.
+    # Мера таблицы пишется **всегда**, а не только при переполнении: раскрой по
+    # ней получают и листы, которые влезли, — иначе построитель не знает,
+    # сколько на них осталось места, и режет по худшему законному случаю. До
+    # этой записи о таблицах не сообщалось ничего: в телеметрии прогона 91 было
+    # 62 записи при 39 листах с таблицами и ни одной с ролью «table».
+    #
+    # Потерей вердикта переполнение таблицы **не** объявляется. Строки таблицы
+    # циклу перекладки буллетов не подвластны: увидев `droppedLines > 0` на
+    # странице, которую он двинуть не может, цикл объявил бы несходимость и
+    # остановил бы оплаченный прогон из-за одной высокой строки. О переполнении
+    # говорит запись разметки ниже — она и есть громкое событие.
+    if bottom is not None and declared_top is not None:
+        record_bullet_measure(
+            slide_key=f"{ctx.slide_key}{TABLE_MEASURE_KEY_SUFFIX}",
+            page=ctx.page,
+            available_height=max(0, bottom - declared_top),
+            max_items=len(plan),
+            item_heights=heights,
+            kept_items=len(plan),
+            dropped_bullets=0,
+            dropped_lines=0,
+        )
+    if bottom is not None and y + table_h > bottom:
+        record_text_layout(
+            page=ctx.page,
+            name=f"orion_search_table_p{ctx.page}",
+            role="table",
+            font_family=FONT,
+            font_size_pt=FS_CAPTION,
+            box_width=CONTENT_W,
+            box_height=table_h,
+            available_height=max(0, bottom - y),
+            required_height=table_h,
+            measured_lines=len(plan),
+            text_length=sum(len(str(payload)) for _kind, payload in plan),
+            clipped=True,
+        )
     shape = ctx.slide.shapes.add_table(table_rows, cols, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(table_h))
     tbl = shape.table
     for i, w in enumerate(widths):
@@ -594,7 +1009,7 @@ def _add_search_table(
     for i, h in enumerate(heights):
         tbl.rows[i].height = Emu(h)
 
-    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = 10.0, clip: bool = True) -> None:
+    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = FS_CAPTION, clip: bool = True) -> None:
         # Status badges ("● Нежелательный") are complete labels, not clipped
         # prose — the dangling-tail trimmer would strip the word after the dot.
         cell.text = _clip_words(text, 200) if clip else _safe(text)
@@ -609,28 +1024,32 @@ def _add_search_table(
         fill.solid()
         fill.fore_color.rgb = bg
 
-    # C.4 — the colored status badge belongs only to a genuine status column;
-    # generic value columns («Значение», «Комментарий») stay plain text so
-    # negative categories never receive a misleading green marker.
-    last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
-    # E.6 — «Оценка» is the SERP verdict column and must carry the badge too.
-    badge_last_col = bool(re.search(r"статус|риск|провер|оценк", last_header, re.I))
-
     for r_idx, (kind, payload) in enumerate(plan):
         if kind == "header":
             for c in range(cols):
                 label = str(payload[c]) if c < len(payload) else ""
-                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=10.0)
+                # Шапка таблицы — зелёная полоса cleeq. Текст на ней чернилами,
+                # а не белым: белое по #24D875 даёт контраст 1,8:1, то есть
+                # заголовок столбца пришлось бы угадывать.
+                paint(tbl.cell(r_idx, c), label, bold=True, color=NAVY, bg=ACCENT, size=FS_CAPTION)
         elif kind == "group":
             merged = tbl.cell(r_idx, 0)
             merged.merge(tbl.cell(r_idx, cols - 1))
-            paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=10.0)
+            paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=FS_CAPTION)
         else:
             row = payload
             status = str(row[cols - 1] if len(row) >= cols else "").strip()
             status_l = status.lower()
-            adverse = "нежелат" in status_l
-            likely = "вероятн" in status_l or "проверк" in status_l or "требует" in status_l
+            # Подсветка строки — от статусной колонки, и только от неё. В
+            # карточке записи последняя колонка называется «Значение», и по
+            # слову «требует» янтарь доставался строке «Категория: Требует
+            # ручной классификации» — то есть окрашивалась не та строка. Правило
+            # то же, что у бейджа ниже: обобщённая колонка значений статусом не
+            # является.
+            adverse = badge_last_col and "нежелат" in status_l
+            likely = badge_last_col and (
+                "вероятн" in status_l or "проверк" in status_l or "требует" in status_l
+            )
             if adverse:
                 row_bg = RGBColor(0xFE, 0xF2, 0xF2)
             elif likely:
@@ -641,8 +1060,8 @@ def _add_search_table(
                 val = str(row[c]) if c < len(row) else ""
                 if c == cols - 1 and badge_last_col:
                     dot, tone = _status_tone(val)
-                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5, clip=False)
+                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=BADGE_PT, clip=False)
                 else:
-                    paint(tbl.cell(r_idx, c), val, bg=row_bg, size=10.0)
+                    paint(tbl.cell(r_idx, c), val, bg=row_bg, size=FS_CAPTION)
 
 

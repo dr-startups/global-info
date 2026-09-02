@@ -13,24 +13,28 @@ import {
   isSuggestionsTargetedRetryState,
   shouldShowGeneralRecoveryCta,
 } from "./unified-suggestions-retry-ui";
+import { arsenkinProgressLine } from "./arsenkin-progress-line";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
-  if (!job) return "scheduled 0/5 · completed 0/5 · ingested 0/5";
+  const plannedAgents = job?.arsenkinPlannedAgents;
+  if (!job) return arsenkinProgressLine({ plannedAgents });
   const st = job.arsenkinEnrichmentState;
   if (st) {
-    const s = st.scheduledAgents?.length ?? 0;
-    const c = st.completedAgents?.length ?? 0;
-    const i = st.ingestedAgents?.length ?? 0;
-    const suffix = st.enrichmentComplete
-      ? "complete"
-      : st.pendingAgents?.length
-        ? "pending"
-        : "incomplete";
-    return `scheduled ${Math.min(5, s)}/5 · completed ${Math.min(5, c)}/5 · ingested ${Math.min(5, i)}/5 (${suffix})`;
+    return arsenkinProgressLine({
+      plannedAgents,
+      scheduledAgents: st.scheduledAgents,
+      completedAgents: st.completedAgents,
+      ingestedAgents: st.ingestedAgents,
+      pendingAgents: st.pendingAgents,
+      enrichmentComplete: st.enrichmentComplete,
+    });
   }
-  const n = job.enrichmentRunIds?.length ?? 0;
-  if (n > 0) return `scheduled ${Math.min(5, n)}/5 · completed 0/5 · ingested 0/5 (incomplete)`;
-  return "scheduled 0/5 · completed 0/5 · ingested 0/5";
+  // Состояния обогащения ещё нет: о постановке известно только по прогонам.
+  const scheduledAgents = job.enrichmentRunIds ?? [];
+  if (scheduledAgents.length > 0) {
+    return arsenkinProgressLine({ plannedAgents, scheduledAgents, enrichmentComplete: false });
+  }
+  return arsenkinProgressLine({ plannedAgents });
 }
 
 function isRenderRecovery(job: UnifiedCollectionJobStatus | null): boolean {
@@ -158,9 +162,11 @@ export function CaseHeader({
   onRetrySuggestions,
   onPaidRecollection,
   onRebuildReport,
+  onPauseRun,
   auditing,
   recovering,
   rebuilding,
+  pausing,
   unifiedJob,
 }: {
   caseDetail: CaseDetail;
@@ -170,9 +176,12 @@ export function CaseHeader({
   onPaidRecollection?: () => void;
   /** Re-run analytics/assembly/render from the persisted composite (no paid collection). */
   onRebuildReport?: () => void;
+  /** Пауза идущего прогона: собранное сохраняется (шаг 0027). */
+  onPauseRun?: () => void;
   auditing: boolean;
   recovering: boolean;
   rebuilding?: boolean;
+  pausing?: boolean;
   /** Current unified job (not legacy AgentRun). */
   unifiedJob: UnifiedCollectionJobStatus | null;
 }) {
@@ -293,6 +302,26 @@ export function CaseHeader({
               {unifiedJob.stage === "REPORT_READY" ||
               unifiedJob.stage === "COMPLETED_PARTIAL" ? (
                 <UnifiedCanonicalDownloadButtons caseId={caseDetail.id} job={unifiedJob} />
+              ) : null}
+              {/*
+                * Пауза стоит рядом с остальными действиями прогона, но не
+                * ждёт их: её нажимают именно на идущем сборе, когда все
+                * прочие кнопки заблокированы работой (шаг 0027).
+                */}
+              {can("agents.run") && unifiedJob.pauseAllowed && onPauseRun ? (
+                <div className="dp-inline" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="dp-btn"
+                    onClick={onPauseRun}
+                    disabled={Boolean(pausing)}
+                    title={t("unified.pauseHint")}
+                    data-testid="unified-pause-cta"
+                  >
+                    {pausing ? <span className="dp-spinner" /> : null}
+                    {pausing ? t("unified.pausing") : t("unified.pause")}
+                  </button>
+                </div>
               ) : null}
               {can("agents.run") && unifiedJob.rebuildAllowed && onRebuildReport ? (
                 <div className="dp-inline" style={{ marginTop: 8 }}>

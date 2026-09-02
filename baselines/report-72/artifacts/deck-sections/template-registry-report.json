@@ -1,6 +1,6 @@
 {
   "version": "deck-template-registry-report-v1",
-  "layoutVersion": "deck-templates-layout-v1",
+  "layoutVersion": "deck-templates-layout-v2",
   "templates": [
     {
       "templateId": "cover",
@@ -90,9 +90,9 @@
       },
       "budgets": {
         "narrativeChars": 600,
-        "itemChars": 80,
+        "itemChars": 320,
         "maxBulletsPerSlide": 0,
-        "maxTableRowsPerSlide": 10
+        "maxTableRowsPerSlide": 3
       },
       "pagination": "continuation",
       "staticBlocks": [
@@ -103,10 +103,10 @@
       ],
       "methodologyNote": null,
       "legend": [
-        "Критический",
         "Высокий",
         "Средний",
-        "Низкий"
+        "Низкий",
+        "Требует подтверждения"
       ]
     },
     {
@@ -121,17 +121,14 @@
         "blockGapPt": 10
       },
       "budgets": {
-        "narrativeChars": 500,
-        "itemChars": 360,
-        "maxBulletsPerSlide": 8,
+        "narrativeChars": 700,
+        "itemChars": 860,
+        "maxBulletsPerSlide": 2,
         "maxTableRowsPerSlide": 0
       },
       "pagination": "continuation",
       "staticBlocks": [
         "Обзор региона",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
@@ -150,15 +147,12 @@
       },
       "budgets": {
         "narrativeChars": 600,
-        "itemChars": 360,
+        "itemChars": 860,
         "maxBulletsPerSlide": 6,
         "maxTableRowsPerSlide": 0
       },
       "pagination": "continuation",
       "staticBlocks": [
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -179,21 +173,59 @@
         "narrativeChars": 600,
         "itemChars": 110,
         "maxBulletsPerSlide": 0,
-        "maxTableRowsPerSlide": 12
+        "maxTableRowsPerSlide": 3
       },
       "pagination": "continuation",
       "staticBlocks": [
         "Результаты поиска",
-        "Позиция",
-        "Домен",
+        "№",
+        "Ссылка",
         "Заголовок",
+        "Тип источника",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Полный адрес материала напечатан в колонке «Ссылка»; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно. «Не проверено» — страница материала не открывалась, и негативных признаков в заголовке нет.",
       "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
+        "О другом лице",
+        "Нежелательный",
+        "Вероятно",
+        "Не проверено",
+        "Нейтральный"
+      ]
+    },
+    {
+      "templateId": "serp-extra-queries",
+      "rendererTemplate": "orion_golden_search_table",
+      "grid": "table",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 110,
+        "maxBulletsPerSlide": 0,
+        "maxTableRowsPerSlide": 3
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Найдено по дополнительным запросам",
+        "Ссылка",
+        "Заголовок",
+        "Найдено по запросу",
+        "Тип источника",
+        "Оценка"
+      ],
+      "methodologyNote": "Строки этой таблицы найдены не по имени, а другими запросами прогона, и в таблице по имени их нет. Мест в выдаче здесь не показано: у второго запроса своя нумерация, и сопоставлять её с первой нельзя.",
+      "legend": [
+        "О другом лице",
+        "Нежелательный",
+        "Вероятно",
+        "Не проверено",
+        "Нейтральный"
       ]
     },
     {
@@ -216,9 +248,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Скриншот выдачи",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -244,9 +273,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Поисковые подсказки",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
@@ -272,9 +298,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -300,12 +323,35 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Википедия и панель знаний",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
+      "legend": null
+    },
+    {
+      "templateId": "wikipedia-check",
+      "rendererTemplate": "orion_golden_wikipedia_check",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 998,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Результат проверки",
+        "Строки выдачи",
+        "Что проверить"
+      ],
+      "methodologyNote": "Наличие статьи проверяется прямым запросом к официальному API Википедии в каждом языковом разделе; строки поисковой выдачи приводятся отдельно от результата проверки.",
       "legend": null
     },
     {
@@ -328,12 +374,9 @@
       "pagination": "continuation",
       "staticBlocks": [
         "AI-ответы поисковых систем",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
+      "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; иллюстрация панели, если она приведена, показывает только начало ответа. Интерпретация даётся отдельным блоком.",
       "legend": null
     },
     {
@@ -356,9 +399,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -388,6 +428,32 @@
         "Что это означает"
       ],
       "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+      "legend": null
+    },
+    {
+      "templateId": "persona-check",
+      "rendererTemplate": "orion_golden_no_data_compact",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 998,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "none",
+      "staticBlocks": [
+        "Кого проверяли",
+        "Что это означает",
+        "Что проверить"
+      ],
+      "methodologyNote": "Персону субъекта выбирает оператор до начала сбора по карточкам внешних источников; на этом листе напечатано принятое решение либо его отсутствие.",
       "legend": null
     },
     {
@@ -426,7 +492,7 @@
       "budgets": {
         "narrativeChars": 600,
         "itemChars": 400,
-        "maxBulletsPerSlide": 10,
+        "maxBulletsPerSlide": 3,
         "maxTableRowsPerSlide": 12
       },
       "pagination": "continuation",

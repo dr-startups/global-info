@@ -5,16 +5,16 @@
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { RawInventoryItem } from "../types";
 import type { SubjectFullNameRu, SubjectIdentityProfile } from "./subject-identity-profile";
+import { transliterateRuToLat } from "./transliterate-ru";
 import {
   isSelfConflictingNegativeSignal,
   ownNameTextOfVariants,
 } from "../analytics/subject-resolution-classifier";
+import { parseSubjectName } from "../../risk-classifier/entity-disambiguation";
 
 const INN_RE = /\b(?:инн[:\s]*)?(\d{12}|\d{10})\b/gi;
 const OGRNIP_RE = /\b(?:огрнип[:\s]*)?(\d{15})\b/gi;
 const OGRN_RE = /\b(?:огрн[:\s]*)?(\d{13})\b/gi;
-
-const RU_PATRONYMIC_SUFFIX = /(ович|евич|ич|овна|евна|ична)$/i;
 
 function normalizeSpace(s: string): string {
   return s.replace(/\s+/g, " ").trim();
@@ -24,77 +24,21 @@ function lower(s: string): string {
   return s.toLowerCase().replace(/ё/g, "е");
 }
 
-/** Parse RU FIO: "Фамилия Имя Отчество" or "Имя Фамилия". */
+/**
+ * Parse RU FIO in whichever order it was written.
+ *
+ * A thin wrapper on purpose: "where is the surname here" is answered once, by
+ * parseSubjectName. While this file had its own positional answer, the profile
+ * of a live run recorded lastName "Умар" for "Умар Назарович Кремлев".
+ */
 export function parseRuFullName(displayName: string): SubjectFullNameRu | undefined {
-  const parts = normalizeSpace(displayName).split(" ").filter(Boolean);
-  if (parts.length < 2) return undefined;
-
-  // Prefer "Last First Patronymic" when last token looks like patronymic
-  if (parts.length >= 3 && RU_PATRONYMIC_SUFFIX.test(parts[parts.length - 1]!)) {
-    return {
-      lastName: parts[0]!,
-      firstName: parts[1]!,
-      patronymic: parts.slice(2).join(" "),
-    };
-  }
-
-  // "First Last" western-ish order with 2 tokens
-  if (parts.length === 2) {
-    // Heuristic: if first token ends with -ов/-ев/-ин/-ский treat as last name first
-    if (/(ов|ев|ин|ын|ский|цкая|ова|ева|ина)$/i.test(parts[0]!)) {
-      return { lastName: parts[0]!, firstName: parts[1]! };
-    }
-    return { lastName: parts[1]!, firstName: parts[0]! };
-  }
-
-  // 3+ without clear patronymic: assume Last First Rest
+  const parsed = parseSubjectName(displayName);
+  if (!parsed.surname || !parsed.givenName) return undefined;
   return {
-    lastName: parts[0]!,
-    firstName: parts[1]!,
-    patronymic: parts.slice(2).join(" ") || undefined,
+    lastName: parsed.surname,
+    firstName: parsed.givenName,
+    patronymic: parsed.patronymic ?? undefined,
   };
-}
-
-function transliterateRuToLat(input: string): string {
-  const map: Record<string, string> = {
-    а: "a",
-    б: "b",
-    в: "v",
-    г: "g",
-    д: "d",
-    е: "e",
-    ё: "e",
-    ж: "zh",
-    з: "z",
-    и: "i",
-    й: "y",
-    к: "k",
-    л: "l",
-    м: "m",
-    н: "n",
-    о: "o",
-    п: "p",
-    р: "r",
-    с: "s",
-    т: "t",
-    у: "u",
-    ф: "f",
-    х: "kh",
-    ц: "ts",
-    ч: "ch",
-    ш: "sh",
-    щ: "shch",
-    ъ: "",
-    ы: "y",
-    ь: "",
-    э: "e",
-    ю: "yu",
-    я: "ya",
-  };
-  return lower(input)
-    .split("")
-    .map((ch) => map[ch] ?? ch)
-    .join("");
 }
 
 function uniq(values: string[]): string[] {

@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { claimNextStep, completeStep, releaseStepLease } from "./step-store";
+import { claimNextStep, completeStep, releaseStepLease, renewStepLease } from "./step-store";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
 export type StepHandler = (step: WorkflowStepRow) => Promise<StepOutcome>;
@@ -26,7 +26,12 @@ export interface StepRunnerDeps {
   onError?: (err: unknown, step: WorkflowStepRow | null) => void;
   /** Вызывается после записи исхода — точка сверки состояний. */
   onStepSettled?: (step: WorkflowStepRow) => Promise<void>;
+  /** Продление лизы работающего шага; подменяется в тестах. */
+  renewLease?: (stepId: string, ownerId: string, leaseMs: number) => Promise<boolean>;
 }
+
+/** Доля лизы, через которую она продлевается. Треть — запас на две осечки. */
+const LEASE_HEARTBEAT_FRACTION = 3;
 
 /**
  * Исполняет один готовый шаг, если такой есть.
@@ -57,6 +62,23 @@ export async function runOneStep(deps: StepRunnerDeps): Promise<boolean> {
     return true;
   }
 
+  /*
+   * Пока шаг работает, лиза продлевается.
+   *
+   * Лиза выдаётся на две минуты, а сборка отчёта идёт шесть: чтение ста
+   * двадцати страниц, разбор моделью, отрисовка. Без продления шаг посреди
+   * работы снова становился свободным, второй воркер брал его и собирал тот
+   * же отчёт параллельно — на живом прогоне чтение ссылок отработало дважды с
+   * промежутком ровно в лизу.
+   */
+  const leaseMs = deps.leaseMs ?? 90_000;
+  const renew = deps.renewLease ?? renewStepLease;
+  const heartbeat = setInterval(() => {
+    void renew(step.id, ownerId, leaseMs).catch((err) => deps.onError?.(err, step));
+  }, Math.max(5_000, Math.floor(leaseMs / LEASE_HEARTBEAT_FRACTION)));
+  // Продление не должно держать процесс живым при остановке контейнера.
+  (heartbeat as unknown as { unref?: () => void }).unref?.();
+
   let outcome: StepOutcome;
   try {
     outcome = await handler(step);
@@ -68,6 +90,8 @@ export async function runOneStep(deps: StepRunnerDeps): Promise<boolean> {
         ? String((err as { code?: unknown }).code)
         : "STEP_THREW";
     outcome = { kind: "failed", code, message: message.slice(0, 500), retryable: true };
+  } finally {
+    clearInterval(heartbeat);
   }
 
   try {

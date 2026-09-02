@@ -12,6 +12,7 @@
  * расхождениями между этими представлениями.
  */
 
+import { MAX_ENRICHMENT_WAIT_MS } from "../services/arsenkin-poll-budget";
 import {
   RUNNABLE_STEP_STATES,
   type StepDefinition,
@@ -50,7 +51,9 @@ export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
     maxAttempts: 10,
     // Совпадает с потолком ожидания обогащения в `arsenkin-poll-budget`:
     // два разных предела на одно и то же ожидание противоречили бы друг другу.
-    maxWaitMs: 4 * 60 * 60_000,
+    // Число здесь дублируется намеренно — расхождение ловит тест бюджетов, и
+    // оно уже поймалось при снижении потолка с четырёх часов до часа.
+    maxWaitMs: MAX_ENRICHMENT_WAIT_MS,
   },
   {
     name: "COMPOSITE_MERGE",
@@ -67,6 +70,21 @@ export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
     maxWaitMs: 60 * 60_000,
   },
 ] as const;
+
+/**
+ * Стадии, которые живут **внутри** шага: своего места в конвейере у них нет.
+ *
+ * `CLIENT_CONTENT` — вторая стадия шага подготовки отчёта, поэтому её позиция
+ * та же, что у шага со стадией `ORION_PREPARE`. Связь объявлена здесь, рядом с
+ * реестром, а не числом в том месте, где она нужна: записанная числом позиция
+ * разъезжается с реестром при первой же вставке шага, и цена расхождения —
+ * не отказ, а тишина. Шаг, который джоба давно переросла, перестаёт
+ * признаваться сделанным и ждёт до исчерпания `maxWaitMs`, а просыпаясь —
+ * запускает платный тик заново.
+ */
+export const STAGE_OWNER: ReadonlyMap<string, string> = new Map([
+  ["CLIENT_CONTENT", "ORION_PREPARE"],
+]);
 
 /** Потолок ожидания шага, если реестр его не задаёт. */
 export const DEFAULT_STEP_MAX_WAIT_MS = 60 * 60_000;
@@ -145,7 +163,7 @@ export function deriveJobStage(
     // Невосстановимый отказ (`retryable: false`) закрывает шаг, не потратив
     // весь бюджет, и по числу попыток выглядел бы как «можно попробовать ещё»,
     // то есть выдавал бы безнадёжную джобу за восстановимую.
-    const willRetry = failed.nextRunAt !== null && failed.attempts < failed.maxAttempts;
+    const willRetry = failedStepWillRetry(failed);
     return {
       stage: willRetry ? "FAILED_RETRYABLE" : "FAILED_TERMINAL",
       status: "FAILED",
@@ -276,6 +294,24 @@ export function applyStepOutcome(
       };
     }
   }
+}
+
+/**
+ * Проснётся ли упавший шаг **сам**: назначен срок и бюджет отказов не исчерпан.
+ *
+ * Это не то же самое, что `stepIsRetryable` рядом: та отвечает «можно ли
+ * повторить вручную» и смотрит только на остаток попыток. Здесь вопрос другой —
+ * «вернётся ли конвейер без человека», и на него отвечает **назначенный срок**:
+ * невосстановимый отказ закрывает шаг, не потратив бюджета, и по числу попыток
+ * выглядел бы как «попробует ещё».
+ *
+ * Ответ один на весь модуль: его спрашивают и вывод стадии, и сверка стадии
+ * после шага.
+ */
+export function failedStepWillRetry(
+  step: Pick<WorkflowStepRow, "nextRunAt" | "attempts" | "maxAttempts">
+): boolean {
+  return step.nextRunAt !== null && step.attempts < step.maxAttempts;
 }
 
 /**

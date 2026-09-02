@@ -21,29 +21,82 @@ import {
   runUnifiedCollectionTick,
   type UnifiedOrchestratorDeps,
 } from "../services/unified-orion-collection-orchestrator";
-import { UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
+import { STAGE_OWNER, UNIFIED_PIPELINE, failedStepWillRetry, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
-/** Стадии, дальше которых конвейер не идёт. */
-const TERMINAL_STAGES = new Set([
-  "REPORT_READY",
-  "COMPLETED_PARTIAL",
-  "FAILED_TERMINAL",
-  "CANCELLED",
-]);
+/**
+ * Исход шага приостановленного прогона.
+ *
+ * Пауза — решение оператора, и `skipped` для неё не годится: пропуск считается
+ * улаженным состоянием, `completeStep` будит следующий шаг, тот тоже
+ * пропускается — каскад до конца конвейера. Все строки `SKIPPED` дают
+ * `planResumeFromSteps` ответ `completed`, то есть возобновить паузу было бы
+ * нечем **никогда**, а собранное осталось бы оплаченным и недоступным.
+ *
+ * Отказ конвейер останавливает (`nextRunnableStep` возвращает `null` на
+ * `FAILED`) и оставляет «где мы остановились» отвечать местом остановки. Из
+ * шести состояний шага это единственное, которое умеет и то и другое. Слово
+ * `FAILED` внутреннее и клиенту не печатается; строка шага несёт код и текст,
+ * которые говорят, что произошло на самом деле.
+ */
+const PAUSED_OUTCOME: StepOutcome = {
+  kind: "failed",
+  code: "RUN_PAUSED",
+  message: "Прогон приостановлен оператором",
+  retryable: false,
+};
+
+/**
+ * Что конечная стадия джобы значит для шага — **один** ответ на весь модуль.
+ *
+ * Раньше отвечали дважды. `outcomeFromJob` (после вызова тика) различал:
+ * отмена — пропуск, терминальный отказ — отказ с кодом джобы, и только
+ * готовый отчёт — «сделано». Проверка перед вызовом тика различать перестала:
+ * любая конечная стадия давала `done`.
+ *
+ * Цена расхождения не косметическая. `completeStep` на `DONE` будит следующий
+ * шаг, поэтому один неверный `done` идёт каскадом до конца конвейера; все
+ * строки `DONE` дают `deriveJobStage` → `REPORT_READY` при джобе в
+ * `FAILED_TERMINAL`, а `planResumeFromSteps` отвечает `completed` **навсегда**:
+ * восстановление отдаёт `JOB_ALREADY_COMPLETED`, и кнопки «Возобновить» у
+ * оператора больше нет. Именно так выглядел дрейф на прогоне 19.08 — у
+ * владельца работала ровно одна кнопка не потому, что так задумано.
+ *
+ * `null` — стадия не конечная, шагу есть что делать.
+ */
+export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | null {
+  if (job.stage === "CANCELLED") return PAUSED_OUTCOME;
+
+  if (job.stage === "FAILED_TERMINAL") {
+    return {
+      kind: "failed",
+      code: job.lastErrorCode ?? "STAGE_FAILED_TERMINAL",
+      message: job.lastError ?? "Стадия завершилась терминальным отказом",
+      retryable: false,
+    };
+  }
+
+  if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") {
+    return { kind: "done", outputRef: job.compositeDatasetId ?? job.baseReportRunId ?? null };
+  }
+
+  return null;
+}
 
 /**
  * Позиция стадии джобы в конвейере — чтобы понимать «дошли до сюда или дальше».
  *
- * `CLIENT_CONTENT` делит позицию с `ORION_PREPARE`: это движение внутри одного
- * шага подготовки отчёта.
+ * Стадия внутри шага (`CLIENT_CONTENT`) занимает позицию своего шага, и кто
+ * чей — сказано данными в реестре (`STAGE_OWNER`). Числа здесь нет намеренно:
+ * вторая половина сравнения ниже читается из реестра, и записанная числом
+ * первая разъехалась бы с ней при первой же вставке шага.
+ *
+ * `0` — стадия конвейеру не принадлежит вовсе (отказ, отмена, готовый отчёт).
  */
 function jobStagePosition(stage: string): number {
-  const byStage = UNIFIED_PIPELINE.find((d) => d.stage === stage);
-  if (byStage) return byStage.position;
-  if (stage === "CLIENT_CONTENT") return 4;
-  return 0;
+  const owner = STAGE_OWNER.get(stage) ?? stage;
+  return UNIFIED_PIPELINE.find((d) => d.stage === owner)?.position ?? 0;
 }
 
 /**
@@ -67,18 +120,12 @@ export function outcomeFromJob(
     };
   }
 
-  if (after.cancelRequested || after.stage === "CANCELLED") {
-    return { kind: "skipped", reason: "Прогон отменён" };
-  }
+  // Пауза запрошена, но тик ещё не успел перевести джобу в `CANCELLED`:
+  // признак живёт на джобе, а не на стадии, поэтому спрашивается отдельно.
+  if (after.cancelRequested) return PAUSED_OUTCOME;
 
-  if (after.stage === "FAILED_TERMINAL") {
-    return {
-      kind: "failed",
-      code: after.lastErrorCode ?? "STAGE_FAILED_TERMINAL",
-      message: after.lastError ?? "Стадия завершилась терминальным отказом",
-      retryable: false,
-    };
-  }
+  const stopped = outcomeForStoppedJob(after);
+  if (stopped) return stopped;
 
   if (after.stage === "FAILED_RETRYABLE") {
     return {
@@ -95,9 +142,6 @@ export function outcomeFromJob(
   // шаг ещё до его исполнения, каждый вызов выглядел бы как «работа идёт», шаг
   // ждал бы вечно и сжёг бы бюджет попыток, остановив конвейер. Ровно это и
   // случилось на первом живом прогоне.
-  if (TERMINAL_STAGES.has(after.stage)) {
-    return { kind: "done", outputRef: after.compositeDatasetId ?? after.baseReportRunId ?? null };
-  }
   const stepPos = stepDefinition(step.name)?.position ?? 0;
   const jobPos = jobStagePosition(after.stage);
   if (jobPos > stepPos) {
@@ -117,6 +161,33 @@ export function outcomeFromJob(
  * `ORION_PREPARE` и `CLIENT_CONTENT` — две стадии одного шага `REPORT_PREPARE`:
  * обработчик один, и переход между ними для конвейера внутренний.
  */
+/**
+ * Стадия, к которой надо вернуть джобу перед новой попыткой шага.
+ *
+ * Джоба помнит прошлый отказ, а `outcomeFromJob` спрашивает именно её стадию.
+ * Пока вердикт прошлой попытки лежит на джобе, новая попытка получает **чужой**
+ * исход, не начав работы: на боевом прогоне 28.07 шаг `ARSENKIN_ENRICHMENT`
+ * сжёг все десять попыток за 45 секунд с одним и тем же текстом
+ * «41 опросов подряд» — при `pollAttempt`, сброшенном в ноль, и без единой
+ * записи об исполнении в логе.
+ *
+ * На вопрос «упал ли этот шаг» отвечали двое — состояние шага и стадия джобы,
+ * — и шаг проиграть был обязан. Перепостановка шага чинила один ответ из двух.
+ *
+ * Возвращается только для повторяемого отказа: `FAILED_TERMINAL` и отмена
+ * остаются как есть, потому что там граница «нужно решение оператора».
+ *
+ * `null` — сбрасывать нечего.
+ */
+export function stageForRetryAttempt(
+  stepName: string,
+  jobStage: string | null | undefined
+): string | null {
+  if (jobStage !== "FAILED_RETRYABLE") return null;
+  const def = UNIFIED_PIPELINE.find((d) => d.name === stepName);
+  return def ? def.stage : null;
+}
+
 function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
   return async (step: WorkflowStepRow): Promise<StepOutcome> => {
     const before = await loadUnifiedCollectionJob(step.caseId);
@@ -128,8 +199,56 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
         retryable: false,
       };
     }
-    if (TERMINAL_STAGES.has(before.stage)) {
-      return { kind: "done", outputRef: before.compositeDatasetId ?? null };
+    /*
+     * Прогон уже остановлен — платный тик не запускаем.
+     *
+     * Ради этого короткое замыкание и заводили: без него проснувшийся шаг
+     * подготовки запускал бы сбор заново. Вердикт при этом берётся общий, тот
+     * же, что и после вызова тика: шаг, который не работал, сделанным не
+     * называется.
+     *
+     * `cancelRequested` здесь намеренно не спрашивается: в `CANCELLED` джобу
+     * переводит сам тик, и пропуск шага до вызова оставил бы отмену
+     * невыполненной.
+     */
+    const stopped = outcomeForStoppedJob(before);
+    if (stopped) return stopped;
+
+    /*
+     * Шаг, который джоба уже переросла, работу не запускает.
+     *
+     * Обработчик один на все шаги, и он выполняет **текущую** стадию джобы, а
+     * не свою. Пока сборка отчёта идёт шесть минут, ждущий шаг обогащения
+     * просыпается по своему расписанию, вызывает тот же тик — и отчёт
+     * собирается второй раз, параллельно. На живом прогоне это видно по логу:
+     * чтение ста двадцати страниц и отрисовка отработали дважды с промежутком
+     * ровно в паузу опроса. Отчёт при этом выходил верный, но платили за него
+     * вдвое.
+     *
+     * Правило то же, по которому шаг признаётся сделанным после тика
+     * (`outcomeFromJob`): джоба ушла дальше — шаг сделан. Просто спрашиваем об
+     * этом до работы, а не после.
+     */
+    const stepPosition = stepDefinition(step.name)?.position ?? 0;
+    if (jobStagePosition(before.stage) > stepPosition) {
+      return {
+        kind: "done",
+        outputRef: before.compositeDatasetId ?? before.baseReportRunId ?? null,
+      };
+    }
+
+    // Вердикт прошлой попытки снимается до начала новой: иначе тик отработает,
+    // а исход всё равно возьмётся из памяти джобы об отказе.
+    const retryStage = stageForRetryAttempt(step.name, before.stage);
+    if (retryStage) {
+      const { patchUnifiedCollectionJob } = await import(
+        "../services/unified-collection-job-store"
+      );
+      await patchUnifiedCollectionJob(step.caseId, {
+        stage: retryStage as UnifiedCollectionJob["stage"],
+        lastError: null,
+        lastErrorCode: null,
+      } as Partial<UnifiedCollectionJob>);
     }
 
     const after = await runUnifiedCollectionTick(step.caseId, deps);
@@ -170,8 +289,22 @@ export async function reconcileStageAfterStep(step: WorkflowStepRow): Promise<vo
       settled?.state === "DONE" || settled?.state === "SKIPPED";
     const failureInvolved =
       drift.derivedStage.startsWith("FAILED") || drift.storedStage.startsWith("FAILED");
+    /*
+     * Шаг, который больше не проснётся, — тоже граница.
+     *
+     * Исключение «отказы не трогаем» защищает **смысл** отказа: какой код и
+     * что произошло, знают обработчики стадий, и переписывать это здесь
+     * вслепую нельзя. Но стадия отвечает и на второй вопрос — «вернётся ли
+     * конвейер сам», — а он выводится из строки шага: срок не назначен, значит
+     * никто не проснётся. Джоба, продолжающая называть себя возобновляемой,
+     * обещает оператору то, чего не будет, и последняя строка лога владельца
+     * (`workflow-stage-drift:FAILED_RETRYABLE!=FAILED_TERMINAL`) — про это.
+     *
+     * Код и текст отказа при этом не трогаются: патч несёт только стадию.
+     */
+    const spent = settled?.state === "FAILED" && !failedStepWillRetry(settled);
 
-    if (boundary && !failureInvolved) {
+    if ((boundary && !failureInvolved) || spent) {
       console.warn(
         `[workflow] стадия джобы ${job.unifiedJobId} приведена к шагам: ` +
           `${drift.storedStage} → ${drift.derivedStage}`

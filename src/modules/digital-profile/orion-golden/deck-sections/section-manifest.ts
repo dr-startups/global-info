@@ -20,6 +20,22 @@ import {
 } from "./contracts";
 import type { SectionValidationReport } from "./section-validation";
 
+/**
+ * Причина отказа секции — коротко и по существу.
+ *
+ * Берутся первые две претензии проверки: их достаточно, чтобы понять класс
+ * проблемы, и они не превращают сообщение об ошибке в простыню. Когда отчёта о
+ * проверке нет вовсе, это тоже сказано словом, а не пустотой.
+ */
+function describeSectionFailure(report: SectionValidationReport | undefined): string {
+  if (!report) return " (нет отчёта проверки секции)";
+  const issues = report.issues.filter((i) => String(i ?? "").trim());
+  if (issues.length === 0) return "";
+  const shown = issues.slice(0, 2).join("; ");
+  const rest = issues.length > 2 ? ` и ещё ${issues.length - 2}` : "";
+  return ` (${shown}${rest})`;
+}
+
 export function buildReportSectionManifest(input: {
   caseId: string;
   reportRunId: string;
@@ -51,6 +67,17 @@ export function buildReportSectionManifest(input: {
     }
   }
 
+  /*
+   * Отказ называет причину, а не только имя секции.
+   *
+   * Прежде здесь оставалось `EXECUTIVE/EXECUTIVE_SUMMARY:FAILED`, и это всё,
+   * что видели оператор и журнал. Причина при этом была известна проверке
+   * секций и лежала в артефакте на диске — «bullet over budget on
+   * p03_executive: 916>900». Чтобы её узнать, приходилось лезть в файлы
+   * прогона; на живом отказе это стоило часа, а сама строка была готова.
+   *
+   * Диагноз должен ехать вместе с отказом, а не ждать, пока за ним придут.
+   */
   const requiredSectionsFailed = entries
     .filter(
       (e) =>
@@ -58,7 +85,10 @@ export function buildReportSectionManifest(input: {
         REQUIRED_SECTIONS.includes(e.sectionType) &&
         (e.status === "FAILED" || e.status === "INSUFFICIENT_DATA" || !e.validationPassed)
     )
-    .map((e) => `${e.sectionType}/${e.fragmentKey}:${e.status}`);
+    .map((e) => {
+      const why = describeSectionFailure(input.validationReports.get(e.fragmentKey));
+      return `${e.sectionType}/${e.fragmentKey}:${e.status}${why}`;
+    });
 
   return {
     schemaVersion: REPORT_SECTION_MANIFEST_VERSION,

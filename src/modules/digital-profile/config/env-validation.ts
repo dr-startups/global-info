@@ -11,6 +11,7 @@
  */
 
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
+import { isLinkReadingEnabled } from "../services/link-page-reader";
 import { boolSetting, stringSetting } from "./defaults";
 
 type Env = Record<string, string | undefined>;
@@ -123,6 +124,26 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
         : `нет ${missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").join(", ")}`,
   });
 
+  /**
+   * Чтение страниц по ссылкам ТОП-20.
+   *
+   * Единственный сборщик, выключенный по умолчанию: он открывает чужие
+   * страницы и гоняет их текст через модель, а это деньги за каждый отчёт.
+   * Состояние печатается в сводке, потому что вопрос «почему темы всё ещё из
+   * справочника» иначе решается перепиской, а не логом запуска.
+   */
+  const linkReadingOn = isLinkReadingEnabled(env as NodeJS.ProcessEnv);
+  const linkReadingReady = linkReadingOn && has("OPENAI_API_KEY");
+  out.push({
+    capability: "Чтение страниц (разбор ссылок ТОП-20)",
+    ready: linkReadingReady,
+    detail: linkReadingReady
+      ? "готов"
+      : !linkReadingOn
+        ? "DIGITAL_PROFILE_LINK_READING не равен true — темы берутся из справочника рубрик"
+        : "нет OPENAI_API_KEY",
+  });
+
   const aiReady = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env) && has("OPENAI_API_KEY");
   out.push({
     capability: "AI-аналитик (текст отчёта)",
@@ -221,7 +242,14 @@ export function validateDigitalProfileEnv(
 
   // Provider keys — only checked when the provider is enabled.
   if (boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED", env)) {
-    if (boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env)) {
+    // Ключи Programmable Search нужны только выбранной стратегии
+    // `custom_search`. При работе через внешнюю выдачу (значение по умолчанию)
+    // их отсутствие — норма, а предупреждение о них печаталось при каждом
+    // запуске и приучало не читать этот блок.
+    if (
+      boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env) &&
+      stringSetting("GOOGLE_SEARCH_PROVIDER", env) === "custom_search"
+    ) {
       if (!env.GOOGLE_SEARCH_API_KEY || !env.GOOGLE_SEARCH_ENGINE_ID) {
         warnings.push(
           "Google provider is enabled but GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID are missing; it will resolve to NOT_CONFIGURED."
@@ -248,7 +276,11 @@ export function validateDigitalProfileEnv(
 
   // Stage N2 — real Google connector (independent dedicated flag + strategy).
   if (boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)) {
-    const strategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+    // Стратегия читается через слой умолчаний — тем же способом, каким её
+    // читает рабочий код. Сырое чтение отсюда сообщало «стратегия не выбрана»
+    // при работающем провайдере: переменная не задана, а значение по умолчанию
+    // (`external_serp`) этой проверке не было видно.
+    const strategy = stringSetting("GOOGLE_SEARCH_PROVIDER", env);
     if (strategy !== "custom_search" && strategy !== "external_serp") {
       warnings.push(
         "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED=true but GOOGLE_SEARCH_PROVIDER is not set to 'custom_search' or 'external_serp'; the real Google provider will resolve to DISABLED."
@@ -260,7 +292,9 @@ export function validateDigitalProfileEnv(
         );
       }
     } else if (strategy === "external_serp") {
-      if (!env.GOOGLE_EXTERNAL_SERP_PROVIDER) {
+      // Выбор внешней выдачи читается так же через умолчания: незаданная
+      // переменная означает `serper`, а не «не выбрано».
+      if (!stringSetting("GOOGLE_EXTERNAL_SERP_PROVIDER", env)) {
         warnings.push(
           "GOOGLE_SEARCH_PROVIDER=external_serp but GOOGLE_EXTERNAL_SERP_PROVIDER is not selected; the real Google provider will resolve to NOT_CONFIGURED."
         );

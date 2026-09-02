@@ -27,6 +27,7 @@ import {
 } from "./live-execution-authorization";
 import type { ProviderTaskRecord } from "./types";
 import { hashProviderRequest } from "./provider-task-store";
+import { withArsenkinTaskSlot } from "./task-slots";
 
 export type ArsenkinSurfaceRun = {
   tool: string;
@@ -195,6 +196,8 @@ export async function executeArsenkinExecutionPlan(input: {
   onProgress?: (info: {
     index: number;
     total: number;
+    /** Сколько задач плана уже завершено. При одновременном исполнении `index` не монотонен. */
+    completed: number;
     tool: string;
     engine: string | null;
     region: string | null;
@@ -224,74 +227,116 @@ export async function executeArsenkinExecutionPlan(input: {
     const coverageMatrix = buildPlannedCoverageMatrix(input.plan);
     const total = input.plan.requests.length;
 
-    for (let index = 0; index < input.plan.requests.length; index += 1) {
-      const req = input.plan.requests[index]!;
-      await input.onProgress?.({
-        index: index + 1,
-        total,
-        tool: req.tool,
-        engine: req.engine,
-        region: req.region,
-        phase: "start",
-      });
-      const done = await completePlannedRequest(
-        input.client,
-        input.store,
-        req,
-        {
-          caseId: input.plan.caseId,
-          reportRunId: input.plan.reportRunId,
-          reuseFromRunIds: input.reuseFromRunIds,
-        },
-        waitTimeoutMs
-      );
-      taskIds.push(done.task.id);
-      const mapped = withProviderTaskId(
-        mapPlannedPayload({
-          req,
-          caseId: input.plan.caseId,
-          auditRunId: input.plan.reportRunId,
-          payload: done.payload,
-        }),
-        done.task.id
-      );
-      drafts.push(...mapped);
+    /*
+     * Задачи плана выполняются одновременно, а не одна за одной.
+     *
+     * Здесь стоял последовательный цикл: каждая задача ждала полного завершения
+     * предыдущей. На живом прогоне это давало 1 м 45 с на задачу и около 20
+     * минут на двенадцать поверхностей — при том, что аккаунт допускает пять
+     * задач одновременно. Провайдер нас не ограничивал: ограничивали мы себя.
+     *
+     * Предел один и общий — `withArsenkinTaskSlot` (см. `task-slots.ts`), он же
+     * действует между агентами. Ждём **все** задачи, а уже потом сообщаем об
+     * ошибке: иначе после первого отказа оставшиеся продолжали бы работать без
+     * авторизации, которая закрывается по выходу отсюда.
+     *
+     * Порядок результатов — по плану, а не по времени ответа: от него зависят
+     * артефакты сбора, и он не должен зависеть от того, кто ответил первым.
+     */
+    type RequestOutcome = {
+      taskId: string;
+      mapped: SerpObservationDraft[];
+      surfaceRun: ArsenkinSurfaceRun | null;
+    };
+    const outcomes = new Array<RequestOutcome | undefined>(total);
+    let completed = 0;
 
-      const resultCountByQueryId = new Map<string, number>();
-      for (const d of mapped) {
-        if (d.providerStatus !== "OK") continue;
-        resultCountByQueryId.set(d.queryId, (resultCountByQueryId.get(d.queryId) ?? 0) + 1);
-      }
-      await persistPlannedCoverageForDoneRequest({
-        reportRunId: input.plan.reportRunId,
-        requestHash: req.requestHash,
-        providerTaskId: done.task.id,
-        targets: coverageMatrix,
-        resultCountByQueryId,
-      });
+    const settled = await Promise.allSettled(
+      input.plan.requests.map((req, index) =>
+        withArsenkinTaskSlot(async () => {
+          await input.onProgress?.({
+            index: index + 1,
+            total,
+            completed,
+            tool: req.tool,
+            engine: req.engine,
+            region: req.region,
+            phase: "start",
+          });
+          const done = await completePlannedRequest(
+            input.client,
+            input.store,
+            req,
+            {
+              caseId: input.plan.caseId,
+              reportRunId: input.plan.reportRunId,
+              reuseFromRunIds: input.reuseFromRunIds,
+            },
+            waitTimeoutMs
+          );
+          const mapped = withProviderTaskId(
+            mapPlannedPayload({
+              req,
+              caseId: input.plan.caseId,
+              auditRunId: input.plan.reportRunId,
+              payload: done.payload,
+            }),
+            done.task.id
+          );
 
-      if (req.tool === "suggest" || req.tool === "paa" || req.tool === "check-top") {
-        const surface =
-          req.tool === "suggest" ? "autocomplete" : req.tool === "paa" ? "paa" : "organic";
-        surfaceRuns.push({
-          tool: req.tool,
-          engine: req.engine ?? mapped[0]?.engine ?? "GOOGLE",
-          region: req.region ?? "RU",
-          language: req.region === "UAE" ? "en" : "ru",
-          query: req.query ?? "",
-          surface,
-          providerTaskId: done.task.id,
-          resultCount: mapped.filter((d) => d.providerStatus === "OK").length,
-        });
-      }
-      await input.onProgress?.({
-        index: index + 1,
-        total,
-        tool: req.tool,
-        engine: req.engine,
-        region: req.region,
-        phase: "done",
-      });
+          const resultCountByQueryId = new Map<string, number>();
+          for (const d of mapped) {
+            if (d.providerStatus !== "OK") continue;
+            resultCountByQueryId.set(d.queryId, (resultCountByQueryId.get(d.queryId) ?? 0) + 1);
+          }
+          await persistPlannedCoverageForDoneRequest({
+            reportRunId: input.plan.reportRunId,
+            requestHash: req.requestHash,
+            providerTaskId: done.task.id,
+            targets: coverageMatrix,
+            resultCountByQueryId,
+          });
+
+          const surfaceRun: ArsenkinSurfaceRun | null =
+            req.tool === "suggest" || req.tool === "paa" || req.tool === "check-top"
+              ? {
+                  tool: req.tool,
+                  engine: req.engine ?? mapped[0]?.engine ?? "GOOGLE",
+                  region: req.region ?? "RU",
+                  language: req.region === "UAE" ? "en" : "ru",
+                  query: req.query ?? "",
+                  surface:
+                    req.tool === "suggest" ? "autocomplete" : req.tool === "paa" ? "paa" : "organic",
+                  providerTaskId: done.task.id,
+                  resultCount: mapped.filter((d) => d.providerStatus === "OK").length,
+                }
+              : null;
+
+          outcomes[index] = { taskId: done.task.id, mapped, surfaceRun };
+          completed += 1;
+          await input.onProgress?.({
+            index: index + 1,
+            total,
+            completed,
+            tool: req.tool,
+            engine: req.engine,
+            region: req.region,
+            phase: "done",
+          });
+        })
+      )
+    );
+
+    const failure = settled.find((r) => r.status === "rejected");
+    if (failure && failure.status === "rejected") {
+      throw failure.reason instanceof Error ? failure.reason : new Error(String(failure.reason));
+    }
+
+    for (const outcome of outcomes) {
+      if (!outcome) continue;
+      taskIds.push(outcome.taskId);
+      drafts.push(...outcome.mapped);
+      if (outcome.surfaceRun) surfaceRuns.push(outcome.surfaceRun);
     }
 
     return {

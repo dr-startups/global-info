@@ -17,17 +17,19 @@ import {
   unifiedArtifactsDir,
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
+import {
+  REBUILD_MARKER,
+  rebuildDataBlockerReason,
+  restoreStateAfterFailedRebuild,
+  type UnifiedRebuildRestoreSnapshot,
+} from "./unified-report-rebuild";
 import type {
   BaseCollectionManifest,
   ReportDataBinding,
   SurfaceCoverageBreakdown,
   UnifiedCollectionJob,
 } from "./unified-collection-types";
-import {
-  computeCoverageProgress,
-  emptyCoverage,
-  FIRST36_PLANNED_SUPPORTED_SURFACES,
-} from "./unified-collection-types";
+import { computeCoverageProgress } from "./unified-collection-types";
 import {
   assessRealCollection,
   captureBaseCollectionManifest,
@@ -53,11 +55,14 @@ import { assertPreRenderDataGates } from "./pre-render-data-gates";
 import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
+  PREPARE_ATTEMPT_WARNING_STARTS,
 } from "./canonical-report-prepare";
+import { resolvePreparePrismaBundle } from "./prepare-prisma-bundle";
 import {
   buildReportQualitySummary,
   buildReportQualityWarnings,
   mergeJobWarnings,
+  refreshRunWarnings,
   toJobReportQuality,
   type JobReportQuality,
 } from "./report-quality-summary";
@@ -69,12 +74,25 @@ import {
 } from "./job-subject-profile-bootstrap";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { invalidateDownstreamAfterEnrichmentIngest } from "./unified-downstream-invalidation";
-import { normalizeArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
+import {
+  normalizeArsenkinEnrichmentState,
+  surfaceCoverageFromEnrichmentState,
+} from "./arsenkin-enrichment-state";
 import type { FullAuditResultDTO } from "./agent-run-service";
 import { ensurePersistedUnifiedBaseReportRun } from "./unified-base-report-run";
+import { collectYandexGenAnswer } from "./yandex-gen-answer-collection";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "./unified-collection-recovery";
 import { ConflictError } from "../http/errors";
+import {
+  PERSONA_GATE_BLOCK_MESSAGE,
+  loadLatestPersonaCheck,
+  loadPersonaGateInput,
+  personaDecisionForReport,
+  personaGateState,
+  type PersonaGateBlockReason,
+  type PersonaGateInput,
+} from "./subject-persona-check";
 import type { ArsenkinEnrichmentState, ArsenkinAgentProgress } from "./arsenkin-enrichment-state";
 import {
   legacyEnrichmentResultToTick,
@@ -83,7 +101,8 @@ import {
   type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
-import { prepareGateFailureMessage } from "./prepare-gate-advice";
+import { isDeterministicPrepareGate, prepareGateFailureMessage } from "./prepare-gate-advice";
+import { recordParkedDeckVersion } from "./parked-deck-version";
 import {
   deriveEnrichmentProgress,
   detectEnrichmentProgressDrift,
@@ -247,6 +266,12 @@ export async function persistUnifiedTickFailure(
 
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
+  /**
+   * Состояние ворот выбора персоны. Подмена — не обход: у офлайн-смока и юнита
+   * старта нет ни строки `Case`, ни базы, и спрашивать её там нечего. Снаружи
+   * подставить состояние нельзя — маршрут старта `deps` не передаёт.
+   */
+  loadPersonaGateInput?: (caseId: string) => Promise<PersonaGateInput>;
   runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
   /** Offline: ProviderTasks for durable enrichment poll/ingest. */
   listEnrichmentProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
@@ -354,125 +379,6 @@ export function unifiedJobHasPreservedStages(job: UnifiedCollectionJob | null | 
     return true;
   }
   return Object.keys(job.artifactPaths ?? {}).length > 0;
-}
-
-async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise<UnifiedCollectionJob> {
-  const renderResume =
-    job.resumeCheckpoint === "RENDER" ||
-    job.lastErrorCode === "RENDER_FAILED" ||
-    /render failed/i.test(job.lastError ?? "");
-
-  const enrichmentComplete = Boolean(job.arsenkinEnrichmentState?.enrichmentComplete);
-  const ingestResume =
-    job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
-    ((job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length &&
-      !enrichmentComplete &&
-      Boolean(job.baseReportRunId));
-
-  if (
-    renderResume &&
-    job.baseReportRunId &&
-    (job.enrichmentRunIds?.length ?? 0) >= 5 &&
-    enrichmentComplete
-  ) {
-    return (
-      await patchUnifiedCollectionJob(job.caseId, {
-        stage: "ORION_PREPARE",
-        status: "RUNNING",
-        resumeCheckpoint: "RENDER",
-        lastError: null,
-        lastErrorCode: null,
-        completedAt: null,
-        warnings: [...job.warnings, "bounded-resume:from-render"],
-      }) ?? job
-    );
-  }
-
-  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
-    job.caseId,
-    job.unifiedJobId,
-    "base-collection-manifest.json"
-  );
-  const hasBase =
-    Boolean(job.baseReportRunId || manifest?.baseReportRunId) &&
-    Boolean(manifest) &&
-    (manifest!.baseCount > 0 ||
-      manifest!.searchResultIds.length + manifest!.searchSurfaceItemIds.length > 0);
-
-  // Full prepare retry after section/assembly QA failure — no re-collection.
-  const assemblyResume =
-    job.resumeCheckpoint === "ASSEMBLY" ||
-    // Прогоны до переименования (шаг 12.4c) хранят прежнее значение.
-    job.resumeCheckpoint === "ORION_PREPARE" ||
-    job.lastErrorCode === "ASSEMBLY_FAILED" ||
-    job.lastErrorCode === "REQUIRED_SECTION_FAILED" ||
-    /required sections failed/i.test(job.lastError ?? "");
-  if (assemblyResume && hasBase && job.compositeDatasetId) {
-    return (
-      await patchUnifiedCollectionJob(job.caseId, {
-        stage: "ORION_PREPARE",
-        status: "RUNNING",
-        resumeCheckpoint: null,
-        lastError: null,
-        lastErrorCode: null,
-        completedAt: null,
-        warnings: [...job.warnings, "bounded-resume:from-assembly"],
-      }) ?? job
-    );
-  }
-
-  if (hasBase && ingestResume) {
-    return (
-      await patchUnifiedCollectionJob(job.caseId, {
-        stage: "ARSENKIN_ENRICHMENT",
-        status: "RUNNING",
-        resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
-        baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
-        // Счётчик простоя обнуляется, иначе возобновление сразу упирается в тот
-        // же предел и «повторяемый отказ» оказывается неправдой. Именно здесь
-        // расходились автоматический путь и кнопка: ручное восстановление
-        // обнуляло счётчик, а этот — нет, поэтому оркестрация ложилась на
-        // пользователя (шаг 14).
-        pollAttempt: 0,
-        // Общий срок ожидания при этом НЕ продлевается: он и ограничивает
-        // худший случай, сколько бы возобновлений ни случилось.
-        enrichmentWaitStartedAt: job.enrichmentWaitStartedAt ?? null,
-        lastError: null,
-        lastErrorCode: null,
-        completedAt: null,
-        warnings: [...job.warnings, "bounded-resume:from-arsenkin-ingest"],
-      }) ?? job
-    );
-  }
-
-  if (hasBase) {
-    return (
-      await patchUnifiedCollectionJob(job.caseId, {
-        stage: "ARSENKIN_ENRICHMENT",
-        status: "RUNNING",
-        // Внутри шага возобновляться некуда: обогащение начинается сначала.
-        // Дублировать здесь стадию нечем и незачем (шаг 12.4c).
-        resumeCheckpoint: null,
-        baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
-        lastError: null,
-        lastErrorCode: null,
-        completedAt: null,
-        warnings: [...job.warnings, "bounded-resume:from-arsenkin"],
-      }) ?? job
-    );
-  }
-
-  return (
-    await patchUnifiedCollectionJob(job.caseId, {
-      stage: "BASE_COLLECTION",
-      status: "RUNNING",
-      resumeCheckpoint: null,
-      lastError: null,
-      lastErrorCode: null,
-      completedAt: null,
-      warnings: [...job.warnings, "bounded-resume:from-base"],
-    }) ?? job
-  );
 }
 
 /**
@@ -655,6 +561,34 @@ async function failRetryable(
   );
 }
 
+/**
+ * Отказ загрузчика ворота **закрывает**, а не открывает.
+ *
+ * «Не смогли прочитать — запустим» выглядит доброжелательно и стоит денег:
+ * прогону база всё равно нужна, а тихий пропуск проверки в этом проекте уже
+ * оплачивался живыми вызовами провайдеров.
+ */
+async function assertPersonaDecided(
+  caseId: string,
+  deps: UnifiedOrchestratorDeps | undefined
+): Promise<void> {
+  const blocked = (reason: PersonaGateBlockReason): ConflictError =>
+    new ConflictError(PERSONA_GATE_BLOCK_MESSAGE[reason], { reason });
+
+  let gate;
+  try {
+    gate = personaGateState(await (deps?.loadPersonaGateInput ?? loadPersonaGateInput)(caseId));
+  } catch (err) {
+    // Причина обязана остаться: одинаковый 409 без единой строки в логе делает
+    // первый же сбой ворот неотлаживаемым, а останавливает он все прогоны
+    // системы разом — недоступность базы, удалённое дело и опечатка в коде
+    // выглядели бы одинаково.
+    console.error("[unified] не удалось прочитать состояние ворот выбора персоны", err);
+    throw blocked("PERSONA_GATE_UNAVAILABLE");
+  }
+  if (gate.mode === "PENDING" || gate.mode === "STALE") throw blocked(gate.reason);
+}
+
 export async function startUnifiedOrionCollection(input: {
   caseId: string;
   requestedBy?: string;
@@ -707,6 +641,16 @@ export async function startUnifiedOrionCollection(input: {
       );
     }
   }
+
+  /*
+   * Ворота выбора персоны — последнее действие постановки задачи.
+   *
+   * Стоят ровно здесь: все ветки продолжения уже вернулись выше, значит ниже
+   * рождается **новый платный прогон**, и до него оператор обязан ответить,
+   * про кого мы собираем. Начатую работу это не трогает — правило «человек не
+   * дожимает прогон руками» говорит о прогоне, который уже существует.
+   */
+  await assertPersonaDecided(input.caseId, input.deps);
 
   const { job, created } = await findOrCreateUnifiedCollectionJob({
     caseId: input.caseId,
@@ -800,16 +744,102 @@ export async function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorD
   return jobs.length;
 }
 
+/** Сколько джоба считается «в работе» без признаков жизни. */
+export const JOB_LEASE_MS = 120_000;
+
+/**
+ * Предельный возраст прогона. Дольше — он не жив, а висит.
+ *
+ * Самое долгое законное ожидание — обогащение Arsenkin, и оно измеряется
+ * десятками минут. Шесть часов дают запас на порядок и при этом не дают
+ * мёртвой джобе занимать подборщик вечно.
+ */
+export const UNIFIED_RUN_MAX_MS = 6 * 60 * 60 * 1000;
+
+/** Через сколько лиза продлевается: треть срока — запас на две осечки. */
+export const JOB_LEASE_HEARTBEAT_MS = Math.floor(JOB_LEASE_MS / 3);
+
 export async function runUnifiedCollectionTick(
   caseId: string,
   deps: UnifiedOrchestratorDeps = {}
 ): Promise<UnifiedCollectionJob | null> {
   const ownerId = `unified-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = await claimUnifiedJobLease({ caseId, ownerId, leaseMs: 120_000, now: deps.now?.() });
+  const claimed = await claimUnifiedJobLease({ caseId, ownerId, leaseMs: JOB_LEASE_MS, now: deps.now?.() });
   if (!claimed) return await loadUnifiedCollectionJob(caseId);
+
+  /*
+   * Лиза джобы продлевается, пока тик работает.
+   *
+   * Лиза берётся на две минуты, а сборка отчёта идёт шесть: чтение ста
+   * двадцати страниц, разбор моделью, отрисовка. Подборщик прогонов
+   * (`pumpResumableUnifiedCollections`) опрашивает джобы каждые пять секунд;
+   * как только лиза истекала, он запускал **второй тик той же джобы**, и
+   * отчёт собирался параллельно сам с собой. На трёх прогонах подряд это
+   * видно по логу: чтение ссылок и отрисовка отработали дважды с промежутком
+   * около двух минут — ровно столько живёт лиза.
+   *
+   * Продление берёт ту же лизу тем же владельцем: если её всё-таки отобрали,
+   * продление не пройдёт и не вернёт работу себе обманом.
+   */
+  const heartbeat = setInterval(() => {
+    void claimUnifiedJobLease({ caseId, ownerId, leaseMs: JOB_LEASE_MS }).catch(() => {});
+  }, JOB_LEASE_HEARTBEAT_MS);
+  (heartbeat as unknown as { unref?: () => void }).unref?.();
 
   try {
     let job = claimed;
+    /*
+     * Прогон, идущий шестой час, мёртв — и его надо закрыть, а не опрашивать
+     * вечно.
+     *
+     * Подборщик берёт джобы в активных стадиях каждые пять секунд. Джоба,
+     * застрявшая в такой стадии, остаётся в выборке навсегда: в логе вторые
+     * сутки шло «подобрано прогонов: 1» от кейса, который никуда не двигался.
+     * Вреда от него мало, но признак «работа идёт» он делает бессмысленным — и
+     * оператор не видит, что прогон давно не жив.
+     *
+     * Шесть часов заведомо больше любого законного ожидания: самое долгое —
+     * обогащение Arsenkin, и оно измеряется десятками минут.
+     */
+    const startedMs = job.startedAt ? Date.parse(job.startedAt) : NaN;
+    const nowMs = deps.now?.().getTime() ?? Date.now();
+    const ageMs = Number.isFinite(startedMs) ? nowMs - startedMs : 0;
+    if (ageMs > UNIFIED_RUN_MAX_MS) {
+      /*
+       * Возраст — это следствие, а не причина: прогон простаивает до утра
+       * именно потому, что уже отказал. Сторож переписывал `lastErrorCode` на
+       * свой код и уносил с собой единственное знание о том, почему прогон
+       * встал, — а по коду отказа решают и восстановление, и интерфейс. У
+       * владельца так был стёрт `CONTENT_DROPPED_BY_RENDERER`: документ
+       * испорчен, сбор цел и оплачен, но выглядело это как «просто просрочен».
+       * Поэтому первопричина остаётся в коде, а возраст — в предупреждениях.
+       */
+      const priorCode = String(job.lastErrorCode ?? "").trim();
+      const priorError = String(job.lastError ?? "").trim();
+      /*
+       * Совет спрашивает тот же предикат, что и кнопка: звать пересобирать
+       * там, где кнопки не будет, — обещание, которого интерфейс не выполнит.
+       * А звать за новым сбором поверх целых данных значит звать заплатить за
+       * то же самое второй раз.
+       */
+      const advice = (await rebuildDataBlockerReason(job)) === null
+        ? "Данные собраны и сохранены — нажмите «Пересобрать отчёт»; повторный платный сбор не нужен."
+        : "Запустите сбор заново — данные предыдущих этапов сохранены.";
+      const stopped = `Прогон не продвигался дольше шести часов и остановлен. ${advice}`;
+      console.error(
+        `[unified] прогон остановлен по возрасту: кейс=${job.caseId} джоба=${job.unifiedJobId} ` +
+          `стадия=${job.stage} возраст=${Math.round(ageMs / 60000)} мин ` +
+          `первопричина=${priorCode || "нет"}`
+      );
+      return await patchUnifiedCollectionJob(caseId, {
+        stage: "FAILED_TERMINAL",
+        status: "FAILED",
+        lastError: priorError ? `${priorError} — ${stopped}` : stopped,
+        lastErrorCode: priorCode || "STALE_NO_PROGRESS",
+        completedAt: new Date().toISOString(),
+        warnings: [...job.warnings, "STALE_NO_PROGRESS"],
+      });
+    }
     if (job.cancelRequested) {
       return await patchUnifiedCollectionJob(caseId, {
         stage: "CANCELLED",
@@ -845,13 +875,51 @@ export async function runUnifiedCollectionTick(
     }
     return await loadUnifiedCollectionJob(caseId);
   } finally {
+    clearInterval(heartbeat);
     await releaseUnifiedJobLease(caseId, ownerId);
   }
 }
 
 
-/** Marker the rebuild path leaves on the job for the duration of the attempt. */
-const REBUILD_MARKER = "report-rebuild-accepted";
+/**
+ * Предупреждения, с которыми прогон приходит к готовому отчёту.
+ *
+ * Часть накопленного описывает **попытку**, а не прогон, и переживать успешную
+ * подготовку не должна: иначе на готовом отчёте висят жалобы, которых больше
+ * нет, и оператор читает завершённый прогон как сломанный.
+ */
+export function warningsSurvivingSuccessfulPrepare(input: {
+  jobWarnings: string[];
+  qualityWarnings: string[];
+  enrichmentComplete: boolean;
+  failedAgentCount: number;
+}): string[] {
+  // Здесь проходит граница «состояние задания ↔ итог прогона»: семейства,
+  // которые прогон вычисляет заново, снимаются целиком, иначе токены прошлой
+  // попытки переживают починку (пункт AV).
+  return refreshRunWarnings(input.jobWarnings, input.qualityWarnings).filter((w) => {
+    // Возрастной останов — свойство прошлой попытки: на готовом отчёте жалоба
+    // на застой читается как «собрано сломанным».
+    if (w === "STALE_NO_PROGRESS") return false;
+    // Drop sticky historical Arsenkin failures once enrichment is clean.
+    if (/arsenkin-failed:/i.test(w) && input.enrichmentComplete && input.failedAgentCount === 0) {
+      return false;
+    }
+    // The rebuild attempt is over — drop its marker so a later, unrelated
+    // failure cannot restore this run's stale snapshot.
+    if (w === REBUILD_MARKER) return false;
+    // Жалобы попытки подготовки описывают её, а не прогон: висящая с прошлой
+    // попытки врёт о нынешней. Свои эта подготовка только что назвала сама —
+    // они в `qualityWarnings`.
+    if (
+      PREPARE_ATTEMPT_WARNING_STARTS.some((start) => w.startsWith(start)) &&
+      !input.qualityWarnings.includes(w)
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
 
 /**
  * Puts a job back the way it was when a report rebuild fails.
@@ -872,32 +940,16 @@ async function restoreAfterFailedRebuild(
 ): Promise<UnifiedCollectionJob | null> {
   if (!job.warnings.some((w) => w === REBUILD_MARKER)) return null;
   const audit = await readUnifiedArtifact<{
-    restoreSnapshot?: {
-      stage: string;
-      status: string;
-      progress: number;
-      completedAt: string | null;
-      reportLinks: Record<string, string>;
-    };
+    restoreSnapshot?: UnifiedRebuildRestoreSnapshot;
   }>(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json");
   const snap = audit?.restoreSnapshot;
   if (!snap) return null;
 
   return (
-    (await patchUnifiedCollectionJob(job.caseId, {
-      stage: snap.stage as UnifiedCollectionJob["stage"],
-      status: snap.status as UnifiedCollectionJob["status"],
-      progress: snap.progress,
-      completedAt: snap.completedAt,
-      reportLinks: snap.reportLinks,
-      lastError: null,
-      lastErrorCode: null,
-      warnings: [
-        ...job.warnings.filter((w) => w !== REBUILD_MARKER),
-        `report-rebuild-failed:${code}`,
-        `report-rebuild-failed-detail:${message.slice(0, 160)}`,
-      ],
-    })) ?? job
+    (await patchUnifiedCollectionJob(
+      job.caseId,
+      restoreStateAfterFailedRebuild(snap, job.warnings, { code, message })
+    )) ?? job
   );
 }
 
@@ -936,6 +988,14 @@ async function stepBaseCollection(
   const audit = await runFullAudit(job.caseId, job.requestedBy);
   const actualProviders = mapFullAuditToActualProviders(audit);
 
+  // Нейро-ответ Яндекса спрашивается между аудитом и снятием манифеста: строки
+  // должны попасть в его дифф. Офлайн-контур (фикстурные строки или отсутствие
+  // prisma) пробу пропускает так же, как пропускает остальной живой сбор.
+  const yandexGenAnswerProbe =
+    deps.fixtureBaseRows || !prisma
+      ? undefined
+      : await collectYandexGenAnswer({ caseId: job.caseId });
+
   let manifest: BaseCollectionManifest;
   if (deps.fixtureBaseRows) {
     manifest = {
@@ -967,6 +1027,7 @@ async function stepBaseCollection(
       beforeSearchSurfaceItemIds: before.searchSurfaceItemIds,
       actualProviders,
       baseReportRunId: job.baseReportRunId,
+      ...(yandexGenAnswerProbe ? { yandexGenAnswerProbe } : {}),
     });
   } else {
     return await failRetryable(
@@ -1173,16 +1234,7 @@ async function stepArsenkin(
     unifiedJobId: job.unifiedJobId,
   });
   const enrichmentRunIds = tick.enrichmentRunIds;
-  const planned = FIRST36_PLANNED_SUPPORTED_SURFACES.length;
-  const coverage: SurfaceCoverageBreakdown = {
-    ...emptyCoverage(planned),
-    inFlight: state.pendingAgents.length,
-    measured: state.enrichmentObservationCount > 0 ? Math.min(planned, state.completedAgents.length) : 0,
-    noResults: state.agents.filter((a) => a.terminalKind === "EMPTY_VALID" || a.terminalKind === "NO_RESULTS")
-      .length,
-    failedRetryable: state.failedAgents.length,
-    progressRatio: state.completedAgents.length / ARSENKIN_REAL_AGENT_NAMES.length,
-  };
+  const coverage: SurfaceCoverageBreakdown = surfaceCoverageFromEnrichmentState(state);
 
   await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
   // Keep job-scoped enrichment state even when failing closed (UI + exact resume).
@@ -1609,28 +1661,28 @@ async function stepPrepare(
     }
   }
 
-  // Prefer injected deps.prisma; fall back to the server client so rebuild/tick
-  // without explicit deps still loads WikipediaCheck / SerpCapture / profiles.
-  let preparePrisma: PrismaClient | null = deps.prisma ?? null;
-  if (!preparePrisma) {
-    try {
-      preparePrisma = (await import("@/server/prisma/client")).prisma;
-    } catch {
-      preparePrisma = null;
-    }
-  }
-
   // Default = canonical job-scoped pipeline. There is NO legacy composer path:
   // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
     deps.runPrepare ??
     (async ({ caseId, binding: b, merge: m }) => {
+      // Список делегатов собирает один модуль: перечисление руками уже делало
+      // источник мёртвым на живом прогоне, оставаясь зелёным в тестах.
+      const preparePrisma = await resolvePreparePrismaBundle(deps.prisma);
+      /*
+       * Кого проверяли — читается здесь, потому что подготовка отчёта базы не
+       * знает вовсе. Ворота уже пропустили этот прогон, то есть решение по
+       * нынешним данным субъекта существует; отсутствие строки решением не
+       * является и печатается как «решения нет».
+       */
+      const personaDecision = personaDecisionForReport(await loadLatestPersonaCheck(caseId));
       const res = await runCanonicalReportPrepare({
         caseId,
         unifiedJobId: job.unifiedJobId,
         artifactsDir: unifiedArtifactsDir(caseId, job.unifiedJobId),
         binding: b,
         merge: m,
+        personaDecision,
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromGptCopy
@@ -1638,16 +1690,7 @@ async function stepPrepare(
           : resumeFromRender
             ? "render"
             : "full",
-        prisma: preparePrisma
-          ? {
-              searchResult: preparePrisma.searchResult,
-              searchSurfaceItem: preparePrisma.searchSurfaceItem,
-              databaseProfile: preparePrisma.databaseProfile,
-              riskFinding: preparePrisma.riskFinding,
-              wikipediaCheck: preparePrisma.wikipediaCheck,
-              serpCapture: preparePrisma.serpCapture,
-            }
-          : null,
+        prisma: preparePrisma,
       });
       return {
         prepareDatasetId: res.prepareDatasetId,
@@ -1668,6 +1711,21 @@ async function stepPrepare(
     const message = err instanceof Error ? err.message : String(err);
     const code =
       err instanceof CanonicalPrepareBlockedError ? err.code : "CANONICAL_PREPARE_FAILED";
+    /*
+     * Провал прогона называется вслух, в логе.
+     *
+     * Отказ записывался в саму джобу и виден был только в интерфейсе. В логе
+     * при этом не появлялось ни строки: подборщик каждые пять секунд печатал
+     * «подобрано прогонов: 1», и упавший прогон выглядел точно так же, как
+     * идущий. Кейс DPA-2026-0031 простоял так больше получаса.
+     *
+     * Сообщение обрезано: разбор схемы приносит абзац JSON, а в логе нужен
+     * признак, по которому видно, куда смотреть.
+     */
+    console.error(
+      `[unified] прогон остановлен: кейс=${job.caseId} джоба=${job.unifiedJobId} ` +
+        `стадия=${job.stage} код=${code} — ${message.replace(/\s+/gu, " ").slice(0, 300)}`
+    );
     const enrichmentObs = await readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
       job.caseId,
       job.unifiedJobId,
@@ -1683,8 +1741,26 @@ async function stepPrepare(
     const isAssemblyFailure =
       code === "ASSEMBLY_FAILED" ||
       code === "REQUIRED_SECTION_FAILED" ||
+      // Испорченный текст сборки чинится пересборкой: данные сбора целы.
+      code === "ASSEMBLY_QA_FAILED" ||
       /required sections failed/i.test(message);
     const assemblySparse = isAssemblyFailure && linkageIncomplete;
+    /*
+     * Отказ, который повтор не лечит, автоматически не повторяется.
+     *
+     * Круг повтора платный: `resumeCheckpoint: ASSEMBLY` означает
+     * `resumeFrom: "full"`, то есть каждая попытка заново вызывает модель на
+     * стадиях 1, 1.5, 2 (принудительно) и 3, а бюджет отказов шага — десять.
+     * Два прогона владельца так и крутились на детерминированном дефекте
+     * сборки: те же пакеты дают тот же текст и ту же длину.
+     *
+     * Спрашивается тот же предикат, которым уже пользуется восстановление, —
+     * иначе на один вопрос отвечали бы дважды и по-разному: автоматика
+     * «повторяем» списком кодов, кнопка «не поможет» по маркеру гейта. Код
+     * здесь ни при чём: `ASSEMBLY_QA_FAILED` выдают и ворота сборки, часть
+     * которых читает текст модели, и им повтор оставлен.
+     */
+    const retryWouldRepeatItself = isDeterministicPrepareGate(message);
 
     if (code === "RENDER_FAILED") {
       return await failRetryable(job, "RENDER_FAILED", message, [
@@ -1693,16 +1769,22 @@ async function stepPrepare(
       ]);
     }
 
+    // Недоступная база — авария у нас, а не результат сбора: собранное цело,
+    // платить заново не за что, поэтому прогон возвращается к этому шагу сам.
+    if (code === "PREPARE_DB_UNAVAILABLE") {
+      return await failRetryable(job, code, message, ["CANONICAL_PREPARE_BLOCKED"]);
+    }
+
     // Assembly/section QA failures are retryable when collection data is intact
     // (live §3.2 regression: uncategorized refs → RU/UAE SUMMARY FAILED).
-    if (isAssemblyFailure && !linkageIncomplete) {
+    if (isAssemblyFailure && !linkageIncomplete && !retryWouldRepeatItself) {
       return await failRetryable(job, code, message, [
         "CANONICAL_PREPARE_BLOCKED",
         "retryable-assembly-failure",
       ]);
     }
 
-    if (linkageIncomplete || assemblySparse) {
+    if ((linkageIncomplete || assemblySparse) && !retryWouldRepeatItself) {
       return await failRetryable(
         job,
         assemblySparse ? "ASSEMBLY_INCOMPLETE_ENRICHMENT" : code,
@@ -1711,7 +1793,19 @@ async function stepPrepare(
       );
     }
 
-    const restored = await restoreAfterFailedRebuild(job, code, message);
+    /*
+     * Прогон паркуется — и вместе с ним записывается версия деки, на которой он
+     * встал. По ней замки («Возобновить» и «Пересобрать отчёт») отличают
+     * «повтор даст то же самое» от «код с тех пор изменился»; без неё они
+     * переживали выкат исправления и оставляли оплаченный прогон мёртвым.
+     *
+     * Запись делается один раз здесь, до развилки: обе ветки парковки —
+     * возврат после неудавшейся пересборки и терминальный патч — уносят её с
+     * собой.
+     */
+    const parked = { ...job, warnings: recordParkedDeckVersion(job.warnings) };
+
+    const restored = await restoreAfterFailedRebuild(parked, code, message);
     if (restored) return restored;
 
     return (
@@ -1724,7 +1818,7 @@ async function stepPrepare(
         lastError: prepareGateFailureMessage(message),
         lastErrorCode: code,
         completedAt: new Date().toISOString(),
-        warnings: [...job.warnings, "CANONICAL_PREPARE_BLOCKED"],
+        warnings: [...parked.warnings, "CANONICAL_PREPARE_BLOCKED"],
       }) ?? job
     );
   }
@@ -1810,9 +1904,10 @@ async function stepPrepare(
       });
       reportQuality = toJobReportQuality(summary);
       await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
-      if (qualityWarnings.length === 0) {
-        qualityWarnings = buildReportQualityWarnings(summary);
-      }
+      // Слияние, а не «или-или»: подготовка приносит свои потери
+      // (`link-verdicts-lost:*`) даже когда сводка качества не записалась, и
+      // непустой список от неё не должен прятать предупреждения сводки.
+      qualityWarnings = mergeJobWarnings(qualityWarnings, buildReportQualityWarnings(summary));
     } else {
       // Ensure the full artifact is present even when prepare already wrote it
       // (idempotent overwrite from the same source of truth).
@@ -1825,28 +1920,18 @@ async function stepPrepare(
         });
         await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
         reportQuality = toJobReportQuality(summary);
-        if (qualityWarnings.length === 0) {
-          qualityWarnings = buildReportQualityWarnings(summary);
-        }
+        qualityWarnings = mergeJobWarnings(qualityWarnings, buildReportQualityWarnings(summary));
       }
     }
   } catch {
     // Observability must never block REPORT_READY.
   }
 
-  const warningsForReady = mergeJobWarnings(job.warnings, qualityWarnings).filter((w) => {
-    // Drop sticky historical Arsenkin failures once enrichment is clean.
-    if (
-      /arsenkin-failed:/i.test(w) &&
-      job.arsenkinEnrichmentState?.enrichmentComplete &&
-      (job.arsenkinEnrichmentState.failedAgents?.length ?? 0) === 0
-    ) {
-      return false;
-    }
-    // The rebuild attempt is over — drop its marker so a later, unrelated
-    // failure cannot restore this run's stale snapshot.
-    if (w === REBUILD_MARKER) return false;
-    return true;
+  const warningsForReady = warningsSurvivingSuccessfulPrepare({
+    jobWarnings: job.warnings,
+    qualityWarnings,
+    enrichmentComplete: Boolean(job.arsenkinEnrichmentState?.enrichmentComplete),
+    failedAgentCount: job.arsenkinEnrichmentState?.failedAgents?.length ?? 0,
   });
 
   return (

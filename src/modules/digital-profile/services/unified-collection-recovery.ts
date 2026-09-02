@@ -23,8 +23,11 @@ import type {
   UnifiedCollectionJob,
   UnifiedCollectionStage,
 } from "./unified-collection-types";
-import { loadReusableAssembledDeck } from "./canonical-report-prepare";
-import { isDeterministicPrepareGate } from "./prepare-gate-advice";
+import {
+  loadReusableAssembledDeck,
+  type AssembledDeckReuseResult,
+} from "./canonical-report-prepare";
+import { prepareRetryIsPointless } from "./parked-deck-version";
 import { evaluateLegacyRecoveryEligibility } from "./unified-recovery-legacy-heuristic";
 import {
   planResumeFromSteps,
@@ -153,13 +156,17 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
       recoveryReason: null,
     };
   }
-  if (job.stage === "CANCELLED" || job.status === "CANCELLED") {
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "JOB_CANCELLED",
-      recoveryReason: null,
-    };
-  }
+  /*
+   * Пауза восстановлению не мешает.
+   *
+   * Отмена значит «приостановить», а не «выбросить»: решение владельца 21.08.
+   * Пока здесь стоял отказ `JOB_CANCELLED`, приостановленный прогон оставался
+   * без единой бесплатной кнопки, и оплаченный сбор становился недоступен —
+   * ровно то, что запрещает правило о сохранности оплаченной работы.
+   *
+   * Признак паузы снимается при возобновлении (ниже, в патче джобы): иначе
+   * первый же тик остановил бы прогон снова.
+   */
   if (!input.ignoreLease && leaseIsActive(job, now)) {
     const ownLease =
       input.leaseOwnerId && job.leaseOwnerId && job.leaseOwnerId === input.leaseOwnerId;
@@ -216,6 +223,16 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
           recoveryReason: null,
         };
       case "resume":
+        // Шаги знают, **где** прогон встал, но не знают, лечится ли отказ
+        // повтором. «Та же подготовка» — это про `REPORT_PREPARE`: подводка
+        // Arsenkin подводит оплаченные наблюдения, а не повторяет сборку.
+        if (stepPlan.stepName === "REPORT_PREPARE" && prepareRetryIsPointless(job)) {
+          return {
+            recoveryAllowed: false,
+            recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
+            recoveryReason: null,
+          };
+        }
         return {
           recoveryAllowed: true,
           recoveryBlockerReason: null,
@@ -382,6 +399,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     throw new ConflictError("ACTIVE_LEASE");
   }
 
+  let result: RecoverUnifiedCollectionResult;
   try {
     // Re-check after lease (fail-closed race).
     const job = await loadUnifiedCollectionJob(input.caseId);
@@ -513,18 +531,23 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         job.unifiedJobId,
         "report-data-binding.json"
       );
-      const reusable = binding
+      // Причины отказа перечислены типом загрузчика — включая эту, которую
+      // выносит вызыватель: сверять не с чем, привязки джобы нет.
+      const attempt: AssembledDeckReuseResult = binding
         ? loadReusableAssembledDeck({
             artifactsDir,
             caseId: job.caseId,
             expectedDatasetId: binding.compositeDatasetId,
           })
-        : null;
+        : { reused: null, refusedReason: "binding-missing" };
       await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "render-checkpoint.json", {
         version: "render-checkpoint-v1",
         stage: "RENDER",
-        status: reusable ? "READY" : "NEEDS_ASSEMBLY",
-        assemblyHash: reusable?.assemblyHash ?? null,
+        status: attempt.reused ? "READY" : "NEEDS_ASSEMBLY",
+        assemblyHash: attempt.reused?.assemblyHash ?? null,
+        // `NEEDS_ASSEMBLY` без причины означал сразу пять разных вещей, и
+        // оператор видел только то, что повтор рендера стоил как пересборка.
+        reuseRefusedReason: attempt.refusedReason,
         caseId: job.caseId,
         unifiedJobId: job.unifiedJobId,
         updatedAt: nowFn().toISOString(),
@@ -574,6 +597,9 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       await patchUnifiedCollectionJob(job.caseId, {
         stage: nextStage,
         status: "WAITING",
+        // Возобновление снимает паузу: иначе первый же тик остановил бы прогон
+        // снова, и кнопка «Продолжить» ничего бы не значила (шаг 0027).
+        cancelRequested: false,
         baseReportRunId,
         resumeCheckpoint,
         // Ingest recovery must rebuild composite/analytics/render after observations land.
@@ -582,6 +608,15 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
+        /*
+         * Возраст отсчитывается заново: сторож закрывает прогон, не
+         * продвигавшийся дольше шести часов, и меряет его от `startedAt`. А
+         * «Возобновить» нажимают как раз на прогоне, который простоял ночь, —
+         * без этой строки первый же тик закрыл бы восстановление, не начав
+         * работы, и, поскольку код отказа тут уже обнулён, первопричина
+         * потерялась бы целиком. `createdAt` остаётся историей прогона.
+         */
+        startedAt: nowIso,
         // Ceiling reset so durable poll can resume the same paid externalTaskIds.
         pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
         // Общий срок ожидания отсчитывается заново: это осознанное решение
@@ -619,7 +654,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);
 
-    return {
+    result = {
       accepted: true,
       jobId: patched.jobId,
       unifiedJobId: patched.unifiedJobId,
@@ -632,12 +667,23 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     };
   } finally {
     await releaseUnifiedJobLease(input.caseId, ownerId);
-    // Разбудить остановившийся шаг до тика: иначе воркер не узнает, что
-    // работа снова готова, и восстановление осталось бы бумажным.
-    const current = await loadUnifiedCollectionJob(input.caseId);
-    if (current) await requeueResumeStep(current, nowFn());
-    await scheduleRecoverTick(input.caseId, input.deps);
   }
+
+  /*
+   * Разбудить остановившийся шаг до тика: иначе воркер не узнает, что работа
+   * снова готова, и восстановление осталось бы бумажным.
+   *
+   * Пробуждение принадлежит **принятому** восстановлению. Пока оно стояло в
+   * `finally`, шаг перепоставлялся и на отказе после взятия лизы, а
+   * проснувшийся шаг на джобе в `FAILED_TERMINAL` закрывался как сделанный —
+   * стадия дрейфовала в `REPORT_READY`, и «Возобновить» исчезало навсегда.
+   * Что пробуждение принадлежит успеху, видно и по идемпотентным ранним
+   * возвратам выше: они будят себя сами, отдельной строкой.
+   */
+  const current = await loadUnifiedCollectionJob(input.caseId);
+  if (current) await requeueResumeStep(current, nowFn());
+  await scheduleRecoverTick(input.caseId, input.deps);
+  return result;
 }
 
 /** Attach server-calculated recovery fields for GET status. */

@@ -10,7 +10,9 @@ import type { PrismaClient } from "@prisma/client";
 import type {
   ActualProviderRecord,
   BaseCollectionManifest,
+  YandexGenAnswerProbe,
 } from "./unified-collection-types";
+import type { CoverageCellStatusRow } from "../orion-golden/analytics/composite-dataset-builder";
 import type { FullAuditResultDTO } from "./agent-run-service";
 
 export function mapFullAuditToActualProviders(audit: FullAuditResultDTO): ActualProviderRecord[] {
@@ -96,6 +98,7 @@ export async function captureBaseCollectionManifest(input: {
   beforeSearchSurfaceItemIds: Set<string>;
   actualProviders: ActualProviderRecord[];
   baseReportRunId?: string | null;
+  yandexGenAnswerProbe?: YandexGenAnswerProbe;
 }): Promise<BaseCollectionManifest> {
   const results = await input.prisma.searchResult.findMany({
     where: { caseId: input.caseId },
@@ -140,7 +143,39 @@ export async function captureBaseCollectionManifest(input: {
       caseCorpusSurfaceItemIds.length,
     actualProviders,
     realCollectionSufficient: isRealCollectionSufficient(actualProviders),
+    ...(input.yandexGenAnswerProbe ? { yandexGenAnswerProbe: input.yandexGenAnswerProbe } : {}),
   };
+}
+
+/**
+ * Ячейки покрытия из записи о попытке спросить нейро-ответ.
+ *
+ * Читаются **только не-успешные** исходы: измеренный успех доказывают сами
+ * строки наблюдений (и существующие ворота `baseCount`/traceability ловят их
+ * потерю). OK из манифеста не читается — иначе манифест и строки становятся
+ * двумя ответами на один вопрос.
+ *
+ * Статусы выбраны из тех, что композитный слой записывает в
+ * `nonOkCoverageCells`: ячейка со статусом вне этого набора до деки не доедет.
+ */
+export function genAnswerCoverageCells(rawManifest: unknown): CoverageCellStatusRow[] {
+  const probe = (rawManifest as { yandexGenAnswerProbe?: YandexGenAnswerProbe } | null)
+    ?.yandexGenAnswerProbe;
+  if (!probe || probe.status === "SUCCESS") return [];
+  const cell = (status: string, errorCode: string | null): CoverageCellStatusRow => ({
+    region: "RU",
+    engine: "YANDEX",
+    surface: "ai_answers",
+    status,
+    provider: "yandex",
+    errorCode,
+  });
+  if (probe.status === "NOT_CONFIGURED") {
+    return [cell("NOT_COLLECTED", probe.errorCode ?? "PROVIDER_NOT_CONFIGURED")];
+  }
+  if (probe.status === "FAILED") return [cell("ERROR", probe.errorCode ?? null)];
+  // NO_RESULTS и REJECTED — измеренная пустота: вопрос задан, ответ получен.
+  return [cell("NO_RESULTS", probe.status === "REJECTED" ? "ANSWER_REJECTED" : null)];
 }
 
 export async function snapshotExistingIds(

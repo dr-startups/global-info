@@ -16,38 +16,21 @@
  * поле в ответе перезаписывается.
  */
 
-/** Слова уровня риска, которые понимает контракт анализа. */
-export type RiskWord = "низкий" | "средний" | "высокий" | "критический";
+import { verdictRiskWord, type ClientRiskWord } from "../client/risk-scale";
 
-/**
- * Вердикт аналитики → слово уровня риска.
- *
- * `MIXED` — смешанный фон, а не отдельная ступень шкалы: по значимости он
- * находится между низким и высоким, поэтому отображается в «средний».
- * `INSUFFICIENT_DATA` вердиктом не является, и превращать его в уровень риска
- * нельзя — «недостаточно данных» это не «низкий риск».
- */
-const VERDICT_TO_RISK_WORD: Record<string, RiskWord> = {
-  HIGH: "высокий",
-  CRITICAL: "критический",
-  ELEVATED: "высокий",
-  MIXED: "средний",
-  MEDIUM: "средний",
-  LOW: "низкий",
-};
+/** Слова уровня риска, которые понимает контракт анализа: ступеней три. */
+export type RiskWord = ClientRiskWord;
 
 /**
  * Слово уровня риска для вердикта аналитики.
  *
- * `null` означает «уровень не определён»: модели он тогда не навязывается, и
- * она отвечает как раньше — но и противоречить будет нечему, потому что
- * плашка в этом случае тоже не печатает ступень шкалы.
+ * Отображение вердикта в ступень живёт на клиентской шкале: слово в ответе
+ * модели и слово в плашке резюме обязаны совпадать, а значит браться из одного
+ * места. `null` означает «уровень не определён»: модели он тогда не
+ * навязывается, и она отвечает как раньше — но и противоречить будет нечему,
+ * потому что плашка в этом случае тоже не печатает ступень шкалы.
  */
-export function riskWordForVerdict(verdict: string | null | undefined): RiskWord | null {
-  const key = String(verdict ?? "").trim().toUpperCase();
-  if (!key) return null;
-  return VERDICT_TO_RISK_WORD[key] ?? null;
-}
+export { verdictRiskWord as riskWordForVerdict };
 
 /**
  * Приводит уровень в ответе модели к вычисленному аналитикой.
@@ -59,14 +42,14 @@ export function withDeterministicRiskLevel<T extends { overallRiskLevel: string 
   analysis: T,
   verdict: string | null | undefined
 ): T {
-  const word = riskWordForVerdict(verdict);
+  const word = verdictRiskWord(verdict);
   if (!word || analysis.overallRiskLevel === word) return analysis;
   return { ...analysis, overallRiskLevel: word };
 }
 
 /** Строка промпта, сообщающая модели уже вычисленный уровень. */
 export function riskLevelPromptLine(verdict: string | null | undefined): string | null {
-  const word = riskWordForVerdict(verdict);
+  const word = verdictRiskWord(verdict);
   if (!word) return null;
   return (
     `Итоговый уровень риска уже вычислен аналитикой по доказательствам и равен «${word}». ` +

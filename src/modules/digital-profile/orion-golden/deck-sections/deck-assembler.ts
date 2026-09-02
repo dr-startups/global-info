@@ -18,10 +18,17 @@ import type {
   SectionPackV2,
   SlideContentContract,
 } from "./contracts";
-import { REPORT_DECK_MANIFEST_VERSION, SECTION_TITLES, type PageKind } from "./contracts";
+import {
+  canonicalSectionPack,
+  REPORT_DECK_MANIFEST_VERSION,
+  SECTION_TITLES,
+  type PageKind,
+} from "./contracts";
 import {
   DECK_TEMPLATE_REGISTRY,
   isAllowedLayoutVariant,
+  rendererTemplateCarriesSourceNote,
+  rendererTemplateCarriesStatusNote,
   type DeckTemplateId,
 } from "./template-registry";
 import {
@@ -29,7 +36,50 @@ import {
   CANONICAL_SLOT_IDS,
   EXPLICIT_SLOT_MERGES,
 } from "./canonical-slots";
+import { dedupSlideBullets } from "./boilerplate-commentary";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
+import { dropEmptyContinuations } from "./continuation-cleanup";
+import { DECK_CONTENT_VERSION } from "./content-version";
+import { applyBulletRecut, type BulletRecutPlan } from "./measured-bullet-fit";
+
+/**
+ * Страницы, где строки — данные, а не наша проза.
+ *
+ * Вычистка повторов заведена против одного и того же **пояснения темы**,
+ * напечатанного в матрице рисков, в обзоре профиля и в резюме региона. Списки
+ * поверхностей — другое: подсказка Google, дословно совпавшая с подсказкой
+ * Яндекса, это два факта, а не повтор. На прогоне вычистка съедала такие
+ * строки, и на странице оставалось три запроса из десяти нарисованных на
+ * панели — при том, что описание рядом считало десять.
+ */
+export function isDataRowTemplate(templateId: string): boolean {
+  return DATA_ROW_TEMPLATES.has(templateId);
+}
+
+const DATA_ROW_TEMPLATES = new Set<string>([
+  "related-queries",
+  "suggestions",
+  "ai-overview",
+  "image-grid",
+  "serp-table",
+  /*
+   * Вторая таблица выдачи. Строки у неё такие же данные, как у первой: по
+   * одиннадцать подряд несут в колонке «Найдено по запросу» одну формулировку.
+   *
+   * **Сегодня запись ничего не меняет, и это надо знать.** Все трое читателей
+   * перечня смотрят прозаические блоки, а не ячейки: вычистка присказок — на
+   * `bullets`, ворот целости цитат — на `bullets`, ворот повтора текста внутри
+   * страницы — на `narrative`/`bullets`/`sourceNote`. У страниц второй таблицы
+   * буллетов нет, а прозаический блок один — сравнивать нечего. Запись стоит
+   * как классификация: она понадобится в тот день, когда у страницы появится
+   * список, и тогда её отсутствие сняло бы строки молча — ровно так однажды
+   * осталось три запроса из десяти нарисованных.
+   *
+   * На ворот «две страницы с одинаковым телом» она не влияет вовсе: тот
+   * считает отпечаток по всем слайдам без этого предиката.
+   */
+  "serp-extra-queries",
+]);
 
 export type AssemblyRejection = {
   fragmentKey: string;
@@ -38,15 +88,58 @@ export type AssemblyRejection = {
     | "FOREIGN_REPORT_RUN"
     | "STALE_DATASET"
     | "SECTION_QA_FAILED"
-    | "EMPTY_VALID_OMITTED";
+    | "EMPTY_VALID_OMITTED"
+    /** Продолжение осталось без содержимого после вычистки повторов. */
+    | "EMPTY_CONTINUATION_DROPPED"
+    /** Вычистка сняла бы со страницы больше трети текста — не применена. */
+    | "BOILERPLATE_DEDUP_SKIPPED";
   detail: string;
 };
+
+/** Снятое предложение с указанием страницы — для разбора сборки. */
+export type DedupRemoval = { slideId: string; sentence: string };
+
+/**
+ * Поля слайда, содержащие клиентский текст.
+ *
+ * Перечень один на всех, кто спрашивает «что здесь читает клиент»: снимок
+ * клиентского текста (`scripts/lib/client-text-snapshot.ts`), приёмочный ворот
+ * «переданное поле оставило след на своей странице» и сторож носителя в сборке
+ * нагрузки. Второй список означал бы, что новое поле попадает под один сторож
+ * и проходит мимо остальных.
+ *
+ * Порядок — тот, в котором поля печатаются в снимке; менять его — значит
+ * двигать эталон клиентского текста.
+ */
+export const CLIENT_TEXT_FIELDS = [
+  "title",
+  "subtitle",
+  "narrative",
+  "whatWasFound",
+  "whyItMatters",
+  "whatToCheck",
+  "statusNote",
+  "sourceNote",
+  "methodologyNote",
+  "emptyStateReason",
+] as const;
+
+export type ClientTextField = (typeof CLIENT_TEXT_FIELDS)[number];
 
 /** Unified slide model in the existing renderer's slide shape. */
 export type RendererSlide = {
   slideKey: string;
   sectionKey: string;
   template: string;
+  /**
+   * Шаблон реестра, из которого выведена раскладка.
+   *
+   * На проводе его нет — рендерер знает только `template`. Здесь он нужен
+   * затем, что ёмкость абзаца объявлена у реестрового шаблона, а одну и ту же
+   * раскладку рендерера делят несколько шаблонов с разными бюджетами: по
+   * `template` верный бюджет не восстановить.
+   */
+  templateId: string;
   /**
    * Level 2.5 — named pre-built layout variant picked by the composer stage.
    * Absent → the renderer's default layout; always a registered variant.
@@ -65,6 +158,8 @@ export type RendererSlide = {
   table?: {
     headers: string[];
     rows: string[][];
+    /** Адрес материала под своей строкой; длина равна числу строк. */
+    rowAddresses?: string[];
     groups?: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }>;
   };
   evidenceRefs: string[];
@@ -89,6 +184,12 @@ export type DeckAssemblyResult = {
   rendererSlides: RendererSlide[];
   rejections: AssemblyRejection[];
   errors: string[];
+  /**
+   * Что вычистка сняла и с какой страницы. Пустой список — обычное дело;
+   * непустой должен быть читаемым, иначе укоротившуюся страницу не с чем
+   * сверить.
+   */
+  dedupRemovals: DedupRemoval[];
 };
 
 export function assembleDeck(input: {
@@ -103,17 +204,40 @@ export function assembleDeck(input: {
    * The assembler itself stays pure — the map is plain validated data.
    */
   layoutVariants?: ReadonlyMap<string, string>;
+  /**
+   * Вердикт меры рендерера, переведённый в «сколько буллетов на каждой странице
+   * слота». Задан — разбивка построителя (сид) уступает ему: ёмкость листа
+   * знает отрисовка, а не число в реестре.
+   */
+  bulletRecut?: BulletRecutPlan;
 }): DeckAssemblyResult {
   const rejections: AssemblyRejection[] = [];
   const errors: string[] = [];
-  const byKey = new Map(input.packs.map((p) => [p.fragmentKey, p]));
+  /*
+   * Дека собирается из пакета в канонической форме — той же, что у его файла.
+   *
+   * Всё, что сборщик выносит из пакета в деку (таблица с полосами записей,
+   * метрики, KPI, объяснения рамок), иначе приносит порядок ключей своего
+   * происхождения: у пакета с диска он схемный, у свежесобранного — авторский.
+   * `assembled-deck.json` от этого расходился побайтово между прогоном,
+   * собравшим секции заново, и следующим, взявшим их из кэша, — а эти байты
+   * штампует приёмка сборки. Ответ здесь один и на любое поле, включая то,
+   * которое появится в пакете завтра.
+   */
+  const byKey = new Map(input.packs.map((p) => [p.fragmentKey, canonicalSectionPack(p)]));
 
   // 4. Required sections must not be failed.
   if (input.manifest.buildBlocked) {
     errors.push(
       `required sections failed: ${input.manifest.requiredSectionsFailed.join("; ")} — build stopped`
     );
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
   }
 
   // 1–5. Verify lineage per pack; reject foreign/stale; drop EMPTY_VALID optionals.
@@ -178,7 +302,13 @@ export function assembleDeck(input: {
   }
 
   if (errors.length > 0) {
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
   }
 
   // 8. slideId / baseSlotId uniqueness.
@@ -191,17 +321,112 @@ export function assembleDeck(input: {
       if (seenBaseSlots.has(slide.baseSlotId)) errors.push(`duplicate baseSlotId: ${slide.baseSlotId}`);
       seenBaseSlots.add(slide.baseSlotId);
     }
+    /*
+     * Полосы адреса под строкой больше нет — и объявить её нельзя.
+     *
+     * Адрес вернулся в колонку таблицы, а ветка рендерера, рисовавшая полосу,
+     * снята как мёртвая. Значит слайд, объявивший `rowAddresses`, отдал бы
+     * клиенту страницу без этих адресов и без единого слова об этом. Прежде
+     * здесь сверялись длины двух массивов; теперь рисовать полосу нечем, и
+     * вопрос сузился до самого объявления.
+     */
+    const table = slide.content.table;
+    if (table?.rowAddresses) {
+      errors.push(
+        `slide ${slide.slideId}: объявлены полосы адреса (${table.rowAddresses.length}), ` +
+          "а рендерер их больше не рисует — адрес печатается колонкой «Ссылка»"
+      );
+    }
   }
   if (errors.length > 0) {
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
+  }
+
+  /*
+   * Пояснение темы печатается один раз на весь отчёт.
+   *
+   * Текст находки собирается один раз и переиспользуется всюду, где тема
+   * появляется: в матрице рисков, в обзоре профиля и в резюме каждого региона.
+   * Из-за этого один и тот же абзац — «Найдены публикации… Для банка или
+   * партнёра такие сюжеты обычно становятся первым поводом для расширенной
+   * проверки» — печатался в отчёте четыре раза дословно. Для читателя это
+   * главный признак отчёта, собранного шаблоном, а не написанного.
+   *
+   * Снимается при этом **только объявленная присказка** — список ведут сами
+   * построители ([[boilerplate-commentary]]). Цитата, источник, «Где видно» и
+   * счётчики темы не снимаются никогда, даже если совпали дословно: на прогоне
+   * 14.08 слепое сравнение предложений опустошило страницу резюме по ОАЭ и
+   * оборвало цитату на середине.
+   *
+   * Сверх белого списка стоит потолок: вычистка не вправе снять со страницы
+   * больше трети текста. Перебор — вычистка на этой странице отменяется целиком
+   * и называет себя в разборе сборки.
+   *
+   * Вычистка идёт до нумерации: продолжение, у которого после неё не осталось
+   * ничего, кроме заголовка, — пустой лист, и он не должен получить ни номера
+   * страницы, ни строки в оглавлении.
+   */
+  const saidInDeck = new Set<string>();
+  const dedupRemovals: DedupRemoval[] = [];
+  const dedupedSlides = acceptedSlides.map(({ slide, pack }) => {
+    if (slide.templateId === "toc" || isDataRowTemplate(slide.templateId)) {
+      return { slide, pack };
+    }
+    const source = slide.content.bullets ?? [];
+    const result = dedupSlideBullets(source, saidInDeck);
+    if (result.skippedByCeiling) {
+      rejections.push({
+        fragmentKey: pack.fragmentKey,
+        reason: "BOILERPLATE_DEDUP_SKIPPED",
+        detail: `${slide.slideId}: сняли бы ${result.wouldRemoveChars} из ${source.join("\n").length} символов`,
+      });
+      return { slide, pack };
+    }
+    if (result.removed.length === 0) return { slide, pack };
+
+    for (const sentence of result.removed) {
+      dedupRemovals.push({ slideId: slide.slideId, sentence });
+    }
+    return {
+      slide: { ...slide, content: { ...slide.content, bullets: result.bullets } },
+      pack,
+    };
+  });
+  const packBySlideId = new Map(dedupedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
+  // Перекладка по мере идёт после вычистки повторов (её вердикт снят с деки,
+  // где повторов уже нет) и до нумерации страниц: номера принадлежат тому
+  // составу листов, который поедет в рендер.
+  const laidOut = dedupedSlides.map(({ slide }) => slide);
+  // Страницу, которой перекладка добавила, знает только её основа: пак ищется
+  // по слоту, а не по идентификатору листа.
+  const packOf = (slide: SlideContentContract): SectionPackV2 =>
+    packBySlideId.get(slide.slideId) ?? packBySlideId.get(slide.continuationOf ?? "")!;
+  const cleanup = dropEmptyContinuations(
+    input.bulletRecut ? applyBulletRecut(laidOut, input.bulletRecut) : laidOut
+  );
+  const finalSlides = cleanup.slides.map((slide) => ({ slide, pack: packOf(slide) }));
+  // Выброшенный лист называется вслух: страница исчезла из отчёта, и это
+  // должно быть видно в разборе сборки, а не только в разнице номеров.
+  for (const slideId of cleanup.dropped) {
+    rejections.push({
+      fragmentKey: packBySlideId.get(slideId)?.fragmentKey ?? "UNKNOWN",
+      reason: "EMPTY_CONTINUATION_DROPPED",
+      detail: slideId,
+    });
   }
 
   // 9/10. Global page index and section page ranges (assembler-owned).
-  const total = acceptedSlides.length;
+  const total = finalSlides.length;
   const slideRefs: DeckSlideRef[] = [];
   const sectionRanges = new Map<string, { first: number; last: number }>();
   const canonicalIdSet = new Set(CANONICAL_SLOT_IDS);
-  acceptedSlides.forEach(({ slide, pack }, i) => {
+  finalSlides.forEach(({ slide, pack }, i) => {
     const page = i + 1;
     // Explicit page accounting: every page is a canonical base slot, a
     // continuation of one, or an explained optional extra — never an
@@ -243,8 +468,9 @@ export function assembleDeck(input: {
     .sort((a, b) => a.pageNumber - b.pageNumber);
 
   // 12/13/14. Renderer slide model with global footer counters + manifest.
-  const rendererSlides: RendererSlide[] = acceptedSlides.map(({ slide }, i) => {
+  const rendererSlides: RendererSlide[] = finalSlides.map(({ slide }, i) => {
     const tpl = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId];
+    const rendererTemplate = tpl?.rendererTemplate ?? "orion_golden_surface_panel";
     const isToc = slide.templateId === "toc";
     const pickedVariant = input.layoutVariants?.get(slide.slideId);
     const layoutVariant =
@@ -254,7 +480,8 @@ export function assembleDeck(input: {
     return {
       slideKey: slide.slideId,
       sectionKey: slide.sectionId,
-      template: tpl?.rendererTemplate ?? "orion_golden_surface_panel",
+      template: rendererTemplate,
+      templateId: slide.templateId,
       ...(layoutVariant ? { layoutVariant } : {}),
       title: slide.title,
       subtitle: slide.subtitle,
@@ -265,7 +492,8 @@ export function assembleDeck(input: {
       continuationOf: slide.continuationOf ?? undefined,
       continuationIndex: slide.continuationIndex ?? undefined,
       narrative: slide.content.narrative,
-      bullets: isToc ? toc.map((t) => t.title) : slide.content.bullets,
+      // Повторы уже вычищены выше, до нумерации страниц.
+      bullets: isToc ? toc.map((t) => t.title) : (slide.content.bullets ?? []),
       table: slide.content.table,
       evidenceRefs: slide.evidenceRefs,
       findingIds: slide.findingIds,
@@ -277,8 +505,26 @@ export function assembleDeck(input: {
       whatWasFound: slide.content.whatWasFound,
       whyItMatters: slide.content.whyItMatters,
       whatToCheck: slide.content.whatToCheck,
-      sourceNote: slide.content.sourceNote,
-      statusNote: slide.content.statusNote,
+      /*
+       * Поле, которому на этом макете негде напечататься, дальше не едет.
+       *
+       * До этой правки построитель клал строку «Источники» на все страницы, а
+       * маппинг нагрузки молча ронял её у макетов без списка (таблица выдачи,
+       * матрица рисков) и у дашбордов, чей «список» рисуется плитками и
+       * карточками тем: 21 сноска из 42 на эталоне-72 и 8 статусных строк.
+       * Прибора у этой потери не было ни одного — ворот «поле оставило след на
+       * своей странице» читает нагрузку, а туда поле не доезжало.
+       *
+       * Носитель — вопрос макета, и отвечает на него реестр, там же, где
+       * объявлена ёмкость списка. Здесь ответ применяется: это единственное
+       * место, где содержимое пакета становится слайдом рендерера.
+       */
+      sourceNote: rendererTemplateCarriesSourceNote(rendererTemplate)
+        ? slide.content.sourceNote
+        : undefined,
+      statusNote: rendererTemplateCarriesStatusNote(rendererTemplate)
+        ? slide.content.statusNote
+        : undefined,
       highlightExplanations: slide.content.highlightExplanations,
       kpis: slide.content.kpis,
       emptyStateReason: slide.emptyStateReason,
@@ -327,7 +573,7 @@ export function assembleDeck(input: {
 
   // Every page outside "canonical base slots + their continuations" gets an
   // explicit owner and reason (e.g. the optional appendix).
-  const packBySlide = new Map(acceptedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
+  const packBySlide = new Map(finalSlides.map(({ slide, pack }) => [slide.slideId, pack]));
   const optionalBaseIds = new Set(
     slideRefs.filter((s) => s.pageKind === "optional_extra").map((s) => s.slideId)
   );
@@ -356,6 +602,7 @@ export function assembleDeck(input: {
     caseId: input.manifest.caseId,
     reportRunId: input.expectedReportRunId,
     sourceDatasetId: input.expectedDatasetId,
+    contentVersion: DECK_CONTENT_VERSION,
     generatedAt: new Date().toISOString(),
     pageCount: total,
     baseSlotCount: slideRefs.filter((s) => !s.isContinuation).length,
@@ -374,12 +621,28 @@ export function assembleDeck(input: {
     nonCanonicalPages,
     mergedSlots,
     sectionContentHashes,
-    assembledDeckHash: `sha256:${createHash("sha256")
-      .update(JSON.stringify(slideRefs.map((s) => `${s.slideId}:${s.pageNumber}`)))
-      .digest("hex")}`,
+    assembledDeckHash: assembledDeckHashOf(
+      slideRefs.map((s) => ({ id: s.slideId, pageNumber: s.pageNumber }))
+    ),
   };
 
-  return { deckManifest, rendererSlides, rejections, errors };
+  return { deckManifest, rendererSlides, rejections, errors, dedupRemovals };
+}
+
+/**
+ * Отпечаток укладки: идентификаторы страниц и их номера в порядке сборки.
+ *
+ * Считается по одной формуле и для манифеста, и для проверки уже записанной
+ * деки. Манифест и `assembled-deck.json` пишутся двумя отдельными записями:
+ * прогон может умереть между ними, а файл — быть урезан, и тогда обещанное
+ * манифестом покрытие относится к деке, которой на диске уже нет.
+ */
+export function assembledDeckHashOf(
+  pages: ReadonlyArray<{ id: string; pageNumber: number }>
+): string {
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(pages.map((p) => `${p.id}:${p.pageNumber}`)))
+    .digest("hex")}`;
 }
 
 /**
@@ -416,6 +679,7 @@ function emptyManifest(input: {
     caseId: input.manifest.caseId,
     reportRunId: input.expectedReportRunId,
     sourceDatasetId: input.expectedDatasetId,
+    contentVersion: DECK_CONTENT_VERSION,
     generatedAt: new Date().toISOString(),
     pageCount: 0,
     baseSlotCount: 0,

@@ -15,7 +15,7 @@
  * и обнаруживались только на живом платном прогоне.
  */
 
-import { deriveJobStage } from "./step-plan";
+import { STAGE_OWNER, deriveJobStage } from "./step-plan";
 import type { WorkflowStepRow } from "./step-types";
 
 /**
@@ -52,9 +52,10 @@ export function detectStageDrift(
   const derived = deriveJobStage(steps, completeness).stage;
   if (derived === stored) return null;
 
-  // `CLIENT_CONTENT` — внутренняя стадия шага подготовки отчёта: конвейер
-  // такого различия не делает, и это не расхождение.
-  if (stored === "CLIENT_CONTENT" && derived === "ORION_PREPARE") return null;
+  // Хранимая стадия живёт внутри шага, и выведенная — стадия этого же шага:
+  // конвейер такого различия не делает, и это не расхождение. Кто чей владелец
+  // — один ответ на модуль, в реестре.
+  if (STAGE_OWNER.get(stored) === derived) return null;
 
   return {
     storedStage: stored,

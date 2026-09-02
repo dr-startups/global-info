@@ -94,18 +94,22 @@ describe("возобновление импорта после рестарта"
     });
 
     expect(submitted).toHaveLength(1);
-    expect(submitted[0]).toEqual([
-      "ARSENKIN_SUGGESTIONS_REAL",
-      "ARSENKIN_PAA_REAL",
-      "ARSENKIN_AI_SEARCH_REAL",
-      "ARSENKIN_URL_AUDIT_REAL",
-    ]);
+    // Состав по умолчанию (ADR-0005) — первая стадия: отправляются те агенты
+    // первой стадии, у которых задач ещё нет. Второй стадии здесь нет вовсе,
+    // и её отсутствие — не пропущенная работа, а принятое решение.
+    expect(submitted[0]).toEqual(["ARSENKIN_SUGGESTIONS_REAL", "ARSENKIN_PAA_REAL"]);
     // Уже отправленный агент не отправляется повторно — это платный вызов.
     expect(submitted[0]).not.toContain("ARSENKIN_SEARCH_TOP_REAL");
+    // Отключённый составом — тем более: за него платят те же деньги.
+    expect(submitted[0]).not.toContain("ARSENKIN_AI_SEARCH_REAL");
+    expect(submitted[0]).not.toContain("ARSENKIN_URL_AUDIT_REAL");
     expect(result.waiting).toBe(true);
     expect(result.blockPipeline).toBe(false);
     expect(result.warnings).toContain(
-      "arsenkin-registered-without-task:ARSENKIN_SUGGESTIONS_REAL,ARSENKIN_PAA_REAL,ARSENKIN_AI_SEARCH_REAL,ARSENKIN_URL_AUDIT_REAL"
+      "arsenkin-registered-without-task:ARSENKIN_SUGGESTIONS_REAL,ARSENKIN_PAA_REAL"
+    );
+    expect(result.warnings).toContain(
+      "arsenkin-disabled-by-tools:ARSENKIN_AI_SEARCH_REAL,ARSENKIN_URL_AUDIT_REAL"
     );
   });
 
@@ -150,6 +154,54 @@ describe("возобновление импорта после рестарта"
     expect(result.blockPipeline).toBe(true);
     expect(result.blockCode).toBe("ARSENKIN_NO_TASKS_TO_POLL");
     expect(result.blockMessage).toContain("ARSENKIN_SUGGESTIONS_REAL");
+  });
+
+  it("отключённый составом агент завершает стадию, а не подвешивает её", async () => {
+    /*
+     * Наблюдалось на живом прогоне: при составе по умолчанию агенты второй
+     * стадии всё равно уходили в работу, потому что «что включено» никто у
+     * состава не спрашивал. Если же их просто перестать отправлять, но
+     * оставить в ожидании, прогон не завершится вовсе: `enrichmentComplete`
+     * требует терминальности всех пяти.
+     */
+    const doneTasks: EnrichmentPollTaskSnap[] = (
+      [
+        ["ARSENKIN_SEARCH_TOP_REAL", "check-top", "tops"],
+        ["ARSENKIN_SUGGESTIONS_REAL", "suggest", "suggestions"],
+        ["ARSENKIN_PAA_REAL", "paa", "questions"],
+      ] as const
+    ).map(([agent, tool, arrayKey], i) => ({
+      id: `pt-${i}`,
+      reportRunId: runId(agent),
+      externalTaskId: `ext-${i}`,
+      toolName: tool,
+      state: "DONE",
+      // Пустой, но правильный по форме ответ: инструмент отработал и ничего не
+      // нашёл. Это EMPTY_VALID, а не отказ.
+      responseJson: { code: "ok", task_id: `ext-${i}`, result: { [arrayKey]: [] } },
+      requestJson: { tools_name: tool, data: { queries: ["субъект"] } },
+    }));
+
+    const result = await runDurableArsenkinEnrichmentTick({
+      job: job({
+        enrichmentRunIds: [
+          runId("ARSENKIN_SEARCH_TOP_REAL"),
+          runId("ARSENKIN_SUGGESTIONS_REAL"),
+          runId("ARSENKIN_PAA_REAL"),
+        ],
+      }),
+      listProviderTasks: async () => doneTasks,
+      pollTask: async (t) => t,
+    });
+
+    expect(result.state.pendingAgents).toEqual([]);
+    expect(result.state.failedAgents).toEqual([]);
+    // Отключённые засчитаны законченными, иначе стадия не закроется никогда.
+    expect(result.state.completedAgents).toContain("ARSENKIN_AI_SEARCH_REAL");
+    expect(result.state.completedAgents).toContain("ARSENKIN_URL_AUDIT_REAL");
+    expect(result.state.enrichmentComplete).toBe(true);
+    expect(result.blockPipeline).toBe(false);
+    expect(result.warnings).toContain("arsenkin-agent-disabled-by-tools:ARSENKIN_AI_SEARCH_REAL");
   });
 
   it("незарегистрированные агенты по-прежнему дают ARSENKIN_STAGE_NOT_STARTED", async () => {

@@ -11,6 +11,7 @@ export type SearchSurfaceMediaCategory =
   | "RELATED_QUERY"
   | "ORGANIC_RESULT"
   | "MANUAL_NOTE"
+  | "AI_ANSWER"
   | "OTHER";
 
 export type SearchSurfaceRow = {
@@ -39,6 +40,7 @@ const DIRECT_TYPES = new Set<SearchSurfaceMediaCategory>([
   "RELATED_QUERY",
   "ORGANIC_RESULT",
   "MANUAL_NOTE",
+  "AI_ANSWER",
 ]);
 
 export function resolveSearchSurfaceMediaCategory(row: SearchSurfaceRow): SearchSurfaceMediaCategory {
@@ -74,6 +76,7 @@ export function countSearchSurfaceMediaAvailability(surfaces: SearchSurfaceRow[]
   relatedQueries: number;
   organicResults: number;
   manualNotes: number;
+  aiAnswers: number;
 } {
   const counts = {
     images: 0,
@@ -84,6 +87,7 @@ export function countSearchSurfaceMediaAvailability(surfaces: SearchSurfaceRow[]
     relatedQueries: 0,
     organicResults: 0,
     manualNotes: 0,
+    aiAnswers: 0,
   };
 
   for (const row of surfaces) {
@@ -111,6 +115,9 @@ export function countSearchSurfaceMediaAvailability(surfaces: SearchSurfaceRow[]
         break;
       case "MANUAL_NOTE":
         counts.manualNotes += 1;
+        break;
+      case "AI_ANSWER":
+        counts.aiAnswers += 1;
         break;
       default:
         break;

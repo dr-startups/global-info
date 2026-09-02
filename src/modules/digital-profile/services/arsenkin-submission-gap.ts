@@ -16,7 +16,10 @@
  * остаётся на опросе, а не уходит на повторную отправку.
  */
 
-import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
+import {
+  ARSENKIN_REAL_AGENT_NAMES,
+  isArsenkinAgentEnabled,
+} from "../agents/real/real-arsenkin-agents";
 import { agentNameFromEnrichmentRunId, toolMatchesAgent } from "./unified-enrichment-sibling-remap";
 
 export type SubmissionGapTask = {
@@ -34,6 +37,8 @@ export type ArsenkinSubmissionGap = {
   unregistered: string[];
   /** Из needsSubmit: зарегистрированы, но задача не ушла — тот самый случай. */
   registeredWithoutTask: string[];
+  /** Отключены составом `ARSENKIN_TOOLS`: не отправляются и не ждутся. */
+  disabled: string[];
 };
 
 function hasText(value: string | null | undefined): boolean {
@@ -65,6 +70,7 @@ function tasksOfAgent(
 export function computeArsenkinSubmissionGap(input: {
   enrichmentRunIds: readonly string[];
   tasks: readonly SubmissionGapTask[];
+  env?: NodeJS.ProcessEnv;
 }): ArsenkinSubmissionGap {
   const runIds = input.enrichmentRunIds.map((id) => String(id ?? "").trim()).filter(Boolean);
   const gap: ArsenkinSubmissionGap = {
@@ -72,6 +78,7 @@ export function computeArsenkinSubmissionGap(input: {
     submitted: [],
     unregistered: [],
     registeredWithoutTask: [],
+    disabled: [],
   };
 
   for (let i = 0; i < ARSENKIN_REAL_AGENT_NAMES.length; i += 1) {
@@ -83,7 +90,18 @@ export function computeArsenkinSubmissionGap(input: {
     const agentRunIds = attributed.length > 0 ? attributed : positional;
 
     if (tasksOfAgent(agentName, agentRunIds, input.tasks).length > 0) {
+      // Задачи уже отправлены и оплачены. Их результат забирается независимо от
+      // того, что говорит состав сейчас: состав мог измениться посреди прогона,
+      // а оплаченный сбор не перестаёт быть оплаченным.
       gap.submitted.push(agentName);
+      continue;
+    }
+    if (!isArsenkinAgentEnabled(agentName, input.env)) {
+      // Отключённый составом агент не отправляется. Именно этой проверки не
+      // было: на живом прогоне все пять агентов уходили в работу, включая тех,
+      // кого интерфейс показывал как «Отключено», — и их поверхности
+      // оплачивались.
+      gap.disabled.push(agentName);
       continue;
     }
     gap.needsSubmit.push(agentName);
@@ -102,6 +120,9 @@ export function describeSubmissionGap(gap: ArsenkinSubmissionGap): string[] {
   }
   if (gap.unregistered.length > 0) {
     out.push(`arsenkin-unregistered:${gap.unregistered.join(",")}`);
+  }
+  if (gap.disabled.length > 0) {
+    out.push(`arsenkin-disabled-by-tools:${gap.disabled.join(",")}`);
   }
   return out;
 }

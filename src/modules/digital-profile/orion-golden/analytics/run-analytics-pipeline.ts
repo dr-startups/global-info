@@ -13,6 +13,7 @@ import { join } from "node:path";
 import type { RawInventoryItem } from "../types";
 import type { ArsenkinReportBindingV2 } from "../classic/arsenkin-report-binding";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
+import { normalizeCoverageSurface } from "../deck-sections/scoped-input";
 import type { SubjectResolution } from "../contracts/subject-resolution";
 import type { SurfaceAnalysis } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
@@ -35,7 +36,19 @@ import {
   type SubjectIdentity,
 } from "./subject-resolution-classifier";
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
-import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
+import { runSurfaceAnalyzers } from "./surface-analyzers";
+import { resolveItemAdverse, spreadVerdictsOverMaterials } from "./item-adverse";
+import { observationVerdictsForVisuals } from "../../serp-observation/resolve-observation-highlights";
+import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
+import { loadReusableLinkVerdicts, runLinkVerdicts } from "./run-link-verdicts";
+import { verdictAuditLogLine } from "./link-verdict-audit-agent";
+import {
+  loadReusableWikipediaArticleReview,
+  runWikipediaArticleReview,
+  wikipediaArticleReviewLogLine,
+  WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT,
+  type WikipediaArticleReviewCheck,
+} from "./run-wikipedia-article-review";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
@@ -44,6 +57,7 @@ import {
   type ExecutiveSummaryStageInput,
   type SourceQualityEntry,
 } from "../executive-summary/stage-contracts";
+import { clientCoverageLimitationLines } from "../executive-summary/coverage-limitation-lines";
 import {
   runExecutiveSummaryStage,
   type ExecutiveSummaryStageResult,
@@ -96,6 +110,7 @@ import {
   composeClientSummary,
 } from "./client-summary-composer";
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
+import type { LinkVerdict, VerdictSummary } from "../contracts/link-verdict";
 import {
   assertFilterLossGatesPass,
   buildFilterLossMatrix,
@@ -104,6 +119,13 @@ import type { FilterLossMatrix } from "../contracts/filter-loss-matrix";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
+  /**
+   * Идентификатор составного набора — чеканка слияния (`composite-<unifiedJobId>`).
+   * Обязателен: пайплайн его наследует во все свои артефакты, а не выводит свой.
+   * Пока он выводился здесь, дека и привязка джобы носили разные идентификаторы,
+   * и повторный рендер платил за полную пересборку.
+   */
+  datasetId: string;
   /** The run whose inventory is being analyzed (canonical lineage anchor). */
   inventoryReportRunId: string;
   items: RawInventoryItem[];
@@ -127,6 +149,12 @@ export type AnalyticsPipelineInput = {
   /** Injectable GPT callers for offline tests (§2.4 / §3.3). */
   gptIdentityCaller?: GptJsonCaller;
   gptThemesCaller?: GptJsonCaller;
+  /**
+   * Записи проверки Википедии со снимками — вход разбора статьи по существу.
+   * Приходят параметром: supplement уже в руках у подготовки отчёта, и второй
+   * его загрузчик здесь был бы вторым ответом на вопрос «какие статьи нашлись».
+   */
+  wikipediaChecks?: WikipediaArticleReviewCheck[];
 };
 
 export type AnalyticsPipelineResult = {
@@ -149,7 +177,20 @@ export type AnalyticsPipelineResult = {
   composedClientSummary: ComposedClientSummary;
   filterLossMatrix: FilterLossMatrix;
   reportDataBinding: ReportDataBinding;
+  /**
+   * Решения по прочитанным страницам и их свод по сюжетам.
+   *
+   * Нужны визуальному слою: рамку на снимке выдачи ставит прочитанная
+   * страница, а легенда говорит теми же кластерными ярлыками, что и резюме.
+   */
+  linkVerdicts: { summary: VerdictSummary; verdicts: LinkVerdict[] };
   artifactPaths: Record<string, string>;
+  /**
+   * Машинные предупреждения о потерях содержимого (`link-verdicts-lost:*`).
+   * Рождаются здесь и не зависят от успеха записи сводки качества — иначе
+   * потеря исчезала бы вместе с отказом записи.
+   */
+  qualityWarnings: string[];
 };
 
 function sha256(text: string): string {
@@ -175,6 +216,69 @@ function sourceQualityFor(domains: string[]): SourceQualityEntry[] {
           ? ("UNVERIFIED" as const)
           : ("AGGREGATOR" as const),
   }));
+}
+
+/** Client-facing surface labels — internal SurfaceKind keys never leak into
+ * the executive conclusion ("Не закрыты направления: …"). */
+const SURFACE_CLIENT_LABELS: Record<string, string> = {
+  organic: "органическая выдача",
+  suggestions: "поисковые подсказки",
+  paa_related: "связанные запросы",
+  images: "изображения в поиске",
+  wikipedia: "Википедия",
+  ai_answers: "ответы ИИ-поиска",
+  url_audit: "проверка URL и индексации",
+  compliance: "комплаенс-базы",
+};
+
+/**
+ * Пробелы покрытия, которые печатает резюме, — **единственный** ответ на
+ * вопрос «о чём сводка говорит „не собрано“».
+ *
+ * Пробел — это поверхность в регионе, а не ячейка: у одной поверхности их
+ * несколько (по числу поисковых систем), и без склейки резюме печатало
+ * «ответы ИИ-поиска (RU)» дважды подряд.
+ *
+ * И пробел не печатается вовсе, если у той же пары «регион + поверхность»
+ * есть **измеренная** ячейка. Иначе сводка спорит со слайдом того же отчёта:
+ * на прогоне 2026-08-19 `dataLimitations` объявляли «ответы ИИ-поиска (UAE):
+ * поверхность не собрана», пока слайд 55 показывал собранный ответ.
+ * Группировка идёт той же функцией, что у деки, — два грейдера обязаны мерить
+ * одной линейкой.
+ */
+export function coverageDataGaps(
+  coverage: Array<{ region: string; surface: string; sampleStatus: "MEASURED" | "NOT_COLLECTED" }>
+): Array<{ area: string; detail: string }> {
+  const measured = new Set(
+    coverage
+      .filter((c) => c.sampleStatus === "MEASURED")
+      .map((c) => `${c.region}|${normalizeCoverageSurface(c.surface)}`)
+  );
+  const gaps: Array<{ area: string; detail: string }> = [];
+  const seen = new Set<string>();
+  for (const c of coverage) {
+    if (c.sampleStatus !== "NOT_COLLECTED") continue;
+    const surface = normalizeCoverageSurface(c.surface);
+    if (measured.has(`${c.region}|${surface}`)) continue;
+    // «MIXED» — слот без региональной привязки (аудит URL). Его код клиенту
+    // ничего не говорит, а направление строка называет и без региона.
+    const region = c.region === "MIXED" ? "" : c.region;
+    const label = SURFACE_CLIENT_LABELS[surface] ?? surface;
+    const area = region ? `${label} (${region})` : label;
+    if (seen.has(area)) continue;
+    seen.add(area);
+    /*
+     * Причина называется словами своего направления: у базы данных нет
+     * «поверхности», которую можно собрать, и общая фраза читалась бы клиенту
+     * ошибкой отчёта.
+     */
+    const detail =
+      surface === "compliance"
+        ? "проверка по базам в этом прогоне не выполнена"
+        : "поверхность не собрана в текущем прогоне";
+    gaps.push({ area, detail });
+  }
+  return gaps;
 }
 
 function buildExecutiveSummaryInput(input: {
@@ -242,26 +346,7 @@ function buildExecutiveSummaryInput(input: {
     }
   }
 
-  // Client-facing surface labels — internal SurfaceKind keys never leak into
-  // the executive conclusion ("Не закрыты направления: …").
-  const SURFACE_CLIENT_LABELS: Record<string, string> = {
-    organic: "органическая выдача",
-    suggestions: "поисковые подсказки",
-    paa_related: "связанные запросы",
-    images: "изображения в поиске",
-    wikipedia: "Википедия",
-    ai_answers: "ответы ИИ-поиска",
-    url_audit: "проверка URL и индексации",
-    compliance: "комплаенс-базы",
-  };
-  const dataGaps: Array<{ area: string; detail: string }> = [];
-  const notCollected = coverage.filter((c) => c.sampleStatus === "NOT_COLLECTED");
-  for (const c of notCollected) {
-    dataGaps.push({
-      area: `${SURFACE_CLIENT_LABELS[c.surface] ?? c.surface} (${c.region})`,
-      detail: "поверхность не собрана в текущем прогоне",
-    });
-  }
+  const dataGaps: Array<{ area: string; detail: string }> = [...coverageDataGaps(coverage)];
   for (const s of input.missingSources) {
     dataGaps.push({ area: s, detail: "источник отсутствует в инвентаре прогона" });
   }
@@ -330,6 +415,7 @@ export async function runOrionAnalyticsPipeline(
 ): Promise<AnalyticsPipelineResult> {
   mkdirSync(input.artifactsDir, { recursive: true });
   const artifactPaths: Record<string, string> = {};
+  const qualityWarnings: string[] = [];
   const hashes: Array<{ name: string; sha256: string }> = [];
   const emit = (name: string, value: unknown) => {
     const { path, sha256: h } = writeArtifact(input.artifactsDir, name, value);
@@ -361,6 +447,7 @@ export async function runOrionAnalyticsPipeline(
   const orphanEnrichmentItems = enrichmentItemsAll.length - enrichmentItems.length;
   const composite = buildAnalyticsCompositeDataset({
     caseId: input.caseId,
+    datasetId: input.datasetId,
     baseItems,
     enrichmentItems,
     binding: input.binding,
@@ -429,8 +516,212 @@ export async function runOrionAnalyticsPipeline(
     emit("gpt-identity-resolution.json", identityArtifact);
   }
 
-  // Complete provider delta with relevance/adverse figures.
-  const enrichmentRefs = new Set(enrichmentItems.map((i) => `inventory:${i.inventoryId}`));
+  // 2d. Область анализа: предмет аудита — ТОП-20 выдачи и международные базы.
+  //
+  // Разбор личности (кто на материале) идёт по всему собранному: страницы
+  // подсказок, изображений и похожих запросов остаются в отчёте и обязаны
+  // честно говорить, о субъекте ли материал. А темы риска и итоговая оценка
+  // строятся только по предмету аудита — иначе вывод опирается на то, чего
+  // проверяющий в выдаче не увидит.
+  const scope = resolveAnalysisScope(input.items);
+  emit("analysis-scope.json", {
+    ...scope.summary,
+    caseId: input.caseId,
+    datasetId,
+    excluded: scope.outOfScope.slice(0, 500).map((d) => ({
+      evidenceRef: d.evidenceRef,
+      reason: d.reason,
+      lane: d.lane,
+      rank: d.rank,
+      title: d.item.title,
+      url: d.item.sourceUrl ?? null,
+    })),
+  });
+
+  // 2e. Чтение ссылок предмета аудита.
+  //
+  // Тема материала до сих пор выбиралась по заголовку и сниппету — по двум
+  // строкам, которые показал поисковик. Здесь страницы читаются целиком, и
+  // решение по каждой выносится с цитатами. Шаг выключен по умолчанию: он
+  // ходит на чужие сайты и в модель, а это деньги за каждый отчёт.
+  //
+  // Купленное чтение сильнее флага. Страницы читаются один раз за сбор:
+  // `DIGITAL_PROFILE_LINK_READING` разрешает только **первую** покупку, а
+  // готовый артефакт джобы переиспользуется при любом его значении. Иначе
+  // пересборка отчёта либо затирала решения пустым артефактом (флаг выключен),
+  // либо молча покупала их заново (флаг включён) — и второе никто не замечал,
+  // потому что отчёт от этого не ломается, просто дорожает.
+  const reusable = loadReusableLinkVerdicts(input.artifactsDir, { caseId: input.caseId });
+  const linkVerdicts =
+    reusable.status === "reuse"
+      ? reusable.result
+      : await runLinkVerdicts({
+          caseId: input.caseId,
+          subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+          items: scope.inScope,
+        });
+  // Купленное было, переиспользовать не вышло — прежние решения подменены, и
+  // неважно, пустым результатом или новой покупкой: в первом случае отчёт
+  // обеднел, во втором за то же чтение заплатили второй раз. Условие «новый
+  // результат пуст» здесь стояло бы вторым ответом на вопрос «подменили ли
+  // купленное» и прятало бы ровно тот случай, за которым никто не следит.
+  const supersededVerdicts = reusable.status === "lost" ? reusable : null;
+  emit("link-verdicts.json", {
+    ...linkVerdicts,
+    datasetId,
+    ...(reusable.status === "reuse"
+      ? {
+          reuse: {
+            reusedAt: new Date().toISOString(),
+            previousDatasetId: reusable.previousDatasetId,
+          },
+        }
+      : {}),
+    ...(supersededVerdicts
+      ? {
+          superseded: {
+            reason: supersededVerdicts.reason,
+            previousVerdictCount: supersededVerdicts.previousVerdictCount,
+          },
+        }
+      : {}),
+  });
+  if (supersededVerdicts) {
+    qualityWarnings.push(`link-verdicts-lost:${supersededVerdicts.reason}`);
+    // Числу в логе верят: у нечитаемого файла решений не сосчитать, и «было
+    // решений: 0» прочиталось бы как «терять было нечего».
+    const previously =
+      supersededVerdicts.reason === "unreadable"
+        ? "сколько решений было — неизвестно"
+        : `в прежнем артефакте было решений: ${supersededVerdicts.previousVerdictCount}`;
+    console.error(
+      `[digital-profile][ссылки] КУПЛЕННОЕ ПОДМЕНЕНО: ` +
+        `link-verdicts-lost:${supersededVerdicts.reason}; ` +
+        `${previously}; новых решений: ${linkVerdicts.verdicts.length}`
+    );
+  }
+  /*
+   * Ноль прочитанных страниц при непустом запросе — это поломка у нас, и она
+   * обязана быть слышна.
+   *
+   * Три прогона подряд отчёт сообщал, что все сто двадцать ссылок «не
+   * открылись», а на самом деле падал сам запрос: в заголовке была кириллица.
+   * Отличить одно от другого по тихому артефакту было нельзя, поэтому теперь
+   * такой прогон кричит в лог — там же, где видно всё остальное.
+   */
+  if (reusable.status === "reuse") {
+    // Строка нужна на живом прогоне: по ней видно, что новых трат на чтение
+    // не было, а решения в отчёте — прежние.
+    console.log(
+      `[digital-profile][ссылки] решения прошлого прогона переиспользованы: ` +
+        `${linkVerdicts.verdicts.length}; страницы не перечитывались`
+    );
+    // Заморозить сломанное чтение можно, спрятать — нет: тревога живёт в
+    // каждом прогоне, который на этих решениях стоит.
+    if (linkVerdicts.readingBroken) {
+      console.error(
+        `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЛО в прогоне, чьи решения переиспользованы: ` +
+          `запрошено ${linkVerdicts.requested} страниц, прочитано 0 — решения вынесены по заголовкам`
+      );
+    }
+  } else if (linkVerdicts.readingBroken) {
+    const detail = linkVerdicts.reading.firstFailureDetail;
+    console.error(
+      `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЕТ: запрошено ${linkVerdicts.requested} страниц, прочитано 0` +
+        (detail ? `. Первая причина: ${detail}` : "")
+    );
+  } else if (linkVerdicts.requested > 0) {
+    const r = linkVerdicts.reading;
+    const reasons = Object.entries(r.byReason)
+      .map(([reason, n]) => `${reason}: ${n}`)
+      .join(", ");
+    console.log(
+      `[digital-profile][ссылки] прочитано ${r.read} из ${r.requested}` +
+        (r.retried > 0 ? `, повторов ${r.retried}` : "") +
+        (reasons ? `; отказы — ${reasons}` : "")
+    );
+    console.log(verdictAuditLogLine(linkVerdicts.audit));
+  }
+
+  /*
+   * 2f. Разбор текста найденных статей Википедии.
+   *
+   * Вход — снимки проверки, а не сеть: полный плейнтекст статьи забрал
+   * провайдер одним вызовом `prop=extracts`. Детерминированная часть (лид,
+   * разделы) работает всегда, модельная — при ключе OpenAI. Купленный разбор
+   * сильнее пересборки по той же причине, что и вердикты: базы у него нет.
+   */
+  const reusableReview = loadReusableWikipediaArticleReview(input.artifactsDir, {
+    caseId: input.caseId,
+  });
+  // Купленное входит в стадию, а не подменяет её: состоявшийся разбор
+  // переиспользуется пофрагментно, а проверка, которой в прошлый раз не
+  // досталось модели, спрашивается заново.
+  const articleReview = await runWikipediaArticleReview({
+    caseId: input.caseId,
+    subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+    checks: input.wikipediaChecks ?? [],
+    previous: reusableReview.status === "reuse" ? reusableReview.result.reviews : [],
+  });
+  emit(WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT, {
+    ...articleReview,
+    datasetId,
+    ...(reusableReview.status === "reuse"
+      ? {
+          reuse: {
+            reusedAt: new Date().toISOString(),
+            previousDatasetId: reusableReview.previousDatasetId,
+          },
+        }
+      : {}),
+    ...(reusableReview.status === "lost"
+      ? {
+          superseded: {
+            reason: reusableReview.reason,
+            previousReviewCount: reusableReview.previousReviewCount,
+          },
+        }
+      : {}),
+  });
+  if (reusableReview.status === "lost") {
+    qualityWarnings.push(`wikipedia-article-review-lost:${reusableReview.reason}`);
+    console.error(
+      `[digital-profile][википедия] КУПЛЕННОЕ ПОДМЕНЕНО: ` +
+        `wikipedia-article-review-lost:${reusableReview.reason}; ` +
+        `прежних записей: ${reusableReview.previousReviewCount}`
+    );
+  }
+  if (articleReview.reviews.length > 0) {
+    console.log(wikipediaArticleReviewLogLine(articleReview));
+  }
+
+  /*
+   * Карта решений по прочитанным страницам — один раз на прогон и сразу
+   * разложенная по материалам.
+   *
+   * Её спрашивают все трое, кто считает негатив: прирост обогащения, разбор
+   * поверхностей и синтез находок. Собирать её у каждого значило бы завести
+   * три ключа к одному ответу, а разъехавшийся ключ виден только на живом
+   * прогоне: офлайн чтение ссылок выключено, и карта пуста.
+   *
+   * Раскладка обязательна: страницы читаются по одному разу на адрес, и без
+   * неё второе наблюдение того же материала осталось бы при словарной метке —
+   * ровно тот спор с таблицей выдачи, который дека уже закрыла у себя.
+   */
+  const verdictByRef = spreadVerdictsOverMaterials(
+    input.items,
+    observationVerdictsForVisuals(linkVerdicts)
+  );
+
+  /*
+   * Прирост обогащения: сколько материалов провайдер добавил и сколько из них
+   * негативных.
+   *
+   * Стоит здесь, а не рядом с составным набором, потому что негатив считается
+   * тем же предикатом, что и в отчёте, а тому нужны решения прочитанных
+   * страниц. Артефакт `provider-delta.json` пишется много позже, так что
+   * порядок ничего не задерживает.
+   */
   let relevantCount = 0;
   let ambiguousCount = 0;
   let otherSubjectCount = 0;
@@ -440,13 +731,7 @@ export async function runOrionAnalyticsPipeline(
     if (d === "SUBJECT_MATCH") relevantCount += 1;
     else if (d === "AMBIGUOUS") ambiguousCount += 1;
     else if (d === "OTHER_SUBJECT") otherSubjectCount += 1;
-    const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
-    const adverse =
-      meta.analystNeutral === true
-        ? false
-        : meta.analystAdverse === true ||
-          ADVERSE_PATTERNS.test([item.title, item.snippet, item.classification].filter(Boolean).join(" "));
-    if (d === "SUBJECT_MATCH" && adverse) {
+    if (d === "SUBJECT_MATCH" && resolveItemAdverse(item, verdictByRef)) {
       newAdverse += 1;
     }
   }
@@ -454,7 +739,6 @@ export async function runOrionAnalyticsPipeline(
   composite.providerDelta.ambiguousCount = ambiguousCount;
   composite.providerDelta.otherSubjectCount = otherSubjectCount;
   composite.providerDelta.newAdverseFindingCount = newAdverse;
-  void enrichmentRefs;
 
   // 3. Typed surface analyzers.
   const surfaceAnalyses = runSurfaceAnalyzers({
@@ -463,6 +747,7 @@ export async function runOrionAnalyticsPipeline(
     items: input.items,
     resolutionLookup: resolutionByRef,
     sourceHashes,
+    verdictByRef,
   });
 
   // 4. Finding synthesis → VerifiedFindingBundle.
@@ -472,10 +757,11 @@ export async function runOrionAnalyticsPipeline(
   let synthesis = synthesizeFindings({
     caseId: input.caseId,
     datasetId,
-    items: input.items,
+    items: scope.inScope,
     resolutionByRef,
     sourceHashes,
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
+    verdictByRef,
   });
   synthesis = {
     ...synthesis,
@@ -609,6 +895,9 @@ export async function runOrionAnalyticsPipeline(
     synthesis,
     provenance: composite.provenance,
     kpiFindingIds: promotedFindingIds,
+    outOfScopeByRef: new Map(
+      scope.outOfScope.map((d) => [d.evidenceRef, String(d.reason)])
+    ),
   });
   assertDispositionGatesPass(dispositionLedger);
   const dispositionSummary = buildDispositionSummary(dispositionLedger);
@@ -649,7 +938,11 @@ export async function runOrionAnalyticsPipeline(
   });
   emit("extracted-facts.json", factExtraction);
 
-  // Stage 4 — ClientSummaryPack (typed summary input; not wired to renderer).
+  const clientCoverageLimitations = clientCoverageLimitationLines(
+    executiveSummaryInput.dataGaps ?? []
+  );
+
+  // Stage 4 — ClientSummaryPack (typed input of the summary the deck prints).
   const regions = [
     ...new Set(input.items.map((i) => String(i.region || "").toUpperCase()).filter(Boolean)),
   ];
@@ -662,6 +955,12 @@ export async function runOrionAnalyticsPipeline(
     representative: representative.selection,
     factsByTheme: factExtraction.factsByTheme,
     factsProcessedThemes: factExtraction.diagnostics.processedThemeIds,
+    // Сюжеты резюме — те же строки, что печатает страница «о чём публикации в
+    // ТОП-20»: свод уже посчитан, пересчитывать его нельзя.
+    linkVerdicts: {
+      themes: linkVerdicts.summary.themes,
+      verdicts: linkVerdicts.verdicts,
+    },
     // Single source of truth for the verdict — the badge and the summary
     // sentence must not answer differently (step 07.9).
     ...(executiveSummary.output?.verdict
@@ -669,12 +968,16 @@ export async function runOrionAnalyticsPipeline(
       : {}),
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
-      coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+      coverageLimitations: clientCoverageLimitations,
+      // Резюме обязано назвать глубину, на которой работал аудит: это то же
+      // число, по которому отсекалась область анализа.
+      searchDepthTopN: scope.summary.topN,
     },
   });
   assertClientSummaryPackGatesPass(clientSummaryPack);
 
-  // Stage 5 — deterministic client summary composer (not wired to renderer).
+  // Stage 5 — deterministic client summary composer; its output is what the
+  // deck prints as the executive summary.
   const composedClientSummary = composeClientSummary({ pack: clientSummaryPack });
   assertComposedSummaryGatesPass(composedClientSummary);
 
@@ -704,7 +1007,7 @@ export async function runOrionAnalyticsPipeline(
     analyticsProvenance: composite.provenance,
     findings: synthesis.bundle.findings,
     kpiFindingIds: promotedFindingIds,
-    coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+    coverageLimitations: clientCoverageLimitations,
     surfaceMetricRows,
   });
   assertFilterLossGatesPass(filterLossMatrix);
@@ -754,6 +1057,10 @@ export async function runOrionAnalyticsPipeline(
     reconciliation,
     composite,
     subjectResolution,
+    // Решения по прочитанным страницам едут дальше по конвейеру, а не только в
+    // артефакт: по ним визуальный слой ставит рамки на снимке выдачи. Читать
+    // только что записанный файл было бы вторым ответом на тот же вопрос.
+    linkVerdicts: { summary: linkVerdicts.summary, verdicts: linkVerdicts.verdicts },
     surfaceAnalyses,
     synthesis,
     executiveSummaryInput,
@@ -771,6 +1078,7 @@ export async function runOrionAnalyticsPipeline(
     filterLossMatrix,
     reportDataBinding,
     artifactPaths,
+    qualityWarnings,
   };
 }
 

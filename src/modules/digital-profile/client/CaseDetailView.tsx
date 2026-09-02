@@ -14,6 +14,7 @@ import {
   getOrionGoldenPrepareStatus,
   startUnifiedOrionCollection,
   recoverUnifiedOrionCollection,
+  pauseUnifiedCollection,
   rebuildUnifiedReport,
   retryUnifiedGptCopy,
   retryUnifiedEnrichmentSuggestionsTask,
@@ -38,6 +39,8 @@ import {
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { SubjectPersonaPanel } from "./SubjectPersonaPanel";
+import { PERSONA_PANEL_ANCHOR, personaBlockKey } from "./persona-panel-text";
 import { SubjectProfilePanel } from "./SubjectProfilePanel";
 import { ReportQualityPanel } from "./ReportQualityPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
@@ -49,6 +52,11 @@ import {
   isSuggestionsTargetedRetryState,
   shouldBlockFullAuditCta,
 } from "./unified-suggestions-retry-ui";
+import {
+  isUnifiedRunTerminal,
+  nextFollowDelayMs,
+  shouldFollowUnifiedRun,
+} from "./unified-run-follow";
 
 type LoadState =
   | { kind: "loading" }
@@ -77,6 +85,7 @@ export function CaseDetailView({
   const [auditing, setAuditing] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [pausing, setPausing] = useState(false);
   const [retryingGptCopy, setRetryingGptCopy] = useState(false);
   const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
@@ -159,21 +168,31 @@ export function CaseDetailView({
     }
   }, [caseId]);
 
-  const pollUnifiedUntilTerminal = useCallback(async () => {
-    for (let i = 0; i < 120; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      const { job } = await getUnifiedOrionCollectionStatus(caseId);
-      if (!job) continue;
-      setUnifiedJob(job);
-      const terminal =
-        job.stage === "REPORT_READY" ||
-        job.stage === "COMPLETED_PARTIAL" ||
-        job.stage === "FAILED_TERMINAL" ||
-        job.stage === "FAILED_RETRYABLE" ||
-        job.stage === "CANCELLED" ||
-        job.status === "COMPLETED";
-      if (!terminal) continue;
-      await refreshAgents();
+  /**
+   * Отказ ворот выбора персоны — человеческим текстом и переходом к панели.
+   *
+   * Состояние ворот интерфейс не вычисляет и до старта не спрашивает:
+   * единственный ответ на этот вопрос даёт сервер, а предпроверка здесь была
+   * бы вторым ответом — она разошлась бы с первым при первом же рефакторинге.
+   * Кнопка жмётся, сервер отвечает 409, и машинная причина переводится в слова.
+   *
+   * Прокрутка, а не ссылка: панель уже на этой странице, но страница дела
+   * длинная, и «откройте блок ниже» заставляет оператора искать его глазами.
+   */
+  const personaBlockText = useCallback(
+    (err: unknown): string | null => {
+      const key = personaBlockKey(err);
+      if (!key) return null;
+      document
+        .getElementById(PERSONA_PANEL_ANCHOR)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return t(key);
+    },
+    [t]
+  );
+
+  const announceTerminalRun = useCallback(
+    (job: UnifiedCollectionJobStatus) => {
       if (job.stage === "REPORT_READY") {
         setBanner({ kind: "ok", text: t("agents.unifiedDone") });
       } else if (job.stage === "COMPLETED_PARTIAL") {
@@ -186,9 +205,61 @@ export function CaseDetailView({
           }`,
         });
       }
-      return;
-    }
-  }, [caseId, refreshAgents, t]);
+    },
+    [t]
+  );
+
+  /*
+   * Страница следит за живым прогоном сама — до конца прогона, а не минуту.
+   *
+   * Здесь стоял цикл на 120 оборотов по 500 мс: ровно шестьдесят секунд, после
+   * чего он молча заканчивался. Прогон идёт около двадцати минут, и всё
+   * оставшееся время шапка показывала снимок первой минуты — «Этап: Базовый
+   * сбор», «Arsenkin scheduled 0/5». Наблюдалось на боевом прогоне 28.07.
+   *
+   * Условие слежения — состояние прогона, а не нажатие кнопки: прогон, начатый
+   * в другой вкладке или до перезагрузки страницы, такой же живой. Срок
+   * следующего вопроса называет сам прогон (`nextPollAt` / `autoResumeAt`) —
+   * раньше него новостей быть не может, и спрашивать чаще незачем.
+   */
+  const followedTerminalRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!shouldFollowUnifiedRun(unifiedJob)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const { job } = await getUnifiedOrionCollectionStatus(caseId);
+        if (cancelled || !job) return;
+        setUnifiedJob(job);
+        if (isUnifiedRunTerminal(job)) {
+          // Итог объявляется один раз на прогон: иначе перерисовка вернула бы
+          // баннер, который пользователь уже закрыл.
+          const key = job.unifiedJobId || job.jobId;
+          if (followedTerminalRef.current !== key) {
+            followedTerminalRef.current = key;
+            await refreshAgents();
+            if (!cancelled) announceTerminalRun(job);
+          }
+          return;
+        }
+        timer = setTimeout(() => void tick(), nextFollowDelayMs(job));
+      } catch {
+        // Сбой одного запроса статуса не должен снимать слежение: прогон идёт
+        // на сервере независимо от того, ответила ли нам сеть сию секунду.
+        if (!cancelled) timer = setTimeout(() => void tick(), nextFollowDelayMs(unifiedJob));
+      }
+    };
+
+    timer = setTimeout(() => void tick(), nextFollowDelayMs(unifiedJob));
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [announceTerminalRun, caseId, refreshAgents, unifiedJob]);
 
   const handleRunUnifiedCollection = useCallback(async () => {
     if (auditing || recovering) return;
@@ -217,11 +288,10 @@ export function CaseDetailView({
     setBanner(null);
     try {
       await startUnifiedOrionCollection(caseId);
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
+      setBanner({ kind: "error", text: personaBlockText(err) ?? tError(code, msg) });
     } finally {
       setAuditing(false);
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
@@ -231,7 +301,7 @@ export function CaseDetailView({
     auditing,
     recovering,
     caseId,
-    pollUnifiedUntilTerminal,
+    personaBlockText,
     tError,
     unifiedJob,
   ]);
@@ -244,17 +314,16 @@ export function CaseDetailView({
     setBanner(null);
     try {
       await startUnifiedOrionCollection(caseId, { confirmPaidRecollection: true });
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
+      setBanner({ kind: "error", text: personaBlockText(err) ?? tError(code, msg) });
     } finally {
       setAuditing(false);
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
       if (job) setUnifiedJob(job);
     }
-  }, [auditing, recovering, caseId, pollUnifiedUntilTerminal, tError]);
+  }, [auditing, recovering, caseId, personaBlockText, tError]);
 
   const handleRecoverUnifiedCollection = useCallback(async () => {
     if (auditing || recovering) return;
@@ -312,7 +381,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -327,7 +395,6 @@ export function CaseDetailView({
     recovering,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -360,7 +427,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -377,9 +443,42 @@ export function CaseDetailView({
     retryingGptCopy,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
+
+  /*
+   * Пауза — единственное действие, доступное посреди работы, поэтому оно не
+   * ждёт, пока освободятся остальные кнопки: смысл его именно в том, чтобы
+   * нажать его на идущем прогоне (шаг 0027).
+   */
+  const handlePauseRun = useCallback(async () => {
+    if (pausing) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.pauseAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.pauseUnavailable", {
+          reason: unifiedJob?.pauseBlockerReason ? ` (${unifiedJob.pauseBlockerReason})` : "",
+        }),
+      });
+      return;
+    }
+    const ok = window.confirm(t("unified.pauseConfirm"));
+    if (!ok) return;
+    setPausing(true);
+    setBanner(null);
+    try {
+      await pauseUnifiedCollection(caseId, jobId);
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setPausing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [pausing, caseId, unifiedJob, t, tError]);
 
   const handleRetryGptCopy = useCallback(async () => {
     if (auditing || recovering || rebuilding || retryingGptCopy) return;
@@ -413,7 +512,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -430,7 +528,6 @@ export function CaseDetailView({
     retryingGptCopy,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -485,7 +582,6 @@ export function CaseDetailView({
           ? t("unified.suggestionsReused", { taskId: result.externalTaskId })
           : t("unified.suggestionsSubmitted", { taskId: result.externalTaskId }),
       });
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -502,7 +598,6 @@ export function CaseDetailView({
     recovering,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -611,9 +706,11 @@ export function CaseDetailView({
           onRetrySuggestions={handleRetrySuggestions}
           onPaidRecollection={handlePaidRecollection}
           onRebuildReport={handleRebuildReport}
+          onPauseRun={handlePauseRun}
           auditing={auditing}
           recovering={recovering}
           rebuilding={rebuilding}
+          pausing={pausing}
           unifiedJob={unifiedJob}
         />
       </Card>
@@ -626,6 +723,14 @@ export function CaseDetailView({
             <ErrorBox>{banner.text}</ErrorBox>
           )}
         </div>
+      ) : null}
+
+      {/* Панель выбора персоны стоит выше редактора тёзок намеренно: она
+          работает до первой траты, а профиль размечает уже собранное. */}
+      {can("agents.run") ? (
+        <Card>
+          <SubjectPersonaPanel caseId={state.caseDetail.id} />
+        </Card>
       ) : null}
 
       {can("case.view") ? (

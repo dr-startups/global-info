@@ -20,7 +20,8 @@ import type { MetricSnapshot } from "../deck-sections/scoped-input";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { matchInternalClientToken } from "../client/load-client-text-contract";
 import { engineRu, metricKeyRu, riskLevelRu, subjectMatchRu, surfaceRu } from "./client-payload-labels";
-import { riskLevelPromptLine, riskWordForVerdict } from "./case-verdict";
+import { riskLevelPromptLine, riskWordForVerdict, type RiskWord } from "./case-verdict";
+import { collapseLegacyRiskWord } from "../client/risk-scale";
 
 export const GPT_CASE_ANALYSIS_VERSION = "gpt-case-analysis-v1" as const;
 
@@ -30,7 +31,16 @@ export type GptJsonCaller = (input: {
   userPayload: unknown;
 }) => Promise<unknown>;
 
-const RiskWordSchema = z.enum(["низкий", "средний", "высокий", "критический"]);
+/**
+ * Приём шире печати: старое «критический» принимается и нормализуется.
+ *
+ * Сузить словарь приёма до трёх ступеней значило бы уронить валидацию на
+ * привычном эхе модели — и молча потерять всю GPT-копию секции. Печать при
+ * этом остаётся трёхступенчатой.
+ */
+const RiskWordSchema = z
+  .enum(["низкий", "средний", "высокий", "критический"])
+  .transform((word): RiskWord => collapseLegacyRiskWord(word) as RiskWord);
 
 /** Field budgets — keep in sync with prompt length hints below. */
 export const GPT_CASE_ANALYSIS_BUDGETS = {
@@ -85,7 +95,7 @@ export const CASE_ANALYSIS_SYSTEM_PROMPT = [
   "Лимиты длины (символы, жёстко): executiveConclusion ≤ 1400; digitalPortrait ≤ 1000; keyRisks.theme ≤ 160; keyRisks.explanation ≤ 700; keyRisks.advice ≤ 400; positiveSignals/recommendations item ≤ 400. Укладывайся в лимит целиком — не обрывай фразу.",
   "Строгие запреты: не выдумывай фактов, имён, компаний и событий, которых нет в переданных данных; не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider, enum); не вставляй URL и идентификаторы; материалы других людей (тёзок) не приписывай проверяемому лицу.",
   "Пиши по-русски.",
-  "Верни ТОЛЬКО JSON по схеме: {\"overallRiskLevel\": \"низкий|средний|высокий|критический\", \"executiveConclusion\": string, \"digitalPortrait\": string, \"keyRisks\": [{\"theme\": string, \"severity\": \"низкий|средний|высокий|критический\", \"explanation\": string, \"advice\": string}], \"positiveSignals\": [string], \"recommendations\": [string]}.",
+  "Верни ТОЛЬКО JSON по схеме: {\"overallRiskLevel\": \"низкий|средний|высокий\", \"executiveConclusion\": string, \"digitalPortrait\": string, \"keyRisks\": [{\"theme\": string, \"severity\": \"низкий|средний|высокий\", \"explanation\": string, \"advice\": string}], \"positiveSignals\": [string], \"recommendations\": [string]}.",
 ].join(" ");
 
 /**

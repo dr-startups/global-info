@@ -11,7 +11,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, before } from "node:test";
 
-import { buildGoldenCaseObservations } from "../fixtures/golden-case/build-observations";
+import {
+  GOLDEN_CASE_OBSERVATION_BAND,
+  buildGoldenCaseObservations,
+} from "../fixtures/golden-case/build-observations";
 import { main as runGoldenCaseCli } from "./run-golden-case-report";
 import {
   buildExecutiveSummaryFragment,
@@ -29,7 +32,21 @@ const BASELINE = join(ROOT, "fixtures", "golden-case", "baseline.json");
 describe("golden-case fixtures", () => {
   it("builds ~300 composite observations with required surfaces", () => {
     const rows = buildGoldenCaseObservations();
-    assert.ok(rows.length >= 280 && rows.length <= 340, `count=${rows.length}`);
+    // Полоса объявлена самой фикстурой: два набора границ уже расходились.
+    assert.ok(
+      rows.length >= GOLDEN_CASE_OBSERVATION_BAND.min &&
+        rows.length <= GOLDEN_CASE_OBSERVATION_BAND.max,
+      `count=${rows.length}`
+    );
+    /*
+     * Несколько написаний ФИО — условие проверяемости второй таблицы выдачи.
+     * С одним запросом она пуста, и ветка «строки есть» уезжает в продакшн
+     * невидимой: ни один другой корпус её не собирает.
+     */
+    const organicQueries = new Set(
+      rows.filter((r) => r.surface === "organic").map((r) => String(r.query ?? ""))
+    );
+    assert.ok(organicQueries.size >= 3, `organic queries=${organicQueries.size}`);
     assert.ok(rows.some((r) => r.kind === "organic" && r.region === "RU"));
     assert.ok(rows.some((r) => r.kind === "organic" && r.region === "UAE"));
     assert.ok(rows.some((r) => r.kind === "suggestion"));

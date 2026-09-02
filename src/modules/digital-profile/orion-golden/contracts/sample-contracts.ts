@@ -270,6 +270,7 @@ export function sampleCanonicalClaimsBundle(): CanonicalClaimsBundle {
         displayExcerpt:
           "Найдены публикации о коррупционном расследовании: «Sample investigation» — источник news.example",
         claimKind: "SOURCE_ALLEGATION",
+      evidenceTypes: ["search_result"],
         subjectMatch: "SUBJECT_MATCH",
         confidence: 0.85,
         themeIds: ["corruption_integrity", "political_public_exposure"],
@@ -367,12 +368,13 @@ export function sampleRepresentativeEvidenceSelection(): RepresentativeEvidenceS
 export function sampleClientSummaryPack(): ClientSummaryPack {
   return {
     ...envelope,
-    schemaVersion: "client-summary-pack-v1",
+    schemaVersion: "client-summary-pack-v2",
     subjectId: "subject-sample",
     scope: {
       regions: ["RU", "UAE"],
       sourceClasses: ["поисковая выдача", "открытые СМИ"],
       surfaces: ["organic", "compliance"],
+      searchDepthTopN: 20,
       period: { collectedLabel: "по дате сбора в кейсе", newestLabel: null },
       coverageLimitations: [],
     },
@@ -399,6 +401,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
           {
             title: "Sample investigation",
             domain: "news.example",
+            url: "https://news.example/material",
             sourceDate: "2024",
             conciseCompleteDescription:
               "«Sample investigation» — источник news.example. Публикация связывает сюжет с вопросами этики.",
@@ -422,6 +425,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
         sourceDomains: ["news.example"],
       },
     ],
+    readPlots: [],
     isolatedSignificantItems: [],
     internationalDatabases: [],
     changesSinceBaseline: {
@@ -443,6 +447,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
       MATERIAL_THEMES_MISSING: 0,
       CLIENT_ASSERTIONS_WITHOUT_EVIDENCE: 0,
       INTERNAL_TOKENS_IN_CLIENT_FIELDS: 0,
+      READ_PLOTS_WITHOUT_EVIDENCE: 0,
     },
   };
 }
@@ -450,7 +455,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
 export function sampleComposedClientSummary(): ComposedClientSummary {
   return {
     ...envelope,
-    schemaVersion: "composed-client-summary-v1",
+    schemaVersion: "composed-client-summary-v2",
     subjectId: "subject-sample",
     fullText:
       "Итоговая оценка: высокий риск. Основные основания: Коррупционные и этические риски.\n\n" +
@@ -475,6 +480,7 @@ export function sampleComposedClientSummary(): ComposedClientSummary {
       themes: [
         {
           themeId: "corruption_integrity",
+          kind: "claims",
           heading: "Коррупционные и этические риски",
           body:
             "Коррупционные и этические риски. По теме найдены конкретные материалы, в том числе «Sample investigation» (news.example). " +

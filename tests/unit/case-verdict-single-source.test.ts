@@ -37,7 +37,7 @@ const MODEL_ANSWER = {
 describe("вердикт аналитики — единственный", () => {
   it("вердикты шкалы отображаются в слова уровня", () => {
     expect(riskWordForVerdict("HIGH")).toBe("высокий");
-    expect(riskWordForVerdict("critical")).toBe("критический");
+    expect(riskWordForVerdict("critical")).toBe("высокий");
     expect(riskWordForVerdict("ELEVATED")).toBe("высокий");
     expect(riskWordForVerdict("LOW")).toBe("низкий");
   });
@@ -78,8 +78,8 @@ describe("ответ модели приводится к вердикту ан�
     expect(parsed?.overallRiskLevel).toBe("высокий");
   });
 
-  it("без вердикта разбор сохраняет прежнее поведение", () => {
-    expect(finalizeGptCaseAnalysis(MODEL_ANSWER)?.overallRiskLevel).toBe("критический");
+  it("без вердикта остаётся слово модели, приведённое к печатной шкале", () => {
+    expect(finalizeGptCaseAnalysis(MODEL_ANSWER)?.overallRiskLevel).toBe("высокий");
   });
 });
 
@@ -98,6 +98,6 @@ describe("промпт сообщает модели готовый уровен
   it("строка добавляется к системному промпту, а не заменяет его", () => {
     const withVerdict = caseAnalysisSystemPrompt("CRITICAL");
     expect(withVerdict).toContain("старший аналитик reputational due diligence");
-    expect(withVerdict).toContain("«критический»");
+    expect(withVerdict).toContain("«высокий»");
   });
 });

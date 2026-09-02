@@ -20,8 +20,8 @@
  *    improve text, never block the report.
  */
 
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { contentHashOf } from "./contracts";
 import type { FragmentKey, SectionPackV2, SlideContentContract } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex, type SubjectProfileInput } from "./scoped-input";
@@ -36,11 +36,32 @@ import {
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import { builderNarrativeRoomOn, narrativeBudgetOf, pageNarrativeOf } from "./page-narrative";
+import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "./template-registry";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
+import { SOURCE_ATTRIBUTION_SOURCE, sourceHostFromMatch } from "../client/client-address";
 
-/** v16 — PDF-49: never drop evidence quotes ending in genitive «…Фамилии». */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v16";
+/**
+ * v18 — правило чисел в основном промпте: всё, что посчитано, остаётся вместе
+ * со своей базой. Требование «сохранив ВСЕ факты, числа» жило только в промпте
+ * ремонта, а основной о числах не говорил ничего — и модель выбрасывала долю
+ * и её основание, считая это редактурой. Теперь это ещё и проверяется
+ * (`rejectDroppedNumbers`), но модели дешевле знать заранее, чем ловить отказ.
+ *
+ * v17 — снята нижняя граница длины и требование заполнить все поля.
+ *
+ * Инструкция плотности жила в двух местах сразу: в промптах фрагментов
+ * (`prompts.ts`) и здесь, в слое, который переписывает текст слайда. Первую
+ * убрали, вторая осталась — и осталась именно операционная: она задавала
+ * конкретные пороги («narrative ≳440, whatWasFound ≳200…») и прямо требовала
+ * не ограничиваться правкой одного поля, если остальные пусты. Это указание
+ * добирать объём словами там, где сказать нечего.
+ *
+ * Версия входит в ключ кеша: без подъёма переиспользовался бы текст,
+ * написанный по прежним правилам.
+ */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v18";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -56,8 +77,6 @@ export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
 
 const TEXT_BUDGETS = GPT_SLIDE_COPY_FIELD_BUDGETS;
 
-/** Prompt marker for offline smokes asserting §7.5 density instructions. */
-export const GPT_SLIDE_COPY_DENSITY_MARKER = "заполняй ВСЕ поля черновика";
 
 /** Prompt marker for the over-budget repair pass (PDF-31 B.1a). */
 export const GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER =
@@ -187,9 +206,33 @@ function repairTargetChars(budget: number): number {
   return Math.max(80, Math.floor(budget * 0.94));
 }
 
+/**
+ * Сколько знаков остаётся нарративу на каждом слайде.
+ *
+ * Не бюджет поля, а бюджет **шаблона минус проза находки**: она приклеивается
+ * к абзацу страницы уже в нагрузке. Просьба «уложись в 1100» к модели, у
+ * которой к тексту потом добавят 240 знаков, честной не является — второй
+ * раунд сжатия по такому пределу бесполезен по построению.
+ */
+export function narrativeRepairLimits(
+  targets: ReadonlyArray<{ slideId: string; templateId: string; content: SlideContentContract["content"] }>
+): Map<string, number> {
+  const limits = new Map<string, number>();
+  for (const slide of targets) {
+    const template = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId]?.rendererTemplate ?? "";
+    // Комнату считает `builderNarrativeRoomOn` — она же отвечает на этот
+    // вопрос разбивке страниц и вычитает разделитель абзаца. Свой расчёт
+    // ошибался на один знак: текст, уложенный ровно в названный нами предел,
+    // всё равно отвергался, и второй раунд сжатия оставался бесполезным.
+    limits.set(slide.slideId, Math.max(80, builderNarrativeRoomOn(slide.content, slide.templateId, template)));
+  }
+  return limits;
+}
+
 function collectOverBudgetItems(
   overrides: SlideOverride[],
-  knownIds: Set<string>
+  knownIds: Set<string>,
+  narrativeLimits: Map<string, number>
 ): OverBudgetItem[] {
   const items: OverBudgetItem[] = [];
   const scalarFields: ScalarCopyField[] = [
@@ -202,12 +245,16 @@ function collectOverBudgetItems(
     if (!knownIds.has(o.slideId)) continue;
     for (const field of scalarFields) {
       const value = o[field];
-      if (value !== undefined && value.trim().length > TEXT_BUDGETS[field]) {
+      const budget =
+        field === "narrative"
+          ? narrativeLimits.get(o.slideId) ?? TEXT_BUDGETS.narrative
+          : TEXT_BUDGETS[field];
+      if (value !== undefined && value.trim().length > budget) {
         items.push({
           slideId: o.slideId,
           field,
           text: value.trim(),
-          maxChars: repairTargetChars(TEXT_BUDGETS[field]),
+          maxChars: repairTargetChars(budget),
         });
       }
     }
@@ -273,7 +320,7 @@ function mergeRepairedFields(input: {
 
 const COPY_INSTRUCTIONS = [
   "Твоя задача — переписать клиентский текст каждого переданного слайда лучше чернового варианта: подробным клиентским языком, без жаргона.",
-  `Для страниц с данными ${GPT_SLIDE_COPY_DENSITY_MARKER} (narrative, whatWasFound, whyItMatters, whatToCheck, bullets) — не ограничивайся правкой одного поля, если остальные пустые или слишком короткие.`,
+  "Для страниц с данными раскрывай тему там, где для этого есть материал; пустое поле — законный исход, если сказать по нему нечего.",
   "Для страниц с данными опирайся на конкретику из scoped findings и черновика: числа публикаций, домены источников, темы риска; не пиши общими фразами без опоры на переданные факты.",
   "Для каждого негативного или неоднозначного сигнала объясняй, ПОЧЕМУ он рискован (влияние на репутацию, сделки, банковские и партнёрские проверки), и давай конкретный совет, что с этой информацией делать.",
   "Опирайся только на переданные findings, claims и черновой текст; не добавляй новых фактов, имён, компаний и доменов.",
@@ -281,7 +328,8 @@ const COPY_INSTRUCTIONS = [
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
   "СТРОГО ЗАПРЕЩЕНО упоминать в клиентском тексте процесс подготовки отчёта и источник данных для тебя: слова «черновик», «черновой», «переданный фрагмент», «переданные данные», «scoped», «findings» и любые рассуждения о том, что в черновике чего-то нет или что страницу не следует чем-то наполнять. Клиент видит только выводы о субъекте и фактах, а не твою работу с материалами.",
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 1050, каждый bullet до 860, whatWasFound до 480, whyItMatters до 380, whatToCheck до 260.",
-  "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳440, whatWasFound ≳200, whyItMatters ≳160, whatToCheck ≳110, bullet ≳340), если в черновике/findings есть материал для раскрытия.",
+  "Длина — следствие материала, а не цель: не добирай объём общими фразами и повторами, чтобы заполнить блок.",
+  "СОХРАНЯЙ ВСЕ ЧИСЛА черновика вместе с их основанием: проценты, доли вида «15 из 50», базы «прочитано 50 из 86 отобранных», счётчики материалов и лет. Переписать формулировку можно, выбросить число или его базу — нельзя: поле с потерянным числом отклоняется целиком и клиент увидит черновик.",
   "НИКОГДА не обрывай цитату или предложение посередине и не оставляй пустые ярлыки вроде «Что делать:.» / «Всего по теме:.» / «Где видно:.» / «контекстом —.». Либо полная фраза с числом/доменом, либо опусти строку целиком.",
   "Не используй заголовки/snippet, обрезанные поисковиком (хвост «…» / «из-за» / «главы в» / «Фамилии,»): либо полная закрытая формулировка, либо опусти цитату.",
   "Пиши КЛИЕНТСКИМ языком консультанта: тема риска → конкретика из заголовков статей → источник (домен) → коротко почему важно. Запрещены внутренние формулировки: «KPI», «тематический блок», «составной набор данных».",
@@ -302,6 +350,43 @@ export function isHonestEmptyStateSlide(slide: SlideContentContract): boolean {
   if (slide.templateId === "coverage-empty-state") return true;
   if (slide.emptyStateReason && slide.emptyStateReason.trim().length > 0) return true;
   return false;
+}
+
+/**
+ * Резюме, собранное композером, стадия 2 не переписывает.
+ *
+ * Текст резюме отвечается один раз — композером; модель поверх уже теряла
+ * карточку (PDF 29) и была единственным участником, способным подставить в
+ * резюме сюжет, которого нет в `link-verdicts.json`: гарды стадии 2 сверяют
+ * домены и цитаты, а название темы не закрепляют никак. Признак — данные
+ * слайда: метрику `composedSummary` ставит построитель ровно на этой ветке.
+ */
+export function isComposedSummaryPack(pack: SectionPackV2): boolean {
+  return pack.slides.some(
+    (s) => !s.isContinuation && Number(s.metrics?.composedSummary ?? 0) > 0
+  );
+}
+
+/**
+ * Почему модель не переписывает пак — **один ответ на весь конвейер**.
+ *
+ * Причин две, и обе давние: признак фрагмента (`prompt.deterministic`) и признак
+ * пака (`isComposedSummaryPack`). Спрашивали их порознь: стадия 2 знала обе,
+ * редактор деки — только первую. Поэтому пак резюме, который стадия 2 не трогает
+ * намеренно, редактор отдавал модели целиком.
+ *
+ * Цена видна на живом отчёте 22.08: модель переписала название темы, которое
+ * приходит данными и печатается ещё на трёх страницах, и документ разошёлся сам
+ * с собой — на стр. 3 одна тема названа дважды по-разному (пункт CW).
+ *
+ * `null` — переписывать можно.
+ */
+export type PackRewriteBlock = "deterministic-fragment" | "composed-summary";
+
+export function packRewriteBlock(pack: SectionPackV2): PackRewriteBlock | null {
+  if (getFragmentPrompt(pack.fragmentKey).deterministic) return "deterministic-fragment";
+  if (isComposedSummaryPack(pack)) return "composed-summary";
+  return null;
 }
 
 /** Offline metric for §7.5 — field fill + length-vs-budget on data slides. */
@@ -449,13 +534,11 @@ export function rejectWeakQuoteLines(bullet: string): string | null {
  * in the deterministic draft (e.g. currenttime.tv / ФБК line).
  */
 export function rejectDroppedEvidenceQuotes(draft: string, next: string): string | null {
-  const srcRe = /—\s*источник\s+([A-Za-z0-9][A-Za-z0-9.-]*)/giu;
-  const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/giu;
-  const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase());
+  const srcRe = new RegExp(SOURCE_ATTRIBUTION_SOURCE, "giu");
+  const quoteRe = new RegExp(`«[^»]{8,}»\\s*${SOURCE_ATTRIBUTION_SOURCE}`, "giu");
+  const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map(sourceHostFromMatch);
   if (draftDomains.length === 0) return null;
-  const nextDomains = new Set(
-    [...String(next ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase())
-  );
+  const nextDomains = new Set([...String(next ?? "").matchAll(srcRe)].map(sourceHostFromMatch));
   for (const d of draftDomains) {
     if (!nextDomains.has(d)) return `dropped-evidence-domain:${d}`;
   }
@@ -467,8 +550,31 @@ export function rejectDroppedEvidenceQuotes(draft: string, next: string): string
   return null;
 }
 
-export function contentHashOf(slides: SlideContentContract[]): string {
-  return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
+/** Числовые токены текста: целые и дробные, включая проценты и годы. */
+function numberTokens(text: string): string[] {
+  return [...String(text ?? "").matchAll(/\d+(?:[.,]\d+)?/gu)].map((m) => m[0]);
+}
+
+/**
+ * Число и его база, единожды посчитанные, моделью не переписываются.
+ *
+ * На живом прогоне стадия 2 приняла переписку, потерявшую «(30%)» и базу
+ * «из 86 отобранных»: гарды сверяли домены и цитаты, а числа не защищало
+ * ничто. Гейт закрывает это одним правилом для всех переписываемых полей —
+ * реестр защищённых слотов пришлось бы держать в согласии с построителями, а
+ * признак на паке выключил бы полезную переписку целиком.
+ *
+ * Направление одно — только потеря. Числа, добавленные моделью, не блокируем:
+ * сочинение фактов ограничено запретом на новые факты, а двусторонняя проверка
+ * резала бы безвредные перечисления. Поле, которого в черновике не было, гейт
+ * не проверяет: сравнивать не с чем.
+ */
+export function rejectDroppedNumbers(draft: string, next: string): string | null {
+  const present = new Set(numberTokens(next));
+  for (const token of numberTokens(draft)) {
+    if (!present.has(token)) return `dropped-number:${token}`;
+  }
+  return null;
 }
 
 function buildFragmentPayload(input: {
@@ -570,13 +676,20 @@ function applyOverrides(input: {
     const tryField = (
       field: "narrative" | "whatWasFound" | "whyItMatters" | "whatToCheck",
       value: string | undefined,
-      budget: number
+      budget: number,
+      /**
+       * Что именно меряется бюджетом. У нарратива это не само поле, а абзац
+       * страницы: проза находки приклеивается к нему уже в нагрузке.
+       */
+      measured?: (text: string) => string
     ) => {
       if (value === undefined) return;
       const normalized = fixName(
         field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
       );
-      const reason = rejectReason(normalized, budget, allowed);
+      const reason =
+        rejectReason(measured ? measured(normalized) : normalized, budget, allowed) ??
+        rejectDroppedNumbers(slide.content[field] ?? "", normalized);
       if (reason) {
         rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
         return;
@@ -585,7 +698,21 @@ function applyOverrides(input: {
       appliedFields += 1;
     };
 
-    tryField("narrative", o.narrative, TEXT_BUDGETS.narrative);
+    /*
+     * Нарратив проверяется **последним и абзацем страницы**.
+     *
+     * Линейка у вопроса «влезает ли абзац» одна, и принадлежит она пакетной
+     * сверке: `validatePack` меряет `pageNarrativeOf` против бюджета шаблона.
+     * Пока здесь мерилось сырое поле против `TEXT_BUDGETS.narrative`, поле
+     * проходило, пакет валился — и откатывался **весь фрагмент**: на прогоне 91
+     * так пропали девятнадцать применённых полей RU_IMAGES из-за одного абзаца.
+     *
+     * Последним — потому что абзац страницы склеивается из остальных полей и
+     * **из буллетов**: `composeFindingProse` вычищает из прозы находки
+     * предложения, уже сказанные в них. Измеренный до их применения, абзац
+     * собран из вчерашних буллетов, и `validatePack` меряет другой текст —
+     * ровно то расхождение линеек, которое работа и убирает.
+     */
     tryField("whatWasFound", o.whatWasFound, TEXT_BUDGETS.whatWasFound);
     tryField("whyItMatters", o.whyItMatters, TEXT_BUDGETS.whyItMatters);
     tryField("whatToCheck", o.whatToCheck, TEXT_BUDGETS.whatToCheck);
@@ -595,14 +722,27 @@ function applyOverrides(input: {
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const draftBullets = slide.content.bullets ?? [];
       const reflowed = o.bullets.map((b) => fixName(reflowThemeBullet(b.trim())));
-      const reasons = reflowed
-        .map(
-          (b, i) =>
-            rejectReason(b, TEXT_BUDGETS.bullet, allowed) ??
-            rejectWeakQuoteLines(b) ??
-            rejectDroppedEvidenceQuotes(draftBullets[i] ?? "", b)
-        )
-        .filter((r): r is string => Boolean(r));
+      /*
+       * Сверка идёт по объединению списков, а не по ответу модели.
+       *
+       * Пока цикл шёл по возвращённым буллетам, хвост черновика не с чем было
+       * сравнить: модель отдавала один буллет вместо двух, список заменялся
+       * целиком, и числа с цитатами выброшенных уходили без единого отказа.
+       * Отсутствующий буллет сверяется с пустой строкой — потеря буллета есть
+       * потеря всего, что в нём было сказано.
+       */
+      const reasons: string[] = [];
+      for (let i = 0; i < Math.max(draftBullets.length, reflowed.length); i += 1) {
+        const draft = draftBullets[i] ?? "";
+        const next = reflowed[i];
+        const reason =
+          (next === undefined
+            ? null
+            : rejectReason(next, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(next)) ??
+          rejectDroppedEvidenceQuotes(draft, next ?? "") ??
+          rejectDroppedNumbers(draft, next ?? "");
+        if (reason) reasons.push(reason);
+      }
       if (reasons.length > 0) {
         rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);
       } else {
@@ -610,6 +750,13 @@ function applyOverrides(input: {
         appliedFields += 1;
       }
     }
+
+    tryField("narrative", o.narrative, narrativeBudgetOf(slide.templateId), (text) =>
+      pageNarrativeOf(
+        { ...content, narrative: text },
+        DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId]?.rendererTemplate ?? ""
+      ) ?? text
+    );
 
     return { ...slide, content };
   });
@@ -816,8 +963,13 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       rejectedFields: [],
     };
 
-    if (prompt.deterministic) {
+    // Причина спрашивается одной функцией: у редактора деки тот же вопрос, и
+    // пока ответов было два, он знал только половину (шаг 0028). Пак при этом
+    // не штампуется вовсе, чтобы остаться байт в байт прежним.
+    const rewriteBlock = packRewriteBlock(pack);
+    if (rewriteBlock) {
       report.status = "SKIPPED_DETERMINISTIC";
+      if (rewriteBlock === "composed-summary") report.detail = "composed-summary";
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }
@@ -942,7 +1094,11 @@ export async function enhanceSectionPacksWithGptCopy(input: {
     const parsed = parseFragmentCopyResponse(queued.value);
     if (parsed) {
       const knownIds = new Set(item.targets.map((s) => s.slideId));
-      const requested = collectOverBudgetItems(parsed.slides, knownIds);
+      const requested = collectOverBudgetItems(
+        parsed.slides,
+        knownIds,
+        narrativeRepairLimits(item.targets)
+      );
       if (requested.length > 0) {
         repairPending.push({ item, overrides: parsed.slides, requested });
         continue;

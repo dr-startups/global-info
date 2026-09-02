@@ -42,6 +42,13 @@ export type DispositionLedgerBuildInput = {
   provenance?: CompositeSerpProvenance | null;
   /** Optional: executive key finding ids — used only for OTHER_SUBJECT_IN_SUBJECT_KPI gate. */
   kpiFindingIds?: Set<string>;
+  /**
+   * Материалы вне предмета аудита: ссылка на доказательство → причина
+   * (`below_top_n`, `rank_unknown`, `surface_out_of_scope`). Реестр обязан
+   * назвать причину каждому материалу, а «его не анализировали, потому что он
+   * вне ТОП-20» — такая же причина, как и все остальные.
+   */
+  outOfScopeByRef?: Map<string, string>;
 };
 
 function refOf(item: RawInventoryItem): string {
@@ -181,6 +188,8 @@ function decideDisposition(input: {
   duplicate: { groupId: string; primaryRef: string } | null;
   material: boolean;
   invalid: boolean;
+  /** Причина, по которой материал не вошёл в предмет аудита (ТОП-20). */
+  outOfScope: string | null;
 }): {
   disposition: ObservationDispositionKind;
   reasonCode: string;
@@ -208,6 +217,21 @@ function decideDisposition(input: {
       duplicateGroupId: null,
       stage: "subject-resolution",
       functionName: "classifySubjectRelevance",
+    };
+  }
+
+  // Вне предмета аудита: материал собран, годен и, возможно, о субъекте — но
+  // ТОП-20 выдачи он не входит либо не является выдачей. Причина называется
+  // раньше дублей: «почему не анализировали» важнее, чем «кто из копий был
+  // первым».
+  if (input.outOfScope) {
+    return {
+      disposition: "EXCLUDE_OUT_OF_SCOPE",
+      reasonCode: `analysis_scope:${input.outOfScope}`,
+      duplicateOf: null,
+      duplicateGroupId: null,
+      stage: "analysis-scope",
+      functionName: "resolveAnalysisScope",
     };
   }
 
@@ -378,6 +402,7 @@ export function buildObservationDispositionLedger(
       duplicate: dup,
       material,
       invalid,
+      outOfScope: input.outOfScopeByRef?.get(ref) ?? null,
     });
 
     if (!decided.reasonCode?.trim()) unreasoned += 1;
