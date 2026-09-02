@@ -2616,7 +2616,7 @@ beneficial partnership»). До партии 0043 такой материал п
 ## Латинская фамилия субъекта считается его именем — однофамилец получает `SUBJECT_MATCH` (прогон Борисова 01.09.2026)
 
 Воспроизведено офлайн на профиле из бандла `diagnostics-unified-1788265382734-379c5a1b.zip`
-(разбор: `/root/.cache/orion-step-0046-work-1/bundle-borisov-finding.md`). Статья
+(воспроизведено офлайн классификатором на профиле из бандла). Статья
 `en.wikipedia.org/wiki/Alexei_Borisov` получила `SUBJECT_MATCH / full_name_match` с
 `matchedIdentifiers: ["Борисов", "borisov"]`: в `subjectIdentityFromProfile`
 (`subject-resolution-classifier.ts`) `familyTokenSet` кириллический, латинский токен «borisov» с ним

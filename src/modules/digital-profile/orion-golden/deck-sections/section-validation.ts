@@ -30,6 +30,16 @@ export type SectionValidationReport = {
 };
 
 /**
+ * Шаблон страницы, которая печатает проверку Википедии, — один ответ на файл.
+ *
+ * Спрашивается он трижды: страничной областью доменов, воротами отрицания и
+ * воротами принадлежности фрагментов. Три литерала расходятся молча, а
+ * разойтись им есть куда: у слота `p29_uae_wikipedia` тот же построитель
+ * отдаёт лист другого шаблона, когда строк выдачи не собрано.
+ */
+const WIKIPEDIA_CHECK_TEMPLATE = "wikipedia-check";
+
+/**
  * Templates whose dynamic sidebar/what-found copy must be strictly derived
  * from the slide's own evidence refs (page scope) — never from region- or
  * bundle-level findings/domains.
@@ -39,7 +49,7 @@ const PAGE_SCOPED_TEMPLATES = new Set([
   "suggestions",
   "image-grid",
   "wikipedia-knowledge",
-  "wikipedia-check",
+  WIKIPEDIA_CHECK_TEMPLATE,
   "ai-overview",
   "related-queries",
   "serp-table",
@@ -400,9 +410,8 @@ export function validateSectionPack(input: {
   // 14. Фрагменты текста статьи печатаются только при подтверждённой
   //     принадлежности — по данным пака, а не по выводу построителя.
   if (input.evidenceIndex) {
+    issues.push(...wikipediaDenialIssues(pack.slides, input.evidenceIndex));
     for (const slide of pack.slides) {
-      const issue = wikipediaDenialIssue(slide, input.evidenceIndex);
-      if (issue) issues.push(issue);
       const fragmentIssue = wikipediaFragmentOwnershipIssue(slide, input.evidenceIndex);
       if (fragmentIssue) issues.push(fragmentIssue);
     }
@@ -412,63 +421,112 @@ export function validateSectionPack(input: {
 }
 
 /**
- * Слайд, чья проверка Википедии ничего не нашла, обязан назвать статью,
- * которая лежит в его же доказательствах.
+ * Страница, чья проверка Википедии ничего не нашла, обязана назвать статью,
+ * которая лежит в её же доказательствах.
  *
  * На прогоне 76 страница ОАЭ утверждала «статья в англоязычной Википедии не
  * найдена», а `en.wikipedia.org/wiki/Viktor_Rashnikov` стоял первой строкой
  * таблицы выдачи того же отчёта: проверка ушла кириллическим запросом. Признак
- * — данные слайда, а не слова: строка о субъекте в том же языковом разделе,
+ * — данные страницы, а не слова: строка о субъекте в том же языковом разделе,
  * что и проверка. Проверяется независимо от построителя намеренно — ворота,
  * повторяющие его вывод, подтверждают сами себя.
+ *
+ * **Область — шаблон `wikipedia-check`, и только он.** Точнее говоря:
+ * отрицание, у которого есть с чем спорить, печатает только эта страница.
+ * Ту же фразу «Проверка по этому запросу статью не нашла» построитель уносит
+ * на лист `coverage-empty-state` того же слота (ветка
+ * `collectedRows === 0 && checkExists === false`),
+ * но там в доказательствах лежит одна запись проверки — спорить не с чем, и
+ * ворота молчали бы и без якоря. Держать на этом правило нельзя: состав
+ * доказательств того листа решает чужой построитель, а якорь — здесь.
+ *
+ * Обратная сторона — лист, у которого спорить есть с чем, а отрицания он не
+ * печатает. Региональное резюме по построению несёт доказательства **всего**
+ * региона: область его фрагмента задана поверхностями таблицы покрытия вместе
+ * с `wikipedia` и её маркерами «статья не найдена». О Википедии лист резюме
+ * при этом не говорит ни слова, то есть адрес статьи в его тексте не окажется
+ * никогда. 01.09.2026 одной `/wiki/`-строки полного тёзки с `SUBJECT_MATCH` в
+ * наборе региона хватило, чтобы обязательная секция `UAE_SUMMARY` получила
+ * `FAILED` и сборка деки остановилась целиком — при полностью оплаченном
+ * сборе. Якорь тот же, которым ниже пользуются ворота принадлежности
+ * фрагментов.
+ *
+ * **Единица суда — цепочка листов, а не лист.** Абзац этой страницы режется по
+ * листам (`SILENTLY_CLIPPED_NARRATIVE_TEMPLATES`), продолжение наследует
+ * доказательства базы целиком, а оговорка с адресом печатается один раз.
+ * Поэтому адрес ищется в объединённом тексте цепочки, а отказ называет базовый
+ * лист. Требовать адрес от каждого листа — значит ронять обязательную секцию на
+ * её же честном тексте, как только страница переросла один лист.
  */
-function wikipediaDenialIssue(
-  slide: SectionPackV2["slides"][number],
+function wikipediaDenialIssues(
+  slides: SectionPackV2["slides"],
   evidenceIndex: ScopedEvidenceIndex
-): string | null {
-  const entries = slide.evidenceRefs.map((ref) => evidenceIndex[ref]);
-  const checks = entries.filter((e) => e?.kind === "wikipedia_check");
-  // Страница отрицает статью только там, где ни одна проверка её не нашла.
-  if (checks.length === 0 || checks.some((e) => e?.wikipediaExists === true)) return null;
-  const deniedDomains = new Set(
-    checks
-      .filter((e) => e?.wikipediaExists === false)
-      .map((e) =>
-        String(e?.language ?? "")
-          .toLowerCase()
-          .split(/[-_]/u)[0]
-      )
+): string[] {
+  const chains = new Map<string, SectionPackV2["slides"]>();
+  for (const slide of slides) {
+    if (slide.templateId !== WIKIPEDIA_CHECK_TEMPLATE) continue;
+    const baseSlideId = slide.continuationOf ?? slide.slideId;
+    const chain = chains.get(baseSlideId);
+    if (chain) chain.push(slide);
+    else chains.set(baseSlideId, [slide]);
+  }
+  const issues: string[] = [];
+  for (const [baseSlideId, chain] of chains) {
+    // Доказательства собираются со всей цепочки на вырост: сегодня
+    // `buildContinuationSlide` расстилает базу целиком, и продолжение несёт
+    // ровно те же ссылки, так что база и объединение равны. Равенство держится
+    // на чужом построителе, а не на правиле, поэтому спрашивается цепочка —
+    // ровно то, что судится.
+    const entries = [...new Set(chain.flatMap((s) => s.evidenceRefs))].map(
+      (ref) => evidenceIndex[ref]
+    );
+    const checks = entries.filter((e) => e?.kind === "wikipedia_check");
+    // Страница отрицает статью только там, где ни одна проверка её не нашла.
+    if (checks.length === 0 || checks.some((e) => e?.wikipediaExists === true)) continue;
+    const deniedDomains = new Set(
+      checks
+        .filter((e) => e?.wikipediaExists === false)
+        .map((e) =>
+          String(e?.language ?? "")
+            .toLowerCase()
+            .split(/[-_]/u)[0]
+        )
+        .filter(Boolean)
+        .map((language) => `${language}.wikipedia.org`)
+    );
+    if (deniedDomains.size === 0) continue;
+    const text = chain
+      .flatMap((slide) => [
+        slide.content.narrative,
+        slide.content.whatWasFound,
+        slide.content.whyItMatters,
+        slide.content.whatToCheck,
+        slide.content.sourceNote,
+        ...(slide.content.bullets ?? []),
+      ])
       .filter(Boolean)
-      .map((language) => `${language}.wikipedia.org`)
-  );
-  if (deniedDomains.size === 0) return null;
-  const text = [
-    slide.content.narrative,
-    slide.content.whatWasFound,
-    slide.content.whyItMatters,
-    slide.content.whatToCheck,
-    slide.content.sourceNote,
-    ...(slide.content.bullets ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const unnamed = entries
-    .filter(
-      (e) =>
-        e?.kind !== "wikipedia_check" &&
-        e?.subjectDecision === "SUBJECT_MATCH" &&
-        deniedDomains.has(String(e?.domain ?? "").toLowerCase()) &&
-        /\/wiki\//u.test(String(e?.url ?? ""))
-    )
-    // Игла — ровно то, что печатает построитель в предложении о статье
-    // (`identity.ts`): полный адрес, а если разобрать нечего — площадка.
-    // Обрезок в полном адресе не находится, и ворота роняли бы обязательную
-    // секцию на здоровом тексте.
-    .map((e) => clientAddress(e!.url) ?? String(e!.domain))
-    .filter((link) => !text.includes(link));
-  return unnamed.length === 0
-    ? null
-    : `wikipedia denial contradicts page evidence on ${slide.slideId}: ${unnamed.join(", ")}`;
+      .join(" ");
+    const unnamed = entries
+      .filter(
+        (e) =>
+          e?.kind !== "wikipedia_check" &&
+          e?.subjectDecision === "SUBJECT_MATCH" &&
+          deniedDomains.has(String(e?.domain ?? "").toLowerCase()) &&
+          /\/wiki\//u.test(String(e?.url ?? ""))
+      )
+      // Игла — ровно то, что печатает построитель в предложении о статье
+      // (`identity.ts`): полный адрес, а если разобрать нечего — площадка.
+      // Обрезок в полном адресе не находится, и ворота роняли бы обязательную
+      // секцию на здоровом тексте.
+      .map((e) => clientAddress(e!.url) ?? String(e!.domain))
+      .filter((link) => !text.includes(link));
+    if (unnamed.length > 0) {
+      issues.push(
+        `wikipedia denial contradicts page evidence on ${baseSlideId}: ${unnamed.join(", ")}`
+      );
+    }
+  }
+  return issues;
 }
 
 /**
@@ -492,7 +550,7 @@ function wikipediaFragmentOwnershipIssue(
    * любой такой буллет на чужом слайде отклонял бы обязательную секцию — то
    * есть деку целиком.
    */
-  if (slide.templateId !== "wikipedia-check") return null;
+  if (slide.templateId !== WIKIPEDIA_CHECK_TEMPLATE) return null;
   const labels = Object.values(WIKIPEDIA_FRAGMENT_CATEGORY_LABELS);
   const fragments = (slide.content.bullets ?? []).filter((b) =>
     labels.some((label) => String(b ?? "").startsWith(`${label}: `))
