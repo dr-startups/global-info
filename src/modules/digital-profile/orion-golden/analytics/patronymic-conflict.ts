@@ -113,12 +113,39 @@ function norm(text: string): string {
 }
 
 /**
- * Отчества, стоящие рядом с фамилией субъекта и отличные от его собственных.
+ * Ключ отчества без падежного хвоста.
  *
- * Соседство обязательно: в тексте, где упомянут и субъект, и посторонний
- * «Иванов Пётр Сергеевич», чужое отчество не относится к субъекту и конфликтом
- * не является.
+ * Кириллический падеж снимает `baseForm` до транслитерации, а латинский до
+ * шага 0051 не снимал никто: «Anatoliya **Viktorovicha** Borisova» отчеством не
+ * считалось вовсе. Хвост берётся тот же, что у кириллической начальной формы
+ * («а|у|ем|е|ы|ой»), и снимается **после** суффикса отчества, то есть только у
+ * слова, уже похожего на отчество: обычному слову от этого ничего не будет.
  */
+function patronymicKeyBase(word: string): string {
+  const key = patronymicKey(baseForm(word));
+  const stripped = key.replace(/(ovich|evich|ovna|evna|ichna)(?:a|u|em|e|y|oy)$/u, "$1");
+  return stripped;
+}
+
+/**
+ * Слово — это форма фамилии субъекта.
+ *
+ * Один ответ на вопрос для обоих правил модуля: и для окна близости к фамилии,
+ * и для слота имени в тройке.
+ *
+ * Сравнение — **точное равенство по ключу**, без допуска на хвост. Допуск был
+ * догадкой и стоил дорого: «Борисович» начинается с «Борисов», и страница о
+ * самом субъекте, назвавшая рядом однофамильца по отчеству, объявлялась чужой.
+ * Падежные формы фамилии допуска больше не требуют — они приходят данными:
+ * раскладка личности кладёт в `lastNameVariants` транслитерации всех падежных
+ * форм (шаг 0048), а ключ приводит к ним и кириллическое написание, поэтому
+ * «Юнусова» совпадает с формой «yunusova» точно.
+ */
+function surnameFormPredicate(surnames: string[]): (word: string) => boolean {
+  const keys = new Set(surnames.map((s) => patronymicKey(norm(s))).filter((s) => s.length > 2));
+  return (word: string): boolean => keys.has(patronymicKey(norm(word)));
+}
+
 /**
  * Слова текста с их позициями — общий обход для латинского прохода.
  *
@@ -134,6 +161,13 @@ function wordsWithOffsets(haystack: string): Array<{ word: string; at: number }>
   return found;
 }
 
+/**
+ * Отчества, стоящие рядом с фамилией субъекта и отличные от его собственных.
+ *
+ * Соседство обязательно: в тексте, где упомянут и субъект, и посторонний
+ * «Иванов Пётр Сергеевич», чужое отчество не относится к субъекту и конфликтом
+ * не является.
+ */
 export function conflictingPatronymics(
   text: string,
   subject: {
@@ -163,18 +197,22 @@ export function conflictingPatronymics(
     .filter((s) => s.length > 2);
   if (surnames.length === 0) return [];
 
+  /*
+   * Окно строится вокруг слов, а не подстрок.
+   *
+   * Подстрочный поиск считал «Борисович» вхождением фамилии «Борисов»: своя
+   * страница, назвавшая рядом однофамильца **по отчеству**, объявлялась чужой
+   * с уверенностью 0,9. Признак слова — `isSurnameFormWord`, тот же, которым
+   * пользуется правило чужого имени.
+   */
+  const isSurnameForm = surnameFormPredicate(surnames);
   const windows: Array<[number, number]> = [];
-  for (const surname of surnames) {
-    let from = 0;
-    for (;;) {
-      const at = haystack.indexOf(surname, from);
-      if (at < 0) break;
-      windows.push([
-        Math.max(0, at - ADJACENCY_CHARS),
-        Math.min(haystack.length, at + surname.length + ADJACENCY_CHARS),
-      ]);
-      from = at + surname.length;
-    }
+  for (const { word, at } of wordsWithOffsets(haystack)) {
+    if (!isSurnameForm(word)) continue;
+    windows.push([
+      Math.max(0, at - ADJACENCY_CHARS),
+      Math.min(haystack.length, at + word.length + ADJACENCY_CHARS),
+    ]);
   }
   if (windows.length === 0) return [];
 
@@ -257,7 +295,7 @@ export function conflictingPatronymics(
     const words = wordsWithOffsets(haystack);
     for (let i = 1; i < words.length; i += 1) {
       const word = words[i]!;
-      const candidate = patronymicKey(baseForm(word.word));
+      const candidate = patronymicKeyBase(word.word);
       if (candidate.length < MIN_PATRONYMIC_KEY || !PATRONYMIC_KEY_RE.test(candidate)) continue;
       if (ownKeys.some((o) => isOwnVariant(candidate, o))) continue;
       // Тройка с именем субъекта — то же условие, что у кириллического прохода:
@@ -313,17 +351,18 @@ export function foreignGivenNamesInTriple(
     .filter((s) => s.length >= 3);
   if (givenKeyStems.length === 0) return [];
 
-  const surnameKeys = [subject.lastName, ...(subject.lastNameVariants ?? [])]
-    .map((s) => patronymicKey(norm(s)))
+  const surnames = [subject.lastName, ...(subject.lastNameVariants ?? [])]
+    .map(norm)
     .filter((s) => s.length > 2);
-  if (surnameKeys.length === 0) return [];
+  if (surnames.length === 0) return [];
 
   const words = norm(text).split(/[^\p{L}]+/u).filter(Boolean);
-  const keys = words.map((w) => patronymicKey(baseForm(w)));
+  const keys = words.map((w) => patronymicKeyBase(w));
   const isPatronymic = (k: string): boolean =>
     k.length >= MIN_PATRONYMIC_KEY && PATRONYMIC_KEY_RE.test(k);
-  const isSurname = (k: string): boolean =>
-    surnameKeys.some((s) => k === s || (k.startsWith(s) && k.length <= s.length + 3));
+  // Тот же предикат, что у окна близости: «борисович» формой фамилии не бывает.
+  const isSurnameForm = surnameFormPredicate(surnames);
+  const isSurname = (index: number): boolean => isSurnameForm(words[index] ?? "");
   const isOwnGiven = (k: string): boolean =>
     givenKeyStems.some((s) => k.startsWith(s) && k.length <= s.length + 4);
 
@@ -351,12 +390,12 @@ export function foreignGivenNamesInTriple(
      * что у основ имён субъекта: короче трёх букв сравнивать не с чем.
      */
     if (given.length < MIN_GIVEN_NAME_KEY) continue;
-    if (isOwnGiven(given) || isSurname(given)) continue;
+    if (isOwnGiven(given) || isSurname(i - 1)) continue;
     // Фамилия субъекта стоит вплотную к тройке: перед именем или после
     // отчества. Без неё материал не о субъекте и не о его однофамильце —
     // приписывать ему конфликт не из чего.
     const surnameAdjacent =
-      (i >= 2 && isSurname(keys[i - 2]!)) || (i + 1 < keys.length && isSurname(keys[i + 1]!));
+      (i >= 2 && isSurname(i - 2)) || (i + 1 < keys.length && isSurname(i + 1));
     if (!surnameAdjacent) continue;
     found.add(words[i - 1]!);
   }
