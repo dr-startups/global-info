@@ -143,7 +143,23 @@ function patronymicKeyBase(word: string): string {
  */
 function surnameFormPredicate(surnames: string[]): (word: string) => boolean {
   const keys = new Set(surnames.map((s) => patronymicKey(norm(s))).filter((s) => s.length > 2));
-  return (word: string): boolean => keys.has(patronymicKey(norm(word)));
+  /*
+   * Сравнивается и целый токен, и каждая его часть по дефису.
+   *
+   * Целый — ради двойной фамилии («Немирович-Данченко» приходит из профиля одним
+   * написанием). Часть — ради приставки: «Борисов-младший», «Дюма-отец», а в
+   * выгрузках дефис ставят и вместо тире. Обратное — делить на части **форму
+   * фамилии** — сделало бы «Данченко Иван Петрович» однофамильцем субъекта, и
+   * это уже догадка: у части двойной фамилии своей жизни нет.
+   */
+  return (word: string): boolean => {
+    const whole = patronymicKey(norm(word));
+    if (keys.has(whole)) return true;
+    if (!word.includes("-")) return false;
+    return norm(word)
+      .split("-")
+      .some((part) => part.length > 2 && keys.has(patronymicKey(part)));
+  };
 }
 
 /**
@@ -154,8 +170,13 @@ function surnameFormPredicate(surnames: string[]): (word: string) => boolean {
  * «данченко» по отдельности — ни одно не равнялось форме фамилии, и якорь не
  * строился никогда. До перехода на слова это держалось случайно, подстрочным
  * поиском.
+ *
+ * Дефис соединяет только буквы: два дефиса подряд — разделитель (в выгрузках их
+ * ставят вместо тире), дефис по краю слова к слову не относится. Иначе
+ * «борисов--фронтмен» становилось одним токеном, а «-борисов» не находилось
+ * вовсе.
  */
-const WORD_RE = /(?<![\p{L}-])(\p{L}[\p{L}-]*\p{L})(?![\p{L}-])/gu;
+const WORD_RE = /(?<!\p{L})(\p{L}{2,}(?:-\p{L}+)*)(?!\p{L})/gu;
 
 /** Разрез текста на слова тем же правилом, что и обход с позициями. */
 function wordsOf(haystack: string): string[] {
