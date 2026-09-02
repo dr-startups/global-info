@@ -15,8 +15,11 @@
 import { describe, expect, it } from "vitest";
 import {
   classifySubjectRelevance,
+  subjectIdentityFromProfile,
   type SubjectIdentity,
 } from "@/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
+import { buildSubjectIdentityProfile } from "@/modules/digital-profile/orion-golden/identity/subject-identity-profile-builder";
+import { classifierProfileFromIdentityProfile } from "@/modules/digital-profile/services/job-subject-profile";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
 
 let seq = 0;
@@ -162,5 +165,27 @@ describe("чужое отчество в строке-запросе", () => {
     const d = classifySubjectRelevance(line("Iouri chliaifchtein net worth"), RASHNIKOV);
     expect(d.decision).toBe("INSUFFICIENT_IDENTIFIERS");
     expect(d.reasonCode).toBe("no_subject_tokens");
+  });
+
+  /**
+   * Утверждение доктекста этого файла — «раскладка профиля кладёт
+   * «filippovich» в имена» — до сих пор только подразумевалось: фикстуры выше
+   * собраны руками и раскладку не измеряют. Здесь личность строится настоящей
+   * цепочкой, и правило проверяется на ней же.
+   */
+  it("раскладка настоящей цепочки кладёт латинское отчество в имена, а фамилию — в фамилии", () => {
+    const profile = buildSubjectIdentityProfile({
+      caseId: "case-unit-foreign-patronymic",
+      subjectName: "Виктор Филиппович Рашников",
+    });
+    const subject = subjectIdentityFromProfile(classifierProfileFromIdentityProfile(profile));
+
+    expect(subject.firstNames).toContain("filippovich");
+    expect(subject.lastNameVariants).toContain("rashnikov");
+    expect(subject.firstNames).not.toContain("rashnikov");
+
+    const d = classifySubjectRelevance(line("viktor feliksovich vekselberg ofac"), subject);
+    expect(d.decision).toBe("OTHER_SUBJECT");
+    expect(d.reasonCode).toBe("suggestion_foreign_patronymic");
   });
 });

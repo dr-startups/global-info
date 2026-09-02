@@ -24,6 +24,8 @@
 
 import { createHash } from "node:crypto";
 import { conflictingPatronymics, foreignPatronymicsInQueryLine } from "./patronymic-conflict";
+import { transliterateRuToLat } from "../identity/transliterate-ru";
+import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
@@ -63,6 +65,63 @@ export type SubjectIdentity = {
 
 function norm(text: string): string {
   return text.toLowerCase().replace(/ё/gu, "е").replace(/\s+/gu, " ").trim();
+}
+
+/**
+ * Слово без различий, которые для написания имени различиями не являются:
+ * регистр, «ё»/«е» и диакритика («Holmström» = «Holmstrom»).
+ *
+ * Раньше формы фамилии сравнивались первыми четырьмя буквами. Это догадка, и
+ * она била по своим: у субъекта, чья фамилия произведена от его же имени
+ * («Иванов Иван Иванович»), собственное латинское имя признавалось формой
+ * фамилии и выпадало из имён, а материал о самом клиенте становился «одной
+ * фамилией».
+ */
+function foldWord(word: string): string {
+  return norm(word)
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+/** Склейка написаний: регистр и «ё»/«е» различиями не считаются. */
+function uniqByNorm(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((v) => {
+    const key = norm(v);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Латинские написания части имени — вывод из неё самой, обеими школами.
+ *
+ * Школы в проекте две, и расходятся они на «ё»: `transliterateRuToLat`
+ * порождает транслитерации профиля (Кремлёв → kremlev), `transliterateRuToEn`
+ * строит поисковые запросы (Кремлёв → Kremlyov). В собранных материалах
+ * встречаются обе, и собственная статья субъекта
+ * (`en.wikipedia.org/wiki/Umar_Kremlyov`) написана как раз по второй. Взять
+ * одну — значит оставить половину материалов субъекта без фамилии; взять обе
+ * второго ответа не заводит: обе становятся формами фамилии, а не именами.
+ *
+ * Оговорка, названная ревью 02.09.2026 и намеренно оставленная: на нынешнем
+ * входе `transliterateRuToLat` **избыточна**. Сюда подаются и падежные формы
+ * (`generateRussianNameForms`), а таблица падежей приводит «ё» к «е» до
+ * склонения, поэтому `transliterateRuToEn` от нормализованного именительного
+ * даёт ровно то, что дала бы `transliterateRuToLat` от исходного. Мутация
+ * «убрать `transliterateRuToLat`» не красит ни одного теста — поймать её
+ * нечем, и это сказано вслух, чтобы следующий читатель не удалил её как дубль
+ * вслепую: она перестанет быть избыточной ровно в тот день, когда падежную
+ * ветку сузят. Убрать её вместе с этой оговоркой — отдельный шаг (опись).
+ */
+function latinFormsOfNameParts(parts: string[]): string[] {
+  return uniqByNorm(
+    parts
+      .flatMap((p) => [transliterateRuToLat(p), transliterateRuToEn(p).toLowerCase()])
+      .map((f) => f.trim())
+      .filter((f) => f.length > 2)
+  );
 }
 
 function itemText(item: RawInventoryItem): string {
@@ -508,10 +567,11 @@ export function promoteLikelyBySharedDomain(input: {
 /**
  * Статья, найденная по межъязыковой ссылке, наследует решение статьи-источника.
  *
- * Это одна сущность Викиданных, а не две: латинский заголовок «Alexei
- * Mordashov» токенная классификация не узнаёт вовсе (наша транслитерация даёт
- * «Aleksey»), и повторная классификация дала бы «не подтверждено» рядом с
- * подтверждённой ru-статьёй — две записи об одном разошлись бы. Направление
+ * Это одна сущность Викиданных, а не две: у латинского заголовка «Alexei
+ * Mordashov» токенная классификация узнаёт фамилию, но не имя (наша
+ * транслитерация даёт «Aleksey», в статье стоит «Alexei»), и повторная
+ * классификация дала бы «одна фамилия» — «не подтверждено» рядом с
+ * подтверждённой ru-статьёй, две записи об одном разошлись бы. Направление
  * наследования безопасно по построению: тёзка-источник передаёт сестре свою
  * неподтверждённость, а не наоборот.
  */
@@ -629,32 +689,55 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
   const structuredGiven = (profile.givenNames ?? []).filter(Boolean);
   const structuredPatr = (profile.patronymics ?? []).filter(Boolean);
 
-  // Surname transliteration token. Prefer the token that corresponds to a known
-  // family name (structured or positional); only fall back to the "shared by all
-  // variants" heuristic when family names are unknown. This avoids mislabelling
-  // the given-name token as the surname for non-Russian, given-first names.
+  /*
+   * Латиница фамилии выводится из самой фамилии.
+   *
+   * Прежняя догадка — «латиница фамилии это слово, общее для всех
+   * транслитераций» — ломается на первом же субъекте с псевдонимом: в
+   * `transliterations` лежат и транслитерации псевдонимов, общих слов не
+   * остаётся вовсе, и фамилия уезжала в кандидаты в имена. Тогда одно слово
+   * удовлетворяет сразу и «фамилия названа», и «имя названо», а однофамилец с
+   * чужим именем получает SUBJECT_MATCH / full_name_match — так статья о чужом
+   * человеке была подтверждена как статья о субъекте на живом прогоне.
+   *
+   * Инвариант узкий и другим быть не может: **написание фамилии, выводимое из
+   * самой фамилии, кандидатом в имена не становится**. Написание, приехавшее в
+   * профиль псевдонимом («Ivan Iakovlev» при фамилии «Яковлев»), ни одной
+   * таблицей не выводится, и опознать его можно только новой догадкой — а
+   * догадку здесь удаляют, а не заводят. Путь для такого написания есть и без
+   * догадки: оператор добавляет его в `familyNames` панелью профиля.
+   *
+   * Фамилия профилю неизвестна — молчим, а не гадаем.
+   */
+  const familySources = [...structuredFamily, profile.fullNameRu?.lastName ?? ""].filter(Boolean);
+  /*
+   * Падежные формы фамилии — тоже формы фамилии, и на латинской стороне их
+   * нужно называть явно. Кириллическую сторону это не задевало никогда:
+   * `matchesToken` порождает формы сам. А псевдоним оператора несёт фамилию в
+   * косвенном падеже («Фонд Борисова»), транслитерация псевдонима приносит
+   * «borisova», и без этой строки слово становилось «именем» — однофамилица
+   * Анна Борисова получала полное совпадение.
+   *
+   * Таблица падежей здесь та же, которой сверяется текст, а не новая догадка.
+   * Зазор, который она оставляет: падежную форму она строит от написания, где
+   * «ё» уже приведена к «е», поэтому «Kremlyova» (вторая школа, косвенный
+   * падеж) формой фамилии не станет — именительный «Kremlyov» станет.
+   */
+  const surnameLatinForms = latinFormsOfNameParts([
+    ...familySources,
+    ...familySources.flatMap(generateRussianNameForms),
+  ]);
   const familyTokenSet = new Set(
-    [...structuredFamily, profile.fullNameRu?.lastName ?? ""]
-      .flatMap((f) => f.toLowerCase().replace(/ё/gu, "е").split(/\s+/))
+    [...familySources, ...surnameLatinForms]
+      .flatMap((f) => norm(f).split(/\s+/))
       .filter((w) => w.length > 2)
+      .map(foldWord)
   );
+  const matchesFamily = (tok: string): boolean => familyTokenSet.has(foldWord(tok));
+  // Остальные токены транслитераций — кандидаты в имена.
   const translits = (profile.transliterations ?? []).map((t) => t.toLowerCase());
-  const tokenSets = translits.map((t) => new Set(t.split(/\s+/).filter((w) => w.length > 2)));
-  const sharedTokens =
-    tokenSets.length > 0
-      ? [...tokenSets[0]].filter((tok) => tokenSets.every((s) => s.has(tok)))
-      : [];
-  const matchesFamily = (tok: string): boolean =>
-    familyTokenSet.has(tok) ||
-    [...familyTokenSet].some(
-      (ft) => (ft.length >= 4 && tok.startsWith(ft.slice(0, 4))) || (tok.length >= 4 && ft.startsWith(tok.slice(0, 4)))
-    );
-  const surnameTranslit = sharedTokens.find(matchesFamily) ?? sharedTokens[0] ?? "";
-  // Non-surname translit tokens become first-name candidates — but never tokens
-  // that transliterate a known family name (guards the surname leaking in as a
-  // first name for given-first Latin names).
   const translitFirsts = translits.flatMap((t) =>
-    t.split(/\s+/).filter((w) => w.length > 2 && w !== surnameTranslit && !matchesFamily(w))
+    t.split(/\s+/).filter((w) => w.length > 2 && !matchesFamily(w))
   );
 
   // Backward-compat positional fallback (lower confidence): only used to seed
@@ -665,9 +748,7 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
 
   const lastName =
     structuredFamily[0] ?? positionalLast ?? profile.displayName.split(/\s+/)[0] ?? "";
-  const lastNameVariants = [
-    ...new Set([...structuredFamily.slice(1), surnameTranslit].filter(Boolean)),
-  ];
+  const lastNameVariants = uniqByNorm([...structuredFamily.slice(1), ...surnameLatinForms]);
   const firstNames = [
     ...new Set([...structuredGiven, positionalFirst, ...translitFirsts].filter(Boolean)),
   ];
