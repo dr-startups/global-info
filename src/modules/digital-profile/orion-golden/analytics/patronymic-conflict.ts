@@ -147,6 +147,22 @@ function surnameFormPredicate(surnames: string[]): (word: string) => boolean {
 }
 
 /**
+ * Дефис — часть слова, а не граница.
+ *
+ * Двойная фамилия приходит из профиля одним написанием («Немирович-Данченко»),
+ * и пока обход резал текст по буквам, в тексте находились «немирович» и
+ * «данченко» по отдельности — ни одно не равнялось форме фамилии, и якорь не
+ * строился никогда. До перехода на слова это держалось случайно, подстрочным
+ * поиском.
+ */
+const WORD_RE = /(?<![\p{L}-])(\p{L}[\p{L}-]*\p{L})(?![\p{L}-])/gu;
+
+/** Разрез текста на слова тем же правилом, что и обход с позициями. */
+function wordsOf(haystack: string): string[] {
+  return [...haystack.matchAll(WORD_RE)].map((m) => m[1]!);
+}
+
+/**
  * Слова текста с их позициями — общий обход для латинского прохода.
  *
  * Позиция нужна тому же окну близости к фамилии, которым пользуется
@@ -155,7 +171,7 @@ function surnameFormPredicate(surnames: string[]): (word: string) => boolean {
  */
 function wordsWithOffsets(haystack: string): Array<{ word: string; at: number }> {
   const found: Array<{ word: string; at: number }> = [];
-  for (const m of haystack.matchAll(/(?<!\p{L})(\p{L}{2,})(?!\p{L})/gu)) {
+  for (const m of haystack.matchAll(WORD_RE)) {
     found.push({ word: m[1]!, at: m.index ?? 0 });
   }
   return found;
@@ -356,7 +372,7 @@ export function foreignGivenNamesInTriple(
     .filter((s) => s.length > 2);
   if (surnames.length === 0) return [];
 
-  const words = norm(text).split(/[^\p{L}]+/u).filter(Boolean);
+  const words = wordsOf(norm(text));
   const keys = words.map((w) => patronymicKeyBase(w));
   const isPatronymic = (k: string): boolean =>
     k.length >= MIN_PATRONYMIC_KEY && PATRONYMIC_KEY_RE.test(k);

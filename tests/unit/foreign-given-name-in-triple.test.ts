@@ -161,6 +161,18 @@ describe("чужое имя в тройке", () => {
     ).toEqual([]);
   });
 
+  it("двойная фамилия — один якорь, а не два слова", () => {
+    const nemirovich = identityOfCase("Немирович-Данченко Владимир Иванович");
+
+    expect(
+      foreignGivenNamesInTriple("Немирович-Данченко Иван Иванович — однофамилец", nemirovich)
+    ).toEqual(["иван"]);
+    // Своя тройка при той же фамилии чужой не объявляется.
+    expect(
+      foreignGivenNamesInTriple("Немирович-Данченко Владимир Иванович", nemirovich)
+    ).toEqual([]);
+  });
+
   it("без структурного отчества субъекта правило молчит", () => {
     // Золотой кейс: у субъекта отчества нет вовсе, тройка не собирается.
     const holmstrom = identityOfCase("Anders Holmström");
