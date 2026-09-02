@@ -251,7 +251,18 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
       } as Partial<UnifiedCollectionJob>);
     }
 
-    const after = await runUnifiedCollectionTick(step.caseId, deps);
+    /*
+     * Отказ прошлой попытки этого шага уходит в тик вместе с зависимостями.
+     *
+     * Строкой выше вердикт снят с джобы, чтобы исход новой попытки не брался из
+     * памяти о старой, — и из-за этого признак «отказ повторился дословно» не
+     * видел ничего. Долговечны эти данные в строке шага: их пишет
+     * `applyStepOutcome` и не чистит никто до успеха.
+     */
+    const after = await runUnifiedCollectionTick(step.caseId, {
+      ...deps,
+      previousStepFailure: { code: step.lastErrorCode, message: step.lastError },
+    });
     return outcomeFromJob(step, before, after, deps.now?.() ?? new Date());
   };
 }

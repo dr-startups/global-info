@@ -32,6 +32,12 @@
 /** Запись в предупреждениях прогона: запаркован повтором, а не гейтом. */
 export const PREPARE_REPEATED_FAILURE_MARK = "prepare-failed-identically";
 
+/** Отказ предыдущей попытки шага — как его хранит строка конвейера. */
+export type PreviousStepFailure = {
+  code?: string | null;
+  message?: string | null;
+};
+
 /**
  * Отказ дословно повторяет предыдущую попытку.
  *
@@ -40,17 +46,22 @@ export const PREPARE_REPEATED_FAILURE_MARK = "prepare-failed-identically";
  * Отличие в один знак означает другой отказ, а нормализация («по коду и первым
  * N символам») вернула бы догадку, ради ухода от которой шаг и делается.
  *
- * Данные берутся с джобы: `failRetryable` записал туда отказ первой попытки, а
- * вход в подготовку `lastError` не очищает — чистят его только ветки Arsenkin и
- * успех. Ни нового поля, ни колонки в базе для признака не заводится.
+ * **Данные берутся у строки шага, а не у джобы, и это цена одной ошибки.**
+ * Сначала признак читал `job.lastError`/`job.lastErrorCode` — и не срабатывал
+ * на живом пути никогда: обработчик шага снимает вердикт прошлой попытки с
+ * джобы **перед** новой (`unified-step-handlers.ts`, `stageForRetryAttempt`),
+ * и ручное «Возобновить» делает то же. Тест этого не показал, потому что звал
+ * тик напрямую, минуя обработчик. Строка шага (`dp_workflow_steps`) хранит
+ * `lastError`/`lastErrorCode` до самого успеха — их пишет `applyStepOutcome`,
+ * и не чистит никто. Ни нового поля, ни колонки заводить не пришлось.
  */
 export function repeatsPreviousFailure(
-  job: { lastError?: string | null; lastErrorCode?: string | null },
+  previous: PreviousStepFailure | null | undefined,
   code: string,
   message: string
 ): boolean {
-  const previousMessage = job.lastError ?? "";
-  const previousCode = job.lastErrorCode ?? "";
+  const previousMessage = previous?.message ?? "";
+  const previousCode = previous?.code ?? "";
   if (!previousMessage || !previousCode) return false;
   return previousCode === code && previousMessage === message;
 }

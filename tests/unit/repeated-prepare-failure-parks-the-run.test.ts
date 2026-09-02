@@ -24,7 +24,11 @@ process.env.UNIFIED_COLLECTION_JOB_STORE = "file";
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { rmSync } from "node:fs";
-import { unifiedJobDir } from "@/modules/digital-profile/services/unified-collection-job-store";
+import {
+  loadUnifiedCollectionJob,
+  patchUnifiedCollectionJob,
+  unifiedJobDir,
+} from "@/modules/digital-profile/services/unified-collection-job-store";
 import { CanonicalPrepareBlockedError } from "@/modules/digital-profile/services/canonical-report-prepare";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "@/modules/digital-profile/services/unified-collection-recovery";
 import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
@@ -35,14 +39,40 @@ import {
   repeatsPreviousFailure,
 } from "@/modules/digital-profile/services/prepare-repeat";
 import { prepareRetryIsPointless } from "@/modules/digital-profile/services/parked-deck-version";
+import { prepareGateFailureMessage } from "@/modules/digital-profile/services/prepare-gate-advice";
+import { evaluateLegacyRecoveryEligibility } from "@/modules/digital-profile/services/unified-recovery-legacy-heuristic";
+import { unifiedStepHandlers } from "@/modules/digital-profile/workflow/unified-step-handlers";
 import { DECK_CONTENT_VERSION } from "@/modules/digital-profile/orion-golden/deck-sections/content-version";
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
 import type { WorkflowStepRow } from "@/modules/digital-profile/workflow/step-types";
 import {
+  ENRICHMENT_DONE,
   failPrepareWith as failPrepare,
   seedPreparedRun,
   stepsAfterPrepare,
 } from "../fixtures/parked-prepare-failure";
+
+/** Строка шага подготовки, упавшего первой попыткой: отказ лежит на ней. */
+function failedPrepareStep(caseId: string, jobId: string): WorkflowStepRow {
+  return {
+    id: "s-prepare",
+    caseId,
+    jobId,
+    name: "REPORT_PREPARE",
+    position: 4,
+    state: "FAILED",
+    attempts: 1,
+    maxAttempts: 10,
+    nextRunAt: NOW,
+    leaseOwner: null,
+    leaseUntil: null,
+    inputHash: null,
+    outputRef: null,
+    lastError: SECTIONS_MESSAGE,
+    lastErrorCode: "ASSEMBLY_FAILED",
+    startedAt: null,
+  } as unknown as WorkflowStepRow;
+}
 
 const pipeline = vi.hoisted(() => ({ rows: [] as unknown[] }));
 
@@ -75,6 +105,7 @@ afterAll(() => {
 
 async function failWith(
   err: unknown,
+  previous?: { code?: string | null; message?: string | null } | null,
   over?: Partial<UnifiedCollectionJob>
 ): Promise<UnifiedCollectionJob> {
   return await failPrepare({
@@ -82,15 +113,20 @@ async function failWith(
     compositeDatasetId: composite,
     error: err,
     now: NOW,
+    previousStepFailure: previous ?? null,
     job: { warnings: [], ...over },
   });
 }
 
-/** Джоба второй попытки: отказ первой лежит на ней и никем не очищен. */
+/**
+ * Отказ первой попытки так, как его приносит строка шага.
+ *
+ * Не джоба: с неё обработчик снимает вердикт прошлой попытки перед новой, и
+ * признак, читающий джобу, на живом пути не сработал бы ни разу.
+ */
 const afterFirstAttempt = (message = SECTIONS_MESSAGE, code = "ASSEMBLY_FAILED") => ({
-  lastError: message,
-  lastErrorCode: code,
-  warnings: ["retryable-assembly-failure", "CANONICAL_PREPARE_BLOCKED"],
+  code,
+  message,
 });
 
 const recoveryFor = async (job: UnifiedCollectionJob, rows: WorkflowStepRow[]) => {
@@ -182,13 +218,141 @@ describe("одинаковый отказ сборки дважды", () => {
 
   it("неполная подводка живёт своей веткой: повторяется подводка, а не сборка", async () => {
     // «Ожидание — не попытка»: подводятся оплаченные наблюдения Arsenkin.
-    const job = await failWith(sectionsFailure(), {
-      ...afterFirstAttempt(),
-      warnings: [...afterFirstAttempt().warnings, "arsenkin-skipped:no-base"],
+    const job = await failWith(sectionsFailure(), afterFirstAttempt(), {
+      warnings: ["arsenkin-skipped:no-base"],
     });
 
     expect(job.stage).toBe("FAILED_RETRYABLE");
     expect(job.warnings).not.toContain(PREPARE_REPEATED_FAILURE_MARK);
+  });
+});
+
+describe("живой путь: повтор приходит от строки шага, а не от джобы", () => {
+  /*
+   * Обработчик шага снимает с джобы `lastError`/`lastErrorCode` **перед каждой**
+   * повторной попыткой (`unified-step-handlers.ts`, `stageForRetryAttempt`), и
+   * ручное «Возобновить» делает то же. Признак, читающий джобу, на живом пути не
+   * срабатывал бы никогда: к моменту сравнения там пусто.
+   *
+   * Долговечные данные лежат в строке шага: `applyStepOutcome` пишет туда
+   * `lastError`/`lastErrorCode` при отказе и не чистит их до успеха. Поэтому
+   * тест идёт через обработчик, а не через тик напрямую.
+   */
+  it("вторая одинаковая попытка паркует прогон", async () => {
+    const caseId = `${CASE}-handler`;
+    const seed = await seedPreparedRun(caseId);
+    await patchUnifiedCollectionJob(caseId, {
+      stage: "FAILED_RETRYABLE",
+      status: "WAITING",
+      resumeCheckpoint: "ASSEMBLY",
+      compositeDatasetId: seed.compositeDatasetId,
+      baseReportRunId: "base-run",
+      enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
+      arsenkinEnrichmentState: ENRICHMENT_DONE,
+      // Джоба после первой попытки — ровно так её оставляет `failRetryable`.
+      lastError: SECTIONS_MESSAGE,
+      lastErrorCode: "ASSEMBLY_FAILED",
+      warnings: ["CANONICAL_PREPARE_BLOCKED", "retryable-assembly-failure", "ASSEMBLY_FAILED"],
+    } as Partial<UnifiedCollectionJob>);
+
+    const handlers = unifiedStepHandlers({
+      now: () => NOW,
+      runPrepare: async () => {
+        throw sectionsFailure();
+      },
+    } as never);
+    const outcome = await handlers.REPORT_PREPARE!(failedPrepareStep(caseId, seed.unifiedJobId));
+    const job = await loadUnifiedCollectionJob(caseId);
+
+    expect(outcome.kind).toBe("failed");
+    expect((outcome as { retryable?: boolean }).retryable).toBe(false);
+    expect(job?.stage).toBe("FAILED_TERMINAL");
+    expect(job?.warnings).toContain(PREPARE_REPEATED_FAILURE_MARK);
+
+    rmSync(unifiedJobDir(caseId), { recursive: true, force: true });
+  });
+
+  it("первая попытка через обработчик остаётся возобновляемой", async () => {
+    const caseId = `${CASE}-handler-first`;
+    const seed = await seedPreparedRun(caseId);
+    await patchUnifiedCollectionJob(caseId, {
+      stage: "ORION_PREPARE",
+      status: "RUNNING",
+      compositeDatasetId: seed.compositeDatasetId,
+      baseReportRunId: "base-run",
+      enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
+      arsenkinEnrichmentState: ENRICHMENT_DONE,
+      lastError: null,
+      lastErrorCode: null,
+      warnings: [],
+    } as Partial<UnifiedCollectionJob>);
+
+    const handlers = unifiedStepHandlers({
+      now: () => NOW,
+      runPrepare: async () => {
+        throw sectionsFailure();
+      },
+    } as never);
+    const outcome = await handlers.REPORT_PREPARE!({
+      ...failedPrepareStep(caseId, seed.unifiedJobId),
+      attempts: 0,
+      state: "PENDING",
+      lastError: null,
+      lastErrorCode: null,
+    } as WorkflowStepRow);
+    const job = await loadUnifiedCollectionJob(caseId);
+
+    expect((outcome as { retryable?: boolean }).retryable).toBe(true);
+    expect(job?.stage).toBe("FAILED_RETRYABLE");
+    expect(job?.warnings).not.toContain(PREPARE_REPEATED_FAILURE_MARK);
+
+    rmSync(unifiedJobDir(caseId), { recursive: true, force: true });
+  });
+});
+
+describe("совет оператору", () => {
+  it("гейт называет действие, и его совет сильнее общего «повторилось»", () => {
+    // Столкнуться они не могут (гейт паркует с первой попытки), но порядок
+    // записан правилом, а не случаем.
+    const message = "prepare gate failed: MATERIAL_THEME_COVERAGE=87.5";
+
+    expect(prepareGateFailureMessage(message, { repeated: true })).toContain(
+      "уточнить профиль субъекта"
+    );
+    expect(prepareGateFailureMessage(message, { repeated: true })).not.toContain(
+      "дважды подряд отказала одинаково"
+    );
+  });
+});
+
+describe("прогон без конвейера шагов", () => {
+  it("легаси-путь знает пометку повтора", async () => {
+    // Таких прогонов уже не создаётся, но они лежат в базе, и ответ им нужен
+    // тот же: причина закрытой кнопки, а не общее «восстановление невозможно».
+    const job = {
+      caseId: CASE,
+      unifiedJobId: "legacy-job",
+      stage: "FAILED_TERMINAL",
+      status: "FAILED",
+      lastError: SECTIONS_MESSAGE,
+      lastErrorCode: "ASSEMBLY_FAILED",
+      warnings: [PREPARE_REPEATED_FAILURE_MARK, "CANONICAL_PREPARE_BLOCKED"],
+      compositeDatasetId: "ds-1",
+      baseReportRunId: "base-1",
+      enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
+      arsenkinEnrichmentState: ENRICHMENT_DONE,
+    } as unknown as UnifiedCollectionJob;
+    const manifest = {
+      caseId: CASE,
+      unifiedJobId: "legacy-job",
+      baseCount: 120,
+      actualProviders: [],
+    } as unknown as Parameters<typeof evaluateLegacyRecoveryEligibility>[0]["manifest"];
+
+    const verdict = await evaluateLegacyRecoveryEligibility({ job, manifest });
+
+    expect(verdict.recoveryAllowed).toBe(false);
+    expect(verdict.recoveryBlockerReason).toBe("PREPARE_GATE_NOT_FIXED_BY_RETRY");
   });
 });
 
@@ -225,7 +389,7 @@ describe("чистые функции признака", () => {
   it("повтор — это тот же код и тот же текст", () => {
     expect(
       repeatsPreviousFailure(
-        { lastError: SECTIONS_MESSAGE, lastErrorCode: "ASSEMBLY_FAILED" },
+        { code: "ASSEMBLY_FAILED", message: SECTIONS_MESSAGE },
         "ASSEMBLY_FAILED",
         SECTIONS_MESSAGE
       )
@@ -237,7 +401,7 @@ describe("чистые функции признака", () => {
     // вернуть догадку, от которой шаг и уходит.
     expect(
       repeatsPreviousFailure(
-        { lastError: SECTIONS_MESSAGE, lastErrorCode: "ASSEMBLY_FAILED" },
+        { code: "ASSEMBLY_FAILED", message: SECTIONS_MESSAGE },
         "ASSEMBLY_FAILED",
         `${SECTIONS_MESSAGE}.`
       )
@@ -246,7 +410,7 @@ describe("чистые функции признака", () => {
 
   it("первая попытка повтором не является", () => {
     expect(
-      repeatsPreviousFailure({ lastError: null, lastErrorCode: null }, "ASSEMBLY_FAILED", SECTIONS_MESSAGE)
+      repeatsPreviousFailure(null, "ASSEMBLY_FAILED", SECTIONS_MESSAGE)
     ).toBe(false);
   });
 

@@ -64,6 +64,11 @@ export async function failPrepareWith(input: {
   now: Date;
   /** Чем прогон отличается от здорового: чекпоинт, подводка, предупреждения. */
   job?: Partial<UnifiedCollectionJob>;
+  /**
+   * Отказ прошлой попытки шага: на живом пути его приносит обработчик из строки
+   * конвейера, а не джоба — с неё вердикт снимается перед каждым повтором.
+   */
+  previousStepFailure?: { code?: string | null; message?: string | null } | null;
 }): Promise<UnifiedCollectionJob> {
   await patchUnifiedCollectionJob(input.caseId, {
     stage: "ORION_PREPARE",
@@ -80,6 +85,7 @@ export async function failPrepareWith(input: {
   await runUnifiedCollectionTick(input.caseId, {
     autoSchedule: false,
     now: () => input.now,
+    previousStepFailure: input.previousStepFailure ?? null,
     runPrepare: async () => {
       throw input.error;
     },

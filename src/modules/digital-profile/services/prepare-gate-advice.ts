@@ -143,12 +143,9 @@ export function prepareGateAdvice(message: string | null | undefined): string | 
  * одинаковым ответом, — поэтому объяснение строится отдельно. Говорит оно то
  * же самое: повтор бессмысленен, данные целы, ждать нужно исправления.
  */
-export function repeatedFailureAdvice(): string {
-  return (
-    "Сборка отчёта дважды подряд отказала одинаково — повтор без изменения кода " +
-    `или данных даст то же. ${DATA_INTACT_TAIL}`
-  );
-}
+export const REPEATED_FAILURE_ADVICE =
+  "Сборка отчёта дважды подряд отказала одинаково — повтор без изменения кода " +
+  `или данных даст то же. ${DATA_INTACT_TAIL}`;
 
 /**
  * Сообщение об отказе для оператора: что произошло и что делать.
@@ -165,7 +162,7 @@ export function prepareGateFailureMessage(
   message: string | null | undefined,
   options: { repeated?: boolean } = {}
 ): string {
-  const advice = prepareGateAdvice(message) ?? (options.repeated ? repeatedFailureAdvice() : null);
+  const advice = prepareGateAdvice(message) ?? (options.repeated ? REPEATED_FAILURE_ADVICE : null);
   const raw = String(message ?? "").trim();
   return advice ? `${advice} (${raw})` : raw;
 }

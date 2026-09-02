@@ -342,6 +342,15 @@ export function foreignGivenNamesInTriple(
   for (let i = 1; i < keys.length; i += 1) {
     if (!isPatronymic(keys[i]!)) continue;
     const given = keys[i - 1]!;
+    /*
+     * Инициал — не имя, и чужим он быть не может.
+     *
+     * Реестры ИП и судебные карточки пишут «Борисов А. Анатольевич»: сокращено
+     * имя **самого** субъекта, а слот имени принимал любое слово, включая одну
+     * букву, — и запись о клиенте уходила из аудита как чужая. Порог тот же,
+     * что у основ имён субъекта: короче трёх букв сравнивать не с чем.
+     */
+    if (given.length < MIN_GIVEN_NAME_KEY) continue;
     if (isOwnGiven(given) || isSurname(given)) continue;
     // Фамилия субъекта стоит вплотную к тройке: перед именем или после
     // отчества. Без неё материал не о субъекте и не о его однофамильце —
@@ -400,6 +409,14 @@ const PATRONYMIC_KEY_RE = /(?:ovich|evich|ovna|evna|ichna)$/u;
  * дешёвую ошибку на дорогую.
  */
 const MIN_PATRONYMIC_KEY = 7;
+
+/**
+ * Порог длины кандидата в имя — тот же, что у основ имён субъекта.
+ *
+ * Короче трёх букв — инициал или обрывок, а не имя; объявлять по нему другого
+ * человека значит терять записи о самом субъекте («Борисов А. Анатольевич»).
+ */
+const MIN_GIVEN_NAME_KEY = 3;
 
 function levenshtein(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);

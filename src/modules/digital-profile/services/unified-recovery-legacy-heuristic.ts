@@ -21,6 +21,7 @@
  */
 
 import { isDeterministicPrepareGate } from "./prepare-gate-advice";
+import { parkedOnRepeatedFailure } from "./prepare-repeat";
 import { readUnifiedArtifact } from "./unified-collection-job-store";
 import type {
   BaseCollectionManifest,
@@ -208,6 +209,19 @@ export async function evaluateLegacyRecoveryEligibility(input: {
           recoveryReason: "ARSENKIN_INGEST_RESUME",
         };
       }
+      /*
+       * Повтор, который уже не поможет, спрашивается **до** предложения
+       * пересобрать: иначе ветка `ASSEMBLY_RESUME` предлагает кнопку тому
+       * прогону, чей отказ уже дословно повторился, — а стоит она четырёх
+       * стадий модели.
+       */
+      if (isDeterministicPrepareGate(job.lastError) || parkedOnRepeatedFailure(job.warnings)) {
+        return {
+          recoveryAllowed: false,
+          recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
+          recoveryReason: null,
+        };
+      }
       // Section/assembly QA failure with intact composite — retry prepare only.
       const isAssemblyFailure =
         job.lastErrorCode === "ASSEMBLY_FAILED" ||
@@ -223,16 +237,6 @@ export async function evaluateLegacyRecoveryEligibility(input: {
           recoveryAllowed: true,
           recoveryBlockerReason: null,
           recoveryReason: "ASSEMBLY_RESUME",
-        };
-      }
-      // Гейт подготовки, вычисляемый из собранных данных, повтором не лечится:
-      // та же сборка над тем же набором даст тот же ответ. Кнопка здесь была бы
-      // приглашением потратить время впустую (шаг 15, E1).
-      if (isDeterministicPrepareGate(job.lastError)) {
-        return {
-          recoveryAllowed: false,
-          recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
-          recoveryReason: null,
         };
       }
       // Отказ рендера с целым составным набором: повторить нужно ровно рендер.

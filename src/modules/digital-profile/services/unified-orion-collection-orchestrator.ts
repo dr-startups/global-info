@@ -105,6 +105,7 @@ import { isDeterministicPrepareGate, prepareGateFailureMessage } from "./prepare
 import {
   PREPARE_REPEATED_FAILURE_MARK,
   repeatsPreviousFailure,
+  type PreviousStepFailure,
 } from "./prepare-repeat";
 import { recordParkedDeckVersion } from "./parked-deck-version";
 import {
@@ -270,6 +271,15 @@ export async function persistUnifiedTickFailure(
 
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
+  /**
+   * Отказ предыдущей попытки того же шага — из строки конвейера.
+   *
+   * У джобы этого знания нет: обработчик шага снимает с неё вердикт прошлой
+   * попытки перед новой, и ручное «Возобновить» тоже. Долговечно оно только в
+   * строке шага, а её держит в руках вызывающий — поэтому приходит сюда, а не
+   * читается тиком из базы (офлайн-контур базы не знает).
+   */
+  previousStepFailure?: PreviousStepFailure | null;
   /**
    * Состояние ворот выбора персоны. Подмена — не обход: у офлайн-смока и юнита
    * старта нет ни строки `Case`, ни базы, и спрашивать её там нечего. Снаружи
@@ -1777,7 +1787,9 @@ async function stepPrepare(
      * «ожидание — не попытка».
      */
     const repeatsItself =
-      isAssemblyFailure && !linkageIncomplete && repeatsPreviousFailure(job, code, message);
+      isAssemblyFailure &&
+      !linkageIncomplete &&
+      repeatsPreviousFailure(deps.previousStepFailure, code, message);
     const retryWouldRepeatItself = isDeterministicPrepareGate(message) || repeatsItself;
 
     if (code === "RENDER_FAILED") {
