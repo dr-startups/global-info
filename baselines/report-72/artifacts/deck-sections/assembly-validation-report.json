@@ -16,6 +16,7 @@
     "canonicalBaseSlotCoverage": true,
     "noPlaceholderWithAvailableAsset": true,
     "noInternalCodesInClientText": true,
+    "noPromisesOfMissingSections": true,
     "emptySidebarCountZero": true,
     "unexplainedAdverseMarkerCountZero": true,
     "visualCardsResolvedOrLabeled": true,

@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:f671f0ef608fdee4732f1a8c29567ca3f0facf4f0bbad82a1bf9bfc70a835458",
-  "contentVersion": "deck-sections-v153",
+  "contentHash": "sha256:630d3b5ed258b0916eef1827b65750224b760a757ab8d809b3831e554d4d002d",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,7 +149,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP",
-  "generatedAt": "2026-09-01T14:59:44.784Z",
+  "generatedAt": "2026-09-02T12:26:21.548Z",
   "inputHash": "sha256:c1c2280b667e7c4aa3e5ec389a3cdf630ff144550560309842da8a21c53c8533:4826c8a58abdf219",
   "inputs": {
     "evidenceRefs": [
@@ -510,15 +510,15 @@
       "isContinuation": false,
       "metrics": {
         "adverseDisplayed": 0,
-        "datasetCount": 50,
+        "datasetCount": 30,
         "displayedCount": 9,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 4,
+        "pageCount": 2,
         "pageIndex": 1,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
-        "uniqueMaterials": 21,
+        "uniqueMaterials": 15,
         "unverifiedDisplayed": 9
       },
       "schemaVersion": "slide-content-v1",
@@ -612,15 +612,15 @@
       "isContinuation": true,
       "metrics": {
         "adverseDisplayed": 0,
-        "datasetCount": 50,
+        "datasetCount": 30,
         "displayedCount": 6,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 4,
+        "pageCount": 2,
         "pageIndex": 2,
         "serpEngine": "YANDEX",
         "serpPositional": 0,
-        "uniqueMaterials": 21,
+        "uniqueMaterials": 15,
         "unverifiedDisplayed": 6
       },
       "schemaVersion": "slide-content-v1",
@@ -759,15 +759,15 @@
       "isContinuation": true,
       "metrics": {
         "adverseDisplayed": 0,
-        "datasetCount": 50,
+        "datasetCount": 20,
         "displayedCount": 9,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 4,
-        "pageIndex": 3,
+        "pageCount": 2,
+        "pageIndex": 1,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 21,
+        "uniqueMaterials": 14,
         "unverifiedDisplayed": 9
       },
       "schemaVersion": "slide-content-v1",
@@ -851,15 +851,15 @@
       "isContinuation": true,
       "metrics": {
         "adverseDisplayed": 2,
-        "datasetCount": 50,
+        "datasetCount": 20,
         "displayedCount": 5,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
-        "pageCount": 4,
-        "pageIndex": 4,
+        "pageCount": 2,
+        "pageIndex": 2,
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
-        "uniqueMaterials": 21,
+        "uniqueMaterials": 14,
         "unverifiedDisplayed": 3
       },
       "schemaVersion": "slide-content-v1",

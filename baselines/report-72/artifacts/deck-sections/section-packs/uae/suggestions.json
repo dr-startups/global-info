@@ -1,13 +1,13 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:0d22ce37c412d21594fe70005fc69363c616a3308e0f2a27945613299fd73757",
-  "contentVersion": "deck-sections-v153",
+  "contentHash": "sha256:4c24e7cb7ddc32710d6b99489ea4f2ea2bc4629b44aecaf183b2537d582326c9",
+  "contentVersion": "deck-sections-v154",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjscznn009tvd9gy2tleds7"
   ],
   "fragmentKey": "UAE_SUGGESTIONS",
-  "generatedAt": "2026-09-01T14:59:44.793Z",
+  "generatedAt": "2026-09-02T12:26:21.557Z",
   "inputHash": "sha256:13e435d5dfca27072be4126554bf72519ea25096d02a193bf79cf729b63a21bf:9e4e09dd208f2dd7",
   "inputs": {
     "evidenceRefs": [
@@ -44,7 +44,7 @@
         "bullets": [
           "glinka sergey mikhaylovich"
         ],
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+        "sourceNote": "Источник — поисковая выдача: у показанных элементов нет отдельных адресов.",
         "statusNote": "Строк с негативной формулировкой на этой странице нет.",
         "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "whatWasFound": "На панели — 1 подсказка: 1 относится к субъекту. Негативных формулировок нет.",

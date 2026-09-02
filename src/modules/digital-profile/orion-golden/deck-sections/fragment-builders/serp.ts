@@ -445,16 +445,36 @@ const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
  * Третья ветка — набор, снятый до проводки второго чтения: назвать причину ему
  * нечем, и он говорит только измеренную глубину. Признак берётся у **набора**,
  * иначе недоехавшее поле превратит «занято» в «никто не вернул».
+ *
+ * **Каждая фраза принадлежит области своего предиката.** «Занято» выводится из
+ * напечатанных материалов и утверждает о нашей таблице — она верна и без
+ * запроса. «Не вернул никто» и глубина третьей ветки выводятся из наблюдений
+ * одной полосы «движок × запрос», поэтому про этот запрос и говорят: без
+ * оговорки лист прогона 92 объявлял позицию 9 невозвращённой, а её вернул
+ * другой запрос того же движка.
  */
 export function serpRankGapSentences(input: {
   printed: readonly number[];
   collected: readonly number[];
   occupied: readonly number[];
   datasetKnowsSecondReading: boolean;
+  /**
+   * Назван ли запрос у таблицы — то есть в какой области померены предикаты.
+   *
+   * «Не вернул ни один источник» и «поисковик вернул N позиций» выводятся из
+   * наблюдений **этого запроса**, а говорилось про весь прогон: на стр. 22
+   * прогона 92 позицию 9 вернул другой запрос того же движка. Набор, у которого
+   * запроса нет вовсе (эталон-72), фильтра не знает, и там обе фразы верны
+   * дословно без оговорки — оговорку добавляет только названный запрос.
+   */
+  queryNamed: boolean;
   positional: boolean;
   topN?: number;
 }): string[] {
   const topN = input.topN ?? SERP_TABLE_TOP_N;
+  // Область утверждений этой функции — одна на все её ветки: они выведены из
+  // наблюдений одной полосы «движок × запрос».
+  const scope = input.queryNamed ? " по этому запросу" : "";
   if (!input.positional || input.printed.length === 0) return [];
   const printed = new Set(input.printed);
   const gaps: number[] = [];
@@ -465,8 +485,11 @@ export function serpRankGapSentences(input: {
     // измеренное — сколько позиций этой пары есть в собранных данных.
     const depth = new Set(input.collected.filter((r) => r >= 1 && r <= topN)).size;
     if (depth === 0 || depth >= topN) return [];
+    // Оговорка та же, что у второй ветки. Пока она стояла безусловно, лист
+    // набора без запроса читался подряд как «запрос в наборе не записан» и
+    // «вернул по этому запросу N позиций» — две фразы, спорящие друг с другом.
     return [
-      `Поисковик вернул по этому запросу ${depth} ${pluralRu(depth, "позицию", "позиции", "позиций")} ` +
+      `Поисковик вернул${scope} ${depth} ${pluralRu(depth, "позицию", "позиции", "позиций")} ` +
         `из ${topN}; остальных в выдаче на дату сбора не было.`,
     ];
   }
@@ -485,8 +508,8 @@ export function serpRankGapSentences(input: {
   if (unreturned.length > 0) {
     out.push(
       unreturned.length === 1
-        ? `Позицию ${unreturned[0]} не вернул ни один источник выдачи в этом прогоне.`
-        : `Позиции ${compactRanges(unreturned)} не вернул ни один источник выдачи в этом прогоне.`
+        ? `Позицию ${unreturned[0]}${scope} не вернул ни один источник выдачи в этом прогоне.`
+        : `Позиции ${compactRanges(unreturned)}${scope} не вернул ни один источник выдачи в этом прогоне.`
     );
   }
   return out;
@@ -739,6 +762,7 @@ export function serpTablePageProse(input: {
       collected: input.collectedRanks ?? [],
       occupied: input.occupiedRanks ?? [],
       datasetKnowsSecondReading: input.datasetKnowsSecondReading ?? false,
+      queryNamed: Boolean(input.query),
       positional: input.positional,
     })
   );
@@ -901,6 +925,25 @@ export function buildSerpFragment(
     return queries.length === 0 || queries.some((q) => sameSerpQuery(q.query, query));
   };
   /**
+   * Относится ли **наблюдение** к таблице этого запроса.
+   *
+   * Линейка одна на всех, кто спрашивает об отдельном наблюдении: полоса
+   * таблицы (`bandRefs`, из неё же считается глубина в лиде и `datasetCount`
+   * листа) и объяснение пропуска номера (`occupiedRanks`). Правило то же, что у
+   * материала выше: запроса у наблюдения нет — оно относится к любому. Пока
+   * полоса отвечала на этот вопрос иначе, чем `groupInQuery`, лист сообщал
+   * «показано 3» при «данных 1» и «материалов 6» — на прогоне 92 безымянных
+   * наблюдений 70 из 1039.
+   *
+   * «Запрос не записан» меряется тем же нормализатором, каким запросы
+   * сравниваются: второй линейки пустоты здесь нет.
+   */
+  const refInQuery = (ref: string, query: string | null): boolean => {
+    const q = scoped.evidenceIndex[ref]?.query;
+    if (!query || normalizeSerpQuery(q).length === 0) return true;
+    return sameSerpQuery(q, query);
+  };
+  /**
    * Позиция материала в выдаче по конкретному запросу и в этом поисковике.
    *
    * Считать её «лучшей по всем наблюдениям» нельзя: материал, найденный
@@ -1060,19 +1103,23 @@ export function buildSerpFragment(
       const regionMainQuery = regionIsMarked && showsOtherQuery ? regionMain.query : null;
       const scopedGroups = groups.filter((g) => groupInQuery(g.engineRefs, query));
       /*
-       * Сколько позиций пары «движок + запрос» есть в собранных данных.
+       * Полоса таблицы — наблюдения её пары «движок × запрос».
        *
        * Считается по **наблюдениям**, а не по материалам, и без фильтра «чьё
        * это чтение»: иначе число отвечает не на тот вопрос, который задаёт
-       * фраза. Обе ошибки были измерены на этой самой правке — сведённый дубль
-       * одной статьи отнимал номер у глубины («позиции 1–20 из ТОП-20» в
-       * заголовке и «19 позиций из 20» в лиде на одной странице), а фильтр
-       * источника прятал позиции второго чтения, которые решением владельца
-       * принадлежат той же выдаче.
+       * фраза. Обе ошибки были измерены — сведённый дубль одной статьи отнимал
+       * номер у глубины («позиции 1–20 из ТОП-20» в заголовке и «19 позиций из
+       * 20» в лиде на одной странице), а фильтр источника прятал позиции
+       * второго чтения, которые решением владельца принадлежат той же выдаче.
+       *
+       * Тот же список кормит и глубину в лиде, и метрику листа: «сколько данных
+       * за этой таблицей» — вопрос один, и второй ответ на него уже расходился
+       * с первым (лист Яндекса печатал `datasetCount` всего региона).
        */
-      const collectedRanks = scopedGroups
+      const bandRefs = scopedGroups
         .flatMap((group) => group.engineRefs)
-        .filter((ref) => !query || sameSerpQuery(scoped.evidenceIndex[ref]?.query, query))
+        .filter((ref) => refInQuery(ref, query));
+      const collectedRanks = bandRefs
         .map((ref) => scoped.evidenceIndex[ref]?.rank)
         .filter((rank): rank is number => typeof rank === "number" && rank >= 1 && rank <= SERP_TABLE_TOP_N);
       /*
@@ -1127,6 +1174,8 @@ export function buildSerpFragment(
           queryChosenByUs,
           regionMainQuery,
           collectedRanks,
+          datasetCount: bandRefs.length,
+          uniqueMaterials: scopedGroups.length,
           displayed: ranked,
           positional: true,
         };
@@ -1143,6 +1192,8 @@ export function buildSerpFragment(
         queryChosenByUs,
         regionMainQuery,
         collectedRanks,
+        datasetCount: bandRefs.length,
+        uniqueMaterials: scopedGroups.length,
         displayed: unranked,
         positional: false,
       };
@@ -1281,6 +1332,18 @@ export function buildSerpFragment(
      * дали бы «позиция N не подтверждена» на каждой строке здорового прогона.
      */
     positional: boolean;
+    /**
+     * Какой это лист **своей** таблицы и сколько их у неё.
+     *
+     * Величина одна на заголовок и на метрику. Пока их считали порознь,
+     * заголовок говорил «(1/2)», а `pageCount` того же листа — 4: он складывал
+     * листы всех движков фрагмента. Единица счёта у таблицы выдачи объявлена в
+     * `docs/ENGINEERING.md` — таблица одного движка одного региона.
+     */
+    sheet: { index: number; count: number };
+    /** Наблюдения полосы «движок × запрос» и сведённые материалы этой таблицы. */
+    datasetCount: number;
+    uniqueMaterials: number;
   }> = [];
   for (const table of tables) {
     const label = serpEngineLabel(table.engine);
@@ -1307,22 +1370,27 @@ export function buildSerpFragment(
             table.displayed.flatMap((x) =>
               x.group.engineRefs
                 /*
-                 * Только наблюдения **этого** запроса.
+                 * Наблюдения этого запроса — и те, чей запрос не записан.
                  *
                  * Материал, найденный несколькими запросами, здесь норма, а не
                  * исключение — ради него живут `queriesOfRefs` и колонка
                  * «Найдено по запросу». Без фильтра номер, намеренный по
                  * второму запросу, приезжал на страницу первого: лист говорил
                  * «позиция 3 занята» там, где по этому запросу третьей позиции
-                 * не мерил никто, то есть верна была вторая ветка. Утверждение
-                 * о выдаче по запросу обязано выводиться из наблюдений по нему
-                 * же — той самой линейкой, что у `rankOfAnyReading`.
+                 * не мерил никто, то есть верна была вторая ветка. Чтение с
+                 * **другим названным** запросом по-прежнему не в счёт.
+                 *
+                 * А вот безымянное чтение в счёт идёт, и это не то же самое,
+                 * что у `rankInQuery`. Там вопрос «какой у материала номер», и
+                 * безымянное чтение крало место у страницы Википедии (замер
+                 * 14.08). Здесь вопрос другой — «чем занят пропуск в уже
+                 * напечатанной таблице», и утверждение выходит о нашей
+                 * странице: материал стоит выше под другим номером, что верно
+                 * без всякого запроса. Пока фильтр был общим, лист прогона 92
+                 * объявлял «позицию 9 не вернул ни один источник» при
+                 * наблюдении с `rank: 9` в бандле.
                  */
-                .filter(
-                  (ref) =>
-                    !table.query ||
-                    sameSerpQuery(scoped.evidenceIndex[ref]?.query, table.query)
-                )
+                .filter((ref) => refInQuery(ref, table.query))
                 .flatMap((ref) =>
                   Object.values(scoped.evidenceIndex[ref]?.ranksByProvider ?? {})
                 )
@@ -1343,7 +1411,10 @@ export function buildSerpFragment(
       freshness: extras?.materialFreshness ?? null,
     });
     for (let i = 0; i < rowChunks.length; i += 1) {
-      const suffix = rowChunks.length > 1 ? ` (${i + 1}/${rowChunks.length})` : "";
+      // Пара «номер листа / всего листов» считается один раз и отсюда идёт и в
+      // заголовок, и в метрику: два вычисления одной величины уже разошлись.
+      const sheet = { index: i + 1, count: rowChunks.length };
+      const suffix = sheet.count > 1 ? ` (${sheet.index}/${sheet.count})` : "";
       // Заголовок начинается с региона, и он же начинает предложение: «ОАЭ»
       // приходит меткой раздела, а «международный» — строчным.
       const region = regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
@@ -1357,6 +1428,9 @@ export function buildSerpFragment(
         queryChosenByUs: table.queryChosenByUs,
         regionMainQuery: table.regionMainQuery,
         positional: table.positional,
+        sheet,
+        datasetCount: table.datasetCount,
+        uniqueMaterials: table.uniqueMaterials,
       });
     }
   }
@@ -1433,16 +1507,20 @@ export function buildSerpFragment(
       evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),
       metrics: {
-        datasetCount: refs.length,
-        uniqueMaterials: merged.length,
+        // Числа листа — числа его собственной таблицы: полоса «движок ×
+        // запрос» и сведённые материалы этой полосы. Региональные `refs` и
+        // `merged` отвечают на вопрос фрагмента, и на листе одного движка они
+        // отвечали не на тот вопрос, который задаёт слайд.
+        datasetCount: pages[i]!.datasetCount,
+        uniqueMaterials: pages[i]!.uniqueMaterials,
         displayedCount: pageRows.length,
         adverseDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === RED_MARKER_LABEL).length,
         likelyDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === "Вероятно").length,
         unverifiedDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === UNVERIFIED_LABEL).length,
         otherSubjectDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === OTHER_SUBJECT_LABEL)
           .length,
-        pageIndex: i + 1,
-        pageCount: pages.length,
+        pageIndex: pages[i]!.sheet.index,
+        pageCount: pages[i]!.sheet.count,
         // Движок и запрос таблицы — печатный факт, а не пересчёт: ворота
         // сверяют напечатанные номера с наблюдениями по этой самой паре.
         ...(pages[i]!.engine ? { serpEngine: pages[i]!.engine } : {}),

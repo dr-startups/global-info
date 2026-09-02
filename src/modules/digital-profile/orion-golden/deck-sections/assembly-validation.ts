@@ -3,15 +3,25 @@
  * DeckAssembler ran. Complements per-section QA.
  */
 
-import type { ReportDeckManifest, ReportSectionManifest, SectionPackV2 } from "./contracts";
-import { REQUIRED_SECTIONS } from "./contracts";
+import type {
+  ReportDeckManifest,
+  ReportSectionManifest,
+  SectionPackV2,
+  SectionType,
+} from "./contracts";
+import { REQUIRED_SECTIONS, SECTION_TITLES } from "./contracts";
 import type { RendererSlide } from "./deck-assembler";
 import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
 import { CANONICAL_SLOT_IDS, type VisualAssetsBySlot } from "./canonical-slots";
 import { assetKindDrawsRedFrames } from "../assets/red-frame-asset-kinds";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
-import { scanDeckForCodeLikeTokens, scanDeckForInternalCodes } from "./internal-code-scan";
+import {
+  clientVisibleStrings,
+  scanDeckForCodeLikeTokens,
+  scanDeckForInternalCodes,
+  type ClientVisibleSlide,
+} from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
 import { normalizeForCompare } from "./text-compare";
 import { withoutFindingMarkers } from "./slide-markers";
@@ -515,6 +525,67 @@ export function serpPrintMatchesObservations(input: {
   return { issues, skipped, comparedTables: tables.size };
 }
 
+/** Страница, зовущая читателя в раздел, которого в собранной деке нет. */
+export type MissingSectionPromise = { slide: string; section: SectionType };
+/**
+ * Игла раздела — его клиентское имя без последней буквы, в нижнем регистре.
+ *
+ * Падежное окончание снимается одним правилом, поэтому «Приложение», «в
+ * приложении» и «материалы приложения» узнаются одной строкой. Второго словаря
+ * названий разделов в проекте нет и заводить его нельзя: он разошёлся бы с
+ * `SECTION_TITLES`, а по нему печатаются заголовки самих разделов.
+ */
+function sectionNeedle(section: SectionType): string {
+  return SECTION_TITLES[section].slice(0, -1).toLowerCase();
+}
+
+/**
+ * Клиентский текст не отправляет читателя в раздел, которого в деке нет.
+ *
+ * Прибор на класс, а не на одну фразу. В прогоне 92 приложение объявлено
+ * необязательным и отброшено ассемблером как пустое и законное, а десять
+ * страниц продолжали звать читателя туда — девять строкой происхождения и
+ * одна рекомендацией матрицы рисков. Ни одна проверка этого не видела: все
+ * они судят страницу, а состав деки — вопрос к деке.
+ *
+ * Читается **собранная дека**, а не выход построителя: построитель согласен
+ * сам с собой по определению и о том, доехал ли его сосед, не знает.
+ *
+ * Игла выводится из `SECTION_TITLES` одним объявленным правилом — имя без
+ * последней буквы, регистр не важен, — а не вторым словарём названий: два
+ * места, где раздел как-то называется, разошлись бы в первую же неделю.
+ * Правило смотрит только на **отсутствующие** разделы, поэтому ссылка на
+ * присутствующий раздел остаётся законной навигацией.
+ *
+ * Читается **наш** текст страницы, без таблицы. «Приложение» — обычное русское
+ * слово, и в ячейке оно приезжает из данных провайдера («Умар Кремлёв —
+ * мобильное приложение федерации бокса»); заголовок чужой страницы обещанием
+ * нашего отчёта не является. Прочие поля мы пишем сами — и там, где они цитируют
+ * материал, цитата стоит внутри нашей фразы, то есть внутри обещания.
+ */
+export function promisesOfMissingSections(
+  slides: readonly (ClientVisibleSlide & { sectionKey?: string })[]
+): MissingSectionPromise[] {
+  const present = new Set(slides.map((s) => String(s.sectionKey ?? "")));
+  const needles = (Object.keys(SECTION_TITLES) as SectionType[])
+    .filter((section) => !present.has(section))
+    .map((section) => ({ section, needle: sectionNeedle(section) }));
+  if (needles.length === 0) return [];
+  const out: MissingSectionPromise[] = [];
+  for (const slide of slides) {
+    // Таблица снимается здесь, а не в `clientVisibleStrings`: там вопрос «что
+    // видит клиент», и ячейка входит в ответ. Здесь вопрос другой — «что мы
+    // ему пообещали».
+    const text = clientVisibleStrings({ ...slide, table: null }).join(" ").toLowerCase();
+    for (const { section, needle } of needles) {
+      if (text.includes(needle)) {
+        out.push({ slide: slide.slideKey ?? slide.slideId ?? "?", section });
+      }
+    }
+  }
+  return out;
+}
+
 export function validateAssembly(input: {
   manifest: ReportSectionManifest;
   deckManifest: ReportDeckManifest;
@@ -699,6 +770,23 @@ export function validateAssembly(input: {
   const codeLike = scanDeckForCodeLikeTokens(rendererSlides);
   for (const f of codeLike.slice(0, 10)) {
     notes.push(`code-like token ${f.code} in client text of ${f.slide}`);
+  }
+
+  /*
+   * Клиентский текст не отправляет читателя в раздел, которого в деке нет.
+   *
+   * Замечание, а не приговор — по тому же основанию, что у токенов выше. Игла
+   * это клиентское имя раздела без падежного окончания, и «приложени» совпадает
+   * с обычным русским словом: цена ложного срабатывания в `issues` — упавший
+   * `passed`, то есть остановленная приёмка эталона и красный офлайн-смок.
+   * Жёсткий отказ живёт на самом ключе `checks`, который смок и проверяет.
+   */
+  const missingSectionPromises = promisesOfMissingSections(rendererSlides);
+  checks.noPromisesOfMissingSections = missingSectionPromises.length === 0;
+  for (const p of missingSectionPromises.slice(0, 10)) {
+    notes.push(
+      `слайд ${p.slide} отправляет читателя в отсутствующий раздел «${SECTION_TITLES[p.section]}»`
+    );
   }
 
   // --- Manual-quality gates (fail closed) ---

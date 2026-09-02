@@ -330,7 +330,9 @@ describe("пропуск номера объясняется данными, а 
       source: "yandex",
     }));
     const text = textOf(slidesOf(rows).filter(isTableA));
-    expect(text).toContain("Позиции 1, 4, 9, 11–20 не вернул ни один источник выдачи в этом прогоне");
+    expect(text).toContain(
+      "Позиции 1, 4, 9, 11–20 по этому запросу не вернул ни один источник выдачи в этом прогоне"
+    );
     expect(text).not.toContain("занята материалом");
   });
 

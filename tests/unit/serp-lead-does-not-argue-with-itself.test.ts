@@ -129,7 +129,9 @@ describe("страница называет причину пропуска, а 
       datasetKnowsSecondReading: true,
       positional: true,
     });
-    expect(prose.head).toContain("Позиции 17–20 не вернул ни один источник выдачи в этом прогоне");
+    expect(prose.head).toContain(
+      "Позиции 17–20 по этому запросу не вернул ни один источник выдачи в этом прогоне"
+    );
     expect(prose.head).not.toContain("потеряны при сборе");
   });
 

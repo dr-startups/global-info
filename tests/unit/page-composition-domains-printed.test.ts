@@ -24,7 +24,9 @@ import {
 const VIEW = {
   slideId: "p19_ru_knowledge_2",
   findings: [],
-  evidenceRefs: [],
+  // Поле вида называется `refs`, и подвал источников спрашивает именно его:
+  // страница без единой ссылки и без доменов подвала не печатает вовсе.
+  refs: [],
   domains: [],
 } as unknown as Parameters<typeof pageRowCompositionBlocks>[1];
 
