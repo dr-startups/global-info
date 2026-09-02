@@ -119,6 +119,21 @@ function norm(text: string): string {
  * «Иванов Пётр Сергеевич», чужое отчество не относится к субъекту и конфликтом
  * не является.
  */
+/**
+ * Слова текста с их позициями — общий обход для латинского прохода.
+ *
+ * Позиция нужна тому же окну близости к фамилии, которым пользуется
+ * кириллический проход: без неё пришлось бы заводить второй ответ на вопрос
+ * «относится ли это отчество к фамилии рядом».
+ */
+function wordsWithOffsets(haystack: string): Array<{ word: string; at: number }> {
+  const found: Array<{ word: string; at: number }> = [];
+  for (const m of haystack.matchAll(/(?<!\p{L})(\p{L}{2,})(?!\p{L})/gu)) {
+    found.push({ word: m[1]!, at: m.index ?? 0 });
+  }
+  return found;
+}
+
 export function conflictingPatronymics(
   text: string,
   subject: {
@@ -130,6 +145,8 @@ export function conflictingPatronymics(
      * родню по имени-отчеству, и одной фамилии рядом мало.
      */
     firstNames?: string[];
+    /** Псевдонимы и транслитерации: там живёт латинская форма отчества. */
+    aliases?: string[];
   }
 ): string[] {
   const haystack = norm(text);
@@ -213,6 +230,126 @@ export function conflictingPatronymics(
     if (!SHORT_PATRONYMICS.has(candidate) || own.has(candidate)) continue;
     const at = m.index ?? 0;
     if (nearSurname(at, candidate.length) && inSubjectTriple(at)) found.add(candidate);
+  }
+
+  /*
+   * Тот же вопрос в латинице — тем же проходом, а не второй функцией.
+   *
+   * `PATRONYMIC_RE` кириллическое, поэтому «Anatoly **Alexandrovich** Borisov»
+   * до шага 0049 конфликтом не считалось: на строках-подсказках латинское
+   * отчество уже узнавалось (`foreignPatronymicsInQueryLine`), а на странице —
+   * нет, и один вопрос имел два ответа в зависимости от алфавита. Замер на
+   * прогоне DPA-2026-0046: восемь страниц о **других** людях («Anatoly
+   * Viktorovich Borisov — ORCID», «Individual Entrepreneur Borisov Anatolii
+   * Aleksandrovich») доезжали до клиента как «требует подтверждения», тогда как
+   * кириллический двойник той же страницы уже получал «другое лицо».
+   *
+   * Ключ, порог длины и допуск «своей» формы берутся у строчного правила: это
+   * один ответ на вопрос «чьё это отчество», записанный один раз.
+   */
+  const ownKeys = ownPatronymicForms(subject);
+  const givenKeyStems = [
+    ...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3)),
+  ]
+    .map((n) => patronymicKey(nameStem(n)))
+    .filter((s) => s.length >= 3);
+  if (givenKeyStems.length > 0) {
+    const words = wordsWithOffsets(haystack);
+    for (let i = 1; i < words.length; i += 1) {
+      const word = words[i]!;
+      const candidate = patronymicKey(baseForm(word.word));
+      if (candidate.length < MIN_PATRONYMIC_KEY || !PATRONYMIC_KEY_RE.test(candidate)) continue;
+      if (ownKeys.some((o) => isOwnVariant(candidate, o))) continue;
+      // Тройка с именем субъекта — то же условие, что у кириллического прохода:
+      // без него биография, называющая родню, объявила бы чужой страницу о
+      // самом субъекте (цена измерена 14.08.2026 — 26 материалов).
+      const before = patronymicKey(words[i - 1]!.word);
+      if (!givenKeyStems.some((s) => before.startsWith(s) && before.length <= s.length + 4)) {
+        continue;
+      }
+      if (!nearSurname(word.at, word.word.length)) continue;
+      // Начальная форма, а не написание из текста: кириллический проход уже
+      // положил сюда «ахметович», и «ахметовича» было бы второй записью того же.
+      found.add(baseForm(word.word));
+    }
+  }
+  return [...found];
+}
+
+/**
+ * Чужое имя внутри именной тройки — это другой человек.
+ *
+ * У имени нет опознаваемой формы, в отличие от отчества на «-ович/-евич»,
+ * поэтому единственный признак «чужое ли оно» — **место**: между формой фамилии
+ * субъекта и отчеством. Прогон DPA-2026-0046 привёл в отчёт три записи ИП
+ * посторонних людей с их ИНН («IE Borisov **Ivan** Anatolevich») — у них совпали
+ * фамилия и отчество, а имя не проверял никто, и вердикт был `SUBJECT_MATCH`
+ * с уверенностью 0,85.
+ *
+ * Вне тройки правило молчит намеренно: «BATE Borisov» и «Anna Borisova» другим
+ * лицом не объявляются. Позиционное правило без отчества объявило бы чужим
+ * футбольный клуб, а ложная чужесть **прячет негатив клиента** — ошибка дороже
+ * той, ради которой правило заводилось (опись, пункты DM и DN).
+ *
+ * Без структурного отчества у субъекта вывод не делается вовсе — тот же принцип,
+ * что у соседних правил: молчим, а не гадаем.
+ */
+export function foreignGivenNamesInTriple(
+  text: string,
+  subject: {
+    lastName: string;
+    lastNameVariants?: string[];
+    patronymics: string[];
+    firstNames?: string[];
+    aliases?: string[];
+  }
+): string[] {
+  if (structuralPatronymicForms(subject).length === 0) return [];
+
+  const givenKeyStems = [
+    ...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3)),
+  ]
+    .map((n) => patronymicKey(nameStem(n)))
+    .filter((s) => s.length >= 3);
+  if (givenKeyStems.length === 0) return [];
+
+  const surnameKeys = [subject.lastName, ...(subject.lastNameVariants ?? [])]
+    .map((s) => patronymicKey(norm(s)))
+    .filter((s) => s.length > 2);
+  if (surnameKeys.length === 0) return [];
+
+  const words = norm(text).split(/[^\p{L}]+/u).filter(Boolean);
+  const keys = words.map((w) => patronymicKey(baseForm(w)));
+  const isPatronymic = (k: string): boolean =>
+    k.length >= MIN_PATRONYMIC_KEY && PATRONYMIC_KEY_RE.test(k);
+  const isSurname = (k: string): boolean =>
+    surnameKeys.some((s) => k === s || (k.startsWith(s) && k.length <= s.length + 3));
+  const isOwnGiven = (k: string): boolean =>
+    givenKeyStems.some((s) => k.startsWith(s) && k.length <= s.length + 4);
+
+  /*
+   * Своя тройка в тексте — правило молчит целиком.
+   *
+   * «Борисов Анатолий Анатольевич и Борисов Иван Анатольевич» — материал о двух
+   * людях, один из которых субъект. Это не «другой человек», а неоднозначность,
+   * и решает её прежняя лестница («смешанные признаки»), а не вывод об исключении.
+   */
+  for (let i = 1; i < keys.length; i += 1) {
+    if (isPatronymic(keys[i]!) && isOwnGiven(keys[i - 1]!)) return [];
+  }
+
+  const found = new Set<string>();
+  for (let i = 1; i < keys.length; i += 1) {
+    if (!isPatronymic(keys[i]!)) continue;
+    const given = keys[i - 1]!;
+    if (isOwnGiven(given) || isSurname(given)) continue;
+    // Фамилия субъекта стоит вплотную к тройке: перед именем или после
+    // отчества. Без неё материал не о субъекте и не о его однофамильце —
+    // приписывать ему конфликт не из чего.
+    const surnameAdjacent =
+      (i >= 2 && isSurname(keys[i - 2]!)) || (i + 1 < keys.length && isSurname(keys[i + 1]!));
+    if (!surnameAdjacent) continue;
+    found.add(words[i - 1]!);
   }
   return [...found];
 }

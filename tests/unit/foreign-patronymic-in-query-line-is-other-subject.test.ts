@@ -135,9 +135,31 @@ describe("чужое отчество в строке-запросе", () => {
     expect(d.reasonCode).toBe("surname_only");
   });
 
-  it("на длинной поверхности правило не действует", () => {
-    const d = classifySubjectRelevance(line("rashnikov viktor feliksovich", "organic"), RASHNIKOV);
-    expect(d.decision).toBe("SUBJECT_MATCH");
+  it("на длинной поверхности судят якоря длинного текста, а не строчное правило", () => {
+    /*
+     * До шага 0049 здесь стояло `SUBJECT_MATCH`: строчное правило на длинную
+     * поверхность не распространялось, а длинный проход был кириллическим — и
+     * один вопрос «чьё это отчество» имел два ответа в зависимости от алфавита.
+     * Кириллический двойник этой же строки («Рашников Виктор Феликсович») давал
+     * «другое лицо» и тогда. Теперь ответ один, а границей служат якоря
+     * длинного текста: окно близости к фамилии и тройка с именем субъекта.
+     */
+    const near = classifySubjectRelevance(
+      line("rashnikov viktor feliksovich", "organic"),
+      RASHNIKOV
+    );
+    expect(near.decision).toBe("OTHER_SUBJECT");
+    expect(near.reasonCode).toBe("patronymic_conflict");
+
+    // Отчество далеко от фамилии — материал о субъекте, где назван кто-то ещё.
+    const far = classifySubjectRelevance(
+      line(
+        "Rashnikov commented on the deal. Separately, Viktor Feliksovich Vekselberg was sanctioned by OFAC last year according to the report.",
+        "organic"
+      ),
+      RASHNIKOV
+    );
+    expect(far.decision).not.toBe("OTHER_SUBJECT");
   });
 
   it("без собственного отчества вывод не делается", () => {

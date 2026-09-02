@@ -169,3 +169,69 @@ describe("биография субъекта не становится мате
     ).toEqual([]);
   });
 });
+
+/**
+ * Субъект прогона DPA-2026-0046: Борисов Анатолий Анатольевич.
+ *
+ * Формы фамилии — те, что раскладка личности порождает после шага 0048: обе
+ * школы транслитерации плюс падежные формы. Латинское отчество лежит среди
+ * `firstNames` — так его кладёт транслитерация тройки, и это принятое решение
+ * владельца от 02.09.2026.
+ */
+const BORISOV_LAT = {
+  lastName: "Борисов",
+  lastNameVariants: ["borisov", "borisova", "borisovu"],
+  firstNames: ["Анатолий", "anatoliy", "anatolevich"],
+  patronymics: ["Анатольевич"],
+};
+
+describe("чужое отчество в латинице — тот же вопрос, тот же ответ", () => {
+  it("узнаёт другого человека в латинской тройке", () => {
+    // Живой заголовок прогона: до шага он давал «требует подтверждения», а
+    // кириллический двойник той же страницы — «другое лицо».
+    expect(
+      conflictingPatronymics("Anatoly Alexandrovich Borisov Market Overview", BORISOV_LAT)
+    ).toEqual(["alexandrovich"]);
+  });
+
+  it("имя субъекта, записанное другой школой, тройку не рвёт", () => {
+    expect(
+      conflictingPatronymics(
+        "Individual Entrepreneur Borisov Anatolii Aleksandrovich - requisites",
+        BORISOV_LAT
+      )
+    ).toEqual(["aleksandrovich"]);
+  });
+
+  it("собственное отчество субъекта в латинице конфликтом не считается", () => {
+    expect(conflictingPatronymics("Borisov Anatoliy Anatolevich, ОГРНИП", BORISOV_LAT)).toEqual([]);
+    // Вторая школа транслитерации — тот же человек.
+    expect(conflictingPatronymics("Anatoliy Anatolyevich Borisov", BORISOV_LAT)).toEqual([]);
+  });
+
+  it("ловушка «биография называет родню» в латинице тоже не срабатывает", () => {
+    // Имя перед чужим отчеством не субъекта — тройки субъекта нет.
+    expect(
+      conflictingPatronymics(
+        "His grandfather Vakhit Zakirovich Yunusov founded the company",
+        {
+          lastName: "Юнусов",
+          lastNameVariants: ["yunusov", "yunusova"],
+          firstNames: ["Тимур", "timur"],
+          patronymics: ["Ильдарович"],
+        }
+      )
+    ).toEqual([]);
+  });
+
+  it("без структурного отчества субъекта латинское правило молчит", () => {
+    expect(
+      conflictingPatronymics("Anatoly Alexandrovich Borisov Market Overview", {
+        lastName: "Борисов",
+        lastNameVariants: ["borisov"],
+        firstNames: ["Анатолий", "anatoliy"],
+        patronymics: [],
+      })
+    ).toEqual([]);
+  });
+});

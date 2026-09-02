@@ -23,7 +23,11 @@
  */
 
 import { createHash } from "node:crypto";
-import { conflictingPatronymics, foreignPatronymicsInQueryLine } from "./patronymic-conflict";
+import {
+  conflictingPatronymics,
+  foreignGivenNamesInTriple,
+  foreignPatronymicsInQueryLine,
+} from "./patronymic-conflict";
 import { transliterateRuToLat } from "../identity/transliterate-ru";
 import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 import { publicDomainOf } from "./public-domain";
@@ -424,6 +428,22 @@ export function classifySubjectRelevance(
     ? foreignPatronymicsInQueryLine(text, subject)
     : [];
   conflictingIdentifiers.push(...queryLinePatronymicConflicts);
+  /*
+   * Чужое имя в именной тройке — и область, в которой его читают.
+   *
+   * Прогон DPA-2026-0046 привёл в отчёт три записи ИП посторонних людей с их
+   * ИНН: фамилия и отчество совпали с субъектом, а имя («Ivan», «Oleg»,
+   * «Andrei») не проверял никто.
+   *
+   * Область — решение шага, а не деталь. Строка-подсказка читается целиком:
+   * она и есть весь материал. У страницы читается **только заголовок**:
+   * сниппет и биография называют родню и партнёров («брат — Иван Анатольевич
+   * Борисов»), и на этой ловушке 14.08.2026 статья о самом субъекте была
+   * объявлена чужой, уведя за собой 26 материалов.
+   */
+  const givenNameScope = isQueryLineSurface(surfaceOf(item)) ? text : norm(item.title ?? "");
+  const derivedGivenNameConflicts = foreignGivenNamesInTriple(givenNameScope, subject);
+  conflictingIdentifiers.push(...derivedGivenNameConflicts);
   for (const n of subject.namesakeNoise) {
     if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
@@ -445,25 +465,35 @@ export function classifySubjectRelevance(
       reasonCode = "no_subject_tokens";
       confidence = 0.85;
     }
-  } else if (hasConflict && !hasGivenName) {
-    // Surname + composer/wrong-person context → other subject.
-    decision = "OTHER_SUBJECT";
-    reasonCode = "namesake_conflict";
-    confidence = 0.9;
   } else if (
-    (derivedPatronymicConflicts.length > 0 || queryLinePatronymicConflicts.length > 0) &&
+    (derivedPatronymicConflicts.length > 0 ||
+      queryLinePatronymicConflicts.length > 0 ||
+      derivedGivenNameConflicts.length > 0) &&
     !matchedStrong
   ) {
-    // Именная тройка названа целиком, и отчество в ней чужое. В русской
-    // системе имён это решающий признак другого человека, а не повод для
-    // сомнений. Сильный идентификатор (ИНН) такой вывод перебивает.
-    // Код причины называет сработавшее правило: по нему в артефактах видно,
-    // строкой запроса выведен конфликт или длинным текстом.
+    /*
+     * Именная тройка названа целиком, и чужой в ней — отчество или имя.
+     *
+     * В русской системе имён это решающий признак другого человека, а не повод
+     * для сомнений. Сильный идентификатор (ИНН) такой вывод перебивает.
+     *
+     * Ветка стоит **выше** общей «фамилия плюс чужой контекст»
+     * (`namesake_conflict`): выведенное правило знает, что именно сработало, и
+     * называет это в артефактах — иначе латинская тройка получала бы код
+     * «однофамилец», по которому не видно, отчество разошлось или имя.
+     */
     decision = "OTHER_SUBJECT";
     reasonCode =
       derivedPatronymicConflicts.length > 0
         ? "patronymic_conflict"
-        : "suggestion_foreign_patronymic";
+        : queryLinePatronymicConflicts.length > 0
+          ? "suggestion_foreign_patronymic"
+          : "given_name_conflict";
+    confidence = 0.9;
+  } else if (hasConflict && !hasGivenName) {
+    // Surname + composer/wrong-person context → other subject.
+    decision = "OTHER_SUBJECT";
+    reasonCode = "namesake_conflict";
     confidence = 0.9;
   } else if (hasConflict && hasGivenName) {
     // Both subject identifiers and conflicting identity — ambiguous, review.
