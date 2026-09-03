@@ -27,7 +27,7 @@ import { describe, expect, it } from "vitest";
 import { aiAnswersFromPositions } from "@/modules/digital-profile/providers/topvisor/adapters/ai-answers";
 import { parsePositionsKey } from "@/modules/digital-profile/providers/topvisor/adapters/positions";
 import { TOPVISOR_AUDIT_REGIONS } from "@/modules/digital-profile/providers/topvisor/regions";
-import { loadTopvisorFixture } from "../support/topvisor-fixture-call";
+import { loadTopvisorFixture } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 const region = (key: string) => TOPVISOR_AUDIT_REGIONS.find((r) => r.key === key)!;
 const PROVENANCE = {

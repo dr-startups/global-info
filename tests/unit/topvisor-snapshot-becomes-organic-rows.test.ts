@@ -19,7 +19,7 @@ import {
 } from "@/modules/digital-profile/providers/topvisor/adapters/positions";
 import { TOPVISOR_AUDIT_REGIONS } from "@/modules/digital-profile/providers/topvisor/regions";
 import { TOPVISOR_PROJECT_SETTINGS } from "@/modules/digital-profile/providers/topvisor/project";
-import { loadTopvisorFixture } from "../support/topvisor-fixture-call";
+import { loadTopvisorFixture } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 const region = (key: string) => TOPVISOR_AUDIT_REGIONS.find((r) => r.key === key)!;
 const PROVENANCE = {

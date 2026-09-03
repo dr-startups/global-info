@@ -13,7 +13,7 @@ import {
 } from "@/modules/digital-profile/services/topvisor-positions-tick";
 import { createMemoryTopvisorTaskStore } from "@/modules/digital-profile/providers/topvisor/task-store";
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
-import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../support/topvisor-fixture-call";
+import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 /*
  * Подсказки здесь выключены настройкой: эти кадры про выдачу и AI-ответы, и

@@ -21,7 +21,7 @@ import { TOPVISOR_AUDIT_REGIONS } from "@/modules/digital-profile/providers/topv
 import { runTopvisorPositionsTick, topvisorReportRunId } from "@/modules/digital-profile/services/topvisor-positions-tick";
 import { createMemoryTopvisorTaskStore } from "@/modules/digital-profile/providers/topvisor/task-store";
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
-import { createTopvisorFixtureCall, loadTopvisorFixture, PILOT_KEYWORDS } from "../support/topvisor-fixture-call";
+import { createTopvisorFixtureCall, loadTopvisorFixture, PILOT_KEYWORDS } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 const region = (key: string) => TOPVISOR_AUDIT_REGIONS.find((r) => r.key === key)!;
 const PROVENANCE = {

@@ -20,7 +20,7 @@ import { ARSENKIN_REAL_AGENT_NAMES } from "@/modules/digital-profile/agents/real
 import { decideEnrichmentPoll, markEnrichmentProgress } from "@/modules/digital-profile/services/arsenkin-poll-budget";
 import { emptyArsenkinEnrichmentState } from "@/modules/digital-profile/services/arsenkin-enrichment-state";
 import { createMemoryTopvisorTaskStore } from "@/modules/digital-profile/providers/topvisor/task-store";
-import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../support/topvisor-fixture-call";
+import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 const CASE_ID = "unified-topvisor-waits-1";
 

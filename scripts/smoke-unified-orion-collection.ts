@@ -38,7 +38,7 @@ import type { BaseCollectionManifest } from "../src/modules/digital-profile/serv
 import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "../src/modules/digital-profile/services/unified-collection-types";
 import type { CompositeMergeResult } from "../src/modules/digital-profile/services/composite-serp-merge";
 import { createMemoryTopvisorTaskStore } from "../src/modules/digital-profile/providers/topvisor/task-store";
-import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../tests/support/topvisor-fixture-call";
+import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../src/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 process.env.NETWORK_CALLS = "0";
 

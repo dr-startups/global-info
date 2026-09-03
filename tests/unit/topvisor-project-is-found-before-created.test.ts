@@ -13,7 +13,7 @@ import {
   TopvisorProjectError,
   topvisorProjectName,
 } from "@/modules/digital-profile/providers/topvisor/project";
-import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../support/topvisor-fixture-call";
+import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "@/modules/digital-profile/providers/topvisor/fixtures/fixture-call";
 
 // Идентификатор кейса совпадает с именем проекта пилота — так фикстура поиска по имени настоящая.
 const CASE = "pilot-2026-09-03";
