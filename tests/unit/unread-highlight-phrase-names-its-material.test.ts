@@ -62,8 +62,8 @@ describe("непрочитанная страница называет свой 
     const phrase = highlightPhrase({ row: FIRST, evidence: index([FIRST]) });
     expect(phrase.full).toContain(RUBRIC);
     expect(phrase.full).toContain("emirates-ledger.ae");
-    expect(phrase.full).toContain("страница не читалась в этом прогоне");
-    expect(phrase.full).toContain("оценка по заголовку и сниппету выдачи");
+    expect(phrase.full).toContain("текст страницы в этом прогоне не проверялся");
+    expect(phrase.full).toContain("по заголовку и описанию в выдаче");
   });
 
   it("адрес уцелел в узкой колонке — уступает цитата слов выдачи, не адрес", () => {
@@ -73,8 +73,8 @@ describe("непрочитанная страница называет свой 
     const phrase = highlightPhrase({ row: FIRST, evidence: index([FIRST]) });
     expect(phrase.sidebar).toContain("emirates-ledger.ae/anders-holmstrom-pep-rca-1");
     expect(phrase.sidebarHasLink).toBe(true);
-    expect(phrase.sidebar).toContain("оценка по заголовку и сниппету выдачи");
-    expect(phrase.full).toMatch(/«[^»]*PEP[^»]*»/);
+    expect(phrase.sidebar).toContain("текст страницы в этом прогоне не проверялся");
+    expect(phrase.full).toMatch(/^«[^»]*PEP[^»]*»/);
     expect(phrase.sidebarComplete).toBe(false);
   });
 

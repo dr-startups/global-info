@@ -75,8 +75,8 @@
       }
     },
     "slides": {
-      "total": 80,
-      "withContent": 75,
+      "total": 79,
+      "withContent": 74,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",

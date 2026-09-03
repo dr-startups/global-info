@@ -81,9 +81,13 @@ describe("страница AI-ответов", () => {
     const bullets = aiPage().flatMap((s) => s.content.bullets ?? []);
     expect(bullets.some((b) => b.includes("Яндекс") && b.includes("Рольф"))).toBe(true);
     expect(bullets.some((b) => b.includes("Google") && b.includes("Serpukhov"))).toBe(true);
-    expect(bullets).toContain("Источник: tass.ru");
-    expect(bullets).toContain("Источник: en.wikipedia.org");
-    expect(bullets.join(" ")).not.toMatch(/tass\.ru — tass\.ru/);
+    // Источники ответа — одной строкой после его тела, а не строкой на ссылку:
+    // десять строк «Источник: домен» расползались на три листа по три.
+    expect(bullets).toContain("Источники ответа: tass.ru, ru.wikipedia.org");
+    expect(bullets).toContain("Источники ответа: en.wikipedia.org");
+    expect(bullets.some((b) => /^Источник: /.test(b))).toBe(false);
+    const alice = bullets.findIndex((b) => b.includes("Рольф"));
+    expect(bullets[alice + 1]).toBe("Источники ответа: tass.ru, ru.wikipedia.org");
   });
 
   it("строка состава считает ответы по движкам, а не ссылки", () => {
@@ -94,6 +98,46 @@ describe("страница AI-ответов", () => {
     expect(found).toMatch(/Google.*1/);
     expect(found).not.toMatch(/Показано \d+ результат/);
     expect(first.metrics?.answers).toBe(2);
+  });
+});
+
+describe("панель знаний вместо ответа", () => {
+  it("подпись называет панель знаний, а не AI Overview, и отсутствие ответа Google названо", async () => {
+    // Отчёт 84, стр. 78: Google AI Overview по запросу ФИО не показал ни в
+    // России, ни в Дубае; панель взяла строку панели знаний и подписала её
+    // «Google AI Overview» — по движку, а не по виду строки.
+    const kb: RawInventoryItem = {
+      inventoryId: "kb-uae",
+      caseId: "case-1",
+      reportRunId: "run-1",
+      source: "serper",
+      provider: "serper",
+      region: "UAE",
+      query: "Kremlev Umar Nazarovich",
+      collectedAt: "2026-09-03T00:00:00.000Z",
+      evidenceType: "knowledge_block",
+      title: "Umar Kremlev",
+      snippet: "Umar Kremlev is a Russian sports functionary, president of the International Boxing Association.",
+      sourceUrl: "serper://knowledge/uae/1",
+      rawMetadata: { engine: "GOOGLE", surface: "knowledge_block", provider: "serper" },
+    } as unknown as RawInventoryItem;
+    const visuals = await buildCanonicalVisualAssets({ subjectName: "Kremlev Umar Nazarovich", items: [kb], allowImagePreviewNetwork: false });
+    const entry = visuals.assets.find((a) => a.assetRef === "uae_ai_answers");
+    expect(entry?.caption ?? "").toMatch(/Панель знаний Google/);
+    expect(entry?.caption ?? "").not.toMatch(/AI Overview/);
+
+    const scoped = {
+      ...scopedInput([]),
+      scope: { regions: ["UAE"] },
+      surfaceUnits: [{ surface: "ai_answers", region: "UAE", engine: "GOOGLE", claims: [], metrics: [], evidenceRefs: ["inventory:kb-uae"] }],
+      evidenceIndex: { "inventory:kb-uae": { kind: "knowledge_block", url: "serper://knowledge/uae/1", title: "Umar Kremlev", snippet: "Umar Kremlev is a Russian sports functionary.", engine: "GOOGLE", provider: "serper", region: "UAE", query: "Kremlev Umar Nazarovich", subjectDecision: "SUBJECT_MATCH" } },
+      surfaceCollectionHints: [{ surface: "ai_answers", region: "UAE", engine: "GOOGLE", status: "NO_RESULTS", provider: "topvisor", errorCode: null }],
+    } as unknown as ScopedFragmentInput;
+    const uaeExtras = { visualAssets: { p31_uae_knowledge: [{ assetRef: "uae_ai_answers", kind: "knowledge_panel", hasImage: true, visibleItems: [{ ref: "inventory:kb-uae", title: "Umar Kremlev" }] }] } } as unknown as FragmentExtras;
+    const { slides } = buildKnowledgeAiFragment("UAE_KNOWLEDGE_AI", "UAE_PROFILE", "ОАЭ", scoped, uaeExtras);
+    const page = slides.find((s) => s.baseSlotId === "p31_uae_knowledge")!;
+    const text = [page.content.statusNote ?? "", ...(page.content.bullets ?? [])].join(" ");
+    expect(text).toMatch(/AI-ответ Google по запросу ФИО в выдаче не показан/);
   });
 });
 
@@ -117,8 +161,10 @@ describe("разбивка ответов по листам", () => {
       expect((p.content.bullets ?? []).length).toBeLessThanOrEqual(3);
       expect(chars(p)).toBeLessThanOrEqual(3600);
     }
-    // Ни один блок не потерян между листами.
-    expect(pages.flatMap((p) => p.content.bullets ?? []).length).toBeGreaterThanOrEqual(6);
+    // Ни один блок не потерян между листами: два тела и две строки источников.
+    const all = pages.flatMap((p) => p.content.bullets ?? []);
+    expect(all.filter((b) => b.startsWith("Источники ответа: ")).length).toBe(2);
+    expect(all.length).toBeGreaterThanOrEqual(4);
   });
 });
 

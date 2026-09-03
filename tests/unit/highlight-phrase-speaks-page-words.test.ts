@@ -154,7 +154,7 @@ describe("фраза «Почему выделено» у непрочитанн
     expect(phrase.read).toBe(false);
     expect(phrase.sidebar).toContain(DICTIONARY_TITLE);
     expect(phrase.sidebar).toContain("rupep.org");
-    expect(phrase.sidebar).toContain("страница не читалась в этом прогоне");
+    expect(phrase.sidebar).toContain("текст страницы в этом прогоне не проверялся");
     expect(phrase.sidebar).toContain("требует ручной проверки");
   });
 
@@ -182,7 +182,8 @@ describe("фраза «Почему выделено» у непрочитанн
     expect(phrase.read).toBe(false);
     expect(phrase.sidebar).toContain("страница не найдена");
     expect(phrase.sidebar).not.toContain("Санкции ЕС и заморозка активов");
-    expect(phrase.sidebar).not.toContain("«");
+    // В кавычках — только сам заголовок выдачи, не цитата со страницы.
+    expect(phrase.sidebar).not.toContain("Активы компании заморожены");
     expect(phrase.full).not.toContain("Активы компании заморожены");
   });
 });
@@ -364,6 +365,6 @@ describe("строка без называемого источника", () => 
       finding: { findingId: "f-1", theme: "Криминальные / судебные материалы" } as never,
     });
 
-    expect(phrase.sidebar).toContain("оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта.");
+    expect(phrase.sidebar).toMatch(/не проверялся; материал учтён в находках отчёта\./);
   });
 });

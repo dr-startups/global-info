@@ -356,9 +356,13 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
     "fast",
     "in",
   ]);
+  // Ответ провайдера приходит и словарём по вариантам, и списком списков
+  // (google.ae, прогон DPA-2026-0051: 35 списков по 5 строк). Вложенный
+  // массив — не строка, и без развёртки из 185 подсказок оставалась одна.
+  const flat = candidates.flatMap((c) => (Array.isArray(c) ? (c as unknown[]).flat(3) : [c]));
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const c of candidates) {
+  for (const c of flat) {
     let text = "";
     if (typeof c === "string") text = c;
     else if (c && typeof c === "object") {

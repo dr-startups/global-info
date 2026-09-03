@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:5ffb3c0ad83735a04f15380c6ccbf4b249b27188c42a1d74c8697e2fd52d5d8d",
-  "contentVersion": "deck-sections-v160",
+  "contentHash": "sha256:86b662fd6510365332337665c44cf8ec0b4c4af23ad9216bb2d1eab9bb28b714",
+  "contentVersion": "deck-sections-v162",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -91,7 +91,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SERP_SCREENSHOT",
-  "generatedAt": "2026-09-03T20:58:49.725Z",
+  "generatedAt": "2026-09-03T22:45:47.656Z",
   "inputHash": "sha256:f9bb792883c296782d5d86b84b8fc447bd33dba51eb8923cbec5f92936ba3c4e:3625c96bfaedac6e",
   "inputs": {
     "evidenceRefs": [
@@ -233,7 +233,7 @@
       "content": {
         "highlightExplanations": [
           {
-            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «PEP: Glinka Sergey Mikhaylovich»; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+            "clientReason": "«PEP: Glinka Sergey Mikhaylovich» — rupep.org: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
             "frameTone": "red"
           }
         ],

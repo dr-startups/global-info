@@ -772,15 +772,24 @@ export async function buildCanonicalVisualAssets(input: {
     if (!answer && rows.length === 0) return false;
     const answerEngine = answer ? engineOf(answer) : null;
     const official = Boolean(answer && String(answer.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME));
+    // Подпись — по виду строки, не только по движку: панель знаний Google —
+    // не AI Overview, и когда ответа по ФИО поисковик не показал, картинка
+    // берёт панель знаний (отчёт 84, стр. 78) и не должна выдавать её за ответ.
+    const knowledgePanel = Boolean(answer && surfaceOf(answer) === "knowledge_block");
+    const engineName = answerEngine === "YANDEX" ? "Яндекса" : answerEngine === "GOOGLE" ? "Google" : null;
     const engineLabel = !answer
       ? undefined
-      : official
-        ? "Нейро-ответ Яндекса (Yandex Search API)"
-        : answerEngine === "YANDEX"
-          ? "Алиса (Яндекс)"
-          : answerEngine === "GOOGLE"
-            ? "Google AI Overview"
-            : undefined;
+      : knowledgePanel
+        ? engineName
+          ? `Панель знаний ${engineName}`
+          : "Панель знаний"
+        : official
+          ? "Нейро-ответ Яндекса (Yandex Search API)"
+          : answerEngine === "YANDEX"
+            ? "Алиса (Яндекс)"
+            : answerEngine === "GOOGLE"
+              ? "Google AI Overview"
+              : undefined;
     // Источники показанного ответа — строки с публичным адресом того же
     // запроса и движка; их домены идут одной строкой под ответом.
     const sourceRows = answer
@@ -814,7 +823,9 @@ export async function buildCanonicalVisualAssets(input: {
       kind: "knowledge_panel",
       title,
       caption: engineLabel
-        ? `Ответ: ${engineLabel} — по запросу о субъекте`
+        ? knowledgePanel
+          ? `${engineLabel} — по запросу о субъекте`
+          : `Ответ: ${engineLabel} — по запросу о субъекте`
         : "Ответ ИИ-поиска по запросам о субъекте",
       imageData: png,
       evidenceRefs: visibleItems.map((v) => v.ref),

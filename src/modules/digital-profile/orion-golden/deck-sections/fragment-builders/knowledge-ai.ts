@@ -4,7 +4,12 @@
  */
 
 import type { FragmentKey, SectionType, SlideContentContract } from "../contracts";
-import { clientNamedSearchEngine, type ScopedEvidenceIndex, type ScopedFragmentInput } from "../scoped-input";
+import {
+  clientNamedSearchEngine,
+  normalizeCoverageSurface,
+  type ScopedEvidenceIndex,
+  type ScopedFragmentInput,
+} from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
 import { packSentencesNoTruncate } from "../semantic-summary-pagination";
@@ -120,6 +125,34 @@ export function buildKnowledgeAiFragment(
   const answerBudget = DECK_TEMPLATE_REGISTRY["ai-overview"].layout.itemCharBudget;
   const isSourceRef = (e: AiEvidence | undefined): boolean =>
     Boolean(e && e.kind === "ai_answer" && isPublicUrl(e.url));
+  /*
+   * Источники ответа — одной строкой после его тела, а не строкой на ссылку:
+   * десять строк «Источник: домен» в отчёте 84 расползлись на три листа по
+   * три. Группа источников — тот же запрос и движок, что у тела.
+   */
+  const answerGroupOf = (e: AiEvidence): string =>
+    `${clientNamedSearchEngine(e.engine) ?? ""}|${String(e.query ?? "").trim().toLowerCase()}`;
+  const sourcesByGroup = new Map<string, string[]>();
+  for (const r of aiRefs) {
+    const e = scoped.evidenceIndex[r];
+    if (!e || !isSourceRef(e)) continue;
+    const group = answerGroupOf(e);
+    const list = sourcesByGroup.get(group) ?? [];
+    const domain = publicDomainOf(e.url);
+    const title = String(e.title ?? "").trim();
+    // Названный источник — «заголовок (домен)»; у ссылки без заголовка
+    // (Topvisor) заголовком служит сам домен, и повторять его не нужно.
+    const label = title && domain && title.toLowerCase() !== domain.toLowerCase() ? `${title} (${domain})` : title || domain;
+    if (label && !list.includes(label)) list.push(label);
+    sourcesByGroup.set(group, list);
+  }
+  const printedSourceGroups = new Set<string>();
+  const sourcesLine = (group: string): string[] => {
+    const list = sourcesByGroup.get(group) ?? [];
+    if (list.length === 0 || printedSourceGroups.has(group)) return [];
+    printedSourceGroups.add(group);
+    return [`Источники ответа: ${list.join(", ")}`];
+  };
   const aiLines = uniqueByText(
     aiRefs.flatMap((r) => {
       const e = scoped.evidenceIndex[r];
@@ -139,12 +172,32 @@ export function buildKnowledgeAiFragment(
         const body = `${answerCaption(e)} ${plainAiAnswerText(e.snippet)}`.trim();
         // Метка ставится **после** укладки: на продолжениях её иначе нет, и со
         // второй страницы чужой материал читается как материал о субъекте.
-        return packSentencesNoTruncate(body, answerBudget).map(mark);
+        return [...packSentencesNoTruncate(body, answerBudget).map(mark), ...sourcesLine(answerGroupOf(e))];
       }
-      if (isSourceRef(e)) return [mark(sourceLine(e))];
+      // Источник без тела в этом наборе (тело не собрано) — своей строкой.
+      if (isSourceRef(e)) return sourcesLine(answerGroupOf(e));
       return e.title ? [mark(e.title)] : [];
     })
   );
+  /*
+   * Заданный вопрос с пустым ответом называется словами: Google AI Overview
+   * по запросу ФИО не показал ни в Москве, ни в Дубае (прогон DPA-2026-0051),
+   * а страница молчала. Ячейку даёт состояние Topvisor (`topvisorCoverageCells`).
+   */
+  const absentAnswerLines = (scoped.surfaceCollectionHints ?? [])
+    .filter(
+      (h) =>
+        normalizeCoverageSurface(h.surface) === "ai_answers" &&
+        String(h.status ?? "").toUpperCase() === "NO_RESULTS" &&
+        String(h.provider ?? "").toLowerCase() === "topvisor" &&
+        (!scoped.scope.regions || !h.region || scoped.scope.regions.includes(h.region))
+    )
+    .map((h) => {
+      const engine = clientNamedSearchEngine(h.engine);
+      const name = engine === "GOOGLE" ? "Google" : engine === "YANDEX" ? "Яндекса (Алиса)" : "поисковика";
+      return `AI-ответ ${name} по запросу ФИО в выдаче не показан — это результат проверки, а не пропуск сбора.`;
+    })
+    .filter((line, i, all) => all.indexOf(line) === i);
   const slides: SlideContentContract[] = [];
 
   const panelSlot = slots.find((s) => s.templateId === "wikipedia-knowledge");
@@ -184,7 +237,7 @@ export function buildKnowledgeAiFragment(
     extras,
     scoped,
     content: {
-      bullets: aiLines,
+      bullets: [...aiLines, ...absentAnswerLines],
       ...pageFindingBlocks(scoped, aiView),
       ...(bodies.length > 0 ? { whatWasFound: answersCompositionLine(bodies, sourceCount) } : {}),
     },

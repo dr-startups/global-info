@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:4a3639b5029afe4273ae19fc4947c8715ec60ccf17c9f91d184375783c57d434",
-  "contentVersion": "deck-sections-v160",
+  "contentHash": "sha256:81c4d896f6b72fa89157868233ca12a14e55678c04d0e86801ac2ec8e47140e3",
+  "contentVersion": "deck-sections-v162",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -100,7 +100,7 @@
     "inventory:ss-cmrebadwv00jimm0fq4orts40"
   ],
   "fragmentKey": "UAE_IMAGES",
-  "generatedAt": "2026-09-03T20:58:49.726Z",
+  "generatedAt": "2026-09-03T22:45:47.658Z",
   "inputHash": "sha256:7e81c0fc54437dbffa3465673aed7621aa89fb7fb1b34c0ed11e4fc37657f1c3:174de8136e96c7a7",
   "inputs": {
     "evidenceRefs": [
@@ -291,23 +291,23 @@
         ],
         "highlightExplanations": [
           {
-            "clientReason": "Страница не читалась в этом прогоне. (vlasti.io/news/191197-sergey_glinka_a_previous_associate_of_sanctioned_oligarchs_allocated_16_million_to_acquire_a_moldovan_facility_with_military_potential_purportedly_under_the_eus).",
+            "clientReason": "Текст страницы в этом прогоне не проверялся. (vlasti.io/news/191197-sergey_glinka_a_previous_associate_of_sanctioned_oligarchs_allocated_16_million_to_acquire_a_moldovan_facility_with_military_potential_purportedly_under_the_eus).",
             "frameTone": "red"
           },
           {
-            "clientReason": "Потенциально негативные публикации; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
+            "clientReason": "«Sheridan's director investigated for 'national security'»; текст страницы в этом прогоне не проверялся — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
             "frameTone": "red"
           },
           {
-            "clientReason": "Криминальные / судебные материалы; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
+            "clientReason": "«European defense industry to the tune of Glinka's March - Russian Criminal»; текст страницы в этом прогоне не проверялся — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
             "frameTone": "red"
           },
           {
-            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «PEP: Glinka Sergey Mikhaylovich»; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+            "clientReason": "«PEP: Glinka Sergey Mikhaylovich» — rupep.org: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
             "frameTone": "red"
           },
           {
-            "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
+            "clientReason": "«CyberCriminal.com | Sergei Glinka – CyberCriminal.com»; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
             "frameTone": "red"
           }
         ],

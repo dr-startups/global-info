@@ -1133,11 +1133,21 @@ export function toRendererPayload(input: {
     // panel is a validation failure upstream.
     const visualAnalysis = hasVisual ? buildVisualAnalysis(s) : undefined;
 
+    /*
+     * Страница AI-ответов — единственный макет с картинкой, где список
+     * печатается текстом: ответ поисковика и есть содержание страницы, а
+     * панель показывает лишь его начало. Отчёт 84: буллеты были в пакете,
+     * рендерер был новый, а на бумаге текста не было — их обнуляла эта
+     * сборка, и идентификатор шаблона до рендерера не доезжал.
+     */
+    const printsAnswers = s.templateId === "ai-overview";
     return {
       slideKey: s.slideKey,
       sectionKey: s.sectionKey,
       template:
         VISUAL_TEMPLATES.has(s.template) && !hasVisual ? "orion_golden_prose" : s.template,
+      // Идентификатор шаблона деки: по нему рендерер узнаёт страницу AI-ответов.
+      templateId: s.templateId,
       layoutVariant: s.layoutVariant,
       title: s.title,
       pageNumber: s.pageNumber,
@@ -1157,7 +1167,14 @@ export function toRendererPayload(input: {
             : narrative,
       // Visual layouts render the structured sidebar panel; the KPI dashboard
       // draws narrative/KPI/action cards; plain layouts get the merged list.
-      bullets: isDashboard || hasVisual ? undefined : isMetricsDashboard ? s.bullets : mergedBullets,
+      // Без картинки страница ответов идёт прозой, и поля сайдбара едут в
+      // общем списке (`mergedBullets`) — иначе у них нет носителя.
+      bullets:
+        isDashboard || (hasVisual && !printsAnswers)
+          ? undefined
+          : isMetricsDashboard || (printsAnswers && hasVisual)
+            ? s.bullets
+            : mergedBullets,
       // Статусная строка (доля прочитанного на странице региона) печатается
       // только там, где макет её рисует. Отдать её остальным шаблонам значило
       // бы передать текст, который никто не нарисует, — та самая беззвучная

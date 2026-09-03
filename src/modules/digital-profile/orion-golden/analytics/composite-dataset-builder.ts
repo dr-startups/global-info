@@ -215,7 +215,10 @@ function toRow(
     url: item.sourceUrl,
     title: item.title,
     // Текст едет только у ответов ИИ-поиска: их страница печатает целиком.
-    ...(surface === "ai_answer" && snippet ? { snippet } : {}),
+    // Сниппет — у любой строки, где он есть: тема непрочитанной страницы
+    // назначается по нему, и дека цитирует его слова (отчёт 84, стр. 37 —
+    // цитаты не было, потому что сниппет ехал только у тел AI-ответов).
+    ...(snippet ? { snippet } : {}),
     domain: domainOf(item.sourceUrl) || undefined,
     evidenceRefs,
     provenanceOwner: owner,

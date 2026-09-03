@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:fd65a06dbb1c09abb8dc1d7c6522772d37bdb781e0ca97939dcf2de03e57a6a2",
-  "contentVersion": "deck-sections-v160",
+  "contentHash": "sha256:ca25e13f14878d653faa6bff3bd878bbde83c868bbb3838954c39c8c7c0b77f4",
+  "contentVersion": "deck-sections-v162",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,7 +149,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP_SCREENSHOT",
-  "generatedAt": "2026-09-03T20:58:49.715Z",
+  "generatedAt": "2026-09-03T22:45:47.649Z",
   "inputHash": "sha256:c1c2280b667e7c4aa3e5ec389a3cdf630ff144550560309842da8a21c53c8533:bfdcc53cd95ed05f",
   "inputs": {
     "evidenceRefs": [
@@ -370,11 +370,11 @@
       "content": {
         "highlightExplanations": [
           {
-            "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
+            "clientReason": "«Связанный с Россией бизнесмен Сергей Глинка ...»; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
             "frameTone": "red"
           },
           {
-            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (rupep.org/ru/person/8095).",
+            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org: по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (rupep.org/ru/person/8095).",
             "frameTone": "red"
           }
         ],
@@ -439,6 +439,35 @@
         "ru_provider_serp_synserp_mrjsdb6i_af88a1f851",
         "ru_provider_serp_synserp_mrjsdcak_818ce2d1c1"
       ]
+    },
+    {
+      "baseSlotId": "p10_ru_serp_visual",
+      "content": {
+        "bullets": [
+          "«Связанный с Россией бизнесмен Сергей Глинка ...» — x.com: отнесено к теме «Криминальные / судебные материалы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
+          "PEP / RCA / watchlist-сигналы — rupep.org: по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (rupep.org/ru/person/8095)."
+        ]
+      },
+      "continuationIndex": 1,
+      "continuationOf": "p10_ru_serp_visual",
+      "evidenceRefs": [
+        "serp_observation:cmrjsczcf002tvd9gv5r4s5e7",
+        "serp_observation:cmrjsczcr0031vd9ghi5pad2i"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39"
+      ],
+      "isContinuation": true,
+      "metrics": {
+        "adverseHighlights": 2
+      },
+      "schemaVersion": "slide-content-v1",
+      "sectionId": "RU_PROFILE",
+      "slideId": "p10_ru_serp_visual__why1",
+      "templateId": "continuation",
+      "title": "Россия — снимок выдачи: почему выделено",
+      "visualAssetRefs": []
     }
   ],
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",

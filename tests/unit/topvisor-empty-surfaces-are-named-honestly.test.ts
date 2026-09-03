@@ -80,6 +80,22 @@ describe("ячейки покрытия Topvisor", () => {
     );
   });
 
+  it("AI-ответ по ФИО, которого поисковик не показал, — измеренная пустота", () => {
+    // Прогон DPA-2026-0051: Google AI Overview по запросу ФИО не показан ни в
+    // Москве, ни в Дубае (`aiAbsentQueries`), Алиса ответила. Без ячейки
+    // страница молчит о том, что вопрос задавался.
+    const cells = topvisorCoverageCells(
+      doneState({ aiAbsentQueries: ["google-moscow:Кремлев Умар Назарович", "google-dubai:Kremlev Umar Nazarovich"] })
+    );
+    expect(cells).toContainEqual(
+      expect.objectContaining({ region: "RU", engine: "GOOGLE", surface: "ai_answers", status: "NO_RESULTS", provider: "topvisor" })
+    );
+    expect(cells).toContainEqual(
+      expect.objectContaining({ region: "UAE", engine: "GOOGLE", surface: "ai_answers", status: "NO_RESULTS", provider: "topvisor" })
+    );
+    expect(cells.find((c) => c.surface === "ai_answers" && c.engine === "YANDEX")).toBeUndefined();
+  });
+
   it("незавершённый прогон ячеек не даёт: пустота не измерена", () => {
     expect(topvisorCoverageCells(doneState({ phase: "COLLECTING" }))).toEqual([]);
     expect(topvisorCoverageCells(null)).toEqual([]);

@@ -363,6 +363,23 @@ export function topvisorCoverageCells(rawState: unknown): CoverageCellStatusRow[
       errorCode: null,
     });
   }
+  // AI-ответ по названному запросу, которого поисковик не показал, — тоже
+  // заданный вопрос с пустым ответом (ключ записи — «регион:запрос»).
+  const absentKeys = new Set(
+    (state.aiAbsentQueries ?? []).map((entry) => String(entry).split(":")[0] ?? "").filter(Boolean)
+  );
+  for (const key of absentKeys) {
+    const region = TOPVISOR_AUDIT_REGIONS.find((r) => r.key === key);
+    if (!region) continue;
+    cells.push({
+      region: region.region,
+      engine: region.engine,
+      surface: "ai_answers",
+      status: "NO_RESULTS",
+      provider: "topvisor",
+      errorCode: null,
+    });
+  }
   for (const planned of state.suggest ?? []) {
     const region = TOPVISOR_AUDIT_REGIONS.find((r) => r.key === planned.key);
     if (!region || !planned.ready) continue;

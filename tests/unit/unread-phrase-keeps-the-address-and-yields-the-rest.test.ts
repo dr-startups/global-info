@@ -59,7 +59,7 @@ describe("узкая колонка не теряет адрес даже на �
     const phrase = highlightPhrase({ row: A, evidence: index([A]) });
     // Последняя ступень лестницы начинает предложение с этих слов, поэтому
     // сверка регистронезависимая: важно, что непрочтение названо.
-    expect(phrase.sidebar.toLowerCase()).toContain("страница не читалась");
+    expect(phrase.sidebar.toLowerCase()).toContain("не проверялся");
   });
 
   it("два длинных адреса одного издания под одной рубрикой различаются и в панели", () => {
@@ -79,8 +79,9 @@ describe("узкая колонка не теряет адрес даже на �
       "https://kompromat1.online/articles/364300-byvshij-partner-oligarhov-sergej-glinka-vydelil-sredstva-fondu"
     );
     const phrase = highlightPhrase({ row: mid, evidence: index([mid]) });
-    expect(phrase.sidebar).toContain("оценка по заголовку и сниппету выдачи");
-    expect(phrase.sidebar).not.toContain(`${RUBRIC} — kompromat1.online;`);
+    expect(phrase.sidebar).toContain("не проверялся");
+    expect(phrase.sidebar).toContain("kompromat1.online/articles/364300-byvshij-partner-oligarhov");
+    expect(phrase.sidebar.length).toBeLessThanOrEqual(SIDEBAR_HIGHLIGHT_BUDGET);
   });
 
   it("короткий адрес ничего не отнимает: фраза остаётся полной", () => {
@@ -88,7 +89,7 @@ describe("узкая колонка не теряет адрес даже на �
     const phrase = highlightPhrase({ row: short, evidence: index([short]) });
     expect(phrase.sidebar).toBe(phrase.full);
     expect(phrase.sidebarComplete).toBe(true);
-    expect(phrase.sidebar).toContain(`${RUBRIC} — rupep.org;`);
+    expect(phrase.sidebar).toContain(`${RUBRIC} — rupep.org: по заголовку и описанию в выдаче;`);
     expect(phrase.sidebar).toContain("(rupep.org/en/person/8095).");
   });
 
@@ -100,6 +101,6 @@ describe("узкая колонка не теряет адрес даже на �
     });
     expect(phrase.sidebarComplete).toBe(true);
     expect(phrase.sidebarHasLink).toBe(false);
-    expect(phrase.sidebar).toContain("страница не читалась");
+    expect(phrase.sidebar).toContain("не проверялся");
   });
 });

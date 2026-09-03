@@ -36,12 +36,24 @@ function evidence(over: Record<string, unknown> = {}): ScopedEvidenceIndex {
 const row = { ref: REF, url: "https://dzen.ru/a/ZtYRD_a9DR1skreI", domain: "dzen.ru", title: "\"Хромой\" бизнес боксера Кремлева", adverse: true, themeTitle: "Криминальные / судебные материалы" };
 
 describe("фраза о непрочитанной странице", () => {
+  it("заголовок-адрес заголовком не печатается", () => {
+    const phrase = highlightPhrase({
+      row: { ...row, title: "https://rupep.org/ru/person/8095", url: "https://rupep.org/ru/person/8095", domain: "rupep.org", themeTitle: "PEP / RCA / watchlist-сигналы" },
+      evidence: evidence({ title: "https://rupep.org/ru/person/8095", url: "https://rupep.org/ru/person/8095", domain: "rupep.org", snippet: "", readFailure: undefined }),
+      budget: 600,
+    });
+    expect(phrase.full).toMatch(/^PEP \/ RCA \/ watchlist-сигналы — rupep\.org: по заголовку и описанию в выдаче;/);
+    expect(phrase.full).not.toMatch(/«https?:/);
+  });
+
   it("цитирует слова выдачи, по которым назначена тема", () => {
     const phrase = highlightPhrase({ row, evidence: evidence(), budget: 600 });
-    expect(phrase.full).toMatch(/страница не прочитана: на странице нет читаемого текста/);
-    expect(phrase.full).toMatch(/оценка по заголовку и сниппету выдачи/);
-    expect(phrase.full).toMatch(/«[^»]*уголовные дела[^»]*»/);
-    expect(phrase.full).not.toMatch(/оценка по заголовку выдачи[;.]/);
+    // Фраза читается как заметка аналитика: сначала заголовок, затем тема и
+    // основание, затем честная оговорка о непроверенном тексте.
+    expect(phrase.full).toMatch(/^«"Хромой" бизнес боксера Кремлева/);
+    expect(phrase.full).toMatch(/отнесено к теме «Криминальные \/ судебные материалы» по заголовку и описанию в выдаче \(«[^»]*уголовные дела[^»]*»\)/);
+    expect(phrase.full).toMatch(/текст страницы проверить не удалось: на странице нет читаемого текста/);
+    expect(phrase.full).not.toMatch(/страница не читалась|страница не прочитана|оценка по заголовку/);
   });
 
   it("без слова словаря в выдаче фраза остаётся прежней — цитаты не выдумываются", () => {
@@ -50,8 +62,9 @@ describe("фраза о непрочитанной странице", () => {
       evidence: evidence({ snippet: "Умар Кремлев стал владельцем автодилера Рольф.", title: "Умар Кремлев стал владельцем «Рольфа»" }),
       budget: 600,
     });
-    // Без попадания словаря — без кавычек вовсе: цитата не выдумывается.
-    expect(phrase.full).toMatch(/оценка по заголовку и сниппету выдачи; материал учтён|оценка по заголовку и сниппету выдачи — требует/);
-    expect(phrase.full).not.toMatch(/«/);
+    // Без попадания словаря — без цитаты: она не выдумывается (кавычки
+    // остаются только у самого заголовка).
+    expect(phrase.full).toMatch(/по заголовку и описанию в выдаче; текст страницы/);
+    expect(phrase.full).not.toMatch(/\(«/);
   });
 });

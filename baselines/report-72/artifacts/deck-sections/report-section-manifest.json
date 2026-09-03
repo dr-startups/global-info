@@ -3,7 +3,7 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-09-03T20:59:28.199Z",
+  "generatedAt": "2026-09-03T22:46:21.533Z",
   "sectionOrder": [
     "FRONT_MATTER",
     "EXECUTIVE",
@@ -86,8 +86,8 @@
       "artifactPath": "section-packs/ru/serp-screenshot.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:fd65a06dbb1c09abb8dc1d7c6522772d37bdb781e0ca97939dcf2de03e57a6a2",
-      "slideCount": 1,
+      "contentHash": "sha256:ca25e13f14878d653faa6bff3bd878bbde83c868bbb3838954c39c8c7c0b77f4",
+      "slideCount": 2,
       "validationPassed": true
     },
     {
@@ -108,7 +108,7 @@
       "artifactPath": "section-packs/ru/images.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:946a9dd354adcbcbdedcf27232ef227a4ff4b5feb7eec30295d4da984ceb1bcf",
+      "contentHash": "sha256:4da8859cb3fec01e6391e460d033c4e0b80fb413cf8aaf9586e0e84ab49d21b8",
       "slideCount": 4,
       "validationPassed": true
     },
@@ -174,7 +174,7 @@
       "artifactPath": "section-packs/uae/serp-screenshot.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:5ffb3c0ad83735a04f15380c6ccbf4b249b27188c42a1d74c8697e2fd52d5d8d",
+      "contentHash": "sha256:86b662fd6510365332337665c44cf8ec0b4c4af23ad9216bb2d1eab9bb28b714",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -196,7 +196,7 @@
       "artifactPath": "section-packs/uae/images.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:4a3639b5029afe4273ae19fc4947c8715ec60ccf17c9f91d184375783c57d434",
+      "contentHash": "sha256:81c4d896f6b72fa89157868233ca12a14e55678c04d0e86801ac2ec8e47140e3",
       "slideCount": 1,
       "validationPassed": true
     },

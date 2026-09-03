@@ -148,10 +148,17 @@ describe("слайд-продолжение «Почему выделено»", 
     expect(validate(built).passed).toBe(true);
   });
 
-  it("две рамки и короткие адреса: продолжения нет", () => {
+  it("две рамки и короткие адреса: колонка объясняет обе, полные фразы — на продолжении", () => {
+    // Фраза о непроверенной странице теперь печатает заголовок выдачи
+    // (решение владельца 04.09.2026) и в узкую колонку целиком не входит:
+    // колонка несёт короткую форму с адресом, продолжение — полную.
     const built = pack([framed(xRow), framed(rupepRow), ...ruRows.slice(4, 7)]);
     expect(built.slides.find((s) => !s.isContinuation)!.content.highlightExplanations?.length).toBe(2);
-    expect(built.slides.filter((s) => s.isContinuation).length).toBe(0);
+    const cont = built.slides.filter((s) => s.isContinuation);
+    expect(cont.length).toBeLessThanOrEqual(1);
+    if (cont.length === 1) {
+      expect((cont[0]!.content.bullets ?? []).some((b) => /по заголовку и описанию в выдаче/.test(b))).toBe(true);
+    }
     expect(validate(built).passed).toBe(true);
   });
 

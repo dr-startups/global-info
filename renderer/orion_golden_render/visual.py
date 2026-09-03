@@ -581,8 +581,17 @@ def _render_ai_answers_page(
         if has_sidebar and side_w > 400000:
             _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, block_h - 60000)
         y = y + block_h + 60000
-    elif has_sidebar and not continuation:
-        _render_analysis_cards_full_width(ctx, slide, y)
+    elif not continuation:
+        # Без картинки (ассет не собран) страница всё равно печатает свой
+        # список — маркер «ответ не найден» или сам ответ, — а карточки
+        # сайдбара идут под ним во всю ширину. Эталон 72: маркер терялся
+        # молча, ворот «поле оставило след на странице» это и поймал.
+        if bullets:
+            y = ctx.bullets(
+                bullets, y + 40000, max_items=8, max_chars=1400, bottom=y + (CONTENT_BOTTOM - y) // 2
+            ) + 60000
+        if has_sidebar:
+            _render_analysis_cards_full_width(ctx, slide, y)
         return
     if bullets:
         # Ответ печатается целиком: бюджет строки — бюджет буллета шаблона

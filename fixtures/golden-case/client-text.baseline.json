@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
-  "slideCount": 80,
-  "totalChars": 67748,
+  "slideCount": 79,
+  "totalChars": 67892,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,10 +21,10 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 4–10",
-        "Цифровой профиль — Россия — стр. 11–56",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 57–76",
-        "Комплаенс-проверка — стр. 77–79",
-        "Приложение — стр. 80–80"
+        "Цифровой профиль — Россия — стр. 11–55",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 56–75",
+        "Комплаенс-проверка — стр. 76–78",
+        "Приложение — стр. 79–79"
       ]
     },
     {
@@ -1268,8 +1268,8 @@
       "baseSlotId": "p10_ru_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — stockholm-kuriren.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström flagged during sanctions screening watchlist review»; материал учтён в находках отчёта. (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1).",
-        "Офшорные структуры — nordmarket-watch.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «linked to Malta holding structure and offshore beneficial ownership»; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
+        "«Anders Holmström flagged during sanctions screening watchlist review» — stockholm-kuriren.se: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1).",
+        "«Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — nordmarket-watch.se: отнесено к теме «Офшорные структуры» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
       ]
     },
     {
@@ -1281,7 +1281,7 @@
       "template": "orion_golden_prose",
       "bullets": [
         "Отмечено аналитиком — finansbladet.se; тема материала — «Деловой профиль»; материал учтён в находках отчёта.",
-        "Криминальные / судебные материалы — kapitalnytt.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Stockholm court schedules hearing involving Anders»; материал учтён в находках отчёта. (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5)."
+        "«Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — kapitalnytt.se: отнесено к теме «Криминальные / судебные материалы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5)."
       ]
     },
     {
@@ -1430,11 +1430,11 @@
       "bullets": [
         "Ответов поискового ИИ: 9 — Алиса 9; источников в ответах: 3. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 0: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
+        "Источники ответа: Anders Holmström и Nordkap Capital: профиль предпринимателя (affarsposten.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (finansbladet.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (kapitalnytt.se)",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 1: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 2: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 3: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 4: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 5: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se.",
         "Негативных заголовков на этой странице нет."
       ]
@@ -1442,40 +1442,27 @@
     {
       "slideKey": "p19_ru_knowledge_2__cont1",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 2/4)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 2/3)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
+        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 5: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 6: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 7: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Knowledge panel: Anders Holmström",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
       ]
     },
     {
       "slideKey": "p19_ru_knowledge_2__cont2",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 3/4)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 3/3)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
+        "Knowledge panel: Anders Holmström",
         "Ответ генеративного поиска Яндекса, получен официальным Yandex Search API; это не дословный блок «Алисы» на странице выдачи. Запрос: «Anders Holmström». Anders Holmström — основатель и управляющий партнёр инвестиционной компании Nordkap Capital. По данным открытых источников, Nordkap Capital специализируется на прямых инвестициях в скандинавский промышленный сектор и в последние годы расширяет присутствие в ОАЭ. Публикации деловых изданий связывают предпринимателя с налоговым разбирательством и с расширением бизнеса в Дубае; окончательных решений по разбирательству в открытых источниках нет. Также встречаются материалы о полном тёзке — хоккейном вратаре, которые к предпринимателю отношения не имеют.",
-        "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — affarsposten.se",
-        "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
-      ]
-    },
-    {
-      "slideKey": "p19_ru_knowledge_2__cont3",
-      "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 4/4)"
-      },
-      "baseSlotId": "p19_ru_knowledge_2",
-      "template": "orion_golden_prose",
-      "bullets": [
-        "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — finansbladet.se",
-        "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — kapitalnytt.se",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
       ]
     },
@@ -1561,7 +1548,7 @@
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
         "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник difc-briefing.ae «Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник dubai-market-daily.ae Где видно: difc-briefing.ae, dubai-market-daily.ae. Всего по теме: 2 материала.",
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae. Всего по теме: 6 материалов, с негативным контекстом — 5."
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae. Всего по теме: 6 материалов, с негативным контекстом — 6."
       ],
       "actions": [
         "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
@@ -1974,9 +1961,9 @@
       "baseSlotId": "p27_uae_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening»; материал учтён в находках отчёта. (emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1).",
-        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Sanctions screening vendor flags Anders Holmström»; материал учтён в находках отчёта. (emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7).",
-        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening»; материал учтён в находках отчёта. (abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11)."
+        "«Anders Holmström referenced in UAE PEP/RCA compliance screening» — emirates-ledger.ae: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1).",
+        "«Sanctions screening vendor flags Anders Holmström for secondary review» — emirates-ledger.ae: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7).",
+        "«Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — abudhabi-capital-news.ae: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11)."
       ]
     },
     {
@@ -1987,8 +1974,8 @@
       "baseSlotId": "p27_uae_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Контекст: Sanctions screening vendor flags Anders Holmström»; материал учтён в находках отчёта. (abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17).",
-        "Сигналы PEP / RCA — khaleej-finance-post.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening» — требует ручной проверки. (khaleej-finance-post.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-21)."
+        "«Контекст: Sanctions screening vendor flags Anders Holmström for secondary review» — abudhabi-capital-news.ae: отнесено к теме «PEP / RCA / watchlist-сигналы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17).",
+        "«Хроника: Anders Holmström referenced in UAE PEP/RCA compliance screening» — khaleej-finance-post.ae: отнесено к теме «Сигналы PEP / RCA» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся — требует ручной проверки. (khaleej-finance-post.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-21)."
       ]
     },
     {
