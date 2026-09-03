@@ -251,6 +251,76 @@ def render_surface_panel_page() -> tuple[bytes, bytes] | None:
     return base64.b64decode(pages[0]["contentBase64"]), base64.b64decode(out["pdfBase64"])
 
 
+#: Тела AI-ответов страницы `ai-overview`: два ответа, каждый длиннее строки.
+AI_ANSWER_BULLETS = [
+    "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Кремлёв Умар Назарович». "
+    "Умар Назарович Кремлёв — российский спортивный функционер, глава Международной ассоциации "
+    "бокса; в сентябре 2024 года стал владельцем дилерского холдинга «Рольф».",
+    "Источник: tass.ru",
+    "Ответ поискового ИИ Google, зафиксированный в выдаче. Запрос: «Кремлёв Умар Назарович». "
+    "Umar Kremlev is a Russian sports official, president of the International Boxing Association "
+    "since 2020; he was born in Serpukhov in 1982.",
+    "Источник: en.wikipedia.org",
+]
+
+
+def render_ai_answers_pages() -> list[tuple[bytes, bytes]] | None:
+    """Страница AI-ответов и её продолжение; None — растр не от LibreOffice.
+
+    Отчёт 83: шаблон `ai-overview` шёл в макет «картинка + сайдбар», который
+    буллеты не рисует, — текст ответов не попадал на бумагу ни разу, а
+    продолжения выходили пустыми. Проверяется текстовый слой PDF: тела обоих
+    ответов и строки источников нарисованы на первой странице, продолжение
+    печатает свои буллеты без картинки.
+    """
+    from orion_golden_render import render_orion_golden  # noqa: PLC0415
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1200, 420), (0xF2, 0xF5, 0xF3)).save(buf, format="PNG")
+    asset = {
+        "assetRef": "ru_ai_answers",
+        "kind": "knowledge_panel",
+        "title": "Россия — ИИ-ответы поисковых систем",
+        "imageData": base64.b64encode(buf.getvalue()).decode("ascii"),
+    }
+    base = {
+        "slideKey": "p19_ru_knowledge_2",
+        "sectionKey": "RU_PROFILE",
+        "template": "orion_golden_surface_panel",
+        "templateId": "ai-overview",
+        "title": "Россия — AI-ответы поисковых систем",
+        "assetRefs": ["ru_ai_answers"],
+        "bullets": AI_ANSWER_BULLETS[:2],
+        "visualAnalysis": {
+            "headlineConclusion": "Ответов поискового ИИ: 2 — Алиса 1, Google 1; источников в ответах: 2.",
+            "whatIsVisible": "Ответ ИИ читают до перехода к материалам.",
+            "recommendedActions": ["Сверить ответ с официальной биографией."],
+        },
+        "pageNumber": 1,
+        "totalPageCount": 2,
+    }
+    cont = {
+        **base,
+        "slideKey": "p19_ru_knowledge_2__cont-1",
+        "title": "Россия — AI-ответы поисковых систем (продолжение 2/2)",
+        "isContinuation": True,
+        "continuationOf": "p19_ru_knowledge_2",
+        "bullets": AI_ANSWER_BULLETS[2:],
+        "pageNumber": 2,
+    }
+    payload = {
+        "subjectName": "Тест",
+        "assets": [asset],
+        "deckManifest": {"toc": [], "sectionPageRanges": [], "finalSlides": [base, cont]},
+    }
+    out = render_orion_golden(payload)
+    pages = out.get("pages") or []
+    if len(pages) < 2 or out.get("pdfExportMode") != "libreoffice" or not out.get("pdfBase64"):
+        return None
+    pdf = base64.b64decode(out["pdfBase64"])
+    return [(base64.b64decode(p["contentBase64"]), pdf) for p in pages[:2]]
+
+
 #: Вводный абзац листа второй таблицы, заведомо длиннее своего потолка.
 #: Ёмкость листа выведена от **объявленного** верха таблицы (заголовок плюс
 #: потолок абзаца), поэтому лист с коротким абзацем начинался бы выше — и
@@ -633,6 +703,42 @@ def main() -> int:
     # именно этих фраз — по текстовому слою PDF: растр умеет сказать «чернила
     # есть», но не «нарисована вторая фраза», а выброшен бывает как раз
     # блок целиком, и колонка при этом остаётся заполненной заголовком.
+    ai_pages = render_ai_answers_pages()
+    if ai_pages is None:
+        print("# SKIP страница AI-ответов — растр не получен от LibreOffice")
+    else:
+        import fitz  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = []
+            for i, (png, _) in enumerate(ai_pages, start=1):
+                path = Path(tmp) / f"page-{i:02d}.png"
+                path.write_bytes(png)
+                paths.append(path)
+            ai_report = check_pages(paths)
+            check(
+                "страница AI-ответов и её продолжение не выходят за края листа",
+                ai_report.passed and not ai_report.findings,
+                "; ".join(f"{f.code} — {f.detail}" for f in ai_report.findings)
+                or f"проверено страниц: {ai_report.pages_checked}",
+            )
+            pdf_path = Path(tmp) / "ai.pdf"
+            pdf_path.write_bytes(ai_pages[0][1])
+            doc = fitz.open(str(pdf_path))
+            first = " ".join(doc[0].get_text().split())
+            second = " ".join(doc[1].get_text().split()) if len(doc) > 1 else ""
+        check(
+            "тело ответа Алисы нарисовано на первой странице",
+            "владельцем дилерского холдинга" in first,
+        )
+        check("строка источника нарисована на первой странице", "Источник: tass.ru" in first)
+        check(
+            "продолжение печатает тело ответа Google",
+            "born in Serpukhov" in second,
+            "вторая страница пуста" if not second.strip() else second[:120],
+        )
+        check("строка состава считает ответы", "Ответов поискового ИИ: 2" in first)
+
     panel = render_surface_panel_page()
     if panel is None:
         print("# SKIP панель поверхности — растр не получен от LibreOffice")

@@ -84,7 +84,23 @@ function answerCaption(e: AiEvidence): string {
 function sourceLine(e: AiEvidence): string {
   const domain = publicDomainOf(e.url);
   const title = String(e.title ?? "").trim() || domain;
-  return domain ? `Источник: ${title} — ${domain}` : `Источник: ${title}`;
+  // У ссылки ответа своего заголовка нет — сборщик называет её доменом, и
+  // «tass.ru — tass.ru» читалось бы как опечатка.
+  if (!domain || title.toLowerCase() === domain.toLowerCase()) return `Источник: ${title}`;
+  return `Источник: ${title} — ${domain}`;
+}
+
+/**
+ * Строка состава страницы ответов: считаются ответы по движкам и источники,
+ * а не «результаты» — под двумя ответами сайдбар писал «Показано 32
+ * результата», складывая тела и ссылки.
+ */
+function answersCompositionLine(bodies: AiEvidence[], sources: number): string {
+  const yandex = bodies.filter((e) => clientNamedSearchEngine(e.engine) === "YANDEX").length;
+  const google = bodies.filter((e) => clientNamedSearchEngine(e.engine) === "GOOGLE").length;
+  const parts = [yandex > 0 ? `Алиса ${yandex}` : null, google > 0 ? `Google ${google}` : null].filter(Boolean);
+  const byEngine = parts.length > 0 ? ` — ${parts.join(", ")}` : "";
+  return `Ответов поискового ИИ: ${bodies.length}${byEngine}; источников в ответах: ${sources}.`;
 }
 
 export function buildKnowledgeAiFragment(
@@ -160,6 +176,8 @@ export function buildKnowledgeAiFragment(
   }
 
   const aiView = buildPageEvidenceView(scoped, aiRefs);
+  const bodies = aiRefs.map((r) => scoped.evidenceIndex[r]).filter((e): e is AiEvidence => isAnswerBody(e));
+  const sourceCount = aiRefs.filter((r) => isSourceRef(scoped.evidenceIndex[r])).length;
   const aiBase = visualSlide({
     slot: aiSlot,
     sectionId,
@@ -168,6 +186,7 @@ export function buildKnowledgeAiFragment(
     content: {
       bullets: aiLines,
       ...pageFindingBlocks(scoped, aiView),
+      ...(bodies.length > 0 ? { whatWasFound: answersCompositionLine(bodies, sourceCount) } : {}),
     },
     evidenceRefs: aiRefs,
     findingIds: aiView.findings.map((f) => f.findingId),

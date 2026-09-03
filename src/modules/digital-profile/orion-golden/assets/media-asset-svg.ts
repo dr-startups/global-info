@@ -328,10 +328,15 @@ export function buildKnowledgePanelSvg(input: {
   title: string;
   summary: string;
   facts: string[];
+  /** Чей ответ: «Алиса (Яндекс)», «Google AI Overview». Без подписи блок читался как утверждение отчёта. */
+  engineLabel?: string;
+  /** Домены источников ответа — одной строкой вместо «фактов», у ссылок ответа своего текста нет. */
+  sources?: string[];
 }): string {
   const width = 1200;
   const height = 420;
-  const facts = input.facts.slice(0, 4);
+  const sources = (input.sources ?? []).filter(Boolean);
+  const facts = sources.length > 0 ? [`Источники: ${sources.join(", ")}`] : input.facts.slice(0, 4);
   /*
    * Сводка — абзац, а не строка.
    *
@@ -350,6 +355,12 @@ export function buildKnowledgePanelSvg(input: {
     `<rect width="100%" height="100%" fill="${COLORS.pageBg}"/>`,
     `<rect x="40" y="40" width="1120" height="340" rx="12" fill="${COLORS.panel}" stroke="${COLORS.panelBorder}"/>`,
     `<text x="64" y="84" font-family="${FONT_STACK}" font-size="22" fill="${COLORS.text}">${esc(input.title)}</text>`,
+    ...(input.engineLabel
+      ? [
+          `<rect x="${1160 - 24 - Math.max(160, input.engineLabel.length * 8 + 24)}" y="58" width="${Math.max(160, input.engineLabel.length * 8 + 24)}" height="30" rx="6" fill="#E8EEF7"/>`,
+          `<text x="${1160 - 24 - Math.max(160, input.engineLabel.length * 8 + 24) / 2}" y="78" font-family="${FONT_STACK}" font-size="13" fill="${COLORS.muted}" text-anchor="middle">${esc(input.engineLabel)}</text>`,
+        ]
+      : []),
     ...summaryLines.map(
       (line, idx) =>
         `<text x="64" y="${112 + idx * 20}" font-family="${FONT_STACK}" font-size="14" fill="${COLORS.muted}">${esc(line)}</text>`

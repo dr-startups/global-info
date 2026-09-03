@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
-  "slideCount": 79,
-  "totalChars": 67183,
+  "slideCount": 80,
+  "totalChars": 67146,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,10 +21,10 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 4–10",
-        "Цифровой профиль — Россия — стр. 11–55",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 56–75",
-        "Комплаенс-проверка — стр. 76–78",
-        "Приложение — стр. 79–79"
+        "Цифровой профиль — Россия — стр. 11–56",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 57–76",
+        "Комплаенс-проверка — стр. 77–79",
+        "Приложение — стр. 80–80"
       ]
     },
     {
@@ -1294,15 +1294,15 @@
       "bullets": [
         "Собрано 36, на панели — 10 подсказок: 8 относятся к субъекту и 2 требуют уточнения принадлежности. С негативной формулировкой — 5. Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "Anders Holmström Nordkap Capital fraud",
-        "Anders Holmström налоговая проверка",
         "Anders Holmström Malta offshore",
         "Anders Holmström санкции",
-        "Nordkap Capital владелец",
         "Anders Holmström Stockholm court",
+        "Anders Holmström арест",
+        "Anders Holmström налоговая проверка",
+        "Nordkap Capital владелец",
         "Anders Holmström комплаенс",
         "Anders Holmström биография",
         "Nordkap Capital Series B",
-        "Anders Holmström арест",
         "Источник — поисковая выдача: у показанных элементов нет отдельных адресов.",
         "На этой странице 5 подсказок с негативной формулировкой — их видно до перехода к самим материалам, поэтому они формируют первое впечатление."
       ]
@@ -1428,7 +1428,7 @@
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
-        "Показано 16 результатов; из них о субъекте — 15, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: affarsposten.se, finansbladet.se и kapitalnytt.se. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Ответов поискового ИИ: 9 — Алиса 9; источников в ответах: 3. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 0: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 1: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 2: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
@@ -1442,7 +1442,7 @@
     {
       "slideKey": "p19_ru_knowledge_2__cont1",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 2/3)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 2/4)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
@@ -1450,19 +1450,30 @@
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 6: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 7: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Knowledge panel: Anders Holmström",
-        "Ответ генеративного поиска Яндекса, получен официальным Yandex Search API; это не дословный блок «Алисы» на странице выдачи. Запрос: «Anders Holmström». Anders Holmström — основатель и управляющий партнёр инвестиционной компании Nordkap Capital. По данным открытых источников, Nordkap Capital специализируется на прямых инвестициях в скандинавский промышленный сектор и в последние годы расширяет присутствие в ОАЭ. Публикации деловых изданий связывают предпринимателя с налоговым разбирательством и с расширением бизнеса в Дубае; окончательных решений по разбирательству в открытых источниках нет. Также встречаются материалы о полном тёзке — хоккейном вратаре, которые к предпринимателю отношения не имеют.",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
       ]
     },
     {
       "slideKey": "p19_ru_knowledge_2__cont2",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 3/3)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 3/4)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
+        "Ответ генеративного поиска Яндекса, получен официальным Yandex Search API; это не дословный блок «Алисы» на странице выдачи. Запрос: «Anders Holmström». Anders Holmström — основатель и управляющий партнёр инвестиционной компании Nordkap Capital. По данным открытых источников, Nordkap Capital специализируется на прямых инвестициях в скандинавский промышленный сектор и в последние годы расширяет присутствие в ОАЭ. Публикации деловых изданий связывают предпринимателя с налоговым разбирательством и с расширением бизнеса в Дубае; окончательных решений по разбирательству в открытых источниках нет. Также встречаются материалы о полном тёзке — хоккейном вратаре, которые к предпринимателю отношения не имеют.",
         "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — affarsposten.se",
+        "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
+      ]
+    },
+    {
+      "slideKey": "p19_ru_knowledge_2__cont3",
+      "text": {
+        "title": "Россия — AI-ответы поисковых систем (продолжение 4/4)"
+      },
+      "baseSlotId": "p19_ru_knowledge_2",
+      "template": "orion_golden_prose",
+      "bullets": [
         "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — finansbladet.se",
         "Источник: Anders Holmström и Nordkap Capital: профиль предпринимателя — kapitalnytt.se",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
@@ -1477,14 +1488,14 @@
       "template": "orion_golden_prose",
       "bullets": [
         "Собрано 24, на панели — 8 связанных запросов: 6 относятся к субъекту и 2 требуют уточнения принадлежности. С негативной формулировкой — 3. Связанные запросы поисковик предлагает набрать следующими: негативная формулировка в этом блоке уводит читателя к нежелательным материалам ещё до того, как он их искал. Проверять блок при обновлении: состав связанных запросов меняется вместе с выдачей.",
-        "Who is Anders Holmström of Nordkap Capital?",
         "Is Anders Holmström under investigation?",
+        "Is Anders Holmström a PEP?",
+        "Has Anders Holmström been sanctioned?",
+        "Who is Anders Holmström of Nordkap Capital?",
         "What does Nordkap Capital do?",
         "Where is Anders Holmström based?",
-        "Is Anders Holmström a PEP?",
         "How is Anders Holmström connected to Malta?",
         "What are the risks of dealing with Nordkap Capital?",
-        "Has Anders Holmström been sanctioned?",
         "Источник — поисковая выдача: у показанных элементов нет отдельных адресов.",
         "На этой странице 3 запроса с негативной формулировкой."
       ]
@@ -1989,9 +2000,9 @@
       "template": "orion_golden_prose",
       "bullets": [
         "Собрано 18, на панели — 10 подсказок: 9 относятся к субъекту и 1 требует уточнения принадлежности. С негативной формулировкой — 1. Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Anders Holmström UAE PEP",
         "Anders Holmström Dubai Nordkap Capital",
         "Anders Holmström DIFC",
-        "Anders Holmström UAE PEP",
         "Anders Holmström Abu Dhabi",
         "Nordkap Capital Dubai office",
         "Anders Holmström Gulf investment",
@@ -2041,7 +2052,7 @@
       "baseSlotId": "p31_uae_knowledge",
       "template": "orion_golden_prose",
       "bullets": [
-        "Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 0. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Ответов поискового ИИ: 4 — Google 4; источников в ответах: 0. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "Ответ поискового ИИ Google, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 8: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Google, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 9: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Google, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 10: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",

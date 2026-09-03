@@ -28,8 +28,22 @@ import {
   type TopvisorObservation,
 } from "./positions";
 
-/** Заголовка у AI-ответа обычно нет — тогда называем вид, а не выдумываем тему. */
-const ANSWER_TITLE_FALLBACK = "Ответ поискового ИИ";
+/**
+ * Заголовка у AI-ответа обычно нет — тогда называем, чей это ответ, а не
+ * выдумываем тему. Движок берётся из адреса региона, по которому читали.
+ */
+function answerTitleFallback(engine: TopvisorAuditRegion["engine"]): string {
+  return engine === "YANDEX" ? "Ответ Алисы (Яндекс)" : "Ответ Google AI Overview";
+}
+
+/** Имя хоста источника — заголовок строки-источника: у ссылки ответа своего нет. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "");
+  } catch {
+    return url;
+  }
+}
 
 type AiOverview = { snippetTitle?: unknown; snippetBody?: unknown; links?: unknown };
 
@@ -71,6 +85,12 @@ export function aiAnswersFromPositions(input: {
   regionIndex: number;
   /** Запросы этого региона в нашем написании. */
   queries: readonly string[];
+  /**
+   * Запросы, чьи ответы нужны отчёту; остальные ответы не читаются вовсе.
+   * Отчёту нужен ответ на само ФИО (решение владельца 03.09.2026): один на
+   * движок и регион. Не задано — берутся все запросы, как в пилоте.
+   */
+  answerQueries?: readonly string[];
   provenance: SnapshotProvenance;
 }): {
   observations: TopvisorObservation[];
@@ -79,8 +99,12 @@ export function aiAnswersFromPositions(input: {
   unmatchedKeywords: string[];
   warnings: string[];
 } {
+  const wanted = input.answerQueries ?? input.queries;
+  const wantedNormalized = new Set(wanted.map((q) => normalizeKeyword(q)));
   const byNormalized = new Map<string, string>();
-  for (const q of input.queries) byNormalized.set(normalizeKeyword(q), q);
+  for (const q of input.queries) {
+    if (wantedNormalized.has(normalizeKeyword(q))) byNormalized.set(normalizeKeyword(q), q);
+  }
 
   const observations: TopvisorObservation[] = [];
   const answered = new Set<string>();
@@ -93,7 +117,8 @@ export function aiAnswersFromPositions(input: {
     const name = normalizeKeyword(typeof kw.name === "string" ? kw.name : "");
     const ourQuery = byNormalized.get(name);
     if (!ourQuery) {
-      if (name) unmatchedKeywords.push(name);
+      // Чужая фраза или наша, но не из названных: ответ не нужен — не читаем.
+      if (name && !input.queries.some((q) => normalizeKeyword(q) === name)) unmatchedKeywords.push(name);
       continue;
     }
     for (const [key, cell] of Object.entries(kw.positionsData ?? {})) {
@@ -138,17 +163,19 @@ export function aiAnswersFromPositions(input: {
       // Тело ответа: без публичного адреса — по нему дека и узнаёт текст ответа.
       observations.push({
         ...common,
-        title: title || ANSWER_TITLE_FALLBACK,
+        title: title || answerTitleFallback(input.region.engine),
         snippet: body,
         sourceUrlOrQuery: ourQuery,
         resultHash: hash(["ai-body"]),
       });
-      // Источники: по строке на ссылку, без собственного текста.
+      // Источники: по строке на ссылку, без собственного текста. Заголовок —
+      // хост: под одним ответом четыре строки «Ответ поискового ИИ» читались
+      // как четыре копии ответа.
       for (const [index, url] of links.entries()) {
         observations.push({
           ...common,
           url,
-          title: title || ANSWER_TITLE_FALLBACK,
+          title: hostOf(url),
           sourceUrlOrQuery: url,
           sourceIndex: index + 1,
           resultHash: hash(["ai-source", url]),
@@ -160,7 +187,7 @@ export function aiAnswersFromPositions(input: {
 
   return {
     observations,
-    absentQueries: input.queries.filter((q) => !answered.has(q)),
+    absentQueries: wanted.filter((q) => !answered.has(q)),
     unmatchedKeywords,
     warnings,
   };

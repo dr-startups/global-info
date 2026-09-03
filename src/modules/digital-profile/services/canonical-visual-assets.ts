@@ -752,21 +752,48 @@ export async function buildCanonicalVisualAssets(input: {
     slotId: string,
     title: string
   ): Promise<boolean> => {
-    // Сводкой панели становится тело ответа: у названного источника есть свой
-    // адрес, и его описание — не ответ поисковика. Панель рисует абзац с
-    // переносом по словам; полный ответ по-прежнему несёт текст страницы.
+    /*
+     * Сводкой панели становится тело ответа: у названного источника есть свой
+     * адрес, и его описание — не ответ поисковика. Панель рисует абзац с
+     * переносом по словам; полный ответ по-прежнему несёт текст страницы.
+     *
+     * Ответов теперь по одному на движок (по запросу ФИО), и картинка одна:
+     * она показывает ответ Яндекса — официальный нейро-ответ, если он есть,
+     * иначе Алису из выдачи, — а без них Google. Чей ответ показан, панель
+     * говорит подписью, а не оставляет догадываться.
+     */
+    const isBody = (r: RawInventoryItem) =>
+      Boolean(String(r.snippet ?? "").trim()) && !/^https?:\/\//i.test(String(r.sourceUrl ?? ""));
+    const bodies = rows.filter(isBody);
     const answer =
-      rows.find(
-        (r) =>
-          String(r.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME) &&
-          String(r.snippet ?? "").trim()
-      ) ?? rows.find((r) => String(r.snippet ?? "").trim());
+      bodies.find((r) => String(r.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME)) ??
+      bodies.find((r) => engineOf(r) === "YANDEX") ??
+      bodies[0];
     if (!answer && rows.length === 0) return false;
-    const facts = rows
-      .filter((r) => r !== answer)
-      .slice(0, 4)
-      .map((r) => String(r.title ?? r.sourceUrl ?? "").trim())
-      .filter(Boolean);
+    const answerEngine = answer ? engineOf(answer) : null;
+    const official = Boolean(answer && String(answer.sourceUrl ?? "").startsWith(YANDEX_GEN_ANSWER_URL_SCHEME));
+    const engineLabel = !answer
+      ? undefined
+      : official
+        ? "Нейро-ответ Яндекса (Yandex Search API)"
+        : answerEngine === "YANDEX"
+          ? "Алиса (Яндекс)"
+          : answerEngine === "GOOGLE"
+            ? "Google AI Overview"
+            : undefined;
+    // Источники показанного ответа — строки с публичным адресом того же
+    // запроса и движка; их домены идут одной строкой под ответом.
+    const sourceRows = answer
+      ? rows.filter(
+          (r) =>
+            r !== answer &&
+            !isBody(r) &&
+            /^https?:\/\//i.test(String(r.sourceUrl ?? "")) &&
+            engineOf(r) === answerEngine &&
+            String(r.query ?? "") === String(answer.query ?? "")
+        )
+      : [];
+    const sources = [...new Set(sourceRows.map((r) => domainOf(r.sourceUrl)).filter(Boolean))];
     const png = await svgToPngBase64(
       buildKnowledgePanelSvg({
         title,
@@ -775,18 +802,20 @@ export async function buildCanonicalVisualAssets(input: {
         summary:
           plainAiAnswerText(answer?.snippet) ||
           String(answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
-        facts,
+        facts: answer ? [] : rows.slice(0, 4).map((r) => String(r.title ?? r.sourceUrl ?? "").trim()).filter(Boolean),
+        engineLabel,
+        sources,
       })
     );
-    const used = [answer, ...rows.filter((r) => r !== answer).slice(0, 4)].filter(
-      (r): r is RawInventoryItem => Boolean(r)
-    );
+    const used = [answer, ...sourceRows.slice(0, 8)].filter((r): r is RawInventoryItem => Boolean(r));
     const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef));
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "knowledge_panel",
       title,
-      caption: "Ответ ИИ-поиска по запросам о субъекте",
+      caption: engineLabel
+        ? `Ответ: ${engineLabel} — по запросу о субъекте`
+        : "Ответ ИИ-поиска по запросам о субъекте",
       imageData: png,
       evidenceRefs: visibleItems.map((v) => v.ref),
     };

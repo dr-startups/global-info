@@ -600,8 +600,16 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     methodologyNote:
       "Ответы AI-сервисов приводятся полностью, без сокращений; иллюстрация панели, если она приведена, показывает только начало ответа. Интерпретация даётся отдельным блоком.",
     maxBulletsPerSlide: 6,
+    // Первый лист делит место с панелью и сайдбаром (верхняя треть), поэтому
+    // его ёмкость — знаками, а не числом блоков; продолжение — три блока:
+    // тело ответа до 1200 знаков и две строки источников.
+    maxBulletsPerContinuation: 3,
     maxTableRowsPerSlide: 0,
-    layout: layout("single-column", { itemCharBudget: 1200, pagination: "continuation" }),
+    layout: layout("single-column", {
+      itemCharBudget: 1200,
+      pagination: "continuation",
+      maxBulletCharsPerSlide: 1600,
+    }),
   },
   "related-queries": {
     templateId: "related-queries",

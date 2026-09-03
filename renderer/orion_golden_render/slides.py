@@ -69,6 +69,7 @@ from .visual import (
     _render_status_badge,
     _render_visual_with_sidebar,
     _tone_value_color,
+    _render_ai_answers_page,
 )
 
 #: Потолок вводного абзаца страницы выдачи и отбивка под ним.
@@ -633,6 +634,12 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_surface_panel":
+        # Страница AI-ответов узнаётся по идентификатору шаблона деки, а не по
+        # новому имени макета: старый рендерер в окне деплоя нарисует её как
+        # прежде (без текста), а не откажет.
+        if str(slide.get("templateId") or "") == "ai-overview":
+            _render_ai_answers_page(ctx, slide, assets, title, bullets)
+            return
         _render_visual_with_sidebar(ctx, slide, assets, title)
         return
 

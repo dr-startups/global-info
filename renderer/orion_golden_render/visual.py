@@ -537,6 +537,59 @@ def _render_visual_with_sidebar(
         _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, img_h - 60000)
 
 
+def _render_ai_answers_page(
+    ctx: _Ctx,
+    slide: dict[str, Any],
+    assets: dict[str, dict[str, Any]],
+    title: str,
+    bullets: list[str],
+) -> None:
+    """Страница AI-ответов: панель и сайдбар сверху, тела ответов под ними.
+
+    Шаблон `ai-overview` шёл в макет «картинка + сайдбар», а тот буллеты не
+    рисует: текст ответов не попадал на бумагу ни разу, продолжения выходили
+    пустыми листами с одним «Выводом» (отчёт 83, стр. 50–55). Ответ поисковика
+    и есть содержание страницы, поэтому картинка занимает верхнюю треть, а
+    текст идёт под ней на всю ширину; продолжение — только текст.
+    """
+    ctx.light_bg()
+    y = ctx.title(title, 280000, NAVY)
+    continuation = bool(slide.get("isContinuation"))
+    refs = slide.get("assetRefs") or []
+    visual = None if continuation else _first_visual_asset(refs, assets)
+    has_sidebar = bool(slide.get("visualAnalysis") or slide.get("clientTakeaway"))
+    if visual:
+        # Верхний блок: треть полосы содержимого — картинка показывает начало
+        # ответа, полный текст идёт ниже.
+        block_h = min(2_000_000, (CONTENT_BOTTOM - y) // 3)
+        img_w = int(CONTENT_W * 0.62) if has_sidebar else CONTENT_W
+        side_w = CONTENT_W - img_w - 120000
+        raw = _resolve_image_bytes(visual)
+        if raw:
+            iw, ih = img_w, block_h
+            if Image is not None:
+                try:
+                    with Image.open(io.BytesIO(raw)) as im:
+                        iw, ih = im.size
+                except Exception:  # noqa: BLE001
+                    pass
+            scale = min(img_w / max(iw, 1), (block_h - 60000) / max(ih, 1))
+            dw, dh = int(iw * scale), int(ih * scale)
+            ctx.slide.shapes.add_picture(
+                io.BytesIO(raw), Emu(MARGIN_X), Emu(y + 60000), width=Emu(dw), height=Emu(dh)
+            )
+        if has_sidebar and side_w > 400000:
+            _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, block_h - 60000)
+        y = y + block_h + 60000
+    elif has_sidebar and not continuation:
+        _render_analysis_cards_full_width(ctx, slide, y)
+        return
+    if bullets:
+        # Ответ печатается целиком: бюджет строки — бюджет буллета шаблона
+        # (`itemCharBudget` 1200), а не общий потолок в 900 знаков.
+        ctx.bullets(bullets, y + 40000, max_items=8, max_chars=1400, bottom=CONTENT_BOTTOM)
+
+
 def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) -> None:
     """No-visual layout: headline accent card, two analysis cards side by
     side, an action card and fine-print provenance — the sidebar content

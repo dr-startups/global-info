@@ -281,11 +281,17 @@ function rebuildObservations(input: {
       warnings.push(`topvisor-positions-missing:${region.key}`);
       continue;
     }
+    // Отчёту нужен AI-ответ на само ФИО; без плана (пилот, тесты) — на все.
+    const plan = input.keywords.plan;
+    const answerQueries = plan
+      ? queries.filter((q) => plan[topvisorPlanKey(region.region, q)]?.subjectNameQuery === true)
+      : undefined;
     const ai = aiAnswersFromPositions({
       body: input.positions,
       region,
       regionIndex: index,
       queries,
+      answerQueries,
       provenance,
     });
     observations.push(...ai.observations);
