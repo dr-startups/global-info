@@ -44,6 +44,7 @@ import { createPrismaTopvisorTaskStore, type TopvisorTaskStore } from "../provid
 import { loadCaseSubject } from "../agents/mock/mock-utils";
 import { offlineOrionQueryPlan, SERP_AUDIT_DEPTH, type OfflinePlanSubject } from "./orion-search-profile-service";
 import type { UnifiedCollectionJob } from "./unified-collection-types";
+import type { CoverageCellStatusRow } from "../orion-golden/analytics/composite-dataset-builder";
 
 export const TOPVISOR_ENRICHMENT_STATE_VERSION = "topvisor-enrichment-state-v1" as const;
 
@@ -73,8 +74,11 @@ export type TopvisorEnrichmentState = {
   suggest: Array<{
     key: TopvisorAuditRegion["key"];
     sourceQuery: string;
+    /** `null` после запуска — провайдер подбор для этой поверхности не принял. */
     groupId: number | null;
     ready: boolean;
+    /** Сколько строк дала группа; `0` у готовой группы — измеренная пустота. */
+    rows?: number;
   }>;
   suggestionCount: number;
   errorCode: string | null;
@@ -236,6 +240,8 @@ function rebuildObservations(input: {
   aiAnswerCount: number;
   aiAbsentQueries: string[];
   suggestionCount: number;
+  /** Строки подбора по ключу поверхности; готовая группа без строк — `0`. */
+  suggestionRowsByKey: Record<string, number>;
 } {
   const observations: TopvisorObservation[] = [];
   const warnings: string[] = [];
@@ -288,6 +294,7 @@ function rebuildObservations(input: {
     warnings.push(...ai.warnings.map((w) => `topvisor:${w}`));
   }
   let suggestionCount = 0;
+  const suggestionRowsByKey: Record<string, number> = {};
   for (const planned of input.state.suggest) {
     const region = TOPVISOR_AUDIT_REGIONS.find((r) => r.key === planned.key);
     const body = input.suggestions[planned.key];
@@ -301,6 +308,7 @@ function rebuildObservations(input: {
     });
     observations.push(...built.observations);
     suggestionCount += built.observations.length;
+    suggestionRowsByKey[planned.key] = built.observations.length;
     warnings.push(...built.warnings.map((w) => `topvisor:${w}`));
   }
 
@@ -311,7 +319,71 @@ function rebuildObservations(input: {
     aiAnswerCount,
     aiAbsentQueries: [...aiAbsentQueries],
     suggestionCount,
+    suggestionRowsByKey,
   };
+}
+
+/** Записи подбора со счётом строк: у готовой группы без строк — честный ноль. */
+function suggestWithRows(
+  suggest: TopvisorEnrichmentState["suggest"],
+  rowsByKey: Record<string, number>
+): TopvisorEnrichmentState["suggest"] {
+  return suggest.map((s) => ({ ...s, rows: rowsByKey[s.key] ?? 0 }));
+}
+
+/**
+ * Ячейки покрытия по состоянию Topvisor — тем же каналом, что о выключенных
+ * агентах Arsenkin (`disabledSurfaceCoverageCells`) и о пробе нейро-ответа.
+ *
+ * Отчёт 83, стр. 74: «ОАЭ — подсказки: инструмент сбора не входил в состав
+ * прогона», хотя Topvisor вызывался и вернул ноль строк. Строки наблюдений
+ * рассказывают деке только о собранном; о заданном вопросе с пустым ответом —
+ * только эти ячейки. Читаются лишь завершённые прогоны: у незавершённого
+ * пустота не измерена. Успех ячейкой не записывается — о нём говорят сами
+ * строки, иначе состояние и строки станут двумя ответами на один вопрос.
+ */
+export function topvisorCoverageCells(rawState: unknown): CoverageCellStatusRow[] {
+  const state = rawState as Partial<TopvisorEnrichmentState> | null;
+  if (!state || state.phase !== "DONE") return [];
+  const cells: CoverageCellStatusRow[] = [];
+  for (const region of state.regions ?? []) {
+    if (Number(region.rows ?? 0) > 0) continue;
+    cells.push({
+      region: region.region,
+      engine: region.engine,
+      surface: "organic",
+      status: "NO_RESULTS",
+      provider: "topvisor",
+      errorCode: null,
+    });
+  }
+  for (const planned of state.suggest ?? []) {
+    const region = TOPVISOR_AUDIT_REGIONS.find((r) => r.key === planned.key);
+    if (!region || !planned.ready) continue;
+    if (planned.groupId == null) {
+      // Провайдер подбор не принял (Google по российским регионам): вопрос
+      // задан, ответ — отказ. Это «не поддерживается», а не «не спрашивали».
+      cells.push({
+        region: region.region,
+        engine: region.engine,
+        surface: "suggestions",
+        status: "NOT_COLLECTED",
+        provider: "topvisor",
+        errorCode: "TOPVISOR_NOT_SUPPORTED",
+      });
+      continue;
+    }
+    if (Number(planned.rows ?? 0) > 0) continue;
+    cells.push({
+      region: region.region,
+      engine: region.engine,
+      surface: "suggestions",
+      status: "NO_RESULTS",
+      provider: "topvisor",
+      errorCode: null,
+    });
+  }
+  return cells;
 }
 
 /** Дата текущей/последней проверки проекта из ответа `get/projects_2/projects`. */
@@ -472,9 +544,11 @@ export async function runTopvisorPositionsTick(input: {
     return finish(
       {
         ...doneState,
+        regions: doneState.regions.map((r) => ({ ...r, rows: rebuilt.rowsByRegion[r.key] ?? 0 })),
         observationCount: rebuilt.observations.length,
         aiAnswerCount: rebuilt.aiAnswerCount,
         aiAbsentQueries: rebuilt.aiAbsentQueries,
+        suggest: suggestWithRows(doneState.suggest, rebuilt.suggestionRowsByKey),
         suggestionCount: rebuilt.suggestionCount,
       },
       { observations: rebuilt.observations, warnings: rebuilt.warnings, waiting: false }
@@ -885,6 +959,7 @@ async function settleSuggestions(input: {
     state: {
       ...doneState,
       regions: doneState.regions.map((r) => ({ ...r, rows: rebuilt.rowsByRegion[r.key] ?? 0 })),
+      suggest: suggestWithRows(doneState.suggest, rebuilt.suggestionRowsByKey),
       observationCount: rebuilt.observations.length,
       aiAnswerCount: rebuilt.aiAnswerCount,
       aiAbsentQueries: rebuilt.aiAbsentQueries,

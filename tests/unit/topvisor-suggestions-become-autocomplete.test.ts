@@ -148,6 +148,12 @@ describe("подбор подсказок в тике", () => {
     const suggestions = done.observations.filter((o) => o.surface === "autocomplete");
     expect(suggestions.length).toBeGreaterThan(0);
     expect(done.state.suggestionCount).toBe(suggestions.length);
+    // Счёт строк живёт и в записи подбора: по нему ячейка покрытия отличает
+    // «группа готова, строк ноль» от «строки есть».
+    expect(done.state.suggest.reduce((n, s) => n + (s.rows ?? 0), 0)).toBe(suggestions.length);
+    expect(done.state.suggest.find((s) => s.key === "yandex-moscow")?.rows).toBe(
+      suggestions.filter((o) => o.engine === "YANDEX").length
+    );
     // Подсказки идут в отчёт вместе с выдачей и AI-ответами.
     expect(new Set(done.observations.map((o) => o.surface))).toEqual(
       new Set(["organic", "ai_answer", "autocomplete"])

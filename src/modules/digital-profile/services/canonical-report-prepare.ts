@@ -70,6 +70,7 @@ import {
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 import type { ReportDataBinding } from "./unified-collection-types";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import { topvisorCoverageCells } from "./topvisor-positions-tick";
 import { disabledSurfaceCoverageCells } from "./arsenkin-enrichment-state";
 import { genAnswerCoverageCells } from "./base-collection-manifest";
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
@@ -1345,6 +1346,12 @@ export async function runCanonicalReportPrepare(
       })),
       ...disabledSurfaceCoverageCells(
         readJsonSafe(join(input.artifactsDir, "arsenkin-enrichment-state.json"))
+      ),
+      // Topvisor: заданные вопросы с пустым ответом и отказы провайдера — тем
+      // же каналом; без них пустая страница подсказок ОАЭ говорила «инструмент
+      // не входил в состав прогона» про вызванный инструмент.
+      ...topvisorCoverageCells(
+        readJsonSafe(join(input.artifactsDir, "topvisor-enrichment-state.json"))
       ),
       // Исход пробы нейро-ответа — тем же каналом. Успех отсюда не читается:
       // иначе манифест и строки наблюдений станут двумя ответами на один

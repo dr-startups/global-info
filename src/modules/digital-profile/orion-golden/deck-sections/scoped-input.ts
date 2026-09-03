@@ -648,6 +648,9 @@ function clientNotCollectedLabel(errorCode?: string | null): string {
   const code = String(errorCode ?? "");
   if (/NOT_CONFIGURED/i.test(code)) return "провайдер не настроен";
   if (/DISABLED/i.test(code)) return "инструмент сбора не входил в состав прогона";
+  // Вопрос задан, провайдер отказал (Topvisor не собирает подсказки Google по
+  // российским регионам): это не «не спрашивали».
+  if (/NOT_SUPPORTED/i.test(code)) return "провайдер не собирает эту поверхность для региона";
   return "поверхность не собиралась в этом прогоне";
 }
 

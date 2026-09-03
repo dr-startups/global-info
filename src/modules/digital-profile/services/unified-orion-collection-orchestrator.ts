@@ -1283,6 +1283,11 @@ async function stepArsenkin(
       : enrichmentRunIds;
 
   await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
+  // Состояние Topvisor — тем же артефактом, что и Arsenkin: по нему подготовка
+  // отчёта пишет ячейки покрытия о заданных вопросах с пустым ответом.
+  if (topvisorState) {
+    await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "topvisor-enrichment-state.json", topvisorState);
+  }
   // Keep job-scoped enrichment state even when failing closed (UI + exact resume).
   job =
     await patchUnifiedCollectionJob(job.caseId, {
