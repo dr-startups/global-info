@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:5964eb3c805f61f21ab098e105ee37b7f5269389693b64ae8db0766433bcc288",
-  "contentVersion": "deck-sections-v158",
+  "contentHash": "sha256:4a3639b5029afe4273ae19fc4947c8715ec60ccf17c9f91d184375783c57d434",
+  "contentVersion": "deck-sections-v160",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -100,7 +100,7 @@
     "inventory:ss-cmrebadwv00jimm0fq4orts40"
   ],
   "fragmentKey": "UAE_IMAGES",
-  "generatedAt": "2026-09-03T20:37:01.741Z",
+  "generatedAt": "2026-09-03T20:58:49.726Z",
   "inputHash": "sha256:7e81c0fc54437dbffa3465673aed7621aa89fb7fb1b34c0ed11e4fc37657f1c3:174de8136e96c7a7",
   "inputs": {
     "evidenceRefs": [
@@ -295,19 +295,19 @@
             "frameTone": "red"
           },
           {
-            "clientReason": "Потенциально негативные публикации — ontheditch.com; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
+            "clientReason": "Потенциально негативные публикации; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
             "frameTone": "red"
           },
           {
-            "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
+            "clientReason": "Криминальные / судебные материалы; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
             "frameTone": "red"
           },
           {
-            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+            "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «PEP: Glinka Sergey Mikhaylovich»; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
             "frameTone": "red"
           },
           {
-            "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
+            "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
             "frameTone": "red"
           }
         ],

@@ -63,14 +63,19 @@ describe("непрочитанная страница называет свой 
     expect(phrase.full).toContain(RUBRIC);
     expect(phrase.full).toContain("emirates-ledger.ae");
     expect(phrase.full).toContain("страница не читалась в этом прогоне");
-    expect(phrase.full).toContain("оценка по заголовку выдачи");
+    expect(phrase.full).toContain("оценка по заголовку и сниппету выдачи");
   });
 
-  it("адрес уцелел в узкой колонке — продолжение строке не нужно", () => {
+  it("адрес уцелел в узкой колонке — уступает цитата слов выдачи, не адрес", () => {
+    // Заголовок фикстуры несёт слово словаря («PEP»), и полная форма получает
+    // цитату слов выдачи (шаг 0053). В узкую колонку она не входит и уступает
+    // первой — как цитата прочитанной страницы; адрес и основание остаются.
     const phrase = highlightPhrase({ row: FIRST, evidence: index([FIRST]) });
     expect(phrase.sidebar).toContain("emirates-ledger.ae/anders-holmstrom-pep-rca-1");
     expect(phrase.sidebarHasLink).toBe(true);
-    expect(phrase.sidebarComplete).toBe(true);
+    expect(phrase.sidebar).toContain("оценка по заголовку и сниппету выдачи");
+    expect(phrase.full).toMatch(/«[^»]*PEP[^»]*»/);
+    expect(phrase.sidebarComplete).toBe(false);
   });
 
   it("длинный адрес узкой колонке не уступает — уступает объяснение", () => {

@@ -65,6 +65,7 @@ import {
 } from "../../analytics/finding-synthesizer";
 import { pluralRu } from "../../../report/i18n/plural-ru";
 import {
+  getAdversePatterns,
   getFindingThemes,
   isAccusingTheme,
   type ThemeDef,
@@ -3619,6 +3620,36 @@ export function clientLink(
  * перевод живёт одной функцией: три места, переводившие причины по-своему,
  * уже расходились в формулировках на соседних страницах.
  */
+/**
+ * Слова выдачи, по которым словарь негатива сработал: окно вокруг первого
+ * попадания, по границам слов, без многоточий (панель их не допускает).
+ * Пусто — словарь на тексте молчит, и цитаты не будет: выдумывать нельзя.
+ */
+export function adverseTriggerFragment(text: string, window = 70): string {
+  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!flat) return "";
+  const dictionary = getAdversePatterns();
+  const re = new RegExp(dictionary.source, dictionary.flags.replace("g", ""));
+  const m = re.exec(flat);
+  if (!m) return "";
+  const half = Math.floor(window / 2);
+  let start = Math.max(0, m.index - half);
+  let end = Math.min(flat.length, m.index + m[0].length + half);
+  if (start > 0) {
+    const sp = flat.lastIndexOf(" ", start);
+    start = sp >= 0 && start - sp < 20 ? sp + 1 : start;
+  }
+  if (end < flat.length) {
+    const sp = flat.indexOf(" ", end);
+    end = sp >= 0 && sp - end < 20 ? sp : end;
+  }
+  return flat
+    .slice(start, end)
+    .replace(/^[^\p{L}\p{N}«"(]+/u, "")
+    .replace(/[^\p{L}\p{N}»")!?.]+$/u, "")
+    .trim();
+}
+
 function readFailureWords(reason: string | undefined): string {
   switch (String(reason ?? "")) {
     case "blocked":
@@ -3775,7 +3806,20 @@ export function highlightPhrase(input: {
     const tail = input.finding
       ? "; материал учтён в находках отчёта"
       : " — требует ручной проверки";
-    const head = `${rubric}${domain ? ` — ${domain}` : ""}; ${why}, оценка по заголовку выдачи${tail}.`;
+    /*
+     * Откуда тема у страницы, которую не открывали: из заголовка и сниппета
+     * выдачи — и слова, по которым словарь её назначил, печатаются. Отчёт 83:
+     * «Криминальные / судебные материалы — dzen.ru; страница не прочитана»
+     * без единого слова о том, почему криминал; в сниппете стояло «возбуждены
+     * уголовные дела» про другого человека, и увидеть это можно было только
+     * в бандле. Фраза — наблюдение, до которого прослеживается тема.
+     */
+    // Заголовок и сниппет — два наблюдения, и окно цитаты не пересекает их
+    // границу: склеенная строка давала «…screening Anders Holmström is…».
+    const trigger =
+      adverseTriggerFragment(String(e?.title ?? "")) || adverseTriggerFragment(String(e?.snippet ?? ""));
+    const basis = `оценка по заголовку и сниппету выдачи${trigger ? `: «${trigger}»` : ""}`;
+    const head = `${rubric}${domain ? ` — ${domain}` : ""}; ${why}, ${basis}${tail}.`;
     /*
      * Адрес называет материал, а рубрика с доменом — нет.
      *
@@ -3813,7 +3857,8 @@ export function highlightPhrase(input: {
      */
     const ladder = [
       head,
-      `${rubric}; ${why}, оценка по заголовку выдачи${tail}.`,
+      `${rubric}; ${why}, ${basis}${tail}.`,
+      `${rubric}; ${why}, оценка по заголовку и сниппету выдачи${tail}.`,
       `${rubric}; ${why}${tail}.`,
       `${rubric}; ${why}.`,
       `${why.charAt(0).toUpperCase()}${why.slice(1)}.`,

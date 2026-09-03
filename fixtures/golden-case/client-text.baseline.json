@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 80,
-  "totalChars": 67146,
+  "totalChars": 67748,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -1268,8 +1268,8 @@
       "baseSlotId": "p10_ru_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — stockholm-kuriren.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1).",
-        "Офшорные структуры — nordmarket-watch.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
+        "PEP / RCA / watchlist-сигналы — stockholm-kuriren.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström flagged during sanctions screening watchlist review»; материал учтён в находках отчёта. (stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanctions-screen-1).",
+        "Офшорные структуры — nordmarket-watch.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «linked to Malta holding structure and offshore beneficial ownership»; материал учтён в находках отчёта. (nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-structu-2)."
       ]
     },
     {
@@ -1281,7 +1281,7 @@
       "template": "orion_golden_prose",
       "bullets": [
         "Отмечено аналитиком — finansbladet.se; тема материала — «Деловой профиль»; материал учтён в находках отчёта.",
-        "Криминальные / судебные материалы — kapitalnytt.se; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5)."
+        "Криминальные / судебные материалы — kapitalnytt.se; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Stockholm court schedules hearing involving Anders»; материал учтён в находках отчёта. (kapitalnytt.se/stockholm-court-schedules-hearing-involving-ande-5)."
       ]
     },
     {
@@ -1974,9 +1974,9 @@
       "baseSlotId": "p27_uae_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1).",
-        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7).",
-        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11)."
+        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening»; материал учтён в находках отчёта. (emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-1).",
+        "PEP / RCA / watchlist-сигналы — emirates-ledger.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Sanctions screening vendor flags Anders Holmström»; материал учтён в находках отчёта. (emirates-ledger.ae/sanctions-screening-vendor-flags-anders-holmstr--7).",
+        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening»; материал учтён в находках отчёта. (abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-11)."
       ]
     },
     {
@@ -1987,8 +1987,8 @@
       "baseSlotId": "p27_uae_serp_visual",
       "template": "orion_golden_prose",
       "bullets": [
-        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17).",
-        "Сигналы PEP / RCA — khaleej-finance-post.ae; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (khaleej-finance-post.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-21)."
+        "PEP / RCA / watchlist-сигналы — abudhabi-capital-news.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Контекст: Sanctions screening vendor flags Anders Holmström»; материал учтён в находках отчёта. (abudhabi-capital-news.ae/sanctions-screening-vendor-flags-anders-holmstr--17).",
+        "Сигналы PEP / RCA — khaleej-finance-post.ae; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «Anders Holmström referenced in UAE PEP/RCA compliance screening» — требует ручной проверки. (khaleej-finance-post.ae/anders-holmstr-m-referenced-in-uae-pep-rca-compl-21)."
       ]
     },
     {

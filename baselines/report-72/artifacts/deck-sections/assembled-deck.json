@@ -2058,11 +2058,11 @@
       "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
       "highlightExplanations": [
         {
-          "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
+          "clientReason": "Криминальные / судебные материалы — x.com; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
           "frameTone": "red"
         },
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/ru/person/8095).",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (rupep.org/ru/person/8095).",
           "frameTone": "red"
         }
       ]
@@ -3346,7 +3346,7 @@
       "statusNote": "Тема подтверждена, уровень внимания — средний; оценка достоверна.",
       "highlightExplanations": [
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «PEP: Glinka Sergey Mikhaylovich»; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
           "frameTone": "red"
         }
       ]
@@ -3478,19 +3478,19 @@
           "frameTone": "red"
         },
         {
-          "clientReason": "Потенциально негативные публикации — ontheditch.com; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
+          "clientReason": "Потенциально негативные публикации; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (ontheditch.com/director-of-gareth-sheridans-company).",
           "frameTone": "red"
         },
         {
-          "clientReason": "Криминальные / судебные материалы — rucriminal.info; страница не читалась в этом прогоне, оценка по заголовку выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
+          "clientReason": "Криминальные / судебные материалы; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи — требует ручной проверки. (rucriminal.info/en/material/evropeyskaya-oboronka-pod-marsh-glinki).",
           "frameTone": "red"
         },
         {
-          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
+          "clientReason": "PEP / RCA / watchlist-сигналы — rupep.org; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи: «PEP: Glinka Sergey Mikhaylovich»; материал учтён в находках отчёта. (rupep.org/en/person/8095).",
           "frameTone": "red"
         },
         {
-          "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
+          "clientReason": "Криминальные / судебные материалы — cybercriminal.com; страница не читалась в этом прогоне, оценка по заголовку и сниппету выдачи; материал учтён в находках отчёта. (cybercriminal.com/threats/sergei-glinka).",
           "frameTone": "red"
         }
       ]

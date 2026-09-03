@@ -79,7 +79,7 @@ describe("узкая колонка не теряет адрес даже на �
       "https://kompromat1.online/articles/364300-byvshij-partner-oligarhov-sergej-glinka-vydelil-sredstva-fondu"
     );
     const phrase = highlightPhrase({ row: mid, evidence: index([mid]) });
-    expect(phrase.sidebar).toContain("оценка по заголовку выдачи");
+    expect(phrase.sidebar).toContain("оценка по заголовку и сниппету выдачи");
     expect(phrase.sidebar).not.toContain(`${RUBRIC} — kompromat1.online;`);
   });
 
