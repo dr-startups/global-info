@@ -86,15 +86,16 @@ export const STRING_DEFAULTS = {
    * запятую, пустая строка — не собирать вовсе.
    *
    * Умолчание описывает работающий продукт: в отчёте три поверхности подсказок
-   * (RU Яндекс, RU Google, ОАЭ Google). **Собираются две:** подсказки Google по
-   * российским регионам Topvisor не отдаёт вовсе — живой прогон 03.09.2026
-   * ответил «Russian regions not available for provider Google to Collect
-   * keywords». Заказывать их значило бы получать отказ на каждом прогоне;
-   * страница «Россия — подсказки Google» в режиме Topvisor остаётся без сбора,
-   * и это названо владельцу. **Цена названа здесь, потому что она и есть
-   * причина настройки:** 0,90 ₽ за исходную фразу на поверхность.
+   * (RU Яндекс, RU Google, ОАЭ Google). **Topvisor собирает одну — Яндекс:**
+   * подсказки Google по российским регионам он не отдаёт вовсе (живой прогон
+   * 03.09.2026: «Russian regions not available for provider Google to Collect
+   * keywords»), а по Дубаю вернул ноль строк. Подсказки Google обеих стран
+   * собирает Arsenkin (`arsenkinSuggestEngines`) — решение владельца 03.09.2026.
+   * Заказывать у Topvisor Google-Дубай значило бы платить за второй источник
+   * того же. **Цена названа здесь, потому что она и есть причина настройки:**
+   * 0,90 ₽ за исходную фразу на поверхность.
    */
-  TOPVISOR_SUGGEST_REGIONS: "yandex-moscow,google-dubai",
+  TOPVISOR_SUGGEST_REGIONS: "yandex-moscow",
 } as const;
 
 export type BooleanSettingName = keyof typeof BOOLEAN_DEFAULTS;

@@ -9,7 +9,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { arsenkinTools } from "@/modules/digital-profile/providers/arsenkin/flags";
+import { arsenkinSuggestEngines, arsenkinTools } from "@/modules/digital-profile/providers/arsenkin/flags";
+import { planArsenkinExactTasks } from "@/modules/digital-profile/orion-golden/classic/plan-arsenkin-exact-tasks";
 import { arsenkinBudgetForStage } from "@/modules/digital-profile/services/arsenkin-ui-orchestration/shared";
 import { retryUnifiedEnrichmentSuggestionsTask } from "@/modules/digital-profile/services/unified-enrichment-targeted-retry";
 
@@ -23,8 +24,29 @@ describe("состав инструментов спрашивается в од
 
     const budget = arsenkinBudgetForStage("FIRST36_STAGE1");
 
-    expect(arsenkinTools()).toEqual(["paa"]);
-    expect(budget.tools).toEqual(["paa"]);
+    // Подсказки Google остаются за Arsenkin и в режиме Topvisor: Topvisor их по
+    // российским регионам не отдаёт, а по Дубаю вернул ноль (решение владельца
+    // 03.09.2026, В4). Подсказки Яндекса — Topvisor.
+    expect(arsenkinTools()).toEqual(["suggest", "paa"]);
+    expect(arsenkinSuggestEngines()).toEqual(["GOOGLE"]);
+    expect(budget.tools).toEqual(["suggest", "paa"]);
+  });
+
+  it("в прежнем режиме подсказки обеих систем — за Arsenkin", () => {
+    vi.stubEnv("SERP_COLLECTION_PROVIDER", "legacy");
+    expect(arsenkinSuggestEngines()).toEqual(["YANDEX", "GOOGLE"]);
+  });
+
+  it("в режиме topvisor план подсказок не содержит Яндекса", () => {
+    const tasks = planArsenkinExactTasks({
+      queriesRu: ["Кремлёв Умар Назарович"],
+      queriesUae: ["Umar Kremlev"],
+      tools: ["suggest"],
+      suggestEngines: ["GOOGLE"],
+    });
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.every((t) => t.tool === "suggest" && t.engine === "GOOGLE")).toBe(true);
+    expect(tasks.map((t) => t.region).sort()).toEqual(["RU", "UAE"]);
   });
 
   it("в прежнем режиме состав стадии прежний", () => {
@@ -34,12 +56,14 @@ describe("состав инструментов спрашивается в од
 
   it("канареечная стадия вне состава ничего не обещает", () => {
     vi.stubEnv("SERP_COLLECTION_PROVIDER", "topvisor");
+    // Канарейка — подсказки Яндекса; в режиме Topvisor их собирает не Arsenkin.
     expect(arsenkinBudgetForStage("SUGGEST_RU_CANARY").tools).toEqual([]);
   });
 });
 
 describe("целевой повтор подсказок Arsenkin", () => {
-  it("в режиме topvisor отказывает и называет причину — до всякой оплаты", async () => {
+  it("без подсказок в составе отказывает и называет причину — до всякой оплаты", async () => {
+    vi.stubEnv("ARSENKIN_TOOLS", "paa");
     vi.stubEnv("SERP_COLLECTION_PROVIDER", "topvisor");
     vi.stubEnv("TOPVISOR_API_KEY", "k");
     vi.stubEnv("TOPVISOR_USER_ID", "100001");

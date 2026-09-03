@@ -30,14 +30,18 @@ afterEach(() => {
 });
 
 describe("состав инструментов и план стадии", () => {
-  it("в режиме topvisor стадия планирует только «люди также спрашивают»", () => {
+  it("в режиме topvisor стадия планирует подсказки Google и «люди также спрашивают»", () => {
     vi.stubEnv("SERP_COLLECTION_PROVIDER", "topvisor");
 
     const plan = buildArsenkinExecutionPlan({ ...base, stage: "FIRST36_STAGE1" });
 
-    expect(plan.tools).toEqual(["paa"]);
-    expect(plan.requests.map((r) => r.tool)).not.toContain("suggest");
+    // Позиции и подсказки Яндекса — Topvisor; подсказки Google Topvisor не
+    // отдаёт, они остаются за Arsenkin (решение владельца 03.09.2026, В4).
+    expect(plan.tools).toEqual(["suggest", "paa"]);
     expect(plan.requests.map((r) => r.tool)).not.toContain("check-top");
+    const suggest = plan.requests.filter((r) => r.tool === "suggest");
+    expect(suggest.length).toBeGreaterThan(0);
+    expect(suggest.every((r) => r.engine === "GOOGLE")).toBe(true);
   });
 
   it("в прежнем режиме состав стадии прежний", () => {

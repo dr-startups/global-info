@@ -31,6 +31,8 @@ export type PlanArsenkinExactTasksInput = {
   queriesRu: string[];
   queriesUae: string[];
   tools: string[];
+  /** Чьи подсказки заказывать инструментом `suggest`; по умолчанию — обеих систем. */
+  suggestEngines?: ReadonlyArray<"YANDEX" | "GOOGLE">;
   urlsEnrichment?: string[];
   aiSerpTargets?: Array<"yandex_ru" | "google_ru" | "google_uae">;
 };
@@ -112,7 +114,10 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
     });
   }
 
-  if (want("suggest")) {
+  const suggestEngines = input.suggestEngines ?? ["YANDEX", "GOOGLE"];
+  const wantSuggest = (engine: "YANDEX" | "GOOGLE") => want("suggest") && suggestEngines.includes(engine);
+
+  if (wantSuggest("YANDEX")) {
     // Yandex suggest: exactly one canonical localized query per ProviderTask.
     const yandexSuggest = buildSuggestRequest({
       queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
@@ -130,6 +135,8 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
       queryCount: 1,
       estimatedLimits: 1,
     });
+  }
+  if (wantSuggest("GOOGLE")) {
     // Google suggest: exactly one Latin query (Cyrillic-only rejected by Arsenkin).
     const googleRuQueries = uaeQueries.length > 0 ? uaeQueries : [];
     if (googleRuQueries.length > 0) {
@@ -155,7 +162,7 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
     }
   }
 
-  if (want("suggest") && uaeQueries.length > 0) {
+  if (wantSuggest("GOOGLE") && uaeQueries.length > 0) {
     const googleUaeSuggest = buildSuggestRequest({
       queries: uaeQueries,
       se: 2,

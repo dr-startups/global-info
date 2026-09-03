@@ -34,7 +34,7 @@ npm run build     # сборка приложения
 | `renderer/orion_golden_render/common.py` | бренд-токены, фон, карточки, колонтитул, портрет обложки |
 | `renderer/orion_golden_render/layout_cleeq.py` | сцена, шкала степени, ряд метрик с ключевой цифрой |
 | `renderer/orion_golden_render/slides.py` | обложка, содержание, разделители, таблицы, страницы-документы |
-| `renderer/orion_golden_render/visual.py` | плитки метрик, боковые панели, таблицы выдачи |
+| `renderer/orion_golden_render/visual.py` | плитки метрик, боковые панели, таблицы выдачи, страница AI-ответов |
 | `renderer/orion_golden_render/executive.py` | резюме, матрица рисков, обзор профиля |
 | `renderer/fonts/` | Inter (SIL OFL) — им и меряют, и рисуют |
 

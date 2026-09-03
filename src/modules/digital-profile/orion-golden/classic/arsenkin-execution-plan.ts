@@ -5,7 +5,7 @@
 
 import { createHash } from "node:crypto";
 import type { ArsenkinToolName } from "../../providers/arsenkin/flags";
-import { arsenkinTools } from "../../providers/arsenkin/flags";
+import { arsenkinSuggestEngines, arsenkinTools } from "../../providers/arsenkin/flags";
 import {
   planArsenkinExactTasks,
   type PlannedExactRequest,
@@ -92,6 +92,9 @@ export function stageHasEnabledTools(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
   const enabled = arsenkinTools(env);
+  // Канарейка — подсказки Яндекса; когда их собирает не Arsenkin, стадии
+  // нечего заказывать, хотя инструмент `suggest` в составе есть (для Google).
+  if (stage === "SUGGEST_RU_CANARY" && !arsenkinSuggestEngines(env).includes("YANDEX")) return false;
   return STAGE_TOOLS[stage].some((t) => enabled.includes(t));
 }
 
@@ -244,6 +247,7 @@ export function buildArsenkinExecutionPlan(
     queriesRu: scoped.queriesRu,
     queriesUae: scoped.queriesUae,
     tools,
+    suggestEngines: arsenkinSuggestEngines(input.env),
     urlsEnrichment: scoped.urlsEnrichment,
     aiSerpTargets: scoped.aiSerpTargets.length ? scoped.aiSerpTargets : undefined,
   });

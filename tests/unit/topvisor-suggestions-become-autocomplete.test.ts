@@ -137,9 +137,10 @@ describe("подбор подсказок в тике", () => {
     // Позиции прочитаны, но прогон ещё не готов: подсказки в работе.
     expect(afterCheck.state.phase).toBe("COLLECTING");
     expect(afterCheck.waiting).toBe(true);
-    // Две поверхности, не три: подсказки Google по российским регионам Topvisor
-    // не отдаёт (живой прогон 03.09.2026), и умолчание их не заказывает.
-    expect(log.filter((e) => e.method === "collect/go")).toHaveLength(2);
+    // Одна поверхность, не три: подсказки Google собирает Arsenkin (по
+    // российским регионам Topvisor их не отдаёт, по Дубаю вернул ноль), и
+    // умолчание заказывает у Topvisor только Яндекс.
+    expect(log.filter((e) => e.method === "collect/go")).toHaveLength(1);
     const collectTask = await taskStore.findByReportRun(topvisorReportRunId("job-1"), "collect");
     expect(collectTask?.state).toBe("RUNNING");
 

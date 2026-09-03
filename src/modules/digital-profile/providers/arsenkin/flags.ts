@@ -91,8 +91,21 @@ export function isArsenkinRequired(env: NodeJS.ProcessEnv = process.env): boolea
  */
 export function arsenkinTools(env: NodeJS.ProcessEnv = process.env): ArsenkinToolName[] {
   const explicit = String(env.ARSENKIN_TOOLS ?? "").trim();
-  if (!explicit && serpCollectionMode(env) === "topvisor") return ["paa"];
+  if (!explicit && serpCollectionMode(env) === "topvisor") return ["suggest", "paa"];
   return parseTools(env.ARSENKIN_TOOLS);
+}
+
+/**
+ * Поисковые системы, чьи подсказки собирает Arsenkin.
+ *
+ * В режиме `topvisor` подсказки Яндекса собирает Topvisor, а подсказки Google
+ * остаются за Arsenkin: по российским регионам Topvisor их не отдаёт вовсе, а
+ * по Дубаю на живом прогоне 03.09.2026 вернул ноль строк. Без этого в отчёте
+ * пустели обе страницы подсказок Google (решение владельца, В4 плана 0053).
+ * Инструмент один, ответ на вопрос «чьи подсказки» — здесь и только здесь.
+ */
+export function arsenkinSuggestEngines(env: NodeJS.ProcessEnv = process.env): Array<"YANDEX" | "GOOGLE"> {
+  return serpCollectionMode(env) === "topvisor" ? ["GOOGLE"] : ["YANDEX", "GOOGLE"];
 }
 
 export function isArsenkinToolEnabled(

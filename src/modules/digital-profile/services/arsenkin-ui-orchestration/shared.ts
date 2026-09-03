@@ -15,7 +15,7 @@ import {
   type CanonicalStageDeps,
   type CanonicalStageResult,
 } from "../../orion-golden/classic/execute-canonical-arsenkin-stage";
-import { arsenkinTools } from "../../providers/arsenkin/flags";
+import { arsenkinTools, arsenkinSuggestEngines } from "../../providers/arsenkin/flags";
 import type { ArsenkinLiveStage } from "../../orion-golden/classic/arsenkin-execution-plan";
 import {
   workflowForStage,
@@ -217,7 +217,10 @@ export function arsenkinBudgetForStage(
   const enabled = arsenkinTools(env) as readonly string[];
   const only = (tools: string[]): string[] => tools.filter((t) => enabled.includes(t));
   if (stage === "SUGGEST_RU_CANARY") {
-    return { maxNewTasks: 2, maxEstimatedLimits: 2, tools: only(["suggest"]) };
+    // Канарейка — подсказки Яндекса; когда их собирает не Arsenkin, стадии
+    // нечего обещать (тот же ответ, что у `stageHasEnabledTools`).
+    const yandexSuggest = arsenkinSuggestEngines(env).includes("YANDEX");
+    return { maxNewTasks: 2, maxEstimatedLimits: 2, tools: yandexSuggest ? only(["suggest"]) : [] };
   }
   if (stage === "FIRST36_STAGE1") {
     return {
