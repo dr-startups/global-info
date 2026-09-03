@@ -13,23 +13,30 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { redactSecrets } from "@/modules/digital-profile/providers/topvisor/redact";
 
-const SECRETS = { apiKey: "4268a9385c407ffd4a0a3ba4b1bcd643", userId: "512963" };
+/*
+ * Значения — вымышленные. Настоящий ключ в этом файле однажды уже побывал:
+ * тест сканировал фикстуры по нему и сам стал местом утечки (коммит
+ * `befdf4c8` на feature/topvisor; ключ подлежит отзыву). Сканирование по
+ * содержимому идёт по секретам из окружения, когда они есть, и по форме
+ * ответа — всегда.
+ */
+const SECRETS = { apiKey: "test-api-key-0123456789abcdef", userId: "100001" };
 
 describe("вычистка секретов Topvisor", () => {
   it("затирает идентификатор аккаунта в имени поля", () => {
-    const cleaned = redactSecrets({ pricesByUsers: { "512963": { price: 0.9 } } }, SECRETS);
+    const cleaned = redactSecrets({ pricesByUsers: { "100001": { price: 0.9 } } }, SECRETS);
 
-    expect(JSON.stringify(cleaned)).not.toContain("512963");
+    expect(JSON.stringify(cleaned)).not.toContain("100001");
     expect(Object.keys(cleaned.pricesByUsers)).toEqual(["***"]);
   });
 
   it("затирает секрет в значении, где бы оно ни лежало", () => {
     const cleaned = redactSecrets(
-      { echo: { headers: ["bearer 4268a9385c407ffd4a0a3ba4b1bcd643"] } },
+      { echo: { headers: ["bearer test-api-key-0123456789abcdef"] } },
       SECRETS
     );
 
-    expect(JSON.stringify(cleaned)).not.toContain("4268a9385c407ffd4a0a3ba4b1bcd643");
+    expect(JSON.stringify(cleaned)).not.toContain("test-api-key-0123456789abcdef");
   });
 
   it("поля с говорящими именами затираются целиком, даже с чужим значением", () => {
@@ -67,11 +74,18 @@ describe("собранные фикстуры", () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
+  // Настоящие секреты — только из окружения машины, где они есть; в репозиторий
+  // они не попадают ни в каком виде. Без них проверяется форма ответа.
+  const live = [process.env.TOPVISOR_API_KEY, process.env.TOPVISOR_USER_ID]
+    .map((v) => String(v ?? "").trim())
+    .filter((v) => v.length >= 6);
+
   it.each(files)("%s не несёт ни ключа, ни идентификатора аккаунта", (file) => {
     const text = readFileSync(join(dir, file), "utf8");
 
-    // Ключ API — по значению: оно уникально и в ответах появляться не должно.
-    expect(text).not.toContain(SECRETS.apiKey);
+    for (const secret of live) expect(text).not.toContain(secret);
+    // Заголовок авторизации не должен встречаться в ответах ни в каком виде.
+    expect(text).not.toMatch(/bearer\s+[0-9a-f]{16,}/i);
     // Идентификатор аккаунта — по месту, где сервис его возвращает именем поля.
     const parsed = JSON.parse(text) as unknown;
     for (const owner of collectPricesByUsers(parsed)) {

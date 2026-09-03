@@ -365,6 +365,8 @@ export async function mergeCompositeSerp(input: {
     clientEvidence?: boolean;
     /** Optional capture time from enrichment rows (§7.2). */
     collectedAt?: string | null;
+    /** Провайдер строки задачи: `arsenkin` по умолчанию, `topvisor-<движок>` у Topvisor. */
+    provider?: string | null;
   }>;
   /** Offline/fixture base rows when prisma unavailable. */
   fixtureBaseRows?: CompositeObservation[];
@@ -647,10 +649,20 @@ export async function mergeCompositeSerp(input: {
   }
 
   let arsenkin = 0;
+  let topvisor = 0;
+  const enrichmentProviders = new Set<string>();
   for (const obs of input.arsenkinObservations ?? []) {
     // Provenance/diagnostic rows (check-h boolean slots) never enter composite/client evidence.
     if (obs.kind === "URL_FETCH_STATUS" || obs.clientEvidence === false) continue;
-    arsenkin += 1;
+    /*
+     * Провайдер строки — из самой строки. Пока он был прибит словом
+     * «arsenkin», строки Topvisor теряли движок в имени, а с ним и право на
+     * номер в таблице выдачи (`rankInOneScale`, `ENGINE_RANK_SOURCE`).
+     */
+    const provider = String(obs.provider ?? "").trim() || "arsenkin";
+    if (/^topvisor/i.test(provider)) topvisor += 1;
+    else arsenkin += 1;
+    enrichmentProviders.add(provider);
     const kindRaw = obs.kind ?? (obs.question ? "paa" : obs.suggestion ? "suggestion" : "organic");
     const kind: CompositeObservation["kind"] =
       kindRaw === "suggestion" || kindRaw === "paa" || kindRaw === "organic" || kindRaw === "other"
@@ -695,14 +707,14 @@ export async function mergeCompositeSerp(input: {
         suggestion: obs.suggestion,
         question: obs.question,
         rank: typeof obs.rank === "number" && obs.rank > 0 ? obs.rank : undefined,
-        providers: ["arsenkin"],
-        primaryProvider: "arsenkin",
+        providers: [provider],
+        primaryProvider: provider,
         evidenceRefs: obs.providerTaskId ? [`providerTask:${obs.providerTaskId}`] : [],
         arsenkinTaskId: obs.providerTaskId ?? null,
         riskLabel: obs.riskLabel,
         collectedAt: obs.collectedAt ? String(obs.collectedAt) : undefined,
       },
-      "arsenkin"
+      provider
     );
   }
 
@@ -730,6 +742,7 @@ export async function mergeCompositeSerp(input: {
       yandex,
       serper,
       arsenkin,
+      topvisor,
       composite: observations.length,
     },
     baseCount,
@@ -743,9 +756,17 @@ export async function mergeCompositeSerp(input: {
             .map((p) => p.providerId)
         )
       ),
-      enrichmentProviders: (input.enrichmentRunIds?.length ?? 0) > 0 || (input.arsenkinObservations?.length ?? 0) > 0
-        ? ["arsenkin"]
-        : [],
+      // Провайдеры обогащения — те, чьи строки действительно пришли; прогон с
+      // зарегистрированными, но пустыми задачами Arsenkin по-прежнему называет
+      // его — так было и раньше.
+      enrichmentProviders: [
+        ...new Set([
+          ...((input.enrichmentRunIds ?? []).some((id) => !/^topvisor-/i.test(id)) || arsenkin > 0
+            ? ["arsenkin"]
+            : []),
+          ...enrichmentProviders,
+        ]),
+      ],
       baseSearchResultIds: [...input.manifest.searchResultIds],
       baseSearchSurfaceItemIds: [...input.manifest.searchSurfaceItemIds],
       enrichmentRunIds: input.enrichmentRunIds ?? [],

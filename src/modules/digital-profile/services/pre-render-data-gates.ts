@@ -5,6 +5,7 @@
 import type { BaseCollectionManifest, ReportDataBinding } from "./unified-collection-types";
 import type { CompositeMergeResult } from "./composite-serp-merge";
 import type { ArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
+import type { TopvisorEnrichmentState } from "./topvisor-positions-tick";
 import { assertEnrichmentReadyForComposite } from "./arsenkin-enrichment-state";
 import {
   assertBaseObservationCoverage,
@@ -24,6 +25,13 @@ export function assertPreRenderDataGates(input: {
   manifest: BaseCollectionManifest | null;
   merge: CompositeMergeResult | null;
   enrichmentState: ArsenkinEnrichmentState | null;
+  /**
+   * Состояние Topvisor судится по данным прогона, а не по режиму машины: есть
+   * состояние — выдачу собирал Topvisor, и без его строк таблицы вышли бы
+   * пустыми при зелёном прогоне. Пересборка старого прогона в другом режиме
+   * на это не влияет.
+   */
+  topvisorState?: TopvisorEnrichmentState | null;
   realCollectionSufficient: boolean;
   /** Провайдеры, подменённые демо-данными, — для внятного сообщения. */
   mockProviders?: string[];
@@ -72,6 +80,19 @@ export function assertPreRenderDataGates(input: {
   } else {
     const enr = assertEnrichmentReadyForComposite(input.enrichmentState);
     if (!enr.ok) errors.push(...enr.errors.map((e) => `enrichment: ${e}`));
+  }
+
+  if (input.topvisorState) {
+    if (input.topvisorState.phase !== "DONE") {
+      errors.push(`topvisor: проверка позиций не завершена (${input.topvisorState.phase})`);
+    } else {
+      const topvisorRows = (input.merge?.observations ?? []).filter((o) =>
+        o.providers.some((p) => /^topvisor-/i.test(p))
+      ).length;
+      if (topvisorRows === 0) {
+        errors.push("topvisor: выдачу собирал Topvisor, но ни одной его строки в слиянии нет (rows=0)");
+      }
+    }
   }
 
   let coverage: BaseObservationCoverage | null = null;

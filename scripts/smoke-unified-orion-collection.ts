@@ -36,6 +36,9 @@ import { ARSENKIN_REAL_AGENT_NAMES } from "../src/modules/digital-profile/agents
 import type { FullAuditResultDTO } from "../src/modules/digital-profile/services/agent-run-service";
 import type { BaseCollectionManifest } from "../src/modules/digital-profile/services/unified-collection-types";
 import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "../src/modules/digital-profile/services/unified-collection-types";
+import type { CompositeMergeResult } from "../src/modules/digital-profile/services/composite-serp-merge";
+import { createMemoryTopvisorTaskStore } from "../src/modules/digital-profile/providers/topvisor/task-store";
+import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../tests/support/topvisor-fixture-call";
 
 process.env.NETWORK_CALLS = "0";
 
@@ -82,6 +85,36 @@ function mockFullAuditReal(): FullAuditResultDTO {
       selectedOrder: [],
       fallbackPolicy: "allow_mock_fallback",
       realProvidersAvailable: 3,
+      mockProvidersAvailable: 0,
+      fallbackEvents: [],
+      warnings: [],
+      decisions: [],
+    },
+  };
+}
+
+/** Итог базового сбора в режиме `topvisor`: агенты выдачи выключены составом, профиль собран. */
+function mockFullAuditTopvisorMode(): FullAuditResultDTO {
+  return {
+    outcome: "SUCCESS",
+    runs: [],
+    runSummary: [
+      { providerId: "yandex", phase: "collection", status: "skipped", runtime: "none", reason: "collected by Topvisor" },
+      { providerId: "google", phase: "collection", status: "skipped", runtime: "none", reason: "collected by Topvisor" },
+      {
+        providerId: "orion_profile",
+        phase: "collection",
+        status: "completed",
+        runtime: "real",
+        agentName: "REAL_ORION_SEARCH_PROFILE",
+        reason: "ok",
+      },
+    ],
+    runtimeStrategy: {
+      mode: "real_first_with_fallback",
+      selectedOrder: [],
+      fallbackPolicy: "allow_mock_fallback",
+      realProvidersAvailable: 1,
       mockProvidersAvailable: 0,
       fallbackEvents: [],
       warnings: [],
@@ -536,6 +569,100 @@ describe("unified orion arsenkin collection", () => {
     });
     assert.equal(started.created, true);
     await deleteUnifiedCollectionJobForTests(caseId);
+  });
+
+  it("режим topvisor: обе позиционные таблицы собираются из снимков Topvisor, базовые агенты выдачи выключены", async () => {
+    /*
+     * Критерий готовности T1b (план 0052): офлайн-прогон на фикстурах пилота
+     * собирает позиционные таблицы Яндекса и Google из Topvisor, а базовые
+     * провайдеры органики не зовутся. Здесь итог базового сбора объявляет их
+     * выключенными составом — как делает стратегия в режиме `topvisor`
+     * (закреплено тестом «один переключатель»), — а слияние получает строки
+     * Topvisor через тот же артефакт обогащения, что и строки Arsenkin.
+     */
+    const caseId = "unified-smoke-topvisor";
+    await deleteUnifiedCollectionJobForTests(caseId);
+    const previousEnv = {
+      SERP_COLLECTION_PROVIDER: process.env.SERP_COLLECTION_PROVIDER,
+      TOPVISOR_API_KEY: process.env.TOPVISOR_API_KEY,
+      TOPVISOR_USER_ID: process.env.TOPVISOR_USER_ID,
+    };
+    process.env.SERP_COLLECTION_PROVIDER = "topvisor";
+    process.env.TOPVISOR_API_KEY = "smoke-key";
+    process.env.TOPVISOR_USER_ID = "100001";
+    try {
+      const { call, log } = createTopvisorFixtureCall({ projectExists: true, checkPollsUntilDone: 1 });
+      let capturedMerge: CompositeMergeResult | null = null;
+      const deps = {
+        autoSchedule: false as const,
+        allowMockReport: false,
+        // Базовые строки здесь — поверхности Serper, которые Topvisor не заменяет.
+        fixtureBaseRows,
+        runFullAudit: async () => mockFullAuditTopvisorMode(),
+        runArsenkinEnrichment: async () => ({
+          arsenkinReportRunId: "arsenkin-enrich-tv-1",
+          enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `arsenkin-enrich-tv-${i + 1}`),
+          observations: [],
+          warnings: [],
+          partial: false,
+          enrichmentComplete: true,
+        }),
+        topvisorCall: call,
+        topvisorTaskStore: createMemoryTopvisorTaskStore(),
+        topvisorKeywords: PILOT_KEYWORDS,
+        runPrepare: async ({ binding, merge }: { binding: { compositeDatasetId: string }; merge: CompositeMergeResult }) => {
+          capturedMerge = merge;
+          return { prepareDatasetId: binding.compositeDatasetId, pdf: "/tmp/demo.pdf" };
+        },
+      };
+      const started = await startUnifiedOrionCollection({
+        caseId,
+        requestedBy: "smoke",
+        deps: { ...deps, ...personaDecided },
+      });
+      assert.equal(started.created, true);
+      const job = await drainJob(caseId, deps);
+      assert.ok(job);
+      assert.ok(
+        job!.stage === "REPORT_READY" || job!.stage === "COMPLETED_PARTIAL",
+        `stage=${job!.stage} err=${job!.lastErrorCode}:${job!.lastError}`
+      );
+      assert.equal(job!.topvisorEnrichmentState?.phase, "DONE");
+      // Проверка Topvisor запускалась ровно один раз — платный вызов не дублируется.
+      assert.equal(log.filter((e) => e.method === "checker/go").length, 1);
+
+      const merge = capturedMerge as CompositeMergeResult | null;
+      assert.ok(merge, "runPrepare не получил слияние");
+      const rows = merge!.observations.filter((o) => o.providers.some((p) => /^topvisor-/.test(p)));
+      assert.ok(rows.length > 0, "в слиянии нет строк Topvisor");
+      const tables = [...new Set(rows.map((o) => `${o.region}/${o.engine}`))].sort();
+      assert.deepEqual(tables, ["RU/GOOGLE", "RU/YANDEX", "UAE/GOOGLE"]);
+      // Номер каждой строки — Topvisor, и принадлежит своему движку.
+      for (const row of rows) {
+        assert.equal(typeof row.rank, "number", `строка без номера: ${row.url}`);
+        assert.match(String(row.rankSource), /^topvisor-(yandex|google)$/);
+        assert.ok(
+          (row.engine === "YANDEX" && row.rankSource === "topvisor-yandex") ||
+            (row.engine === "GOOGLE" && row.rankSource === "topvisor-google"),
+          `чужой номер: ${row.engine} ← ${row.rankSource}`
+        );
+      }
+      assert.ok((merge!.providerCounts.topvisor ?? 0) >= rows.length);
+      assert.equal(merge!.providerCounts.arsenkin, 0);
+
+      const bindingRaw = readFileSync(
+        join(process.cwd(), "storage", "digital-profile", "unified-orion-collection", caseId, job!.unifiedJobId, "report-data-binding.json"),
+        "utf-8"
+      );
+      const binding = JSON.parse(bindingRaw) as { providerCounts: { topvisor?: number } };
+      assert.ok((binding.providerCounts.topvisor ?? 0) > 0, "привязка не считает строки Topvisor");
+    } finally {
+      for (const [k, v] of Object.entries(previousEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      await deleteUnifiedCollectionJobForTests(caseId);
+    }
   });
 
   it("coverage breakdown exposes measured/noResults/notSupported/failedFinal", () => {

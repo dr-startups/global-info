@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { topvisorCall, TopvisorNotConfiguredError } from "@/modules/digital-profile/providers/topvisor/client";
 import { redactSecrets } from "@/modules/digital-profile/providers/topvisor/redact";
 import { topvisorSecrets, serpCollectionMode } from "@/modules/digital-profile/providers/config";
-import { projectRegionIndex } from "@/modules/digital-profile/providers/topvisor/regions";
+import { projectRegionIndex, TOPVISOR_AUDIT_REGIONS } from "@/modules/digital-profile/providers/topvisor/regions";
 
 const FIXTURES = join(
   process.cwd(),
@@ -141,20 +141,8 @@ async function stepRegions(): Promise<void> {
   });
 }
 
-/**
- * Регионы пилота.
- *
- * Ключи взяты из справочника самого Topvisor (`--step=regions`), а не угаданы:
- * у Яндекса и Google они разные, и «Москва» в обоих — это `213`, тогда как
- * Дубай у Google — `11499`. Глубина: Google `region_depth: 2` — это ТОП-20,
- * ровно та глубина, которую обещает клиенту таблица выдачи; у Яндекса первая
- * ступень уже глубже двадцати.
- */
-const PILOT_REGIONS = [
-  { key: "yandex-moscow", searcher_key: 0, region_key: 213, region_lang: "ru", region_device: 0, region_depth: 1 },
-  { key: "google-moscow", searcher_key: 1, region_key: 213, region_lang: "ru", region_device: 0, region_depth: 2 },
-  { key: "google-dubai", searcher_key: 1, region_key: 11499, region_lang: "en", region_device: 0, region_depth: 2 },
-] as const;
+/** Регионы пилота — те же, что у рабочего пути: один ответ на вопрос «где проверяем». */
+const PILOT_REGIONS = TOPVISOR_AUDIT_REGIONS;
 
 async function stepSetup(): Promise<void> {
   const state = loadState();

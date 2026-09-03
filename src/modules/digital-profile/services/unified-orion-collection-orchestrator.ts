@@ -100,6 +100,15 @@ import {
   runDurableArsenkinEnrichmentTick,
   type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
+import {
+  loadTopvisorKeywordsFromDb,
+  runTopvisorPositionsTick,
+  type TopvisorKeywords,
+  type TopvisorTickResult,
+} from "./topvisor-positions-tick";
+import { serpCollectionMode } from "../providers/config";
+import type { TopvisorCallFn } from "../providers/topvisor/client";
+import type { TopvisorTaskStore } from "../providers/topvisor/task-store";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
 import { isDeterministicPrepareGate, prepareGateFailureMessage } from "./prepare-gate-advice";
 import {
@@ -291,6 +300,14 @@ export type UnifiedOrchestratorDeps = {
   listEnrichmentProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
   /** Offline: poll adapter (never /set). */
   pollEnrichmentTask?: (task: EnrichmentPollTaskSnap) => Promise<EnrichmentPollTaskSnap>;
+  /**
+   * Topvisor (режим `topvisor`): вызов API, хранилище задач и набор запросов —
+   * подставляются офлайн. Набор — значением или загрузчиком: загрузчик и есть
+   * то, что может отказать, и его отказ обязан стать названным отказом шага.
+   */
+  topvisorCall?: TopvisorCallFn;
+  topvisorTaskStore?: TopvisorTaskStore;
+  topvisorKeywords?: TopvisorKeywords | (() => Promise<TopvisorKeywords>);
   /**
    * Arsenkin enrichment tick (may be incomplete). Prefer enrichmentComplete flag.
    * Schedule-only (enrichmentRunIds length 5) is NOT completion.
@@ -1250,6 +1267,21 @@ async function stepArsenkin(
   const enrichmentRunIds = tick.enrichmentRunIds;
   const coverage: SurfaceCoverageBreakdown = surfaceCoverageFromEnrichmentState(state);
 
+  /*
+   * Второй провайдер задач — Topvisor — идёт тем же оборотом, рядом с тиком
+   * Arsenkin, а не внутри него. Решение «звать ли» — по данным прогона: раз
+   * состояние уже есть, проверка продолжается, каким бы ни был режим машины
+   * сейчас; заводится оно только в режиме `topvisor`.
+   */
+  const topvisor = await runTopvisorSubTick(job, deps);
+  const topvisorObservations = topvisor?.observations ?? [];
+  const topvisorState = topvisor?.state ?? job.topvisorEnrichmentState ?? null;
+  const allObservations = [...tick.observations, ...topvisorObservations];
+  const allEnrichmentRunIds =
+    topvisorState?.phase === "DONE" && !enrichmentRunIds.includes(topvisorState.reportRunId)
+      ? [...enrichmentRunIds, topvisorState.reportRunId]
+      : enrichmentRunIds;
+
   await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
   // Keep job-scoped enrichment state even when failing closed (UI + exact resume).
   job =
@@ -1257,7 +1289,17 @@ async function stepArsenkin(
       arsenkinEnrichmentState: state,
       enrichmentRunIds,
       arsenkinReportRunId: tick.arsenkinReportRunId,
+      ...(topvisorState ? { topvisorEnrichmentState: topvisorState } : {}),
     }) ?? job;
+
+  if (topvisor?.blockPipeline) {
+    return await failRetryable(
+      job,
+      topvisor.blockCode ?? "TOPVISOR_ENRICHMENT_FAILED",
+      topvisor.blockMessage ?? "Topvisor positions failed",
+      [...tick.warnings, ...topvisor.warnings, "ARSENKIN_RESULT_INGEST"]
+    );
+  }
 
   if (tick.blockPipeline) {
     return await failRetryable(
@@ -1268,16 +1310,17 @@ async function stepArsenkin(
     );
   }
 
-  if (tick.waiting || !state.enrichmentComplete) {
+  const topvisorWaiting = Boolean(topvisor?.waiting);
+  if (tick.waiting || !state.enrichmentComplete || topvisorWaiting) {
     // Persist partial observations + durable nextPollAt (restart-safe).
     const obsPath = await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "arsenkin-enrichment-observations.json",
       {
-        observations: tick.observations,
+        observations: allObservations,
         arsenkinReportRunId: tick.arsenkinReportRunId,
-        enrichmentRunIds,
+        enrichmentRunIds: allEnrichmentRunIds,
         enrichmentComplete: false,
         state,
         ingestedResultHashes: state.ingestedResultHashes,
@@ -1292,7 +1335,10 @@ async function stepArsenkin(
     // задачи Arsenkin двигаются, ждать можно и нужно (шаг 14).
     const nowDate = deps.now?.() ?? new Date();
     const liveCounts = await countLiveEnrichmentProgress(job.caseId, deps);
-    const currentMark = markEnrichmentProgress(state, liveCounts);
+    const currentMark = markEnrichmentProgress(state, {
+      ...liveCounts,
+      topvisorPercent: topvisorState?.lastPercent ?? null,
+    });
     const budget = decideEnrichmentPoll({
       previous: job.enrichmentProgressMark ?? null,
       current: currentMark,
@@ -1310,9 +1356,15 @@ async function stepArsenkin(
       );
     }
     // Пауза растёт только при простое: продвижение — не повод ждать дольше.
+    // Из двух провайдеров ждём того, кто ответит раньше.
+    const candidates = [tick.nextPollAt, topvisor?.nextPollAt]
+      .filter((x): x is string => Boolean(x))
+      .map((x) => Date.parse(x))
+      .filter((x) => Number.isFinite(x));
     const nextPollAt =
-      tick.nextPollAt ??
-      new Date(nowDate.getTime() + pollBackoffMs(budget.idlePolls)).toISOString();
+      candidates.length > 0
+        ? new Date(Math.min(...candidates)).toISOString()
+        : new Date(nowDate.getTime() + pollBackoffMs(budget.idlePolls)).toISOString();
     return (
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
@@ -1335,8 +1387,9 @@ async function stepArsenkin(
         warnings: [
           ...job.warnings,
           ...tick.warnings,
+          ...(topvisor?.warnings ?? []),
           ...progressDrift,
-          "arsenkin-awaiting-ingest",
+          topvisorWaiting ? "topvisor-awaiting-check" : "arsenkin-awaiting-ingest",
         ],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
         lastError: null,
@@ -1369,9 +1422,9 @@ async function stepArsenkin(
     job.unifiedJobId,
     "arsenkin-enrichment-observations.json",
     {
-      observations: tick.observations,
+      observations: allObservations,
       arsenkinReportRunId: tick.arsenkinReportRunId,
-      enrichmentRunIds,
+      enrichmentRunIds: allEnrichmentRunIds,
       enrichmentComplete: true,
       state,
       ingestedResultHashes: state.ingestedResultHashes,
@@ -1393,6 +1446,7 @@ async function stepArsenkin(
       warnings: [
         ...(invalidationWarnings.length > 0 ? invalidationWarnings : job.warnings),
         ...tick.warnings,
+        ...(topvisor?.warnings ?? []),
       ],
       artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
       ...(priorComposite || priorLinks?.pdf || priorLinks?.pptx
@@ -1403,6 +1457,63 @@ async function stepArsenkin(
         : {}),
     }) ?? job
   );
+}
+
+/**
+ * Под-тик Topvisor внутри шага обогащения.
+ *
+ * `null` — Topvisor в этом прогоне не участвует: режим `legacy` и состояния
+ * нет. Набор запросов берётся из базы (план базового сбора); офлайн его и
+ * хранилище задач подставляют зависимости.
+ */
+async function runTopvisorSubTick(
+  job: UnifiedCollectionJob,
+  deps: UnifiedOrchestratorDeps
+): Promise<TopvisorTickResult | null> {
+  const started = Boolean(job.topvisorEnrichmentState);
+  if (!started && serpCollectionMode() !== "topvisor") return null;
+
+  let prisma: PrismaClient | null = deps.prisma ?? null;
+  if (!prisma && !deps.topvisorTaskStore) {
+    try {
+      prisma = (await import("@/server/prisma/client")).prisma;
+    } catch {
+      prisma = null;
+    }
+  }
+  const unavailable = (message: string): TopvisorTickResult => ({
+    state: job.topvisorEnrichmentState ?? null,
+    observations: [],
+    waiting: false,
+    advanced: false,
+    blockPipeline: true,
+    blockCode: "TOPVISOR_KEYWORDS_UNAVAILABLE",
+    blockMessage: message,
+    warnings: [],
+    nextPollAt: null,
+  }) as TopvisorTickResult;
+  let keywords: TopvisorKeywords;
+  try {
+    const provided = deps.topvisorKeywords;
+    if (typeof provided === "function") keywords = await provided();
+    else if (provided) keywords = provided;
+    else if (prisma) keywords = await loadTopvisorKeywordsFromDb(prisma, job.caseId);
+    else return unavailable("Topvisor: набор запросов недоступен — нет базы и нет подстановки.");
+  } catch (err) {
+    // Сбой чтения — названный отказ шага, который оператор видит и повторяет
+    // кнопкой, а не `UNIFIED_TICK_FAILED` из необработанного исключения.
+    return unavailable(
+      `Topvisor: набор запросов не прочитан — ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  return await runTopvisorPositionsTick({
+    job,
+    keywords,
+    call: deps.topvisorCall,
+    taskStore: deps.topvisorTaskStore,
+    prisma,
+    now: deps.now,
+  });
 }
 
 async function stepComposite(
@@ -1454,6 +1565,14 @@ async function stepComposite(
   const enrichmentComplete =
     Boolean(job.arsenkinEnrichmentState?.enrichmentComplete) ||
     Boolean((enrichment as { enrichmentComplete?: boolean } | null)?.enrichmentComplete);
+  if (job.topvisorEnrichmentState && job.topvisorEnrichmentState.phase !== "DONE") {
+    return await failRetryable(
+      job,
+      "TOPVISOR_ENRICHMENT_INCOMPLETE",
+      `composite refused: Topvisor positions ${job.topvisorEnrichmentState.phase}`,
+      ["ARSENKIN_RESULT_INGEST", "composite-blocked:topvisor-incomplete"]
+    );
+  }
   if (!enrichmentComplete) {
     return await failRetryable(
       job,
@@ -1635,6 +1754,7 @@ async function stepPrepare(
       manifest,
       merge,
       enrichmentState,
+      topvisorState: job.topvisorEnrichmentState ?? null,
       realCollectionSufficient: manifest.realCollectionSufficient,
       mockProviders: assessRealCollection(manifest.actualProviders).mockProviders,
       allowMockReport: deps.allowMockReport,

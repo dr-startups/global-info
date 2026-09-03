@@ -50,6 +50,11 @@ export type EnrichmentProgressMark = {
    */
   doneProviderTasks: number;
   persistedObservations: number;
+  /**
+   * Процент проверки позиций Topvisor. Проверка идёт четыре–шесть минут, и
+   * без этого счёта её ожидание выглядело бы застоем Arsenkin.
+   */
+  topvisorPercent?: number;
 };
 
 export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
@@ -64,7 +69,7 @@ export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
 export function markEnrichmentProgress(
   state: ArsenkinEnrichmentState | null | undefined,
   /** Счёты из базы: они двигаются внутри агента, а сводка — только на границах. */
-  live: { doneProviderTasks?: number; persistedObservations?: number } = {}
+  live: { doneProviderTasks?: number; persistedObservations?: number; topvisorPercent?: number | null } = {}
 ): EnrichmentProgressMark {
   const agents = state?.agents ?? [];
   return {
@@ -74,6 +79,9 @@ export function markEnrichmentProgress(
     observations: Math.max(0, Number(state?.enrichmentObservationCount ?? 0)),
     doneProviderTasks: Math.max(0, Number(live.doneProviderTasks ?? 0)),
     persistedObservations: Math.max(0, Number(live.persistedObservations ?? 0)),
+    // Поле есть только у прогона с Topvisor: отсутствие — сам по себе признак,
+    // и метки прежних прогонов не меняют формы.
+    ...(live.topvisorPercent != null ? { topvisorPercent: Math.max(0, Number(live.topvisorPercent)) } : {}),
   };
 }
 
@@ -97,7 +105,8 @@ export function progressAdvanced(
     current.doneTasks > before.doneTasks ||
     current.observations > before.observations ||
     current.doneProviderTasks > before.doneProviderTasks ||
-    current.persistedObservations > before.persistedObservations
+    current.persistedObservations > before.persistedObservations ||
+    (current.topvisorPercent ?? 0) > (before.topvisorPercent ?? 0)
   );
 }
 

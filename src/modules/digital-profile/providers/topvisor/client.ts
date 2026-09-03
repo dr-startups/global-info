@@ -42,6 +42,47 @@ export type TopvisorCallResult<T = unknown> = {
   errors: string[];
 };
 
+/** Форма вызова — для подстановки в тик и тесты: фикстуры отвечают ею же. */
+export type TopvisorCallFn = <T = unknown>(input: TopvisorCallInput) => Promise<TopvisorCallResult<T>>;
+
+export class TopvisorOfflineError extends Error {
+  constructor(kind: string) {
+    super(`NETWORK_CALLS=0 forbids Topvisor network call: ${kind}`);
+    this.name = "TopvisorOfflineError";
+  }
+}
+
+/*
+ * Предел аккаунта — пять одновременных обращений — держится здесь, а не
+ * доверяется вызывающим: шестое ждёт своей очереди, а не получает отказ
+ * сервиса, который пришлось бы отличать от настоящей ошибки.
+ */
+let activeCalls = 0;
+const waitingCalls: Array<() => void> = [];
+
+function acquireSlot(): Promise<() => void> {
+  return new Promise((resolve) => {
+    const grant = () => {
+      activeCalls += 1;
+      let released = false;
+      resolve(() => {
+        if (released) return;
+        released = true;
+        activeCalls -= 1;
+        const next = waitingCalls.shift();
+        if (next) next();
+      });
+    };
+    if (activeCalls < TOPVISOR_MAX_CONCURRENT) grant();
+    else waitingCalls.push(grant);
+  });
+}
+
+/** Сколько обращений идёт и сколько ждёт — для теста предела. */
+export function topvisorConcurrencySnapshot(): { active: number; waiting: number } {
+  return { active: activeCalls, waiting: waitingCalls.length };
+}
+
 export class TopvisorNotConfiguredError extends Error {
   constructor(missing: string[]) {
     super(`Topvisor не настроен: нет ${missing.join(", ")}.`);
@@ -68,7 +109,7 @@ export async function topvisorCall<T = unknown>(
   input: TopvisorCallInput,
   deps: {
     fetchImpl?: typeof fetch;
-    env?: NodeJS.ProcessEnv;
+    env?: Record<string, string | undefined>;
   } = {}
 ): Promise<TopvisorCallResult<T>> {
   const env = deps.env ?? process.env;
@@ -81,9 +122,17 @@ export async function topvisorCall<T = unknown>(
   const url = [TOPVISOR_BASE, input.action, input.service, input.method]
     .filter((part) => String(part ?? "").length > 0)
     .join("/");
+  const kind = `topvisor:${input.action}/${input.service}${input.method ? `/${input.method}` : ""}`;
 
-  noteProviderNetworkCall(`topvisor:${input.action}/${input.service}${input.method ? `/${input.method}` : ""}`, env);
+  // Офлайн-контур обязан обходиться без сети: без подставленного транспорта
+  // при `NETWORK_CALLS=0` отказ наступает здесь, до `fetch`, а не в сети.
+  if (String(env.NETWORK_CALLS ?? "") === "0" && !deps.fetchImpl) {
+    throw new TopvisorOfflineError(kind);
+  }
 
+  noteProviderNetworkCall(kind, env as NodeJS.ProcessEnv);
+
+  const release = await acquireSlot();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 60_000);
   try {
@@ -113,5 +162,6 @@ export async function topvisorCall<T = unknown>(
     };
   } finally {
     clearTimeout(timer);
+    release();
   }
 }

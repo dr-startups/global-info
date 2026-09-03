@@ -132,6 +132,8 @@ export type ReportDataBinding = {
     yandex: number;
     serper: number;
     arsenkin: number;
+    /** Строки Topvisor (`topvisor-yandex`/`topvisor-google`); нет на прогонах до T1b. */
+    topvisor?: number;
     composite: number;
   };
   generatedAt: string;
@@ -228,6 +230,12 @@ export type UnifiedCollectionJob = {
     | null;
   /** Persisted Arsenkin enrichment state contract (not schedule-only). */
   arsenkinEnrichmentState?: import("./arsenkin-enrichment-state").ArsenkinEnrichmentState | null;
+  /**
+   * Состояние сбора выдачи через Topvisor (режим `topvisor`). Отсутствует на
+   * прогонах прежнего режима — и это сам по себе признак: есть состояние,
+   * значит выдачу собирал Topvisor, и без его строк отчёт не рисуется.
+   */
+  topvisorEnrichmentState?: import("./topvisor-positions-tick").TopvisorEnrichmentState | null;
   /**
    * Durable poll cadence for WAITING / ARSENKIN_RESULT_INGEST.
    * Survives process restart; startup resume honors nextPollAt.
