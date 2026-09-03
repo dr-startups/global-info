@@ -351,6 +351,9 @@ async function buildSerpSnapshotAsset(input: {
   return true;
 }
 
+/** Сколько строк вмещает панель поверхности (`buildSurfacePanelSvg`). */
+const PANEL_ROW_LIMIT = 10;
+
 async function buildListPanelAsset(input: {
   assetRef: string;
   kind: "surface_panel";
@@ -376,16 +379,28 @@ async function buildListPanelAsset(input: {
   ) {
     throw new Error(`injected-visual-failure:${input.assetRef}`);
   }
-  const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
-  if (rows.length === 0) return false;
+  const titled = input.rows.filter((r) => String(r.title ?? "").trim());
+  if (titled.length === 0) return false;
   // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
-  const drawn = rows.map((r) =>
+  const decided = titled.map((r) =>
     panelRowWithOwnership({
       item: toVisibleItem(r, input.verdictByRef),
       decision: input.subjectDecisionByRef?.[refOf(r)],
       meta: input.rowMeta?.(r),
     })
   );
+  /*
+   * Негативные строки — первыми, остальные в порядке сбора. Панель вмещает
+   * десять строк, а негатив в наборе может стоять двенадцатым: на живом
+   * прогоне заголовок страницы говорил «1 негативная формулировка», а панель
+   * рисовала десять нейтральных, и клиент негатива не видел. Решает
+   * итоговая рамка (после принадлежности), а не сырой словарь: строка о
+   * другом лице вперёд не идёт.
+   */
+  const drawn = [
+    ...decided.filter((d) => d.visible.adverse === true),
+    ...decided.filter((d) => d.visible.adverse !== true),
+  ].slice(0, PANEL_ROW_LIMIT);
   const visibleItems = drawn.map((d) => d.visible);
   const png = await svgToPngBase64(
     buildSurfacePanelSvg({

@@ -564,7 +564,10 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       // наращиваются («прокур» → «прокуратура»), английские — нет. Правая
       // граница у семейства «суд» всё-таки есть, и почему — в
       // `COURT_WORD_FORMS`.
-      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|" +
+      // «криминал» — русское слово, и латинское `criminal` его не ловит: в
+      // подсказках Яндекса «кремлев … криминал» шла нейтральной строкой рядом
+      // с красной «судимости» (решение владельца 03.09.2026).
+      "санкц|sanction|watch.?list|уголов|criminal|криминал|арест|arrest|court(?!s)|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|" +
       FSB_ABBREVIATION +
       "|" +
       COURT_WORD_FORMS +
