@@ -14,8 +14,16 @@ RUN apt-get update \
         libreoffice-writer \
         fonts-dejavu \
         fonts-liberation \
+        fonts-noto-cjk \
         curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Иероглифы в выдаче — реальные строки Google (zh.wikipedia.org в ТОП-20 по
+# Дубаю, отчёт 83 кейса DPA-2026-0050). Без шрифта с CJK-глифами LibreOffice
+# печатает квадраты, и таблица молча теряет заголовки. Сборка образа сама
+# проверяет, что шрифт на месте: локальный контур этого не видит — на машине
+# разработчика свои шрифты.
+RUN fc-list :lang=zh | grep -q . && fc-list :lang=ja | grep -q .
 
 WORKDIR /app
 
