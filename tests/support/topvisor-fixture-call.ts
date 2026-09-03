@@ -92,6 +92,7 @@ export function createTopvisorFixtureCall(options: FixtureCallOptions = {}): {
     if (key === "edit/positions_2/checker/go") {
       return options.failCheckerGo ? fail("Ошибка сервиса при запуске проверки") : ok(loadTopvisorFixture("check-go"));
     }
+    if (key === "get/positions_2/history") return ok(loadTopvisorFixture("read-positions-correct"));
     if (key === "get/snapshots_2/history") {
       const searcher = Number(payload.searcher_key);
       const region = Number(payload.region_key);

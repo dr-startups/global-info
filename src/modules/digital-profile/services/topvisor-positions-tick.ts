@@ -22,11 +22,13 @@ import { topvisorCall, type TopvisorCallFn } from "../providers/topvisor/client"
 import {
   checkStatusPayload,
   positionsCheckPayload,
+  positionsHistoryPayload,
   readCheckPercent,
   snapshotHistoryPayload,
   snapshotToObservations,
   type TopvisorObservation,
 } from "../providers/topvisor/adapters/positions";
+import { aiAnswersFromPositions } from "../providers/topvisor/adapters/ai-answers";
 import { ensureTopvisorProject, TopvisorProjectError } from "../providers/topvisor/project";
 import { TOPVISOR_AUDIT_REGIONS, type TopvisorAuditRegion } from "../providers/topvisor/regions";
 import { createPrismaTopvisorTaskStore, type TopvisorTaskStore } from "../providers/topvisor/task-store";
@@ -48,6 +50,10 @@ export type TopvisorEnrichmentState = {
   keywords: number;
   lastPercent: number | null;
   observationCount: number;
+  /** Сколько AI-ответов (тел, не ссылок) собрано; `0` — ответов не было. */
+  aiAnswerCount: number;
+  /** Запросы, у которых AI-ответа не оказалось: пустота названа, а не молчит. */
+  aiAbsentQueries: string[];
   errorCode: string | null;
   errorMessage: string | null;
   updatedAt: string;
@@ -90,6 +96,8 @@ function emptyState(job: UnifiedCollectionJob, now: Date): TopvisorEnrichmentSta
     keywords: 0,
     lastPercent: null,
     observationCount: 0,
+    aiAnswerCount: 0,
+    aiAbsentQueries: [],
     errorCode: null,
     errorMessage: null,
     updatedAt: now.toISOString(),
@@ -117,16 +125,39 @@ function regionQueries(region: TopvisorAuditRegion, keywords: TopvisorKeywords):
   return region.region === "RU" ? keywords.ru : keywords.uae;
 }
 
+/**
+ * Наблюдения из сохранённых ответов — выдача из снимков, AI-ответы из истории
+ * позиций. Пересобираются на каждом обороте после `DONE`: пока Arsenkin ещё
+ * ждёт, строки Topvisor обязаны доехать до итогового артефакта, и держать их в
+ * памяти тика нельзя.
+ */
 function rebuildObservations(input: {
   state: TopvisorEnrichmentState;
   snapshots: Record<string, unknown>;
+  positions: unknown;
   keywords: TopvisorKeywords;
   caseId: string;
   unifiedJobId: string;
-}): { observations: TopvisorObservation[]; warnings: string[]; rowsByRegion: Record<string, number> } {
+}): {
+  observations: TopvisorObservation[];
+  warnings: string[];
+  rowsByRegion: Record<string, number>;
+  aiAnswerCount: number;
+  aiAbsentQueries: string[];
+} {
   const observations: TopvisorObservation[] = [];
   const warnings: string[] = [];
   const rowsByRegion: Record<string, number> = {};
+  const provenance = {
+    caseId: input.caseId,
+    unifiedJobId: input.unifiedJobId,
+    enrichmentRunId: input.state.reportRunId,
+    providerTaskId: input.state.providerTaskId,
+    externalTaskId: input.state.externalTaskId,
+  };
+  let aiAnswerCount = 0;
+  const aiAbsentQueries = new Set<string>();
+
   for (const region of TOPVISOR_AUDIT_REGIONS) {
     const index = input.state.regions.find((r) => r.key === region.key)?.index;
     const body = input.snapshots[region.key];
@@ -134,25 +165,42 @@ function rebuildObservations(input: {
       warnings.push(`topvisor-snapshot-missing:${region.key}`);
       continue;
     }
+    const queries = regionQueries(region, input.keywords);
     const built = snapshotToObservations({
       body,
       region,
       regionIndex: index,
-      queries: regionQueries(region, input.keywords),
+      queries,
       depth: SERP_AUDIT_DEPTH,
-      provenance: {
-        caseId: input.caseId,
-        unifiedJobId: input.unifiedJobId,
-        enrichmentRunId: input.state.reportRunId,
-        providerTaskId: input.state.providerTaskId,
-        externalTaskId: input.state.externalTaskId,
-      },
+      provenance,
     });
     observations.push(...built.observations);
     rowsByRegion[region.key] = built.observations.length;
     warnings.push(...built.warnings.map((w) => `topvisor:${w}`));
+
+    if (input.positions == null) {
+      warnings.push(`topvisor-positions-missing:${region.key}`);
+      continue;
+    }
+    const ai = aiAnswersFromPositions({
+      body: input.positions,
+      region,
+      regionIndex: index,
+      queries,
+      provenance,
+    });
+    observations.push(...ai.observations);
+    aiAnswerCount += ai.observations.filter((o) => !o.url).length;
+    for (const q of ai.absentQueries) aiAbsentQueries.add(`${region.key}:${q}`);
+    warnings.push(...ai.warnings.map((w) => `topvisor:${w}`));
   }
-  return { observations, warnings, rowsByRegion };
+  return {
+    observations,
+    warnings,
+    rowsByRegion,
+    aiAnswerCount,
+    aiAbsentQueries: [...aiAbsentQueries],
+  };
 }
 
 /** Дата текущей/последней проверки проекта из ответа `get/projects_2/projects`. */
@@ -272,16 +320,21 @@ export async function runTopvisorPositionsTick(input: {
   // --- Снимки на месте: наблюдения пересобираются из сохранённого снимка. ---
   if (liveTask?.state === "DONE") {
     const doneState: TopvisorEnrichmentState = { ...resumed, phase: "DONE", lastPercent: 100 };
-    const snapshots = (liveTask.responseJson?.snapshots ?? {}) as Record<string, unknown>;
     const rebuilt = rebuildObservations({
       state: doneState,
-      snapshots,
+      snapshots: (liveTask.responseJson?.snapshots ?? {}) as Record<string, unknown>,
+      positions: liveTask.responseJson?.positions ?? null,
       keywords: input.keywords,
       caseId: job.caseId,
       unifiedJobId: job.unifiedJobId,
     });
     return finish(
-      { ...doneState, observationCount: rebuilt.observations.length },
+      {
+        ...doneState,
+        observationCount: rebuilt.observations.length,
+        aiAnswerCount: rebuilt.aiAnswerCount,
+        aiAbsentQueries: rebuilt.aiAbsentQueries,
+      },
       { observations: rebuilt.observations, warnings: rebuilt.warnings, waiting: false }
     );
   }
@@ -405,10 +458,35 @@ export async function runTopvisorPositionsTick(input: {
     snapshots[region.key] = res.body;
   }
 
+  /*
+   * Второе чтение того же прогона: выдача лежит в снимках, AI-ответ — в
+   * признаках выдачи истории позиций. Одним вызовом не обойтись, и оба чтения
+   * идут одним оборотом: иначе AI-ответы доехали бы лишь на следующем, а
+   * прогон уже ушёл бы к слиянию.
+   */
+  const positionsRead = await call({
+    action: "get",
+    service: "positions_2",
+    method: "history",
+    payload: positionsHistoryPayload(
+      projectId,
+      checking.regions.map((r) => r.index),
+      checking.checkDate
+    ),
+  });
+  if (!positionsRead.ok) {
+    return fail(
+      checking,
+      "TOPVISOR_POSITIONS_READ_FAILED",
+      `Topvisor: история позиций не прочитана — ${positionsRead.errors.join("; ")}`
+    );
+  }
+
   const doneState: TopvisorEnrichmentState = { ...checking, phase: "DONE", lastPercent: 100 };
   const rebuilt = rebuildObservations({
     state: doneState,
     snapshots,
+    positions: positionsRead.body,
     keywords: input.keywords,
     caseId: job.caseId,
     unifiedJobId: job.unifiedJobId,
@@ -416,13 +494,20 @@ export async function runTopvisorPositionsTick(input: {
   await taskStore.update(liveTask.id, {
     state: "DONE",
     completedAt: now,
-    responseJson: { status: status.body, snapshots, observationCount: rebuilt.observations.length },
+    responseJson: {
+      status: status.body,
+      snapshots,
+      positions: positionsRead.body,
+      observationCount: rebuilt.observations.length,
+    },
   });
   return finish(
     {
       ...doneState,
       regions: doneState.regions.map((r) => ({ ...r, rows: rebuilt.rowsByRegion[r.key] ?? 0 })),
       observationCount: rebuilt.observations.length,
+      aiAnswerCount: rebuilt.aiAnswerCount,
+      aiAbsentQueries: rebuilt.aiAbsentQueries,
     },
     { observations: rebuilt.observations, warnings: rebuilt.warnings, waiting: false, advanced: true }
   );

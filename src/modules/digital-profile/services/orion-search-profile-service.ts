@@ -120,17 +120,27 @@ function yandexReady(): boolean {
 /**
  * Идёт ли поверхность Serper в отчёт при этом режиме сбора.
  *
- * Подсказки в режиме `topvisor` собирает Topvisor, и вторым источником Serper
- * быть не может — решение владельца 03.09.2026: два источника одного и того же
- * дают клиенту два ответа на один вопрос и оплачиваются дважды. Остальные
- * поверхности (картинки, видео, связанные, панель знаний) Topvisor не
- * заменяет, и они собираются как прежде.
+ * Судится **элемент**, а не его вид, и это не педантизм: готовый ответ Google
+ * (`answerBox`) и панель знаний приходят из Serper под одним видом
+ * `knowledgePanel`, различает их только `rawMetadataSafe.surface`. Фильтр по
+ * виду выключил бы в режиме `topvisor` панель знаний молча — страница
+ * «Панель знаний» опустела бы при зелёном прогоне.
+ *
+ * Что выключено в режиме `topvisor` и почему: подсказки (решение владельца
+ * 03.09.2026 — двух источников одного и того же быть не может) и готовый
+ * ответ Google (AI-ответы собирает Topvisor, вместе с Алисой, одним чтением).
+ * Картинки, видео, связанные запросы и панель знаний Topvisor не заменяет.
  */
-export function surfaceKindAllowedInMode(
-  kind: SerperSurfaceItem["kind"],
+export function surfaceItemAllowedInMode(
+  item: Pick<SerperSurfaceItem, "kind" | "rawMetadataSafe">,
   mode: SerpCollectionMode
 ): boolean {
-  return !(mode === "topvisor" && kind === "autocomplete");
+  if (mode !== "topvisor") return true;
+  if (item.kind === "autocomplete") return false;
+  const surface = String(
+    (item.rawMetadataSafe as { surface?: unknown } | undefined)?.surface ?? ""
+  );
+  return surface !== "answerBox";
 }
 
 function surfaceTypeForKind(kind: SerperSurfaceItem["kind"]): SearchSurfaceType {
@@ -475,7 +485,7 @@ async function runRegionSurfaces(
         anySuccess = true;
         for (const item of result.items) {
           if (item.kind === "organic") continue; // organic stored in search_results
-          if (!surfaceKindAllowedInMode(item.kind, mode)) continue;
+          if (!surfaceItemAllowedInMode(item, mode)) continue;
           all.push(serperItemToSurfaceInput(item, subject.fullName));
         }
       }
@@ -484,7 +494,7 @@ async function runRegionSurfaces(
         for (const item of result.items) {
           if (
             (item.kind === "relatedQueries" || item.kind === "knowledgePanel") &&
-            surfaceKindAllowedInMode(item.kind, mode)
+            surfaceItemAllowedInMode(item, mode)
           ) {
             all.push(serperItemToSurfaceInput(item, subject.fullName));
           }

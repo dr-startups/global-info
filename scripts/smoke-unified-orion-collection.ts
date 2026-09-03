@@ -635,10 +635,11 @@ describe("unified orion arsenkin collection", () => {
       assert.ok(merge, "runPrepare не получил слияние");
       const rows = merge!.observations.filter((o) => o.providers.some((p) => /^topvisor-/.test(p)));
       assert.ok(rows.length > 0, "в слиянии нет строк Topvisor");
-      const tables = [...new Set(rows.map((o) => `${o.region}/${o.engine}`))].sort();
+      // Номер есть у строки выдачи; у AI-ответа места в выдаче нет по существу.
+      const organic = rows.filter((o) => o.surface === "organic");
+      const tables = [...new Set(organic.map((o) => `${o.region}/${o.engine}`))].sort();
       assert.deepEqual(tables, ["RU/GOOGLE", "RU/YANDEX", "UAE/GOOGLE"]);
-      // Номер каждой строки — Topvisor, и принадлежит своему движку.
-      for (const row of rows) {
+      for (const row of organic) {
         assert.equal(typeof row.rank, "number", `строка без номера: ${row.url}`);
         assert.match(String(row.rankSource), /^topvisor-(yandex|google)$/);
         assert.ok(
@@ -647,8 +648,31 @@ describe("unified orion arsenkin collection", () => {
           `чужой номер: ${row.engine} ← ${row.rankSource}`
         );
       }
-      assert.ok((merge!.providerCounts.topvisor ?? 0) >= rows.length);
+      assert.ok((merge!.providerCounts.topvisor ?? 0) >= organic.length);
       assert.equal(merge!.providerCounts.arsenkin, 0);
+
+      /*
+       * AI-ответы (T2): тело ответа — строка со своим текстом и без публичного
+       * адреса, источники — строки с адресами. Дека различает их именно так
+       * (`isAnswerBody`/`isSourceRef`), и подпись «чей это ответ» она берёт из
+       * провайдера наблюдения.
+       */
+      const ai = merge!.observations.filter((o) => o.surface === "ai_answer");
+      const bodies = ai.filter((o) => !o.url);
+      const sources = ai.filter((o) => o.url);
+      assert.ok(bodies.length > 0, "в слиянии нет тел AI-ответов");
+      assert.ok(sources.length >= bodies.length, "у AI-ответов нет источников");
+      for (const b of bodies) {
+        assert.ok(String(b.snippet ?? "").length > 0, "тело AI-ответа пустое");
+        assert.doesNotMatch(String(b.snippet), /<b>|<u>|<br>/, "в тело ответа просочилась разметка");
+        assert.match(String(b.primaryProvider), /^topvisor-(yandex|google)$/);
+      }
+      for (const src of sources) assert.match(String(src.url), /^https?:\/\//);
+      // Алиса и AI Overview приходят одним чтением — оба движка представлены.
+      assert.deepEqual(
+        [...new Set(bodies.map((b) => b.engine))].sort(),
+        ["GOOGLE", "YANDEX"]
+      );
 
       const bindingRaw = readFileSync(
         join(process.cwd(), "storage", "digital-profile", "unified-orion-collection", caseId, job!.unifiedJobId, "report-data-binding.json"),

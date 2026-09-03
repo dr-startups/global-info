@@ -48,6 +48,8 @@ function topvisorState(phase: TopvisorEnrichmentState["phase"]): TopvisorEnrichm
     keywords: 12,
     lastPercent: 100,
     observationCount: 0,
+    aiAnswerCount: 0,
+    aiAbsentQueries: [],
     errorCode: null,
     errorMessage: null,
     updatedAt: "2026-09-03T00:00:00.000Z",

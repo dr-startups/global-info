@@ -76,6 +76,38 @@ describe("тик позиций Topvisor", () => {
     expect(fourth.waiting).toBe(false);
   });
 
+  it("после проверки читаются и снимки, и AI-ответы: два чтения за прогон", async () => {
+    /*
+     * Выдача лежит в снимке, AI-ответ — в истории позиций с `show_serp_features`.
+     * Одним вызовом не обойтись, и оба чтения обязаны случиться за тот же
+     * оборот: иначе AI-ответы «доедут» лишь на следующем, а прогон уже ушёл к
+     * слиянию.
+     */
+    const { call, log } = createTopvisorFixtureCall({ projectExists: true, checkPollsUntilDone: 0 });
+    const taskStore = createMemoryTopvisorTaskStore();
+
+    const first = await runTopvisorPositionsTick({ job: job(), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });
+    const done = await runTopvisorPositionsTick({ job: job(first.state), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });
+
+    expect(done.state.phase).toBe("DONE");
+    const positionsReads = log.filter((e) => e.service === "positions_2" && e.method === "history");
+    expect(positionsReads).toHaveLength(1);
+    expect(positionsReads[0]!.payload).toMatchObject({ show_serp_features: 1 });
+    // Индексы регионов — из проекта: Дубай 2520, а не третий по порядку.
+    expect(positionsReads[0]!.payload!.regions_indexes).toEqual([1, 2, 2520]);
+
+    const ai = done.observations.filter((o) => o.surface === "ai_answer");
+    expect(ai.length).toBeGreaterThan(0);
+    expect(new Set(ai.map((o) => o.provider))).toEqual(new Set(["topvisor-yandex", "topvisor-google"]));
+    expect(done.state.aiAnswerCount).toBe(ai.filter((o) => !o.url).length);
+
+    // Пересборка после DONE отдаёт те же строки и в сеть не ходит.
+    const before = log.length;
+    const again = await runTopvisorPositionsTick({ job: job(done.state), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });
+    expect(log.length).toBe(before);
+    expect(again.observations.filter((o) => o.surface === "ai_answer").length).toBe(ai.length);
+  });
+
   it("без ключа — отказ с именем переменной, ни одного вызова", async () => {
     const { call, log } = createTopvisorFixtureCall({ projectExists: true });
     const out = await runTopvisorPositionsTick({

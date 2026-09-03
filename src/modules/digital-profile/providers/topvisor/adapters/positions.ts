@@ -38,6 +38,39 @@ export function parseSnapshotKey(key: string): { date: string; rank: number; reg
   return { date: m[1]!, rank: Number(m[2]), regionIndex: Number(m[3]) };
 }
 
+const POSITIONS_KEY_RE = /^(\d{4}-\d{2}-\d{2}):(\d+):(\d+)$/;
+
+/**
+ * Ключ истории позиций — **не** ключ снимка.
+ *
+ * У снимка это `дата:позиция:индексРегиона`, у позиций —
+ * `дата:идентификаторПроекта:индексРегиона`. На глаз формы неотличимы, и
+ * перепутать их значит принять номер проекта за место в выдаче.
+ */
+export function parsePositionsKey(
+  key: string
+): { date: string; projectId: number; regionIndex: number } | null {
+  const m = POSITIONS_KEY_RE.exec(String(key ?? "").trim());
+  if (!m) return null;
+  return { date: m[1]!, projectId: Number(m[2]), regionIndex: Number(m[3]) };
+}
+
+/** Запрос истории позиций: AI-ответы приходят в признаках выдачи. */
+export function positionsHistoryPayload(
+  projectId: number,
+  regionIndexes: readonly number[],
+  date: string
+): Record<string, unknown> {
+  return {
+    project_id: projectId,
+    date1: date,
+    date2: date,
+    regions_indexes: [...regionIndexes],
+    show_serp_features: 1,
+    history_fields: ["position", "serp_features", "snippet_title", "snippet_body"],
+  };
+}
+
 /** Разметка Topvisor (`<b>`, `<br>`) снимается: в отчёт идёт текст. */
 export function stripTopvisorHtml(value: string | null | undefined): string {
   return String(value ?? "")

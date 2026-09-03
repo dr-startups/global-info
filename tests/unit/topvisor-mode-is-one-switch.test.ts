@@ -289,13 +289,14 @@ describe("базовый сбор в режиме topvisor", () => {
   it("подсказки Serper в отчёт не идут: источник подсказок один", async () => {
     // Решение владельца 03.09.2026: двух параллельных источников подсказок быть
     // не может. Остальные поверхности Serper Topvisor не заменяет.
-    const { surfaceKindAllowedInMode } = await import(
+    const { surfaceItemAllowedInMode } = await import(
       "@/modules/digital-profile/services/orion-search-profile-service"
     );
+    const item = (kind: string) => ({ kind }) as never;
 
-    expect(surfaceKindAllowedInMode("autocomplete", "topvisor")).toBe(false);
-    expect(surfaceKindAllowedInMode("images", "topvisor")).toBe(true);
-    expect(surfaceKindAllowedInMode("knowledgePanel", "topvisor")).toBe(true);
-    expect(surfaceKindAllowedInMode("autocomplete", "legacy")).toBe(true);
+    expect(surfaceItemAllowedInMode(item("autocomplete"), "topvisor")).toBe(false);
+    expect(surfaceItemAllowedInMode(item("images"), "topvisor")).toBe(true);
+    expect(surfaceItemAllowedInMode(item("knowledgePanel"), "topvisor")).toBe(true);
+    expect(surfaceItemAllowedInMode(item("autocomplete"), "legacy")).toBe(true);
   });
 });
