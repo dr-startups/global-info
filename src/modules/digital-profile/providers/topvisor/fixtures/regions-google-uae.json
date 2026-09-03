@@ -1,0 +1,41 @@
+{
+  "result": [
+    {
+      "status": 1,
+      "id": 11499,
+      "google_id": 1000013,
+      "mail_id": null,
+      "coords": "25.2048493 55.2707828",
+      "countryCode": "AE",
+      "type": "CITY",
+      "name_ru": "Дубай",
+      "areaName_ru": "Эмират Дубай",
+      "name_en": "Dubai",
+      "areaName_en": "",
+      "childrenCount": 8,
+      "parentId": 121479,
+      "areaName": "Эмират Дубай",
+      "name": "Дубай",
+      "domain": ".ae"
+    },
+    {
+      "status": 1,
+      "id": 121479,
+      "google_id": 9041083,
+      "mail_id": null,
+      "coords": "25.2048493 55.2707828",
+      "countryCode": "AE",
+      "type": "SUBJECT_FEDERATION",
+      "name_ru": "Эмират Дубай",
+      "areaName_ru": "",
+      "name_en": "Dubai",
+      "areaName_en": "",
+      "childrenCount": 3,
+      "parentId": 210,
+      "areaName": "",
+      "name": "Эмират Дубай",
+      "domain": ".ae"
+    }
+  ],
+  "total": 2
+}

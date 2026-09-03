@@ -1,25 +1,15 @@
 /**
- * Guard against accidental Arsenkin HTTP during --rerender-only.
+ * Прежние имена сторожа сети Arsenkin.
+ *
+ * Сам сторож теперь общий (`providers/network-guard.ts`): вопрос «можно ли в
+ * сеть» один на всех провайдеров. Здесь остались только имена, которыми его
+ * зовут существующие вызовы и тесты, — переименовывать их отдельным движением
+ * значило бы смешать перенос с правкой.
  */
 
-let networkCalls = 0;
-
-export function resetArsenkinNetworkCallCount(): void {
-  networkCalls = 0;
-}
-
-export function getArsenkinNetworkCallCount(): number {
-  return networkCalls;
-}
-
-export function isArsenkinRerenderOnly(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.ARSENKIN_RERENDER_ONLY === "1";
-}
-
-/** Count and optionally forbid Arsenkin HTTP. */
-export function noteArsenkinNetworkCall(kind: string, env: NodeJS.ProcessEnv = process.env): void {
-  if (isArsenkinRerenderOnly(env)) {
-    throw new Error(`ARSENKIN_RERENDER_ONLY forbids network call: ${kind}`);
-  }
-  networkCalls += 1;
-}
+export {
+  getProviderNetworkCallCount as getArsenkinNetworkCallCount,
+  isRerenderOnly as isArsenkinRerenderOnly,
+  noteProviderNetworkCall as noteArsenkinNetworkCall,
+  resetProviderNetworkCallCount as resetArsenkinNetworkCallCount,
+} from "../network-guard";

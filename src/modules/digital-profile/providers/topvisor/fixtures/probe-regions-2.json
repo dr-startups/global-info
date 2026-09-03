@@ -1,0 +1,13 @@
+{
+  "result": null,
+  "errors": [
+    {
+      "code": 1003,
+      "string": "Call to undefined method: get/projects_2/searchers",
+      "detail": {
+        "sid": "3d1dbedd2b91f830",
+        "v": "1.20.85"
+      }
+    }
+  ]
+}

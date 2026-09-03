@@ -1,0 +1,41 @@
+{
+  "result": [
+    {
+      "status": 1,
+      "id": 213,
+      "google_id": 1011969,
+      "mail_id": 70,
+      "coords": "55.755826 37.6173",
+      "countryCode": "RU",
+      "type": "CITY",
+      "name_ru": "Москва",
+      "areaName_ru": "Москва и Московская область",
+      "name_en": "Moscow",
+      "areaName_en": "",
+      "childrenCount": 14,
+      "parentId": 1,
+      "areaName": "Москва и Московская область",
+      "name": "Москва",
+      "domain": ".ru"
+    },
+    {
+      "status": 1,
+      "id": 103325,
+      "google_id": 1016196,
+      "mail_id": null,
+      "coords": "46.7323875 -117.0001651",
+      "countryCode": "US",
+      "type": "CITY",
+      "name_ru": "Москоу",
+      "areaName_ru": "Штат Айдахо",
+      "name_en": "Moscow",
+      "areaName_en": "Idaho",
+      "childrenCount": 0,
+      "parentId": 29329,
+      "areaName": "Штат Айдахо",
+      "name": "Москоу",
+      "domain": ".com"
+    }
+  ],
+  "total": 2
+}

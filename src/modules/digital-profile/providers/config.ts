@@ -411,3 +411,68 @@ export function listProviderAvailability(): ProviderAvailability[] {
     getProviderAvailability("YANDEX"),
   ];
 }
+
+/**
+ * Откуда берётся выдача — один ответ на весь конвейер.
+ *
+ * Органика, AI-ответы, подсказки и частота переключаются вместе: половинчатый
+ * переход означал бы, что часть прогона молча идёт прежним путём, а отчёт об
+ * этом не говорит. Значение читается при каждом вызове, а не при загрузке
+ * модуля: режим — операционное решение, и он меняется без пересборки.
+ *
+ * Непонятое значение — прежний путь: опечатка в настройке не должна означать
+ * «собираем ничем».
+ */
+export type SerpCollectionMode = "legacy" | "topvisor";
+
+/** Окружение как читаемый словарь — та же форма, что у `config/defaults.ts`. */
+type EnvLike = Record<string, string | undefined>;
+
+export function serpCollectionMode(env: EnvLike = process.env): SerpCollectionMode {
+  return stringSetting("SERP_COLLECTION_PROVIDER", env) === "topvisor" ? "topvisor" : "legacy";
+}
+
+/** Секреты Topvisor: оба обязательны, оба читаются при вызове. */
+export function topvisorSecrets(env: EnvLike = process.env): {
+  apiKey: string | null;
+  userId: string | null;
+} {
+  return {
+    apiKey: envStr(env.TOPVISOR_API_KEY) ?? null,
+    userId: envStr(env.TOPVISOR_USER_ID) ?? null,
+  };
+}
+
+/**
+ * Пригодность Topvisor: выключен режимом или не настроен ключом.
+ *
+ * Разница видна оператору и печатается на старте: «выключен» — так решили,
+ * «не настроен» — забыли секрет. Названы **все** недостающие переменные сразу:
+ * называть их по одной значит заставлять деплоить дважды.
+ */
+export function topvisorAvailability(env: EnvLike = process.env): {
+  status: AvailabilityStatus;
+  message?: string;
+  /** Недостающие переменные — данные для строки готовности, а не её формулировка. */
+  missing: string[];
+} {
+  if (serpCollectionMode(env) !== "topvisor") {
+    return {
+      status: "DISABLED",
+      message: "Topvisor выключен: SERP_COLLECTION_PROVIDER не равен topvisor.",
+      missing: [],
+    };
+  }
+  const { apiKey, userId } = topvisorSecrets(env);
+  const missing = [!apiKey ? "TOPVISOR_API_KEY" : null, !userId ? "TOPVISOR_USER_ID" : null].filter(
+    (x): x is string => Boolean(x)
+  );
+  if (missing.length > 0) {
+    return {
+      status: "NOT_CONFIGURED",
+      message: `Topvisor выбран источником выдачи, но нет ${missing.join(", ")}.`,
+      missing,
+    };
+  }
+  return { status: "ENABLED", missing: [] };
+}

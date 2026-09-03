@@ -1,4 +1,5 @@
 import { getAgent } from "./registry";
+import { serpCollectionMode } from "../providers/config";
 import type { AgentAvailability } from "./types";
 import type {
   ProviderFallbackPolicy,
@@ -184,6 +185,31 @@ export function resolveRuntimeStrategy(input: RuntimeStrategyRequest = {}): Reso
     const mockReady = isEnabled(pair.mockAgent, input.availabilityOverride);
     if (realReady) strategy.realProvidersAvailable += 1;
     if (mockReady) strategy.mockProvidersAvailable += 1;
+
+    /*
+     * Органику в режиме `topvisor` собирает Topvisor, и базовые агенты выдачи
+     * не зовутся вовсе.
+     *
+     * Решение принимается здесь, а не в сервисе сбора: сервис уже спрашивает
+     * состав (`runtime.steps.some(providerId === "yandex")`), и второй ответ на
+     * вопрос «звать ли Яндекс» разошёлся бы с этим в первую же неделю. Причина
+     * попадает в решения стратегии — по ней в артефактах видно, что провайдера
+     * не звали намеренно, а не потеряли.
+     */
+    const delegatedToTopvisor =
+      pair.phase === "collection" &&
+      (pair.providerId === "yandex" || pair.providerId === "google") &&
+      serpCollectionMode() === "topvisor";
+    if (delegatedToTopvisor) {
+      pushSkipped(strategy, pair, {
+        status: "skipped_by_mode",
+        reason:
+          "органическую выдачу собирает Topvisor (SERP_COLLECTION_PROVIDER=topvisor).",
+        realReady,
+        mockReady,
+      });
+      continue;
+    }
 
     if (mode === "mock_only") {
       if (pair.mockAgent && mockReady) {

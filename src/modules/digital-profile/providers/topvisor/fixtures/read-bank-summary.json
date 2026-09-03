@@ -1,0 +1,45 @@
+{
+  "result": [
+    {
+      "info": "Кассовые операции",
+      "TOTAL()": 1000,
+      "currency": "RUB"
+    },
+    {
+      "info": "Проверка позиций",
+      "TOTAL()": -15.23,
+      "currency": "RUB"
+    },
+    {
+      "info": "Проверка частоты",
+      "TOTAL()": -1.06,
+      "currency": "RUB"
+    },
+    {
+      "info": "Подбор слов",
+      "TOTAL()": -0.9,
+      "currency": "RUB"
+    },
+    {
+      "info": "Проверка частоты (Тулбокс)",
+      "TOTAL()": -0.09,
+      "currency": "RUB"
+    },
+    {
+      "info": "Подбор слов (Тулбокс)",
+      "TOTAL()": -1.08,
+      "currency": "RUB"
+    },
+    {
+      "info": "Итого: Пополнение",
+      "TOTAL()": 1000,
+      "currency": "RUB"
+    },
+    {
+      "info": "Итого: Расход",
+      "TOTAL()": -18.36,
+      "currency": "RUB"
+    }
+  ],
+  "total": 1
+}

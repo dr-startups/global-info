@@ -1,0 +1,26 @@
+{
+  "result": {
+    "pricesByUsers": {
+      "***": {
+        "price": 0.9,
+        "priceOriginal": 1,
+        "limits": 1,
+        "qualifiers": [
+          {
+            "region_key": 213,
+            "searcher_key": 0,
+            "region_lang": null,
+            "also_searched": false,
+            "depth": 40,
+            "hint_depth": 1,
+            "hint_generators": [
+              "space"
+            ]
+          }
+        ],
+        "comment": "Составление семантического ядра по фразе(ам) для проекта \"example.org\" #32742967\n- Yandex, Москва (ru)\n\nЗапросы: \n- кремлёв умар назарович"
+      }
+    }
+  },
+  "total": 0
+}

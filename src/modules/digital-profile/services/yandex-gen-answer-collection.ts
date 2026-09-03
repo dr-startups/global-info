@@ -14,7 +14,7 @@
 
 import { createHash } from "node:crypto";
 import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
-import { providerConfig } from "../providers/config";
+import { providerConfig, serpCollectionMode } from "../providers/config";
 import {
   fetchYandexGenAnswer,
   type YandexGenAnswerOutcome,
@@ -218,6 +218,22 @@ export async function collectYandexGenAnswer(
     message,
     attemptedAt,
   });
+
+  /*
+   * В режиме `topvisor` генеративный ответ приходит снимком Topvisor, и
+   * официальный `/v2/gen/search` не спрашивается: два источника одного ответа
+   * — два ответа на один вопрос и двойная оплата. Исход записывается словом,
+   * а не отсутствием записи.
+   */
+  if (serpCollectionMode() === "topvisor") {
+    return {
+      status: "SKIPPED_DELEGATED",
+      query: null,
+      errorCode: null,
+      message: "Генеративный ответ собирает Topvisor (SERP_COLLECTION_PROVIDER=topvisor).",
+      attemptedAt,
+    };
+  }
 
   let query: string | null = null;
   try {

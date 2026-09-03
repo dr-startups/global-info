@@ -11,7 +11,7 @@
 import { Prisma, SearchEngine } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
-import { providerConfig } from "../providers/config";
+import { providerConfig, serpCollectionMode, type SerpCollectionMode } from "../providers/config";
 import { organicSearchDepth, type OrganicSearchProvider } from "../providers/search-depth";
 /**
  * Глубина аудита выдачи. Одно число на весь конвейер: столько же обещает
@@ -115,6 +115,22 @@ function googleReady(): boolean {
 
 function yandexReady(): boolean {
   return yandexSearchProvider.availability().status === "ENABLED";
+}
+
+/**
+ * Идёт ли поверхность Serper в отчёт при этом режиме сбора.
+ *
+ * Подсказки в режиме `topvisor` собирает Topvisor, и вторым источником Serper
+ * быть не может — решение владельца 03.09.2026: два источника одного и того же
+ * дают клиенту два ответа на один вопрос и оплачиваются дважды. Остальные
+ * поверхности (картинки, видео, связанные, панель знаний) Topvisor не
+ * заменяет, и они собираются как прежде.
+ */
+export function surfaceKindAllowedInMode(
+  kind: SerperSurfaceItem["kind"],
+  mode: SerpCollectionMode
+): boolean {
+  return !(mode === "topvisor" && kind === "autocomplete");
 }
 
 function surfaceTypeForKind(kind: SerperSurfaceItem["kind"]): SearchSurfaceType {
@@ -302,13 +318,32 @@ export async function persistOrganicResults(
   return inserted.count;
 }
 
-async function runRegionOrganic(
+/**
+ * Органика одного региона.
+ *
+ * Экспортируется ради шва «режим сбора → статус региона»: в режиме `topvisor`
+ * выдачу собирает другой источник, и страница покрытия обязана прочитать
+ * «делегировано», а не «не настроено». Проверить это иначе нечем — остальной
+ * путь требует базы.
+ */
+export async function runRegionOrganic(
   caseId: string,
   subject: CaseSubjectInfo,
   queries: OrionQuerySpec[],
   region: OrionRegionCode,
   runtimeMode?: ProviderRuntimeMode
 ): Promise<{ organic: number; googleStatus: string; yandexStatus: string }> {
+  /*
+   * Выдачу собирает Topvisor — базовые провайдеры не зовутся вовсе.
+   *
+   * Состав уже сказал это стратегией (`runtime.steps` не содержит yandex и
+   * google), но статус региона пришёл бы из ветки «не настроено», и страница
+   * покрытия печатала бы клиенту неправду: ключи на месте, источник другой.
+   */
+  if (serpCollectionMode() === "topvisor") {
+    return { organic: 0, googleStatus: "DELEGATED", yandexStatus: "DELEGATED" };
+  }
+
   let organic = 0;
   let googleStatus = "NOT_QUERIED";
   let yandexStatus = "NOT_QUERIED";
@@ -413,6 +448,7 @@ async function runRegionSurfaces(
    * `resultsPerQuery` остаётся способом попросить БОЛЬШЕ, но не меньше.
    */
   const limit = Math.max(SERP_AUDIT_DEPTH, providerConfig.google.resultsPerQuery);
+  const mode = serpCollectionMode();
   const all: SearchSurfaceInput[] = [];
   let anySuccess = false;
 
@@ -439,13 +475,17 @@ async function runRegionSurfaces(
         anySuccess = true;
         for (const item of result.items) {
           if (item.kind === "organic") continue; // organic stored in search_results
+          if (!surfaceKindAllowedInMode(item.kind, mode)) continue;
           all.push(serperItemToSurfaceInput(item, subject.fullName));
         }
       }
       // related + knowledge come from organic batch
       if (key === "organic" && result.status === "SUCCESS") {
         for (const item of result.items) {
-          if (item.kind === "relatedQueries" || item.kind === "knowledgePanel") {
+          if (
+            (item.kind === "relatedQueries" || item.kind === "knowledgePanel") &&
+            surfaceKindAllowedInMode(item.kind, mode)
+          ) {
             all.push(serperItemToSurfaceInput(item, subject.fullName));
           }
         }
@@ -459,13 +499,32 @@ async function runRegionSurfaces(
   };
 }
 
-function deriveCollectionStatus(
+/**
+ * Статус региона по итогам базового сбора.
+ *
+ * Экспортируется ради шва «статус движка → статус региона»: именно здесь слово
+ * «делегировано» терялось — поверхности Serper делали регион «собранным» при
+ * нуле строк выдачи, а их отсутствие — «не запрошенным».
+ */
+export function deriveCollectionStatus(
   organic: number,
   surfaces: number,
   googleStatus: string,
   yandexStatus: string,
   region: OrionRegionCode
 ): { status: RegionCollectionStatus; message: string } {
+  /*
+   * Органику собирает Topvisor (режим `topvisor`): строк выдачи на этой стадии
+   * нет по решению, а не по отказу. Ветка стоит первой: `googleStatus` к этому
+   * моменту уже перетёрт поверхностями в COLLECTED, и общая проверка
+   * `organic + surfaces > 0` объявила бы регион собранным.
+   */
+  if (googleStatus === "DELEGATED" || yandexStatus === "DELEGATED") {
+    return {
+      status: "DELEGATED",
+      message: `Organic delegated to Topvisor (enrichment stage); Serper surfaces collected: ${surfaces}.`,
+    };
+  }
   if (organic + surfaces > 0) {
     return { status: "COLLECTED", message: "Search data collected for this region." };
   }

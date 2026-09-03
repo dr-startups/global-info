@@ -173,6 +173,11 @@ export function genAnswerCoverageCells(rawManifest: unknown): CoverageCellStatus
   if (probe.status === "NOT_CONFIGURED") {
     return [cell("NOT_COLLECTED", probe.errorCode ?? "PROVIDER_NOT_CONFIGURED")];
   }
+  // Вопрос не задавался — ответ собирает Topvisor. Это не измеренная пустота,
+  // и ячейка называет источник, а не «нет результатов».
+  if (probe.status === "SKIPPED_DELEGATED") {
+    return [cell("NOT_COLLECTED", "DELEGATED_TO_TOPVISOR")];
+  }
   if (probe.status === "FAILED") return [cell("ERROR", probe.errorCode ?? null)];
   // NO_RESULTS и REJECTED — измеренная пустота: вопрос задан, ответ получен.
   return [cell("NO_RESULTS", probe.status === "REJECTED" ? "ANSWER_REJECTED" : null)];

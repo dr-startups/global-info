@@ -1,0 +1,23 @@
+{
+  "result": [
+    {
+      "status": 1,
+      "id": 213,
+      "google_id": 1011969,
+      "mail_id": 70,
+      "coords": "55.755826 37.6173",
+      "countryCode": "RU",
+      "type": "CITY",
+      "name_ru": "Москва",
+      "areaName_ru": "Москва и Московская область",
+      "name_en": "Moscow",
+      "areaName_en": "",
+      "childrenCount": 14,
+      "parentId": 1,
+      "areaName": "Москва и Московская область",
+      "name": "Москва",
+      "domain": ".ru"
+    }
+  ],
+  "total": 1
+}

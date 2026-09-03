@@ -4,6 +4,7 @@
  */
 
 import { boolSetting } from "../../config/defaults";
+import { serpCollectionMode } from "../config";
 
 export type ArsenkinToolName =
   | "check-top"
@@ -79,7 +80,18 @@ export function isArsenkinRequired(env: NodeJS.ProcessEnv = process.env): boolea
   return env.ARSENKIN_REQUIRED === "1" || env.ARSENKIN_REQUIRED === "true";
 }
 
+/**
+ * Состав инструментов Arsenkin.
+ *
+ * В режиме `topvisor` позиции и подсказки собирает Topvisor, и Arsenkin
+ * остаётся ради единственной поверхности, которой у Topvisor нет, — «люди
+ * также спрашивают». Два источника одного и того же означали бы два ответа на
+ * один вопрос и двойную оплату. Явный `ARSENKIN_TOOLS` сильнее режима: это
+ * рычаг на один прогон, и молча отменять его нельзя.
+ */
 export function arsenkinTools(env: NodeJS.ProcessEnv = process.env): ArsenkinToolName[] {
+  const explicit = String(env.ARSENKIN_TOOLS ?? "").trim();
+  if (!explicit && serpCollectionMode(env) === "topvisor") return ["paa"];
   return parseTools(env.ARSENKIN_TOOLS);
 }
 

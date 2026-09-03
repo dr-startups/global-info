@@ -13,6 +13,7 @@
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
 import { isLinkReadingEnabled } from "../services/link-page-reader";
 import { boolSetting, stringSetting } from "./defaults";
+import { topvisorAvailability } from "../providers/config";
 
 type Env = Record<string, string | undefined>;
 
@@ -74,6 +75,22 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
         ? "готов"
         : "нет ARSENKIN_API_TOKEN",
   });
+
+  /*
+   * Topvisor — источник выдачи, AI-ответов, подсказок и частоты в своём режиме.
+   *
+   * Строка появляется только тогда, когда режим выбран: «не готов» о источнике,
+   * которого не звали, — ложная тревога, а сводка обязана означать одно —
+   * «нужного секрета нет». В прежнем режиме говорить здесь не о чем.
+   */
+  const topvisor = topvisorAvailability(env);
+  if (topvisor.status !== "DISABLED") {
+    out.push({
+      capability: "Topvisor (выдача, AI-ответы, подсказки, частота)",
+      ready: topvisor.status === "ENABLED",
+      detail: topvisor.status === "ENABLED" ? "готов" : `нет ${topvisor.missing.join(", ")}`,
+    });
+  }
 
   // Google/ORION через внешний SERP. Ключ читается из
   // GOOGLE_EXTERNAL_SERP_API_KEY либо из псевдонима SERPER_API_KEY.

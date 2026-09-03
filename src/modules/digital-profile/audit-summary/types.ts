@@ -8,6 +8,7 @@
  */
 
 import type { RiskLevel, RiskTheme } from "../risk-classifier/types";
+import type { RegionCollectionStatus } from "../search-surfaces/region-profiles";
 
 export type OverallRiskLevel = RiskLevel | "UNKNOWN";
 
@@ -98,7 +99,7 @@ export interface RegionAuditSummary {
   videosNegative: number;
   knowledgeBlockStatus: "PRESENT" | "MISMATCH" | "ABSENT" | "NOT_COLLECTED";
   /** Stage O4.1 — whether this region was actually queried. */
-  collectionStatus?: "COLLECTED" | "NOT_QUERIED" | "NOT_CONFIGURED" | "NOT_SUPPORTED" | "PARTIAL";
+  collectionStatus?: RegionCollectionStatus;
   statusMessage?: string;
   regionRiskLevel: OverallRiskLevel;
   regionConclusion: string;

@@ -1,0 +1,13 @@
+{
+  "result": null,
+  "errors": [
+    {
+      "code": 1003,
+      "string": "Call to undefined method: get/positions_2/checker/regions",
+      "detail": {
+        "sid": "2a8754e3f3ff284b",
+        "v": "1.20.85"
+      }
+    }
+  ]
+}

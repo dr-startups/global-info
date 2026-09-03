@@ -12,7 +12,14 @@ export type RegionCollectionStatus =
   | "NOT_QUERIED"
   | "NOT_CONFIGURED"
   | "NOT_SUPPORTED"
-  | "PARTIAL";
+  | "PARTIAL"
+  /**
+   * Выдачу этого региона собирает другой источник (режим `topvisor`).
+   *
+   * Отдельное слово, а не «не настроено»: ключи на месте, и страница покрытия
+   * иначе печатала бы клиенту неправду о собственном сборе.
+   */
+  | "DELEGATED";
 
 export interface RegionProfile {
   code: OrionRegionCode;

@@ -1,0 +1,15 @@
+{
+  "result": {
+    "pricesByUsers": {
+      "***": {
+        "projectsIds": [
+          32742967
+        ],
+        "price": 0.22,
+        "priceOriginal": 0.24,
+        "limits": 12
+      }
+    }
+  },
+  "total": 0
+}

@@ -1,0 +1,93 @@
+{
+  "result": {
+    "headers": null,
+    "keywords": [
+      {
+        "name": "umar kremlev boxing",
+        "snapshotsData": {
+          "2026-09-03:1:1": {
+            "url": "https://vk.ru/umar.kremlev",
+            "domain": "vk.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:2:1": {
+            "url": "https://en.wikipedia.org/wiki/Umar_Kremlev",
+            "domain": "en.wikipedia.org",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:3:1": {
+            "url": "https://t.me/umar_kremlev",
+            "domain": "t.me",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:4:1": {
+            "url": "https://www.youtube.com/@umar_kremlev",
+            "domain": "youtube.com",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:5:1": {
+            "url": "https://ru.ruwiki.ru/wiki/Кремлёв,_Умар_Назарович",
+            "domain": "ru.ruwiki.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          }
+        }
+      },
+      {
+        "name": "umar kremlev investigation",
+        "snapshotsData": {
+          "2026-09-03:1:1": {
+            "url": "https://www.kommersant.ru/doc/8923538",
+            "domain": "kommersant.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:2:1": {
+            "url": "https://www.youtube.com/watch?v=zexUWwdWi1c",
+            "domain": "youtube.com",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:3:1": {
+            "url": "https://www.forbes.ru/biznes/567785-investgruppa-vladel-ca-rol-fa-kremleva-kupila-aktivy-na-toplivnom-rynke",
+            "domain": "forbes.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:4:1": {
+            "url": "https://vk.ru/wall-62326_2037",
+            "domain": "vk.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          },
+          "2026-09-03:5:1": {
+            "url": "https://dzen.ru/a/ZtYRD_a9DR1skreI",
+            "domain": "dzen.ru",
+            "snippet_title": "",
+            "snippet_body": "",
+            "snippet_ext": ""
+          }
+        }
+      }
+    ],
+    "dates": [
+      "2026-09-03"
+    ],
+    "depthPositions": 50,
+    "existsDates": null
+  },
+  "total": 12
+}

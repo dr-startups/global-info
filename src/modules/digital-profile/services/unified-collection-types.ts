@@ -53,7 +53,19 @@ export type SurfaceCoverageBreakdown = {
  * один вопрос «собрано ли».
  */
 export type YandexGenAnswerProbe = {
-  status: "SUCCESS" | "NO_RESULTS" | "REJECTED" | "FAILED" | "NOT_CONFIGURED";
+  /**
+   * `SKIPPED_DELEGATED` — ответ собирает другой источник (режим `topvisor`).
+   * Отдельный исход, а не отсутствие записи: «не спрашивали, потому что
+   * спрашивает Topvisor» и «спросили, ничего не пришло» — разные факты, и
+   * пустая запись читалась бы как второе.
+   */
+  status:
+    | "SUCCESS"
+    | "NO_RESULTS"
+    | "REJECTED"
+    | "FAILED"
+    | "NOT_CONFIGURED"
+    | "SKIPPED_DELEGATED";
   /** Текст запроса, который ушёл в GenSearch (null — построить его не удалось). */
   query: string | null;
   errorCode: string | null;

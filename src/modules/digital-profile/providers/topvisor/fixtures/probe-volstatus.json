@@ -1,0 +1,13 @@
+{
+  "result": null,
+  "errors": [
+    {
+      "code": 2004,
+      "string": "Несоответствие значения переданного параметра: fields[n].name = 'status_volume'",
+      "detail": {
+        "sid": "324440869e8fd8cc",
+        "v": "1.20.85"
+      }
+    }
+  ]
+}

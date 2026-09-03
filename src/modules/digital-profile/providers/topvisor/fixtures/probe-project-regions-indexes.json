@@ -1,0 +1,80 @@
+{
+  "result": [
+    {
+      "id": 32742967,
+      "searchers": [
+        {
+          "id": 24078449,
+          "project_id": 32742967,
+          "searcher": 0,
+          "enabled": 1,
+          "ord": 1,
+          "key": 0,
+          "name": "Yandex",
+          "regions": [
+            {
+              "id": 26220389,
+              "key": 213,
+              "lang": "ru",
+              "device": 0,
+              "depth": 1,
+              "index": 1,
+              "enabled": 1,
+              "searcher_key": 0,
+              "type": "CITY",
+              "countryCode": "RU",
+              "name": "Москва",
+              "areaName": "Москва и Московская область",
+              "domain": ".ru",
+              "parentId": 1
+            }
+          ]
+        },
+        {
+          "id": 24078461,
+          "project_id": 32742967,
+          "searcher": 1,
+          "enabled": 1,
+          "ord": 2,
+          "key": 1,
+          "name": "Google",
+          "regions": [
+            {
+              "id": 26220400,
+              "key": 213,
+              "lang": "ru",
+              "device": 0,
+              "depth": 2,
+              "index": 2,
+              "enabled": 1,
+              "searcher_key": 1,
+              "type": "CITY",
+              "countryCode": "RU",
+              "name": "Москва",
+              "areaName": "Москва и Московская область",
+              "domain": ".ru",
+              "parentId": 1
+            },
+            {
+              "id": 26220401,
+              "key": 11499,
+              "lang": "en",
+              "device": 0,
+              "depth": 2,
+              "index": 2520,
+              "enabled": 1,
+              "searcher_key": 1,
+              "type": "CITY",
+              "countryCode": "AE",
+              "name": "Дубай",
+              "areaName": "Эмират Дубай",
+              "domain": ".ae",
+              "parentId": 121479
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "total": 1
+}
