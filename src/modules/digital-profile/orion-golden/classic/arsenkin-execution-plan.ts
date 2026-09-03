@@ -70,6 +70,8 @@ export type BuildArsenkinExecutionPlanInput = {
    * When set, STAGE_TOOLS[stage] is ignored; stage still drives query/url scoping + digest.
    */
   toolsOverride?: ArsenkinToolName[];
+  /** Окружение для чтения состава инструментов; по умолчанию — процесса. */
+  env?: NodeJS.ProcessEnv;
 };
 
 const STAGE_TOOLS: Record<ArsenkinLiveStage, ArsenkinToolName[]> = {
@@ -210,22 +212,28 @@ export function buildArsenkinExecutionPlan(
   input: BuildArsenkinExecutionPlanInput
 ): ArsenkinExecutionPlan {
   /*
-   * План строит то, что у него просят, и не решает, что включено.
+   * Явный запрос строится как есть; список стадии по умолчанию — фильтруется
+   * составом.
    *
-   * Здесь стоял фильтр по `ARSENKIN_TOOLS`, и он ломал прогон: когда агент
-   * явно просит `ai-serp`, а инструмент выключен, отфильтрованный список
-   * становился пустым — и вызывающий получал «Пустой execution plan для
-   * tools=[ai-serp]», то есть ошибку вместо пропуска. Прогон на этом вставал.
+   * Здесь стоял общий фильтр по `ARSENKIN_TOOLS`, и он ломал прогон: когда
+   * агент **явно** просит `ai-serp`, а инструмент выключен, отфильтрованный
+   * список становился пустым — и вызывающий получал «Пустой execution plan для
+   * tools=[ai-serp]», то есть ошибку вместо пропуска. Поэтому явный запрос
+   * (`toolsOverride`) фильтром не трогается: пустой план на него — ошибка
+   * вызывающего, и её надо видеть.
    *
-   * Решение «запускать ли инструмент вообще» принимается выше — там, где
-   * выбирают, что делать: в доступности агента и в пропуске стадии
-   * (`stageHasEnabledTools`). Построитель плана обязан честно построить то, что
-   * запрошено, иначе пустой результат невозможно отличить от «нечего делать».
+   * Но список **по умолчанию** — не запрос, а «что вообще делает эта стадия»,
+   * и его фильтровать обязательно. `stageHasEnabledTools` пропускает стадию,
+   * если включён хоть один её инструмент: в режиме `topvisor` включён `paa`,
+   * стадия запускалась, и весь её список (`check-top`, `suggest`, `paa`) уходил
+   * в план — то есть ручной путь вкладки Arsenkin заказывал платные подсказки
+   * и позиции, которые уже собирает Topvisor.
    */
+  const enabled = arsenkinTools(input.env) as readonly ArsenkinToolName[];
   const tools =
     input.toolsOverride && input.toolsOverride.length > 0
       ? [...input.toolsOverride]
-      : STAGE_TOOLS[input.stage];
+      : STAGE_TOOLS[input.stage].filter((t) => enabled.includes(t));
   const scoped = stageQueries(input);
   const defaults = STAGE_DEFAULT_MAX[input.stage];
   const maxNewTasks = input.maxNewTasks > 0 ? input.maxNewTasks : defaults.maxNewTasks;
