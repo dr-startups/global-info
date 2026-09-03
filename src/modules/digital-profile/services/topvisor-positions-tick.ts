@@ -17,7 +17,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { topvisorAvailability } from "../providers/config";
+import { topvisorSecrets } from "../providers/config";
 import { topvisorCall, type TopvisorCallFn } from "../providers/topvisor/client";
 import {
   checkStatusPayload,
@@ -341,13 +341,26 @@ export async function runTopvisorPositionsTick(input: {
       { blockPipeline: true, blockCode: code, blockMessage: message }
     );
 
-  // Разрешение — ключ. Проверяется на каждом обороте: секрет мог исчезнуть.
-  const availability = topvisorAvailability(env);
-  if (availability.status !== "ENABLED") {
+  /*
+   * Разрешение — ключ, и проверяется он на каждом обороте: секрет мог исчезнуть.
+   *
+   * А вот **режим** начатому прогону уже не судья. Режим отвечает на вопрос
+   * «начинать ли сбор через Topvisor», и его решают один раз; работать
+   * начатому разрешает ключ. Пока здесь спрашивалась общая пригодность,
+   * снятие `SERP_COLLECTION_PROVIDER` сразу после прогона — обычное действие
+   * оператора — попав между оборотами, убивало бы прогон с «не настроен» при
+   * живых ключах, теряя уже оплаченную проверку. Начатость — это данные
+   * (состояние в джобе), а не слово настройки.
+   */
+  const { apiKey, userId } = topvisorSecrets(env);
+  const missingSecrets = [!apiKey ? "TOPVISOR_API_KEY" : null, !userId ? "TOPVISOR_USER_ID" : null].filter(
+    (x): x is string => Boolean(x)
+  );
+  if (missingSecrets.length > 0) {
     return fail(
       previous,
       "TOPVISOR_NOT_CONFIGURED",
-      availability.message ?? `Topvisor не настроен: нет ${availability.missing.join(", ")}.`
+      `Topvisor не настроен: нет ${missingSecrets.join(", ")}.`
     );
   }
 

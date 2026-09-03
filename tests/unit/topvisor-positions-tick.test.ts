@@ -117,6 +117,51 @@ describe("тик позиций Topvisor", () => {
     expect(again.observations.filter((o) => o.surface === "ai_answer").length).toBe(ai.length);
   });
 
+  it("начатый прогон продолжается, даже если режим уже переключили обратно", async () => {
+    /*
+     * Режим решает, **начинать** ли сбор через Topvisor; работать начатому
+     * прогону разрешает ключ. Оператор снимает `SERP_COLLECTION_PROVIDER`
+     * сразу после прогона, и попади это между оборотами — прогон умер бы с
+     * «не настроен» при живых ключах, потеряв оплаченную проверку.
+     */
+    const { call } = createTopvisorFixtureCall({ projectExists: true, checkPollsUntilDone: 0 });
+    const taskStore = createMemoryTopvisorTaskStore();
+    const started = await runTopvisorPositionsTick({ job: job(), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });
+    expect(started.state.phase).toBe("CHECKING");
+
+    const withoutMode = { TOPVISOR_API_KEY: "k", TOPVISOR_USER_ID: "100001", TOPVISOR_SUGGEST_REGIONS: "none" };
+    const next = await runTopvisorPositionsTick({
+      job: job(started.state),
+      keywords: PILOT_KEYWORDS,
+      call,
+      taskStore,
+      env: withoutMode,
+    });
+
+    expect(next.blockPipeline).toBe(false);
+    expect(next.state.errorCode).toBeNull();
+    expect(next.state.phase).toBe("DONE");
+    expect(next.observations.length).toBeGreaterThan(0);
+  });
+
+  it("начатый прогон без ключа всё равно отказывает, называя переменную", async () => {
+    const { call } = createTopvisorFixtureCall({ projectExists: true, checkPollsUntilDone: 0 });
+    const taskStore = createMemoryTopvisorTaskStore();
+    const started = await runTopvisorPositionsTick({ job: job(), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });
+
+    const out = await runTopvisorPositionsTick({
+      job: job(started.state),
+      keywords: PILOT_KEYWORDS,
+      call,
+      taskStore,
+      env: { TOPVISOR_API_KEY: "k" },
+    });
+
+    expect(out.blockPipeline).toBe(true);
+    expect(out.blockCode).toBe("TOPVISOR_NOT_CONFIGURED");
+    expect(String(out.blockMessage)).toContain("TOPVISOR_USER_ID");
+  });
+
   it("без ключа — отказ с именем переменной, ни одного вызова", async () => {
     const { call, log } = createTopvisorFixtureCall({ projectExists: true });
     const out = await runTopvisorPositionsTick({
