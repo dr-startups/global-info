@@ -15,7 +15,16 @@ import { createMemoryTopvisorTaskStore } from "@/modules/digital-profile/provide
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
 import { createTopvisorFixtureCall, PILOT_KEYWORDS } from "../support/topvisor-fixture-call";
 
-const ENV = { SERP_COLLECTION_PROVIDER: "topvisor", TOPVISOR_API_KEY: "k", TOPVISOR_USER_ID: "100001" };
+/*
+ * Подсказки здесь выключены настройкой: эти кадры про выдачу и AI-ответы, и
+ * подбор добавил бы им лишнюю фазу. Свои кадры у подсказок отдельные.
+ */
+const ENV = {
+  SERP_COLLECTION_PROVIDER: "topvisor",
+  TOPVISOR_API_KEY: "k",
+  TOPVISOR_USER_ID: "100001",
+  TOPVISOR_SUGGEST_REGIONS: "none",
+};
 
 function job(state: UnifiedCollectionJob["topvisorEnrichmentState"] = null): UnifiedCollectionJob {
   return {
@@ -171,6 +180,7 @@ describe("тик позиций Topvisor", () => {
     await taskStore.create({
       caseId: "pilot-2026-09-03",
       reportRunId: topvisorReportRunId("job-1"),
+      toolName: "positions",
       externalTaskId: null,
       requestJson: { projectId: 32742967, checkDate: "2026-09-03" },
       submittedAt: now(),

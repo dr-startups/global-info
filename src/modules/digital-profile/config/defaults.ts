@@ -81,6 +81,17 @@ export const STRING_DEFAULTS = {
    * когда путь закрыт целиком.
    */
   SERP_COLLECTION_PROVIDER: "legacy",
+  /**
+   * Поверхности подсказок, собираемые Topvisor: ключи регионов аудита через
+   * запятую, пустая строка — не собирать вовсе.
+   *
+   * Умолчание описывает работающий продукт: в отчёте три поверхности подсказок
+   * (RU Яндекс, RU Google, ОАЭ Google), и все три собираются, как собирал их
+   * Arsenkin. **Цена названа здесь, потому что она и есть причина настройки:**
+   * 0,90 ₽ за исходную фразу на поверхность, то есть 2,70 ₽ на прогон. Сузить
+   * список — решение владельца, а не молчаливая экономия.
+   */
+  TOPVISOR_SUGGEST_REGIONS: "yandex-moscow,google-moscow,google-dubai",
 } as const;
 
 export type BooleanSettingName = keyof typeof BOOLEAN_DEFAULTS;

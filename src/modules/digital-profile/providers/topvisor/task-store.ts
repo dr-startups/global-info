@@ -19,11 +19,17 @@ import { createHash, randomUUID } from "node:crypto";
  */
 export type TopvisorTaskState = "QUEUED" | "RUNNING" | "DONE" | "FAILED";
 
+/**
+ * Инструменты Topvisor — по строке задачи на каждый: проверка позиций идёт
+ * минуты, подбор подсказок — секунды, и оплачиваются они порознь.
+ */
+export type TopvisorToolName = "positions" | "collect";
+
 export type TopvisorTaskRow = {
   id: string;
   caseId: string;
   reportRunId: string;
-  toolName: "positions";
+  toolName: TopvisorToolName;
   externalTaskId: string | null;
   requestHash: string;
   state: TopvisorTaskState;
@@ -39,6 +45,7 @@ export type TopvisorTaskRow = {
 export type TopvisorTaskCreate = {
   caseId: string;
   reportRunId: string;
+  toolName: TopvisorToolName;
   /** `null` — запуск ещё не подтверждён (строка `QUEUED`). */
   externalTaskId: string | null;
   requestJson: Record<string, unknown>;
@@ -53,7 +60,7 @@ export type TopvisorTaskPatch = Partial<
 >;
 
 export type TopvisorTaskStore = {
-  findByReportRun: (reportRunId: string) => Promise<TopvisorTaskRow | null>;
+  findByReportRun: (reportRunId: string, toolName?: TopvisorToolName) => Promise<TopvisorTaskRow | null>;
   create: (input: TopvisorTaskCreate) => Promise<TopvisorTaskRow>;
   update: (id: string, patch: TopvisorTaskPatch) => Promise<TopvisorTaskRow>;
 };
@@ -67,12 +74,16 @@ export function hashTopvisorRequest(body: unknown): string {
 export function createMemoryTopvisorTaskStore(): TopvisorTaskStore {
   const rows = new Map<string, TopvisorTaskRow>();
   return {
-    async findByReportRun(reportRunId) {
-      return [...rows.values()].find((r) => r.reportRunId === reportRunId) ?? null;
+    async findByReportRun(reportRunId, toolName = "positions") {
+      return (
+        [...rows.values()].find((r) => r.reportRunId === reportRunId && r.toolName === toolName) ?? null
+      );
     },
     async create(input) {
-      // Одна строка на прогон: повторное заведение обновляет её, как upsert в базе.
-      const existing = [...rows.values()].find((r) => r.reportRunId === input.reportRunId);
+      // Одна строка на прогон и инструмент: повтор обновляет её, как upsert в базе.
+      const existing = [...rows.values()].find(
+        (r) => r.reportRunId === input.reportRunId && r.toolName === input.toolName
+      );
       if (existing) {
         const next: TopvisorTaskRow = {
           ...existing,
@@ -90,7 +101,7 @@ export function createMemoryTopvisorTaskStore(): TopvisorTaskStore {
         id: `tv-${randomUUID().slice(0, 8)}`,
         caseId: input.caseId,
         reportRunId: input.reportRunId,
-        toolName: "positions",
+        toolName: input.toolName,
         externalTaskId: input.externalTaskId,
         requestHash: hashTopvisorRequest(input.requestJson),
         state: input.externalTaskId ? "RUNNING" : "QUEUED",
@@ -131,12 +142,12 @@ type PrismaTaskRow = {
   completedAt: Date | null;
 };
 
-function fromPrisma(row: PrismaTaskRow): TopvisorTaskRow {
+function fromPrisma(row: PrismaTaskRow & { toolName?: unknown }): TopvisorTaskRow {
   return {
     id: row.id,
     caseId: String(row.caseId ?? ""),
     reportRunId: String(row.reportRunId ?? ""),
-    toolName: "positions",
+    toolName: row.toolName === "collect" ? "collect" : "positions",
     externalTaskId: row.externalTaskId,
     requestHash: row.requestHash,
     state: (["QUEUED", "RUNNING", "DONE", "FAILED"].includes(row.state) ? row.state : "QUEUED") as TopvisorTaskState,
@@ -156,9 +167,9 @@ function toJson(value: unknown): never {
 
 export function createPrismaTopvisorTaskStore(prisma: PrismaClient): TopvisorTaskStore {
   return {
-    async findByReportRun(reportRunId) {
+    async findByReportRun(reportRunId, toolName = "positions") {
       const row = await prisma.providerTask.findFirst({
-        where: { reportRunId, provider: TOPVISOR_PROVIDER, toolName: "positions" },
+        where: { reportRunId, provider: TOPVISOR_PROVIDER, toolName },
         orderBy: { createdAt: "desc" },
       });
       return row ? fromPrisma(row as PrismaTaskRow) : null;
@@ -192,7 +203,7 @@ export function createPrismaTopvisorTaskStore(prisma: PrismaClient): TopvisorTas
           caseId: input.caseId,
           reportRunId: input.reportRunId,
           provider: TOPVISOR_PROVIDER,
-          toolName: "positions",
+          toolName: input.toolName,
           externalTaskId: input.externalTaskId,
           requestHash,
           state: input.externalTaskId ? "RUNNING" : "QUEUED",

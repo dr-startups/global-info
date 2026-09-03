@@ -29,6 +29,12 @@ import {
   type TopvisorObservation,
 } from "../providers/topvisor/adapters/positions";
 import { aiAnswersFromPositions } from "../providers/topvisor/adapters/ai-answers";
+import {
+  suggestionsFromKeywords,
+  TOPVISOR_HINT_DEPTH,
+  TOPVISOR_HINT_GENERATORS,
+} from "../providers/topvisor/adapters/suggestions";
+import { stringSetting } from "../config/defaults";
 import { ensureTopvisorProject, TopvisorProjectError } from "../providers/topvisor/project";
 import { TOPVISOR_AUDIT_REGIONS, type TopvisorAuditRegion } from "../providers/topvisor/regions";
 import { createPrismaTopvisorTaskStore, type TopvisorTaskStore } from "../providers/topvisor/task-store";
@@ -39,7 +45,12 @@ export const TOPVISOR_ENRICHMENT_STATE_VERSION = "topvisor-enrichment-state-v1" 
 
 export type TopvisorEnrichmentState = {
   version: typeof TOPVISOR_ENRICHMENT_STATE_VERSION;
-  phase: "NOT_STARTED" | "CHECKING" | "DONE" | "FAILED";
+  /**
+   * `COLLECTING` — позиции прочитаны, идёт подбор подсказок. Отдельная фаза, а
+   * не признак: подбор оплачивается своей задачей и может отказать, не отнимая
+   * уже оплаченной выдачи.
+   */
+  phase: "NOT_STARTED" | "CHECKING" | "COLLECTING" | "DONE" | "FAILED";
   projectId: number | null;
   reportRunId: string;
   providerTaskId: string | null;
@@ -54,6 +65,14 @@ export type TopvisorEnrichmentState = {
   aiAnswerCount: number;
   /** Запросы, у которых AI-ответа не оказалось: пустота названа, а не молчит. */
   aiAbsentQueries: string[];
+  /** Подбор подсказок: поверхность, исходная фраза и группа, куда сервис их сложил. */
+  suggest: Array<{
+    key: TopvisorAuditRegion["key"];
+    sourceQuery: string;
+    groupId: number | null;
+    ready: boolean;
+  }>;
+  suggestionCount: number;
   errorCode: string | null;
   errorMessage: string | null;
   updatedAt: string;
@@ -83,6 +102,35 @@ export function topvisorReportRunId(unifiedJobId: string): string {
 /** Пауза между опросами: проверка идёт минуты, чаще спрашивать незачем. */
 const CHECK_POLL_MS = 30_000;
 
+/** Пауза между опросами подбора: он идёт секунды, а не минуты. */
+const COLLECT_POLL_MS = 10_000;
+
+/**
+ * Поверхности подсказок, которые собираем, — из настройки: цена решения
+ * (0,90 ₽ за поверхность) названа там же, где значение.
+ */
+function suggestRegions(env: EnvLike): TopvisorAuditRegion[] {
+  /*
+   * Пустая строка в окружении — это «не задано», и `stringSetting` вернёт
+   * умолчание. Явное «ничего не собирать» пишется значением, которое не
+   * называет ни одной поверхности, — например `none`: отдельной проверки для
+   * него нет, потому что отбор по ключам и так вернёт пустой список.
+   */
+  const raw = stringSetting("TOPVISOR_SUGGEST_REGIONS", env);
+  const keys = new Set(
+    String(raw ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+  );
+  return TOPVISOR_AUDIT_REGIONS.filter((r) => keys.has(r.key));
+}
+
+/** Исходная фраза поверхности — первая из набора её региона: имя субъекта. */
+function sourceQueryFor(region: TopvisorAuditRegion, keywords: TopvisorKeywords): string | null {
+  return regionQueries(region, keywords)[0] ?? null;
+}
+
 function emptyState(job: UnifiedCollectionJob, now: Date): TopvisorEnrichmentState {
   return {
     version: TOPVISOR_ENRICHMENT_STATE_VERSION,
@@ -98,6 +146,8 @@ function emptyState(job: UnifiedCollectionJob, now: Date): TopvisorEnrichmentSta
     observationCount: 0,
     aiAnswerCount: 0,
     aiAbsentQueries: [],
+    suggest: [],
+    suggestionCount: 0,
     errorCode: null,
     errorMessage: null,
     updatedAt: now.toISOString(),
@@ -135,6 +185,8 @@ function rebuildObservations(input: {
   state: TopvisorEnrichmentState;
   snapshots: Record<string, unknown>;
   positions: unknown;
+  /** Ответы чтения групп подбора: ключ поверхности → список фраз группы. */
+  suggestions: Record<string, unknown>;
   keywords: TopvisorKeywords;
   caseId: string;
   unifiedJobId: string;
@@ -144,6 +196,7 @@ function rebuildObservations(input: {
   rowsByRegion: Record<string, number>;
   aiAnswerCount: number;
   aiAbsentQueries: string[];
+  suggestionCount: number;
 } {
   const observations: TopvisorObservation[] = [];
   const warnings: string[] = [];
@@ -194,12 +247,30 @@ function rebuildObservations(input: {
     for (const q of ai.absentQueries) aiAbsentQueries.add(`${region.key}:${q}`);
     warnings.push(...ai.warnings.map((w) => `topvisor:${w}`));
   }
+  let suggestionCount = 0;
+  for (const planned of input.state.suggest) {
+    const region = TOPVISOR_AUDIT_REGIONS.find((r) => r.key === planned.key);
+    const body = input.suggestions[planned.key];
+    if (!region || planned.groupId == null || body == null) continue;
+    const built = suggestionsFromKeywords({
+      body,
+      groupId: planned.groupId,
+      region,
+      sourceQuery: planned.sourceQuery,
+      provenance,
+    });
+    observations.push(...built.observations);
+    suggestionCount += built.observations.length;
+    warnings.push(...built.warnings.map((w) => `topvisor:${w}`));
+  }
+
   return {
     observations,
     warnings,
     rowsByRegion,
     aiAnswerCount,
     aiAbsentQueries: [...aiAbsentQueries],
+    suggestionCount,
   };
 }
 
@@ -252,7 +323,7 @@ export async function runTopvisorPositionsTick(input: {
 
   const finish = (
     state: TopvisorEnrichmentState,
-    rest: Partial<Omit<TopvisorTickResult, "state">> & { observations?: TopvisorObservation[] }
+    rest: Partial<TopvisorTickResult> & { observations?: TopvisorObservation[] }
   ): TopvisorTickResult => ({
     state: { ...state, updatedAt: now.toISOString() },
     observations: rest.observations ?? [],
@@ -317,6 +388,21 @@ export async function runTopvisorPositionsTick(input: {
     externalTaskId: previous.externalTaskId ?? liveTask?.externalTaskId ?? null,
   };
 
+  // --- Подбор идёт: дочитать группы и завершить; снимки уже сохранены. ---
+  if (liveTask?.state === "DONE" && resumed.phase === "COLLECTING") {
+    const settled = await settleSuggestions({
+      call,
+      taskStore,
+      state: resumed,
+      keywords: input.keywords,
+      job,
+      now,
+      snapshots: (liveTask.responseJson?.snapshots ?? {}) as Record<string, unknown>,
+      positions: liveTask.responseJson?.positions ?? null,
+    });
+    return finish(settled.state, settled);
+  }
+
   // --- Снимки на месте: наблюдения пересобираются из сохранённого снимка. ---
   if (liveTask?.state === "DONE") {
     const doneState: TopvisorEnrichmentState = { ...resumed, phase: "DONE", lastPercent: 100 };
@@ -324,6 +410,8 @@ export async function runTopvisorPositionsTick(input: {
       state: doneState,
       snapshots: (liveTask.responseJson?.snapshots ?? {}) as Record<string, unknown>,
       positions: liveTask.responseJson?.positions ?? null,
+      suggestions: ((await taskStore.findByReportRun(previous.reportRunId, "collect"))?.responseJson
+        ?.keywords ?? {}) as Record<string, unknown>,
       keywords: input.keywords,
       caseId: job.caseId,
       unifiedJobId: job.unifiedJobId,
@@ -334,6 +422,7 @@ export async function runTopvisorPositionsTick(input: {
         observationCount: rebuilt.observations.length,
         aiAnswerCount: rebuilt.aiAnswerCount,
         aiAbsentQueries: rebuilt.aiAbsentQueries,
+        suggestionCount: rebuilt.suggestionCount,
       },
       { observations: rebuilt.observations, warnings: rebuilt.warnings, waiting: false }
     );
@@ -366,6 +455,7 @@ export async function runTopvisorPositionsTick(input: {
     const task = await taskStore.create({
       caseId: job.caseId,
       reportRunId: resumed.reportRunId,
+      toolName: "positions",
       externalTaskId: null,
       requestJson: {
         projectId: project.projectId,
@@ -482,33 +572,270 @@ export async function runTopvisorPositionsTick(input: {
     );
   }
 
-  const doneState: TopvisorEnrichmentState = { ...checking, phase: "DONE", lastPercent: 100 };
-  const rebuilt = rebuildObservations({
-    state: doneState,
-    snapshots,
-    positions: positionsRead.body,
-    keywords: input.keywords,
-    caseId: job.caseId,
-    unifiedJobId: job.unifiedJobId,
-  });
   await taskStore.update(liveTask.id, {
     state: "DONE",
     completedAt: now,
-    responseJson: {
-      status: status.body,
-      snapshots,
-      positions: positionsRead.body,
-      observationCount: rebuilt.observations.length,
-    },
+    responseJson: { status: status.body, snapshots, positions: positionsRead.body },
   });
-  return finish(
-    {
+
+  /*
+   * Позиции оплачены и прочитаны — дальше подбор подсказок. Он идёт **после**
+   * проверки намеренно: собранные фразы попадают в проект, и заказать проверку
+   * позиций после них значило бы оплатить вчетверо больше фраз.
+   */
+  const collected = await ensureSuggestCollect({
+    call,
+    taskStore,
+    state: { ...checking, phase: "COLLECTING" },
+    keywords: input.keywords,
+    env,
+    now,
+    job,
+  });
+  warnings.push(...collected.warnings);
+  const settled = await settleSuggestions({
+    call,
+    taskStore,
+    state: collected.state,
+    keywords: input.keywords,
+    job,
+    now,
+    snapshots,
+    positions: positionsRead.body,
+  });
+  // Состояние берётся у `settleSuggestions`: счётчики строк считает он.
+  return finish(settled.state, { ...settled, advanced: true });
+}
+
+/**
+ * Заказать подбор подсказок — по строке задачи и группе, а не по слову фазы.
+ *
+ * Деньги: строка задачи заводится **до** платного вызова, а перед вызовом
+ * проверяется, нет ли уже группы с нужным именем: обрыв между запуском и
+ * записью не должен оплачивать подбор дважды. Отказ подбора не роняет
+ * оплаченную выдачу — он остаётся предупреждением.
+ */
+async function ensureSuggestCollect(input: {
+  call: TopvisorCallFn;
+  taskStore: TopvisorTaskStore;
+  state: TopvisorEnrichmentState;
+  keywords: TopvisorKeywords;
+  env: EnvLike;
+  now: Date;
+  job: UnifiedCollectionJob;
+}): Promise<{ state: TopvisorEnrichmentState; warnings: string[] }> {
+  const warnings: string[] = [];
+  const regions = suggestRegions(input.env);
+  const projectId = input.state.projectId!;
+  if (regions.length === 0) {
+    return { state: { ...input.state, phase: "DONE", suggest: [] }, warnings };
+  }
+
+  /*
+   * Уже заказанное узнаётся по строке задачи, а не по имени группы: в имени
+   * («DI (город): фраза») нет поисковика, и подбор по одной фразе в Яндексе и
+   * Google Москвы дал бы две группы с одинаковым именем.
+   *
+   * Строка заводится **до** первого платного вызова и дополняется
+   * идентификатором группы сразу после каждого. Остаточный риск назван: обрыв
+   * ровно между вызовом и записью оплатит один подбор (0,90 ₽) второй раз —
+   * узкое окно вместо тихой двойной оплаты всего набора.
+   */
+  const stored = await input.taskStore.findByReportRun(input.state.reportRunId, "collect");
+  const planned: TopvisorEnrichmentState["suggest"] =
+    ((stored?.requestJson?.planned ?? []) as TopvisorEnrichmentState["suggest"]).map((p) => ({
+      ...p,
+    }));
+  const saveProgress = async (): Promise<void> => {
+    await input.taskStore.create({
+      caseId: input.job.caseId,
+      reportRunId: input.state.reportRunId,
+      toolName: "collect",
+      externalTaskId: planned
+        .map((p) => p.groupId)
+        .filter((x): x is number => x != null)
+        .join(","),
+      requestJson: { projectId, planned },
+      submittedAt: input.now,
+    });
+  };
+
+  if (planned.length === 0) {
+    for (const region of regions) {
+      const sourceQuery = sourceQueryFor(region, input.keywords);
+      if (!sourceQuery) {
+        warnings.push(`topvisor:collect-no-source:${region.key}`);
+        continue;
+      }
+      planned.push({ key: region.key, sourceQuery, groupId: null, ready: false });
+    }
+    if (planned.length === 0) {
+      return { state: { ...input.state, phase: "DONE", suggest: [] }, warnings };
+    }
+    await saveProgress();
+  }
+
+  for (const entry of planned) {
+    if (entry.groupId != null) continue;
+    const region = regions.find((r) => r.key === entry.key);
+    if (!region) continue;
+    const sourceQuery = entry.sourceQuery;
+    const go = await input.call({
+      action: "edit",
+      service: "keywords_2",
+      method: "collect/go",
+      payload: {
+        project_id: projectId,
+        keywords: [sourceQuery],
+        qualifiers: [
+          {
+            searcher_key: region.searcher_key,
+            region_key: region.region_key,
+            hint_depth: TOPVISOR_HINT_DEPTH,
+            hint_generators: [...TOPVISOR_HINT_GENERATORS],
+          },
+        ],
+      },
+    });
+    if (!go.ok) {
+      // Отказ подбора не отменяет оплаченную выдачу — он назван и идёт дальше.
+      warnings.push(`topvisor:collect-start-failed:${entry.key}:${go.errors.join("; ")}`);
+      entry.ready = true;
+      continue;
+    }
+    const created = (go.body as { result?: Record<string, { id?: unknown }> })?.result ?? {};
+    const groupId = Number(Object.values(created)[0]?.id ?? Object.keys(created)[0] ?? 0);
+    entry.groupId = Number.isFinite(groupId) && groupId > 0 ? groupId : null;
+    await saveProgress();
+  }
+
+  const live = planned.filter((p) => p.groupId != null);
+  if (live.length === 0) {
+    return { state: { ...input.state, phase: "DONE", suggest: planned }, warnings };
+  }
+  return { state: { ...input.state, phase: "COLLECTING", suggest: planned }, warnings };
+}
+
+/**
+ * Дочитать подбор: группы готовы — забрать фразы, нет — ждать.
+ *
+ * Группа подбора обязана остаться выключенной: включённая, она попала бы в
+ * следующую проверку позиций, а фраз в ней вчетверо больше исходных. Сервис
+ * отдаёт её выключенной, но полагаться на это нельзя — проверяем и выключаем.
+ */
+async function settleSuggestions(input: {
+  call: TopvisorCallFn;
+  taskStore: TopvisorTaskStore;
+  state: TopvisorEnrichmentState;
+  keywords: TopvisorKeywords;
+  job: UnifiedCollectionJob;
+  now: Date;
+  snapshots: Record<string, unknown>;
+  positions: unknown;
+}): Promise<{
+  observations: TopvisorObservation[];
+  warnings: string[];
+  waiting: boolean;
+  nextPollAt: string | null;
+  state: TopvisorEnrichmentState;
+}> {
+  const warnings: string[] = [];
+  const state = input.state;
+  const projectId = state.projectId!;
+  const bodies: Record<string, unknown> = {};
+
+  if (state.phase === "COLLECTING" && state.suggest.length > 0) {
+    const groupsRead = await input.call({
+      action: "get",
+      service: "keywords_2",
+      method: "groups",
+      payload: { project_id: projectId, fields: ["id", "name", "on", "status"] },
+    });
+    const groups = (Array.isArray((groupsRead.body as { result?: unknown })?.result)
+      ? ((groupsRead.body as { result: Array<Record<string, unknown>> }).result)
+      : []) as Array<{ id?: unknown; on?: unknown; status?: unknown }>;
+
+    let pending = 0;
+    for (const planned of state.suggest) {
+      if (planned.groupId == null) continue;
+      const group = groups.find((g) => Number(g.id) === planned.groupId);
+      if (!group) {
+        pending += 1;
+        continue;
+      }
+      if (Number(group.status) !== 0) {
+        pending += 1;
+        continue;
+      }
+      if (Number(group.on) !== 0) {
+        await input.call({
+          action: "edit",
+          service: "keywords_2",
+          method: "groups/on",
+          payload: { project_id: projectId, id: planned.groupId, on: 0 },
+        });
+        warnings.push(`topvisor:collect-group-disabled:${planned.key}`);
+      }
+      const list = await input.call({
+        action: "get",
+        service: "keywords_2",
+        method: "keywords",
+        payload: {
+          project_id: projectId,
+          filters: [
+            { name: "group_id", operator: "EQUALS", values: [String(planned.groupId)] },
+          ],
+          fields: ["name", "group_id"],
+        },
+      });
+      if (!list.ok) {
+        warnings.push(`topvisor:collect-read-failed:${planned.key}:${list.errors.join("; ")}`);
+        continue;
+      }
+      bodies[planned.key] = list.body;
+      planned.ready = true;
+    }
+    if (pending > 0) {
+      return {
+        observations: [],
+        warnings,
+        waiting: true,
+        nextPollAt: new Date(input.now.getTime() + COLLECT_POLL_MS).toISOString(),
+        state,
+      };
+    }
+    const collectTask = await input.taskStore.findByReportRun(state.reportRunId, "collect");
+    if (collectTask) {
+      await input.taskStore.update(collectTask.id, {
+        state: "DONE",
+        completedAt: input.now,
+        responseJson: { keywords: bodies },
+      });
+    }
+  }
+
+  const doneState: TopvisorEnrichmentState = { ...state, phase: "DONE", lastPercent: 100 };
+  const rebuilt = rebuildObservations({
+    state: doneState,
+    snapshots: input.snapshots,
+    positions: input.positions,
+    suggestions: bodies,
+    keywords: input.keywords,
+    caseId: input.job.caseId,
+    unifiedJobId: input.job.unifiedJobId,
+  });
+  return {
+    observations: rebuilt.observations,
+    warnings: [...warnings, ...rebuilt.warnings],
+    waiting: false,
+    nextPollAt: null,
+    state: {
       ...doneState,
       regions: doneState.regions.map((r) => ({ ...r, rows: rebuilt.rowsByRegion[r.key] ?? 0 })),
       observationCount: rebuilt.observations.length,
       aiAnswerCount: rebuilt.aiAnswerCount,
       aiAbsentQueries: rebuilt.aiAbsentQueries,
+      suggestionCount: rebuilt.suggestionCount,
     },
-    { observations: rebuilt.observations, warnings: rebuilt.warnings, waiting: false, advanced: true }
-  );
+  };
 }

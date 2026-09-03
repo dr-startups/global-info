@@ -674,6 +674,23 @@ describe("unified orion arsenkin collection", () => {
         ["GOOGLE", "YANDEX"]
       );
 
+      /*
+       * Подсказки (T3): собирает их Topvisor, Serper в этом режиме их не даёт.
+       * Строка автодополнения несёт исходную фразу запросом и собранную —
+       * подсказкой; источник подсказок в прогоне ровно один.
+       */
+      const suggestions = merge!.observations.filter((o) => o.kind === "suggestion");
+      assert.ok(suggestions.length > 0, "в слиянии нет подсказок Topvisor");
+      for (const sg of suggestions) {
+        assert.match(String(sg.primaryProvider), /^topvisor-(yandex|google)$/);
+        assert.ok(String(sg.suggestion ?? "").length > 0, "подсказка без текста");
+      }
+      assert.equal(
+        suggestions.filter((sg) => /serper|arsenkin/i.test(String(sg.primaryProvider))).length,
+        0,
+        "у подсказок больше одного источника"
+      );
+
       const bindingRaw = readFileSync(
         join(process.cwd(), "storage", "digital-profile", "unified-orion-collection", caseId, job!.unifiedJobId, "report-data-binding.json"),
         "utf-8"

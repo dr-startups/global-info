@@ -50,6 +50,8 @@ function topvisorState(phase: TopvisorEnrichmentState["phase"]): TopvisorEnrichm
     observationCount: 0,
     aiAnswerCount: 0,
     aiAbsentQueries: [],
+    suggest: [],
+    suggestionCount: 0,
     errorCode: null,
     errorMessage: null,
     updatedAt: "2026-09-03T00:00:00.000Z",

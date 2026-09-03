@@ -36,6 +36,14 @@ export type FixtureCallOptions = {
   settingsApplied?: boolean;
   /** Запуск проверки отвечает ошибкой сервиса. */
   failCheckerGo?: boolean;
+  /** Запуск подбора подсказок отвечает ошибкой сервиса. */
+  failCollectGo?: boolean;
+  /** Группа подбора уже есть в проекте (возобновление после обрыва). */
+  collectGroupExists?: boolean;
+  /** Группа подбора пришла включённой — её надо выключить, иначе она попадёт в проверку. */
+  collectGroupOn?: boolean;
+  /** Сколько чтений групп подбор ещё «идёт» (status 1), прежде чем завершиться. */
+  collectPollsUntilDone?: number;
 };
 
 function ok<T>(body: T): TopvisorCallResult<T> {
@@ -58,6 +66,11 @@ export function createTopvisorFixtureCall(options: FixtureCallOptions = {}): {
   const log: FixtureCallLogEntry[] = [];
   const untilDone = options.checkPollsUntilDone ?? 1;
   let statusPolls = 0;
+  // Группа подбора появляется в проекте после платного вызова — как в жизни,
+  // и какое-то время значится незавершённой (`status: 1`).
+  let collectStarted = false;
+  let groupReads = 0;
+  const collectUntilDone = options.collectPollsUntilDone ?? 1;
 
   const route = (input: TopvisorCallInput): TopvisorCallResult<unknown> => {
     // Ключ маршрута — тот же путь, что уходит в сервис: действие/служба/метод.
@@ -85,9 +98,34 @@ export function createTopvisorFixtureCall(options: FixtureCallOptions = {}): {
     if (key === "add/positions_2/searchers") return ok(loadTopvisorFixture("setup-searcher-0"));
     if (key === "add/positions_2/searchers/regions") return ok(loadTopvisorFixture("setup-region-google-moscow"));
     if (key === "edit/positions_2/settings") return ok(loadTopvisorFixture("setup-settings-correct"));
-    if (key === "get/keywords_2/groups") return ok(loadTopvisorFixture("read-groups-now"));
+    if (key === "get/keywords_2/groups") {
+      const body = loadTopvisorFixture<{ result: Array<Record<string, unknown>> }>("read-groups-now");
+      const rows = body.result.filter((g) => !String(g.name ?? "").startsWith("DI ("));
+      const di = body.result.filter((g) => String(g.name ?? "").startsWith("DI ("));
+      for (const g of di) g.on = options.collectGroupOn ? 1 : 0;
+      const hidden = options.collectGroupExists === false && !collectStarted;
+      if (!hidden) {
+        groupReads += 1;
+        for (const g of di) g.status = groupReads > collectUntilDone ? 0 : 1;
+      }
+      return ok({ ...body, result: hidden ? rows : [...rows, ...di] });
+    }
     if (key === "add/keywords_2/groups") return ok(loadTopvisorFixture("setup-group-add-UAE"));
-    if (key === "get/keywords_2/keywords") return ok(loadTopvisorFixture("setup-keywords-after"));
+    if (key === "get/keywords_2/keywords") {
+      // Чтение группы подбора отличается фильтром по ней: набор позиций и
+      // собранные подсказки живут в одном списке фраз проекта.
+      const byGroup = Array.isArray(payload.filters)
+        ? (payload.filters as Array<{ name?: unknown }>).some((f) => String(f?.name ?? "") === "group_id")
+        : false;
+      return ok(loadTopvisorFixture(byGroup ? "read-suggest-group" : "setup-keywords-after"));
+    }
+    if (key === "edit/keywords_2/collect/go") {
+      collectStarted = true;
+      return options.failCollectGo
+        ? fail("Ошибка сервиса при запуске подбора")
+        : ok(loadTopvisorFixture("probe-collect-go"));
+    }
+    if (key === "edit/keywords_2/groups/on") return ok({ result: 1 });
     if (key === "add/keywords_2/keywords") return ok(loadTopvisorFixture("setup-keyword-RU-1"));
     if (key === "edit/positions_2/checker/go") {
       return options.failCheckerGo ? fail("Ошибка сервиса при запуске проверки") : ok(loadTopvisorFixture("check-go"));

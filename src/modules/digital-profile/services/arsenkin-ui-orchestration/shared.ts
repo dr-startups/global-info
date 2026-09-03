@@ -15,6 +15,7 @@ import {
   type CanonicalStageDeps,
   type CanonicalStageResult,
 } from "../../orion-golden/classic/execute-canonical-arsenkin-stage";
+import { arsenkinTools } from "../../providers/arsenkin/flags";
 import type { ArsenkinLiveStage } from "../../orion-golden/classic/arsenkin-execution-plan";
 import {
   workflowForStage,
@@ -197,25 +198,38 @@ export function toRegionBucket(value: string): "RU" | "UAE" {
   return /UAE|AE|INTL/i.test(String(value ?? "")) ? "UAE" : "RU";
 }
 
-export function arsenkinBudgetForStage(stage: ArsenkinUiStage): {
+/**
+ * Бюджет стадии — и её состав инструментов.
+ *
+ * Состав спрашивается у `arsenkinTools()`, а не перечисляется здесь второй раз:
+ * пока списков было три (здесь, у агентов и в кнопке целевого повтора), стадия
+ * обещала инструменты, которых в прогоне нет, — а в режиме `topvisor` обещала
+ * бы платный `suggest`, который собирает уже Topvisor.
+ */
+export function arsenkinBudgetForStage(
+  stage: ArsenkinUiStage,
+  env: NodeJS.ProcessEnv = process.env
+): {
   maxNewTasks: number;
   maxEstimatedLimits: number;
   tools: string[];
 } {
+  const enabled = arsenkinTools(env) as readonly string[];
+  const only = (tools: string[]): string[] => tools.filter((t) => enabled.includes(t));
   if (stage === "SUGGEST_RU_CANARY") {
-    return { maxNewTasks: 2, maxEstimatedLimits: 2, tools: ["suggest"] };
+    return { maxNewTasks: 2, maxEstimatedLimits: 2, tools: only(["suggest"]) };
   }
   if (stage === "FIRST36_STAGE1") {
     return {
       maxNewTasks: 20,
       maxEstimatedLimits: 20,
-      tools: ["check-top", "suggest", "paa"],
+      tools: only(["check-top", "suggest", "paa"]),
     };
   }
   return {
     maxNewTasks: 10,
     maxEstimatedLimits: 10,
-    tools: ["ai-serp", "check-h", "indexation"],
+    tools: only(["ai-serp", "check-h", "indexation"]),
   };
 }
 

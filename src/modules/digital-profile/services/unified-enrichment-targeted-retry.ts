@@ -30,6 +30,7 @@ import {
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
 import type { UnifiedCollectionJob } from "./unified-collection-types";
+import { arsenkinTools } from "../providers/arsenkin/flags";
 
 export const PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED =
   "PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED" as const;
@@ -395,6 +396,21 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   if (!jobId) throw new ValidationError("jobId is required");
   if (!enrichmentRunId) throw new ValidationError("enrichmentRunId is required");
   const agentName = normalizeAgentName(input.agentName);
+
+  /*
+   * Инструмент вне состава не заказывается — даже кнопкой оператора.
+   *
+   * Состав спрашивается у `arsenkinTools()`: в режиме `topvisor` подсказки
+   * собирает Topvisor, и нажатие заказало бы **второй платный** источник того
+   * же самого. Отказ идёт первым — до чтения джобы, лизы и подтверждения
+   * оплаты: платить нельзя, значит и спрашивать не о чем.
+   */
+  if (!arsenkinTools().includes("suggest")) {
+    throw new ConflictError("suggest is not in ARSENKIN_TOOLS", {
+      reason: "SUGGEST_NOT_IN_ARSENKIN_TOOLS",
+      tools: arsenkinTools(),
+    });
+  }
 
   const job = await loadUnifiedCollectionJob(input.caseId);
   if (!job) throw new NotFoundError("unified collection job not found");
