@@ -27,6 +27,9 @@ import {
   snapshotHistoryPayload,
   snapshotToObservations,
   type TopvisorObservation,
+  normalizeKeyword,
+  topvisorPlanKey,
+  type TopvisorKeywordPlan,
 } from "../providers/topvisor/adapters/positions";
 import { aiAnswersFromPositions } from "../providers/topvisor/adapters/ai-answers";
 import {
@@ -38,7 +41,8 @@ import { stringSetting } from "../config/defaults";
 import { ensureTopvisorProject, TopvisorProjectError } from "../providers/topvisor/project";
 import { TOPVISOR_AUDIT_REGIONS, type TopvisorAuditRegion } from "../providers/topvisor/regions";
 import { createPrismaTopvisorTaskStore, type TopvisorTaskStore } from "../providers/topvisor/task-store";
-import { SERP_AUDIT_DEPTH } from "./orion-search-profile-service";
+import { loadCaseSubject } from "../agents/mock/mock-utils";
+import { offlineOrionQueryPlan, SERP_AUDIT_DEPTH, type OfflinePlanSubject } from "./orion-search-profile-service";
 import type { UnifiedCollectionJob } from "./unified-collection-types";
 
 export const TOPVISOR_ENRICHMENT_STATE_VERSION = "topvisor-enrichment-state-v1" as const;
@@ -91,7 +95,15 @@ export type TopvisorTickResult = {
   nextPollAt: string | null;
 };
 
-export type TopvisorKeywords = { ru: readonly string[]; uae: readonly string[] };
+export type TopvisorKeywords = {
+  ru: readonly string[];
+  uae: readonly string[];
+  /**
+   * Пометки плана по нормализованной фразе. Не хранятся в состоянии прогона:
+   * выводятся из субъекта на каждом ходу, а в состояние едут только фразы.
+   */
+  plan?: TopvisorKeywordPlan;
+};
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -126,9 +138,15 @@ function suggestRegions(env: EnvLike): TopvisorAuditRegion[] {
   return TOPVISOR_AUDIT_REGIONS.filter((r) => keys.has(r.key));
 }
 
-/** Исходная фраза поверхности — первая из набора её региона: имя субъекта. */
+/**
+ * Исходная фраза поверхности — само ФИО по пометке плана; без плана — первая
+ * из набора региона (порядок выборки из базы не гарантирован, поэтому это
+ * запасной путь, а не правило).
+ */
 function sourceQueryFor(region: TopvisorAuditRegion, keywords: TopvisorKeywords): string | null {
-  return regionQueries(region, keywords)[0] ?? null;
+  const queries = regionQueries(region, keywords);
+  const named = queries.find((q) => keywords.plan?.[topvisorPlanKey(region.region, q)]?.subjectNameQuery === true);
+  return named ?? queries[0] ?? null;
 }
 
 function emptyState(job: UnifiedCollectionJob, now: Date): TopvisorEnrichmentState {
@@ -159,15 +177,36 @@ function emptyState(job: UnifiedCollectionJob, now: Date): TopvisorEnrichmentSta
  * (`createdBy: REAL_ORION_SEARCH_PROFILE`), где столбец `engine` кодирует
  * регион: `YANDEX` — RU, `GOOGLE` — UAE. Второго набора не заводится.
  */
-export async function loadTopvisorKeywordsFromDb(prisma: PrismaClient, caseId: string): Promise<TopvisorKeywords> {
+/**
+ * Пометки плана для фраз: по нормализованной фразе — назначение и «это ФИО».
+ * План строится без сети тем же построителем, что у базового сбора; фразы,
+ * которых в офлайн-плане нет (производные от подсказок), остаются без пометки.
+ */
+export function topvisorKeywordPlan(subject: OfflinePlanSubject): TopvisorKeywordPlan {
+  const plan: Record<string, { purpose: string; subjectNameQuery?: boolean }> = {};
+  for (const spec of offlineOrionQueryPlan(subject)) {
+    const key = topvisorPlanKey(spec.region, spec.query);
+    if (!normalizeKeyword(spec.query) || plan[key]) continue;
+    plan[key] = { purpose: spec.purpose, ...(spec.subjectNameQuery ? { subjectNameQuery: true } : {}) };
+  }
+  return plan;
+}
+
+export async function loadTopvisorKeywordsFromDb(
+  prisma: PrismaClient,
+  caseId: string,
+  deps: { subject?: (caseId: string) => Promise<OfflinePlanSubject> } = {}
+): Promise<TopvisorKeywords> {
   const rows = await prisma.searchQuery.findMany({
     where: { caseId, source: "GENERATED", createdBy: "REAL_ORION_SEARCH_PROFILE" },
     select: { engine: true, queryText: true },
   });
   const dedupe = (list: string[]) => [...new Set(list.map((q) => q.trim()).filter(Boolean))];
+  const subject = await (deps.subject ?? loadCaseSubject)(caseId);
   return {
     ru: dedupe(rows.filter((r) => r.engine === "YANDEX").map((r) => r.queryText)),
     uae: dedupe(rows.filter((r) => r.engine === "GOOGLE").map((r) => r.queryText)),
+    plan: topvisorKeywordPlan(subject),
   };
 }
 
@@ -224,6 +263,7 @@ function rebuildObservations(input: {
       region,
       regionIndex: index,
       queries,
+      plan: input.keywords.plan,
       depth: SERP_AUDIT_DEPTH,
       provenance,
     });

@@ -77,6 +77,19 @@ describe("тик позиций Topvisor", () => {
     expect(task?.state).toBe("DONE");
     expect(task?.responseJson).toMatchObject({ snapshots: expect.any(Object) });
 
+    // Пометки плана доезжают до наблюдений тика: без этого таблица ТОП-20 не
+    // знает своего основного запроса на наборе из одних строк Topvisor.
+    const marked = {
+      ...PILOT_KEYWORDS,
+      plan: { "RU|умар кремлёв iba": { purpose: "subject_lookup", subjectNameQuery: true } },
+    };
+    const markedRun = await runTopvisorPositionsTick({ job: job(second.state), keywords: marked, call, taskStore, env: ENV });
+    const fio = markedRun.observations.filter((o) => o.surface === "organic" && o.query === "Умар Кремлёв IBA");
+    expect(fio.length).toBeGreaterThan(0);
+    expect(fio.every((o) => o.subjectNameQuery === true && o.queryPurpose === "subject_lookup")).toBe(true);
+    const others = markedRun.observations.filter((o) => o.surface === "organic" && o.query !== "Умар Кремлёв IBA");
+    expect(others.every((o) => o.subjectNameQuery === undefined)).toBe(true);
+
     // После DONE: сеть не трогается, наблюдения те же — из сохранённого снимка.
     const before = log.length;
     const fourth = await runTopvisorPositionsTick({ job: job(third.state), keywords: PILOT_KEYWORDS, call, taskStore, env: ENV });

@@ -97,6 +97,13 @@ export type ArsenkinIngestedObservation = {
    * предмет аудита.
    */
   rank?: number;
+  /**
+   * Назначение запроса из плана сбора и пометка «это само ФИО». Базовые строки
+   * несут их в `rawMetadata`; строка обогащения — здесь. Без них таблица
+   * ТОП-20 выбирает запрос счётом строк и подписывается запросом «…инн».
+   */
+  queryPurpose?: string;
+  subjectNameQuery?: boolean;
   providerTaskId?: string | null;
   riskLabel?: string | null;
   /** Provenance required for ingested rows. */

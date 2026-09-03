@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { mergeCompositeSerp, rankInOneScale } from "@/modules/digital-profile/services/composite-serp-merge";
-import { rankSourceBelongsToEngine } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import { mainSerpTableQuery, rankSourceBelongsToEngine } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import type { BaseCollectionManifest } from "@/modules/digital-profile/services/unified-collection-types";
 
 const manifest: BaseCollectionManifest = {
@@ -115,5 +115,53 @@ describe("слияние строк Topvisor", () => {
     expect(row?.primaryProvider).toBe("yandex");
     expect(row?.rank).toBe(7);
     expect(row?.rankSource).toBe("yandex");
+  });
+});
+
+describe("основной запрос таблицы на строках Topvisor", () => {
+  it("пометки плана переживают слияние, и таблица подписывается запросом ФИО", async () => {
+    const rows = [
+      ...[1, 2, 3].map((rank) => ({
+        kind: "organic" as const,
+        surface: "organic",
+        region: "RU",
+        engine: "YANDEX",
+        query: "Кремлёв Умар Назарович инн",
+        url: `https://rusprofile.ru/${rank}`,
+        title: `Строка ${rank}`,
+        rank,
+        provider: "topvisor-yandex",
+        providerTaskId: "pt-tv",
+        queryPurpose: "business_lookup",
+      })),
+      {
+        kind: "organic" as const,
+        surface: "organic",
+        region: "RU",
+        engine: "YANDEX",
+        query: "Кремлёв Умар Назарович",
+        url: "https://en.wikipedia.org/wiki/Umar_Kremlev",
+        title: "Umar Kremlev - Wikipedia",
+        rank: 1,
+        provider: "topvisor-yandex",
+        providerTaskId: "pt-tv",
+        queryPurpose: "subject_lookup",
+        subjectNameQuery: true,
+      },
+    ];
+    const merge = await mergeCompositeSerp({
+      manifest,
+      fixtureBaseRows: [],
+      arsenkinObservations: rows,
+      enrichmentRunIds: ["topvisor-positions-job-1"],
+    });
+    const fio = merge.observations.find((o) => o.query === "Кремлёв Умар Назарович");
+    expect(fio?.queryPurpose).toBe("subject_lookup");
+    expect(fio?.subjectNameQuery).toBe(true);
+    // Три строки «…инн» против одной строки ФИО: без пометки победил бы счёт.
+    expect(mainSerpTableQuery(merge.observations)).toEqual({
+      query: "Кремлёв Умар Назарович",
+      markedByData: true,
+    });
   });
 });

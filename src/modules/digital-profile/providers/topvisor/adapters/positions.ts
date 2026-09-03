@@ -17,6 +17,20 @@ import type { ArsenkinIngestedObservation } from "../../../services/arsenkin-enr
 import { topvisorProviderName, type TopvisorAuditRegion } from "../regions";
 
 /** Строка Topvisor в форме наблюдения обогащения — той же, что у Arsenkin. */
+/**
+ * Пометки плана запросов по ключу «регион|нормализованная фраза»: назначение
+ * и «это само ФИО». Источник — план сбора (`offlineOrionQueryPlan`), не текст
+ * фразы. Регион — часть ключа: одна и та же фраза («Umar Kremlev») в RU-контуре
+ * — одно из написаний, а в контуре ОАЭ — само имя.
+ */
+export type TopvisorKeywordPlan = Readonly<
+  Record<string, { purpose: string; subjectNameQuery?: boolean }>
+>;
+
+export function topvisorPlanKey(region: string, query: string): string {
+  return `${region}|${normalizeKeyword(query)}`;
+}
+
 export type TopvisorObservation = ArsenkinIngestedObservation & {
   /** Дата снимка — ISO-день из ключа записи. */
   collectedAt?: string;
@@ -123,6 +137,8 @@ export function snapshotToObservations(input: {
   regionIndex: number;
   /** Запросы этого региона в нашем написании. */
   queries: readonly string[];
+  /** Пометки плана по нормализованной фразе; без плана строка идёт без пометок. */
+  plan?: TopvisorKeywordPlan;
   /** ТОП-N: снимок Яндекса приходит на 50 при любом `depth_positions`. */
   depth: number;
   provenance: SnapshotProvenance;
@@ -168,12 +184,15 @@ export function snapshotToObservations(input: {
       const title = stripTopvisorHtml(typeof record.snippet_title === "string" ? record.snippet_title : "");
       const snippet = stripTopvisorHtml(typeof record.snippet_body === "string" ? record.snippet_body : "");
       const domain = (typeof record.domain === "string" && record.domain.trim()) || domainOf(url);
+      const mark = input.plan?.[topvisorPlanKey(input.region.region, ourQuery)];
       observations.push({
         kind: "organic",
         surface: "organic",
         region: input.region.region,
         engine: input.region.engine,
         query: ourQuery,
+        ...(mark ? { queryPurpose: mark.purpose } : {}),
+        ...(mark?.subjectNameQuery ? { subjectNameQuery: true } : {}),
         url,
         title: title || undefined,
         snippet: snippet || undefined,

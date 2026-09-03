@@ -14,19 +14,15 @@
 
 import { createHash } from "node:crypto";
 import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
-import { providerConfig, serpCollectionMode } from "../providers/config";
+import { serpCollectionMode } from "../providers/config";
 import {
   fetchYandexGenAnswer,
   type YandexGenAnswerOutcome,
 } from "../providers/yandex-search-provider";
 import { YANDEX_GEN_ANSWER_URL_SCHEME } from "../providers/yandex-gen-search";
-import { parseSubjectName } from "../risk-classifier/entity-disambiguation";
-import {
-  buildOrionQueryPlanDetailed,
-  queriesForRegionPurpose,
-} from "../search-surfaces/orion-query-plan";
-import { buildSubjectQuerySet, plannedPrimaryQueries } from "../search-surfaces/subject-query-set";
+import { queriesForRegionPurpose } from "../search-surfaces/orion-query-plan";
 import type { SearchSurfaceInput } from "../search-surfaces/types";
+import { offlineOrionQueryPlan, type OfflinePlanSubject } from "./orion-search-profile-service";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import type { YandexGenAnswerProbe } from "./unified-collection-types";
 
@@ -63,36 +59,8 @@ function genAnswerUrl(kind: "answer" | "empty" | "rejected", parts: string[]): s
  * Читать запрос из `dp_search_queries` нельзя: `createMany` не гарантирует
  * порядок выборки.
  */
-export function yandexGenAnswerQuery(
-  subject: Pick<CaseSubjectInfo, "fullName" | "aliases" | "targetRegions" | "location">
-): string | null {
-  const parsed = parseSubjectName(subject.fullName);
-  const set = buildSubjectQuerySet({
-    profile: {
-      fullName: subject.fullName,
-      firstName: parsed.givenName ?? undefined,
-      lastName: parsed.surname ?? undefined,
-      patronymic: parsed.patronymic ?? undefined,
-      variants: subject.aliases ?? [],
-    },
-    suggestions: [],
-    region: "RU",
-    language: "ru",
-    capturedAt: new Date(0).toISOString(),
-  });
-  const { plan } = buildOrionQueryPlanDetailed(
-    {
-      fullName: subject.fullName,
-      aliases: subject.aliases,
-      targetRegions: subject.targetRegions,
-      location: subject.location,
-    },
-    {
-      primaryQueriesByRegion: { RU: plannedPrimaryQueries(set) },
-      maxPrimaryPerRegion: providerConfig.orion.maxPrimaryQueriesPerRegion,
-      regions: ["RU"],
-    }
-  );
+export function yandexGenAnswerQuery(subject: OfflinePlanSubject): string | null {
+  const plan = offlineOrionQueryPlan(subject, ["RU"]);
   return queriesForRegionPurpose(plan, "RU", ["subject_lookup"])[0]?.query ?? null;
 }
 

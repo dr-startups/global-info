@@ -154,6 +154,23 @@ describe("подбор подсказок в тике", () => {
     );
   });
 
+  it("исходная фраза подбора — само ФИО по пометке плана, а не первая строка выборки", async () => {
+    // Порядок выборки из `dp_search_queries` не гарантирован: первой может
+    // оказаться «…инн», и подсказки собрались бы по ней.
+    const reordered = {
+      ru: ["Кремлёв Умар Назарович инн", ...PILOT_KEYWORDS.ru],
+      uae: PILOT_KEYWORDS.uae,
+      plan: { "RU|кремлёв умар назарович": { purpose: "subject_lookup", subjectNameQuery: true } },
+    };
+    const { call } = createTopvisorFixtureCall({ projectExists: true, checkPollsUntilDone: 1 });
+    const taskStore = createMemoryTopvisorTaskStore();
+    let out = await runTopvisorPositionsTick({ job: job(), keywords: reordered, call, taskStore, env: ENV });
+    for (let i = 1; i < 4 && out.state.phase !== "DONE" && !out.blockPipeline; i += 1) {
+      out = await runTopvisorPositionsTick({ job: job(out.state), keywords: reordered, call, taskStore, env: ENV });
+    }
+    expect(out.state.suggest.find((s) => s.key === "yandex-moscow")?.sourceQuery).toBe("Кремлёв Умар Назарович");
+  });
+
   it("группа подбора остаётся выключенной: её фразы не попадают в проверку позиций", async () => {
     /*
      * Включённая группа удорожила бы следующую проверку вчетверо: собранных

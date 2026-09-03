@@ -361,6 +361,9 @@ export async function mergeCompositeSerp(input: {
     /** Fine-grained surface when adapter sets it (ai_answer / organic / …). */
     surface?: string;
     providerTaskId?: string | null;
+    /** Пометки плана запросов у строки обогащения (см. `ArsenkinIngestedObservation`). */
+    queryPurpose?: string;
+    subjectNameQuery?: boolean;
     riskLabel?: string | null;
     clientEvidence?: boolean;
     /** Optional capture time from enrichment rows (§7.2). */
@@ -711,6 +714,10 @@ export async function mergeCompositeSerp(input: {
         primaryProvider: provider,
         evidenceRefs: obs.providerTaskId ? [`providerTask:${obs.providerTaskId}`] : [],
         arsenkinTaskId: obs.providerTaskId ?? null,
+        // Пометки плана едут со строкой обогащения так же, как с базовой —
+        // иначе набор из одних строк Topvisor не знает своего основного запроса.
+        queryPurpose: String(obs.queryPurpose ?? "").trim() || undefined,
+        subjectNameQuery: obs.subjectNameQuery === true ? true : undefined,
         riskLabel: obs.riskLabel,
         collectedAt: obs.collectedAt ? String(obs.collectedAt) : undefined,
       },

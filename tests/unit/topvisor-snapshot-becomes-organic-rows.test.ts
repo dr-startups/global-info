@@ -149,3 +149,53 @@ describe("статус проверки и настройки проекта", (
     });
   });
 });
+
+describe("назначение запроса едет со строкой", () => {
+  /*
+   * Таблица «ТОП-20 по запросу ФИО» выбирает запрос по пометкам
+   * `queryPurpose` / `subjectNameQuery`, а не по тексту. У строк Topvisor их
+   * не было, и таблица подписывалась запросом «…инн» — пометки должен нести
+   * снимок, а откуда их брать, знает план запросов.
+   */
+  it("запрос субъекта помечен планом, остальные — нет", () => {
+    const out = snapshotToObservations({
+      body: loadTopvisorFixture("read-snapshot-yandex-moscow"),
+      region: region("yandex-moscow"),
+      regionIndex: 1,
+      queries: ["Умар Кремлёв IBA", "Кремлёв федерация бокса"],
+      plan: {
+        "RU|умар кремлёв iba": { purpose: "subject_lookup", subjectNameQuery: true },
+        "RU|кремлёв федерация бокса": { purpose: "business_lookup" },
+      },
+      depth: 20,
+      provenance: PROVENANCE,
+    });
+    const subject = out.observations.filter((o) => o.query === "Умар Кремлёв IBA");
+    const other = out.observations.filter((o) => o.query === "Кремлёв федерация бокса");
+    expect(subject.length).toBeGreaterThan(0);
+    expect(other.length).toBeGreaterThan(0);
+    for (const o of subject) {
+      expect(o.queryPurpose).toBe("subject_lookup");
+      expect(o.subjectNameQuery).toBe(true);
+    }
+    for (const o of other) {
+      expect(o.queryPurpose).toBe("business_lookup");
+      expect(o.subjectNameQuery).toBeUndefined();
+    }
+  });
+
+  it("без плана строка идёт без пометок, а не с выдуманными", () => {
+    const out = snapshotToObservations({
+      body: loadTopvisorFixture("read-snapshot-yandex-moscow"),
+      region: region("yandex-moscow"),
+      regionIndex: 1,
+      queries: ["Умар Кремлёв IBA"],
+      depth: 20,
+      provenance: PROVENANCE,
+    });
+    for (const o of out.observations) {
+      expect(o.queryPurpose).toBeUndefined();
+      expect(o.subjectNameQuery).toBeUndefined();
+    }
+  });
+});
