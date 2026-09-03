@@ -191,6 +191,32 @@ export function createPrismaTopvisorTaskStore(prisma: PrismaClient): TopvisorTas
         update: { status: "RUNNING", finishedAt: null },
       });
       const requestHash = hashTopvisorRequest(input.requestJson);
+      /*
+       * Одна строка на прогон и инструмент — как в хранилище памяти. Уникальный
+       * ключ таблицы — по хешу запроса, а запрос подбора дописывается после
+       * каждого платного вызова (в него ложатся идентификаторы групп), и
+       * upsert по хешу заводил новую строку на каждое дополнение: живой прогон
+       * 03.09.2026 оставил три строки `collect` — QUEUED, RUNNING и DONE — из
+       * которых две устаревшие, и диагностика читала их как три задачи.
+       */
+      const existing = await prisma.providerTask.findFirst({
+        where: { reportRunId: input.reportRunId, provider: TOPVISOR_PROVIDER, toolName: input.toolName },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) {
+        const updated = await prisma.providerTask.update({
+          where: { id: existing.id },
+          data: {
+            externalTaskId: input.externalTaskId,
+            state: input.externalTaskId ? "RUNNING" : "QUEUED",
+            submittedAt: input.submittedAt,
+            requestHash,
+            requestJson: toJson(input.requestJson),
+            errorCode: null,
+          },
+        });
+        return fromPrisma(updated as PrismaTaskRow);
+      }
       const row = await prisma.providerTask.upsert({
         where: {
           reportRunId_provider_requestHash: {
