@@ -20,6 +20,12 @@ export const ClientTextContractSchema = z.object({
   forbiddenRawTokens: z.array(z.string().min(1)).min(1),
   allowedSnakeTokens: z.array(z.string().min(1)),
   internalTokenPattern: z.string().min(1),
+  /**
+   * Наши слова, которые встречаются и в мире («audit», «pipeline», «arsenkin»).
+   * Проверяются только в тексте, который пишем мы; цитируемый материал
+   * источников ими не судится — см. `matchInternalClientToken`.
+   */
+  ownVocabularyPattern: z.string().min(1),
   fieldBudgets: FieldBudgetsSchema,
   sidebarBannedPattern: z.string().min(1),
   sidebarEllipsisForbidden: z.boolean(),
@@ -43,6 +49,7 @@ export type ClientTextVerdict = {
 
 let cached: ClientTextContract | null = null;
 let internalRe: RegExp | null = null;
+let ownVocabularyRe: RegExp | null = null;
 let sidebarBannedRe: RegExp | null = null;
 let rawCaseIdRe: RegExp | null = null;
 
@@ -66,6 +73,13 @@ function internalTokenRegex(c: ClientTextContract): RegExp {
   return internalRe;
 }
 
+function ownVocabularyRegex(c: ClientTextContract): RegExp {
+  if (!ownVocabularyRe || ownVocabularyRe.source !== c.ownVocabularyPattern) {
+    ownVocabularyRe = new RegExp(c.ownVocabularyPattern, "iu");
+  }
+  return ownVocabularyRe;
+}
+
 function sidebarBannedRegex(c: ClientTextContract): RegExp {
   if (!sidebarBannedRe || sidebarBannedRe.source !== c.sidebarBannedPattern) {
     sidebarBannedRe = new RegExp(c.sidebarBannedPattern, "i");
@@ -80,11 +94,25 @@ function rawCaseIdRegex(c: ClientTextContract): RegExp {
   return rawCaseIdRe;
 }
 
+/**
+ * Чей это текст — решает, каким списком его судить.
+ *
+ * Машинные идентификаторы (`reportRunId`, `datasetId`, `serp_obs`, …) не могут
+ * появиться ни в каком клиентском тексте — ни в нашем, ни в цитате. Слова
+ * нашего словаря («audit», «pipeline», «arsenkin») — тоже наши коды, но они же
+ * обычные слова и части чужих названий: Google в ответе о регистрации ИП
+ * цитирует сайт Audit-it, и живой прогон 03.09.2026 лёг на этом слове. Поэтому
+ * словарь применяется только к тексту, который пишем мы; цитируемый материал
+ * источников (`quoted: true` — буллеты и ячейки таблиц) судится по машинному
+ * списку.
+ */
 export function matchInternalClientToken(
   text: string,
-  contract: ClientTextContract = getClientTextContract()
+  contract: ClientTextContract = getClientTextContract(),
+  opts: { quoted?: boolean } = {}
 ): boolean {
-  return internalTokenRegex(contract).test(text);
+  if (internalTokenRegex(contract).test(text)) return true;
+  return opts.quoted ? false : ownVocabularyRegex(contract).test(text);
 }
 
 /**
@@ -94,7 +122,7 @@ export function matchInternalClientToken(
  */
 export function evaluateClientText(
   text: string,
-  opts?: { surface?: "sidebar" | "body"; contract?: ClientTextContract }
+  opts?: { surface?: "sidebar" | "body"; contract?: ClientTextContract; quoted?: boolean }
 ): ClientTextVerdict {
   const contract = opts?.contract ?? getClientTextContract();
   const surface = opts?.surface ?? "body";
@@ -116,7 +144,7 @@ export function evaluateClientText(
         issues.push({ code: "forbidden", detail: token });
       }
     }
-    if (matchInternalClientToken(value, contract)) {
+    if (matchInternalClientToken(value, contract, { quoted: Boolean(opts?.quoted) })) {
       issues.push({ code: "internal-token" });
     }
     if (rawCaseIdRegex(contract).test(value)) {

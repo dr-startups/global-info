@@ -130,9 +130,13 @@ describe("client-text-contract §6.1", () => {
     console.log(`# SKIP ${parityName} — интерпретатор Python не найден`);
   }
   (python ? it : it.skip)(parityName, () => {
-    const fixtures: Array<{ text: string; surface: "body" | "sidebar" }> = [
+    const fixtures: Array<{ text: string; surface: "body" | "sidebar"; quoted?: boolean }> = [
       { text: "Чистый клиентский вывод о субъекте.", surface: "body" },
       { text: "pipeline datasetId leaked", surface: "body" },
+      // Цитата источника: слово нашего словаря допустимо, машинный идентификатор — нет.
+      { text: "According to registries (such as Audit-It), he is listed as a founder.", surface: "body", quoted: true },
+      { text: "According to registries (such as Audit-It), he is listed as a founder.", surface: "body" },
+      { text: "Источник пишет: datasetId d1", surface: "body", quoted: true },
       { text: "requires_review status", surface: "body" },
       { text: "lexis_nexis screening ok", surface: "body" },
       { text: "См. таблицу…", surface: "sidebar" },
@@ -160,7 +164,10 @@ describe("client-text-contract §6.1", () => {
     assert.equal(pyVerdicts.length, fixtures.length);
 
     for (let i = 0; i < fixtures.length; i += 1) {
-      const ts = evaluateClientText(fixtures[i]!.text, { surface: fixtures[i]!.surface });
+      const ts = evaluateClientText(fixtures[i]!.text, {
+        surface: fixtures[i]!.surface,
+        quoted: fixtures[i]!.quoted,
+      });
       const pyV = pyVerdicts[i]!;
       assert.equal(ts.contractVersion, pyV.contractVersion, `fixture ${i} version`);
       assert.equal(ts.ok, pyV.ok, `fixture ${i} ok mismatch for "${fixtures[i]!.text}"`);

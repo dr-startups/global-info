@@ -272,11 +272,19 @@ export function validateSectionPack(input: {
     checkText(issues, slide.slideId, "whatWasFound", slide.content.whatWasFound, TEXT_BUDGETS.whatWasFound);
     checkText(issues, slide.slideId, "whyItMatters", slide.content.whyItMatters, TEXT_BUDGETS.whyItMatters);
     checkText(issues, slide.slideId, "whatToCheck", slide.content.whatToCheck, TEXT_BUDGETS.whatToCheck);
+    /*
+     * Буллеты и ячейки несут материал источников — ответы поискового ИИ,
+     * фрагменты Википедии, заголовки выдачи, — поэтому судятся как цитаты:
+     * машинный идентификатор в них — находка, слово нашего словаря — нет.
+     * Живой прогон 03.09.2026 лёг на «Audit» из названия сайта Audit-it
+     * внутри ответа Google. Наш собственный текст страницы (заголовок, абзац,
+     * объяснения) по-прежнему судится полным списком.
+     */
     for (const b of slide.content.bullets ?? []) {
       // AI answers are exempt from the bullet budget (no truncation allowed),
-      // but never from the internal-token check.
+      // but never from the machine-identifier check.
       const budget = slide.templateId === "ai-overview" ? Number.MAX_SAFE_INTEGER : TEXT_BUDGETS.bullet;
-      checkText(issues, slide.slideId, "bullet", b, budget);
+      checkText(issues, slide.slideId, "bullet", b, budget, { quoted: true });
     }
     // Адрес печатается ячейкой и проверяется вместе со строками. Поле полосы
     // читается только ради старых артефактов: живого входа у него нет.
@@ -284,7 +292,7 @@ export function validateSectionPack(input: {
       ...(slide.content.table?.rows ?? []).flat(),
       ...(slide.content.table?.rowAddresses ?? []),
     ]) {
-      if (matchInternalClientToken(stripFindingMarkers(cell))) {
+      if (matchInternalClientToken(stripFindingMarkers(cell), undefined, { quoted: true })) {
         issues.push(`internal token in table cell on ${slide.slideId}: "${cell.slice(0, 60)}"`);
       }
     }
@@ -594,13 +602,14 @@ function checkText(
   slideId: string,
   field: string,
   value: string | undefined,
-  budget: number
+  budget: number,
+  opts: { quoted?: boolean } = {}
 ): void {
   if (!value) return;
   if (value.length > budget) {
     issues.push(`${field} over budget on ${slideId}: ${value.length}>${budget}`);
   }
-  if (matchInternalClientToken(stripFindingMarkers(value))) {
+  if (matchInternalClientToken(stripFindingMarkers(value), undefined, { quoted: Boolean(opts.quoted) })) {
     issues.push(`internal token in ${field} on ${slideId}: "${value.slice(0, 60)}"`);
   }
 }

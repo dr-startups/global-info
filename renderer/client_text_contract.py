@@ -19,6 +19,7 @@ REQUIRED_KEYS = (
     "forbiddenRawTokens",
     "allowedSnakeTokens",
     "internalTokenPattern",
+    "ownVocabularyPattern",
     "fieldBudgets",
     "sidebarBannedPattern",
     "sidebarEllipsisForbidden",
@@ -59,8 +60,15 @@ def evaluate_client_text(
     *,
     surface: str = "body",
     contract: dict[str, Any] | None = None,
+    quoted: bool = False,
 ) -> dict[str, Any]:
-    """Parity with TS evaluateClientText — same codes for the same input."""
+    """Parity with TS evaluateClientText — same codes for the same input.
+
+    ``quoted`` — текст цитирует источник (ответ поискового ИИ, фрагмент статьи,
+    заголовок выдачи): машинные идентификаторы в нём — находка, слова нашего
+    словаря (audit, pipeline, arsenkin) — нет. Живой прогон 03.09.2026 лёг на
+    «Audit» из названия сайта Audit-it внутри ответа Google.
+    """
     c = resolve_contract(contract)
     value = str(text or "")
     issues: list[dict[str, str]] = []
@@ -78,7 +86,8 @@ def evaluate_client_text(
             if str(token).lower() in lower:
                 issues.append({"code": "forbidden", "detail": str(token)})
         internal = re.compile(str(c["internalTokenPattern"]), re.I | re.U)
-        if internal.search(value):
+        own = re.compile(str(c["ownVocabularyPattern"]), re.I | re.U)
+        if internal.search(value) or (not quoted and own.search(value)):
             issues.append({"code": "internal-token"})
         raw_case = re.compile(str(c["rawCaseIdPattern"]), re.I)
         if raw_case.search(value):

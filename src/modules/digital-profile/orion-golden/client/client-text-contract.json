@@ -39,8 +39,11 @@
     "scoped",
     "findings"
   ],
-  "allowedSnakeTokens": ["lexis_nexis"],
-  "internalTokenPattern": "\\baudit\\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL",
+  "allowedSnakeTokens": [
+    "lexis_nexis"
+  ],
+  "internalTokenPattern": "reportRunId|report_run|datasetId|serp[-_]obs|inventoryId|schemaVersion|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL",
+  "ownVocabularyPattern": "\\baudit\\b|pipeline|arsenkin",
   "fieldBudgets": {
     "title": 140,
     "narrative": 1100,
@@ -54,6 +57,7 @@
   "rawCaseIdPattern": "\\bcmr[a-z0-9]{10,}\\b",
   "rendererStripPattern": "(storage/|C:\\\\\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL)",
   "notes": {
-    "apiAndEngine": "REMEDIATION §6.1 — «API» and «движок» removed from hard sidebar bans; keep only clearly internal tokens."
+    "apiAndEngine": "REMEDIATION §6.1 — «API» and «движок» removed from hard sidebar bans; keep only clearly internal tokens.",
+    "quotedText": "Живой прогон 03.09.2026: сборка упала на «Audit» из названия сайта Audit-it внутри ответа Google. internalTokenPattern — машинные идентификаторы, недопустимые в любом клиентском тексте, включая цитаты; ownVocabularyPattern — наши слова, которые встречаются и в мире (audit, pipeline, arsenkin): проверяются только в тексте, который пишем мы, и не применяются к цитируемому материалу источников (quoted)."
   }
 }
