@@ -48,6 +48,12 @@ export function CreateCaseForm({
       setError(t("createCase.fullNameRequired"));
       return;
     }
+    // Дата рождения обязательна: без неё платный сбор не начнётся (ворота
+    // персоны закрыты), и узнавать об этом на кнопке «Собрать» поздно.
+    if (!birthDate) {
+      setError(t("createCase.birthDateRequired"));
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -103,9 +109,13 @@ export function CreateCaseForm({
 
         <div className="dp-field">
           <label>{t("createCase.birthDate")}</label>
+          <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            {t("createCase.birthDateHint")}
+          </div>
           <input
             className="dp-input"
             type="date"
+            required
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}
           />

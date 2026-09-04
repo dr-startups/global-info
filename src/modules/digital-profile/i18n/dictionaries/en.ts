@@ -423,6 +423,10 @@ export const en: Dictionary = {
     aliases: "Aliases (comma or newline separated)",
     aliasesPlaceholder: "J. Sample, Johnny Sample",
     birthDate: "Birth date",
+    birthDateHint:
+      "Required: it is the strongest subject anchor — it tells a full namesake's material apart from the subject's.",
+    birthDateRequired:
+      "Enter the date of birth: without it collection will not start — a full namesake's material cannot be told apart from the subject's.",
     targetRegions: "Target regions (comma separated)",
     targetRegionsPlaceholder: "RU, UAE",
     lawfulBasis: "Lawful basis",

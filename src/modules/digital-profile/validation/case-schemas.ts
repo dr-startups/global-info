@@ -52,11 +52,44 @@ const optionalDate = z
     return d;
   });
 
+/**
+ * Дата рождения субъекта — обязательное поле дела.
+ *
+ * Это самый сильный признак субъекта и единственный, работающий в обе стороны:
+ * подтверждает свой материал и опровергает чужой. Без неё ворота персоны
+ * закрыты (`SUBJECT_ANCHORS_MISSING`) и платный сбор всё равно не начнётся —
+ * узнавать об этом на кнопке «Собрать» поздно, дело уже заведено с неполными
+ * данными. Прогон DPA-2026-0049, названный заказчиком «мешаниной», был заведён
+ * без неё.
+ */
+const requiredBirthDate = z
+  .union([z.string(), z.date()])
+  // `.optional()` здесь не «поле необязательно», а «пустое значение доходит до
+  // разбора»: иначе union отвергает его своей фразой про типы, и оператор
+  // читает `invalid_union` вместо причины.
+  .optional()
+  .transform((v, ctx) => {
+    if (v == null || v === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Укажите дату рождения субъекта: без неё материалы полного тёзки не отличить от материалов проверяемого лица",
+      });
+      return z.NEVER;
+    }
+    const d = v instanceof Date ? v : new Date(v);
+    if (Number.isNaN(d.getTime())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid date" });
+      return z.NEVER;
+    }
+    return d;
+  });
+
 export const CreateDigitalProfileCaseSchema = z.object({
   // Subject
   fullName: trimmedString(200),
   aliases: z.array(trimmedString(200)).max(50).optional(),
-  birthDate: optionalDate,
+  birthDate: requiredBirthDate,
   // Case scope / compliance
   targetRegions: z.array(trimmedString(120)).max(50).optional(),
   lawfulBasis: z.enum(LAWFUL_BASIS_VALUES),
