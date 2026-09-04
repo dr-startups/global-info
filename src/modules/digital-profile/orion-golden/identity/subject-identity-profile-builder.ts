@@ -215,24 +215,6 @@ function discoverOgrn(items: RawInventoryItem[], nameHints: string[]): { ogrn: s
   return { ogrn: [...ogrn], ogrnip: [...ogrnip] };
 }
 
-function discoverLocations(items: RawInventoryItem[], nameHints: string[]): string[] {
-  const locs = new Set<string>();
-  const regionRe =
-    /\b(тверск\w*|москв\w*|санкт[- ]петербург\w*|ленинград\w*|краснодар\w*|осташков\w*|дубай|оаэ|uae|abu dhabi)\b/gi;
-  const hints = nameHints.map(lower).filter((n) => n.length > 4);
-  for (const item of items.slice(0, 400)) {
-    const text = hayItem(item);
-    const low = lower(text);
-    if (!hints.some((h) => low.includes(h))) continue;
-    let m: RegExpExecArray | null;
-    const r = new RegExp(regionRe.source, regionRe.flags);
-    while ((m = r.exec(text)) !== null) {
-      if (m[1]) locs.add(normalizeSpace(m[1]));
-    }
-  }
-  return [...locs].slice(0, 20);
-}
-
 export function buildSubjectIdentityProfile(input: {
   caseId: string;
   subjectName: string;
@@ -274,7 +256,6 @@ export function buildSubjectIdentityProfile(input: {
   const inns = discoverInnsLinkedToSubject(items, fullNameRu, input.subjectName);
   const { ogrn, ogrnip } = discoverOgrn(items, nameVariants);
   const wrongPatronymics = discoverWrongPatronymics(items, fullNameRu);
-  const locations = discoverLocations(items, nameVariants);
 
   /*
    * Запросы по добытому ИНН не строятся: искать по чужому идентификатору
@@ -295,10 +276,18 @@ export function buildSubjectIdentityProfile(input: {
     transliterations,
     queryVariants,
     ...(inns.length ? { discovered: { inn: inns } } : {}),
+    /*
+     * Города из корпуса больше не добываются. `discoverLocations` собирал их по
+     * словарю («тверск|москв|краснодар|осташков|дубай») и клал в
+     * `knownIdentifiers.locations`, откуда они уезжали в контекст
+     * классификации: корпус подтверждался тем, что система сама из него
+     * достала. Вдобавок регэксп стоял на `\b` и на кириллице не срабатывал
+     * вовсе — то есть поле годами было пустым, а читатели кода считали иначе.
+     * Регион признаком субъекта не является и по решению владельца (0054, №7).
+     */
     knownIdentifiers: {
       ogrn: ogrn.length ? ogrn : undefined,
       ogrnip: ogrnip.length ? ogrnip : undefined,
-      locations: locations.length ? locations : undefined,
     },
     negativeIdentitySignals: {
       wrongPatronymics,

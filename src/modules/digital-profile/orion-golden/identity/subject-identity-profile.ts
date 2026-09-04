@@ -73,7 +73,6 @@ export type SubjectIdentityProfile = {
     birthDate?: string[];
     companyNames?: string[];
     socialHandles?: string[];
-    locations?: string[];
     domains?: string[];
   };
   negativeIdentitySignals: {

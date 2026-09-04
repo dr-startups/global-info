@@ -1645,7 +1645,7 @@ export type SubjectIdentityProfileDTO = {
   aliases: string[];
   transliterations: string[];
   queryVariants?: string[];
-  knownIdentifiers?: { inn?: string[]; ogrn?: string[]; ogrnip?: string[]; locations?: string[] };
+  knownIdentifiers?: { inn?: string[]; ogrn?: string[]; ogrnip?: string[] };
   negativeIdentitySignals?: {
     wrongPatronymics: string[];
     wrongNames: string[];

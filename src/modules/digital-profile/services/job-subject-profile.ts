@@ -74,7 +74,7 @@ export function classifierProfileFromIdentityProfile(
     namesakeProfiles: p.namesakeProfiles ?? [],
     // При якорях старое поле пустеет: его слова уже переехали фразами, и два
     // набора признаков с разной силой были бы двумя ответами на один вопрос.
-    contextIdentifiers: p.anchors ? [] : (p.contextIdentifiers ?? p.knownIdentifiers?.locations ?? []),
+    contextIdentifiers: p.anchors ? [] : (p.contextIdentifiers ?? []),
     ...(p.anchors ? { anchors: withLegacyContextAsAnchors(p) } : {}),
     /*
      * Идентификатором ИНН становится только от оператора.
