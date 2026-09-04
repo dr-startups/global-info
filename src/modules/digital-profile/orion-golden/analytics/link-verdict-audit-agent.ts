@@ -18,6 +18,11 @@
  *   раньше, но теперь по проверенным цитатам).
  * — **Фамилии субъекта нет в тексте, а решение говорит «это он»** → решение
  *   понижается до «неясно»: страница о ком-то другом или не о человеке вовсе.
+ * — **Признака субъекта нет в тексте, а решение говорит «это он»** → то же
+ *   понижение. Имя на странице есть у каждого полного тёзки, и на прогоне
+ *   DPA-2026-0049 стадия чтения назвала «страницами субъекта» тринадцать
+ *   карточек ИП и четыре страницы офтальмолога. Признак — то, чего у тёзки
+ *   нет; проверяется он дословно, здесь, а не обещанием модели.
  *
  * Каждое изменение записывается с причиной: правка, которую нельзя объяснить,
  * ничем не лучше ошибки, которую она исправляет.
@@ -25,12 +30,17 @@
 
 import { requireQuotedAdverse, type LinkVerdict } from "../contracts/link-verdict";
 import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
+import {
+  anchorHitsInText,
+  hasSubjectAnchors,
+  type SubjectAnchors,
+} from "./subject-anchors";
 
 export type VerdictAuditChange = {
   evidenceRef: string;
   url: string;
   /** Что именно сделали с решением. */
-  action: "quote_dropped" | "adverse_downgraded" | "subject_downgraded";
+  action: "quote_dropped" | "adverse_downgraded" | "subject_downgraded" | "anchor_missing";
   reason: string;
 };
 
@@ -132,6 +142,11 @@ export function auditLinkVerdicts(input: {
   sources: readonly VerdictAuditSource[];
   /** Написания имени субъекта: фамилия, полное имя, транслит. */
   subjectNames: readonly string[];
+  /**
+   * Признаки субъекта. Пусты (фикстуры, кейс без якорей) — проверка признака
+   * не делается вовсе, и прежнее поведение сохраняется слово в слово.
+   */
+  anchors?: SubjectAnchors | null;
 }): { verdicts: LinkVerdict[]; report: VerdictAuditReport } {
   const textByRef = new Map(
     input.sources.filter((s) => s.text && s.text.trim()).map((s) => [s.evidenceRef, s.text!])
@@ -183,6 +198,26 @@ export function auditLinkVerdicts(input: {
         url: verdict.url,
         action: "subject_downgraded",
         reason: "имени субъекта нет в тексте страницы",
+      });
+      next = { ...next, subjectMatch: "unclear", tone: next.tone === "adverse" ? "neutral" : next.tone };
+    }
+
+    /*
+     * «Это он» проверяется признаком, а «вероятно» — нет: второе и не
+     * утверждает принадлежность, а лишь называет её возможной, и понижать его
+     * было бы отказом от собственного различия между ними.
+     */
+    if (
+      next.subjectMatch === "subject" &&
+      hasSubjectAnchors(input.anchors ?? null) &&
+      anchorHitsInText({ text, url: next.url, anchors: input.anchors! }).length === 0
+    ) {
+      subjectDowngraded += 1;
+      changes.push({
+        evidenceRef: verdict.evidenceRef,
+        url: verdict.url,
+        action: "anchor_missing",
+        reason: "ни один признак субъекта не найден в тексте страницы",
       });
       next = { ...next, subjectMatch: "unclear", tone: next.tone === "adverse" ? "neutral" : next.tone };
     }

@@ -896,6 +896,31 @@ export type ClassifierSubjectProfile = {
  * is only a lower-confidence fallback and never assumes Russian ordering or the
  * existence of a patronymic.
  */
+/**
+ * Прогон по якорям, не подтвердивший ни одного материала, дальше не идёт.
+ *
+ * Отчёт из нуля подтверждённых материалов — это лист «ничего не найдено» ценой
+ * четырёх стадий модели. Причина почти всегда одна и чинится оператором: якорь
+ * написан не теми словами, какими пишет выдача («Арбитражный суд Краснодарского
+ * края» против «АС Краснодарского края»). Поэтому отказ здесь — гейт
+ * подготовки: он говорит, что делать, и не предлагает повторить то же самое.
+ *
+ * Пустой корпус отказом не считается: о нём говорят другие ворота, и валить на
+ * якоря чужую беду значило бы дать оператору неверный совет.
+ */
+export function assertAnchoredRunHasSubjectMatches(input: {
+  anchors: SubjectAnchors | null | undefined;
+  items: ReadonlyArray<{ decision: string }>;
+}): void {
+  if (!hasSubjectAnchors(input.anchors ?? null)) return;
+  if (input.items.length === 0) return;
+  const confirmed = input.items.filter(
+    (i) => i.decision === "SUBJECT_MATCH" || i.decision === "LIKELY_SUBJECT"
+  ).length;
+  if (confirmed > 0) return;
+  throw new Error(`SUBJECT_ANCHORS_NO_MATCH=${input.items.length}`);
+}
+
 export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): SubjectIdentity {
   const structuredFamily = (profile.familyNames ?? []).filter(Boolean);
   const structuredGiven = (profile.givenNames ?? []).filter(Boolean);

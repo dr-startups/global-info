@@ -32,6 +32,7 @@ import {
   type EnrichmentRunReconciliation,
 } from "./enrichment-run-reconciler";
 import {
+  assertAnchoredRunHasSubjectMatches,
   subjectIdentityFromProfile,
   type SubjectIdentity,
 } from "./subject-resolution-classifier";
@@ -566,7 +567,13 @@ export async function runOrionAnalyticsPipeline(
       ? reusable.result
       : await runLinkVerdicts({
           caseId: input.caseId,
-          subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+          subject: {
+            fullName: subject.displayName,
+            aliases: subject.aliases ?? [],
+            // Стадия чтения знала только ФИО: имя на странице есть у каждого
+            // полного тёзки, и «страницами субъекта» становились чужие.
+            anchors: subject.anchors ?? null,
+          },
           items: scope.inScope,
           decisionByRef: decisionByRefForReading,
         });
@@ -953,6 +960,19 @@ export async function runOrionAnalyticsPipeline(
     claimsBundle: canonicalClaims,
   });
   assertRepresentativeGatesPass(representative.selection);
+
+  /*
+   * Последняя проверка перед стадиями модели.
+   *
+   * Прогон по якорям, не подтвердивший ни одного материала, дальше не идёт:
+   * отчёт вышел бы листом «ничего не найдено» ценой четырёх стадий GPT, а
+   * лечится это правкой признаков и пересборкой — она платит только за модель,
+   * не за сбор.
+   */
+  assertAnchoredRunHasSubjectMatches({
+    anchors: subject.anchors ?? null,
+    items: subjectResolution.items,
+  });
 
   // Stage 3b — verified facts per theme (05.2c2). Fail-open: a theme whose
   // extraction fails keeps its deterministic text.

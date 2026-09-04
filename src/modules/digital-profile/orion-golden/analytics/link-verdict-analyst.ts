@@ -34,8 +34,21 @@ import {
 import { callOpenAiStrictJson } from "../gpt/openai-json-client";
 import type { LinkPageRead } from "../../services/link-page-reader";
 import { SOURCE_TYPES, normalizeSourceType, sourceTypeFromDomain } from "./source-type";
+import { hasSubjectAnchors, type SubjectAnchors } from "./subject-anchors";
 
-export const LINK_VERDICT_PROMPT_VERSION = "link-verdict-prompt-v2" as const;
+/** Признаки для промпта: только названные, без пустых полей и без служебных. */
+function anchorsForPrompt(anchors: SubjectAnchors | null | undefined): string[] | undefined {
+  if (!hasSubjectAnchors(anchors ?? null)) return undefined;
+  const a = anchors!;
+  return [
+    a.birthDate ? `дата рождения ${a.birthDate}` : "",
+    ...a.phrases.map((p) => p.text),
+    ...a.inn.map((i) => `ИНН ${i}`),
+    ...a.domains.map((d) => `сайт ${d}`),
+  ].filter(Boolean);
+}
+
+export const LINK_VERDICT_PROMPT_VERSION = "link-verdict-prompt-v3" as const;
 
 const SYSTEM_PROMPT = `Ты аналитик проверки деловой репутации. Тебе дают текст одной веб-страницы и данные проверяемого лица.
 
@@ -50,7 +63,8 @@ const SYSTEM_PROMPT = `Ты аналитик проверки деловой р�
 }
 
 Правила:
-1. subjectMatch — про то, о ТОМ ЛИ человеке страница. "other" — если это однофамилец или тёзка. "unclear" — если по тексту не определить. Не выдавай предположение за уверенность.
+1. subjectMatch — про то, о ТОМ ЛИ человеке страница. "other" — если это однофамилец или тёзка. "unclear" — если по тексту не определить. Не выдавай предположение за уверенность. Совпадения одного имени НЕ ДОСТАТОЧНО: у проверяемого лица есть полные тёзки, и на их страницах стоит то же имя.
+1a. Если в данных лица есть признаки (anchors) — место работы, должность, дата рождения, ИНН, сайт, — то "subject" ставится, только когда хотя бы один из них есть в тексте страницы рядом с именем; процитируй этот фрагмент в quotes. Признака нет — "unclear", даже если имя совпало полностью.
 2. tone — как эта публикация выглядит для банка или контрагента при проверке. "adverse" — если она создаёт вопросы: суды, санкции, расследования, конфликты, обвинения. "supportive" — если это официальная или деловая публикация, работающая на репутацию. Иначе "neutral".
 3. theme — назови СОДЕРЖАНИЕ публикации, а не её жанр. Плохо: "Криминальные материалы". Хорошо: "Судебный спор с бывшей супругой о разделе активов".
 4. sourceType — ровно одно значение из списка: ${SOURCE_TYPES.join(" | ")}. Смотри на саму площадку, а не на тему материала: запись в санкционном реестре и статья о санкциях в газете — разные типы источника.
@@ -68,7 +82,7 @@ export type LinkVerdictInput = {
   /** Заголовок и сниппет из выдачи — контекст, но не основание вывода. */
   serpTitle?: string;
   serpSnippet?: string;
-  subject: { fullName: string; aliases?: string[] };
+  subject: { fullName: string; aliases?: string[]; anchors?: SubjectAnchors | null };
   page: LinkPageRead;
 };
 
@@ -135,7 +149,16 @@ export async function analyzeLinkPage(
     raw = await call({
       systemPrompt: SYSTEM_PROMPT,
       userPayload: {
-        subject: { fullName: input.subject.fullName, aliases: input.subject.aliases ?? [] },
+        subject: {
+          fullName: input.subject.fullName,
+          aliases: input.subject.aliases ?? [],
+          /*
+           * Признаки едут модели тем же списком, каким их назвал оператор.
+           * Модель ими пользуется, но не отвечает за них: найден признак на
+           * странице или нет, дословно проверяет `auditLinkVerdicts`.
+           */
+          anchors: anchorsForPrompt(input.subject.anchors),
+        },
         page: {
           url: input.url,
           domain: input.domain,

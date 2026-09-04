@@ -28,6 +28,7 @@ import {
   type VerdictThemeSummary,
 } from "../contracts/link-verdict";
 import { analyzeLinkPages, type LinkVerdictInput } from "./link-verdict-analyst";
+import type { SubjectAnchors } from "./subject-anchors";
 import { resolveThemeLabels, summarizeThemesWithLabels } from "./link-theme-clustering";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 import { isLinkReadingEnabled, readLinkPage, type LinkPageRead } from "../../services/link-page-reader";
@@ -264,7 +265,8 @@ export function loadReusableLinkVerdicts(
 
 export async function runLinkVerdicts(input: {
   caseId: string;
-  subject: { fullName: string; aliases?: string[] };
+  /** Признаки субъекта едут и в промпт чтения, и в дословную проверку вывода. */
+  subject: { fullName: string; aliases?: string[]; anchors?: SubjectAnchors | null };
   /** Материалы предмета аудита (ТОП-20 выдачи). */
   items: RawInventoryItem[];
   /** Решение разметки по наблюдению: чужие страницы не читаются. */
@@ -338,6 +340,7 @@ export async function runLinkVerdicts(input: {
       text: i.page.ok ? i.page.text : undefined,
     })),
     subjectNames: subjectNameVariants(input.subject),
+    anchors: input.subject.anchors ?? null,
   });
   const verdicts = audited.verdicts;
   // Второй проход: формулировки страниц сводятся в темы отчёта. Без него на
