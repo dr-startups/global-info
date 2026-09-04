@@ -88,6 +88,24 @@ async function loadCaseSubjectSafe(
   }
 }
 
+/** Файловое хранилище профиля кейса — умолчание для продакшна. */
+const defaultProfileStore = {
+  read(caseId: string): SubjectIdentityProfile | null {
+    const path = subjectProfilePath(caseId);
+    if (!existsSync(path)) return null;
+    try {
+      return JSON.parse(readFileSync(path, "utf8")) as SubjectIdentityProfile;
+    } catch {
+      return null;
+    }
+  },
+  write(caseId: string, profile: SubjectIdentityProfile): void {
+    const path = subjectProfilePath(caseId);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+  },
+};
+
 export type SubjectProfileBootstrapResult = {
   profile: ClassifierSubjectProfile;
   /** true when the case-root profile file was created by this bootstrap. */
@@ -108,6 +126,11 @@ export async function bootstrapSubjectProfileFromCollection(input: {
   /** Injected subject (offline tests); production resolves from the case. */
   subject?: CaseSubjectRef | null;
   prisma?: PrismaClient | null;
+  /** Чтение и запись файла профиля; по умолчанию — файловая система кейса. */
+  store?: {
+    read: (caseId: string) => SubjectIdentityProfile | null;
+    write: (caseId: string, profile: SubjectIdentityProfile) => void;
+  };
 }): Promise<SubjectProfileBootstrapResult | null> {
   const subject =
     input.subject ?? (await loadCaseSubjectSafe(input.caseId, input.prisma ?? null));
@@ -128,23 +151,21 @@ export async function bootstrapSubjectProfileFromCollection(input: {
   });
   const birthDate = subject.dateOfBirth ?? null;
 
+  const store = input.store ?? defaultProfileStore;
   let identity = mergeDiscoveredIntoProfile(built, built, birthDate);
   let persistedToCaseRoot = false;
   try {
-    const path = subjectProfilePath(input.caseId);
     /*
      * Файл кейса дополняется, а не подменяется: якоря и тёзки ввёл оператор,
      * а дата рождения и предложения — машинная часть, и она обновляется каждым
-     * прогоном.
+     * прогоном. Раньше бутстрап звался только при отсутствии файла, и кейс с
+     * заведённым профилем не получал ни даты рождения, ни свежих предложений —
+     * ровно случай прогона DPA-2026-0049.
      */
-    if (existsSync(path)) {
-      const previous = JSON.parse(readFileSync(path, "utf8")) as SubjectIdentityProfile;
-      if (previous?.displayName) identity = mergeDiscoveredIntoProfile(previous, built, birthDate);
-    }
-    const next = `${JSON.stringify(identity, null, 2)}\n`;
-    if (!existsSync(path) || readFileSync(path, "utf8") !== next) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, next, "utf8");
+    const previous = store.read(input.caseId);
+    if (previous?.displayName) identity = mergeDiscoveredIntoProfile(previous, built, birthDate);
+    if (!previous || JSON.stringify(previous) !== JSON.stringify(identity)) {
+      store.write(input.caseId, identity);
       persistedToCaseRoot = true;
     }
   } catch {

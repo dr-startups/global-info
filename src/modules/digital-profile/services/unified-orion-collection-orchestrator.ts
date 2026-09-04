@@ -1638,10 +1638,17 @@ async function stepComposite(
   // → automatic bootstrap from the case subject + the just-collected data.
   // Only when even the bootstrap cannot resolve a subject does prepare later
   // fail closed with SUBJECT_PROFILE_MISSING.
-  let subjectProfile = await resolveJobSubjectProfile({
-    caseId: job.caseId,
-    injected: deps.subjectProfile ?? null,
-  });
+  /*
+   * Бутстрап зовётся всегда, а не только при отсутствии файла.
+   *
+   * Он больше не «создаёт профиль, если его нет», а сливает машинную часть в
+   * существующий: дату рождения из карточки кейса, предложения по ИНН и чужие
+   * отчества из свежего корпуса. Якоря и тёзок оператора он не трогает.
+   * Прежний порядок оставлял кейс с заведённым профилем без даты рождения
+   * навсегда — ровно случай прогона DPA-2026-0049, где файл уже лежал с тремя
+   * чужими ИНН.
+   */
+  let subjectProfile = deps.subjectProfile ?? null;
   if (!subjectProfile) {
     const bootstrap = await bootstrapSubjectProfileFromCollection({
       caseId: job.caseId,
@@ -1652,6 +1659,10 @@ async function stepComposite(
       prisma,
     });
     subjectProfile = bootstrap?.profile ?? null;
+  }
+  // Субъект кейса не читается (нет базы, офлайн) — остаётся файл, как раньше.
+  if (!subjectProfile) {
+    subjectProfile = await resolveJobSubjectProfile({ caseId: job.caseId, injected: null });
   }
   if (subjectProfile) {
     await writeUnifiedArtifact(
