@@ -300,6 +300,56 @@ export type SerpObservationForGate = {
   domain?: string;
 };
 
+/**
+ * Блоки клиентского текста страницы — в том виде, в каком их сравнивают на повтор.
+ *
+ * Единица сравнения — то, что видит клиент. На карточной странице матрицы
+ * рисков это заголовок карточки **вместе** с телом: заголовок стоит строкой
+ * таблицы, и в буллет он намеренно не входит — там он был бы напечатан второй
+ * раз. Пока сравнивалось одно тело, две разные темы с одинаковым телом
+ * («Всего по теме: 3 материала» плюс постоянная оговорка о неподтверждённой
+ * принадлежности) объявлялись повтором, и отчёт не собирался вовсе — прогон
+ * DPA-2026-0053.
+ *
+ * Заголовки берутся, только когда строк таблицы ровно столько же, сколько
+ * буллетов: иначе соответствие карточки и строки неизвестно, а выдумывать его
+ * значит сравнивать не то, что напечатано.
+ *
+ * Блок, от которого после нормализации не осталось ни слова (одно тире,
+ * многоточие), клиенту текстом не виден и в сравнение не идёт: краснеть на
+ * вёрстке вместо повтора — не то же самое.
+ */
+export function printedBlocksForRepeatCheck(
+  slide: {
+    narrative?: string | undefined;
+    bullets?: string[] | undefined;
+    sourceNote?: string | undefined;
+    table?: { rows: string[][] } | undefined;
+  },
+  templateId: string
+): Array<{ key: string; excerpt: string }> {
+  const bullets = slide.bullets ?? [];
+  const rows = slide.table?.rows ?? [];
+  const headlineOf = (index: number): string =>
+    templateId === "risk-matrix" && rows.length === bullets.length
+      ? String(rows[index]?.[0] ?? "")
+      : "";
+  const raw: Array<{ text: string; headline: string }> = [
+    { text: String(slide.narrative ?? ""), headline: "" },
+    ...bullets.map((b, i) => ({ text: String(b ?? ""), headline: headlineOf(i) })),
+    { text: String(slide.sourceNote ?? ""), headline: "" },
+  ];
+  const out: Array<{ key: string; excerpt: string }> = [];
+  for (const block of raw) {
+    const text = withoutFindingMarkers(block.text);
+    if (!text) continue;
+    const key = normalizeForCompare(`${block.headline} ${text}`);
+    if (!key) continue;
+    out.push({ key, excerpt: text.replace(/\s+/gu, " ").slice(0, 90) });
+  }
+  return out;
+}
+
 /** Домен в сравнимом виде: без схемы, без www, в нижнем регистре. */
 function bareDomain(raw: string | undefined): string {
   return String(raw ?? "")
