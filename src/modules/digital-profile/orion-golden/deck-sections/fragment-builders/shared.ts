@@ -2529,14 +2529,26 @@ export function auditScopeLine(ms: MetricSnapshot, opts?: { withRemainder?: bool
 }
 
 /**
- * Знаменатель доли: прочитанные страницы региона минус признанные чужими.
+ * Знаменатель доли: прочитанные страницы региона минус те, что о субъекте не
+ * говорят, — признанные чужими и подтверждённые только совпадением имени.
  *
  * Определение одно на все места счёта — и на фразу страницы региона, и на
  * строку резюме, и на машинное поле слайда, которым приёмка сверяет слова с
  * числами. Разъехавшись, они дали бы клиенту два разных «из скольких».
  */
 export function readShareDenominator(counts: LinkReadRegionCounts): number {
-  return counts.read - counts.readOther;
+  return counts.read - counts.readOther - (counts.readUnconfirmed ?? 0);
+}
+
+/** Исключённые из знаменателя, одной фразой: их называют обе строки доли. */
+function excludedFromShare(counts: LinkReadRegionCounts): string {
+  const parts = [
+    counts.readOther > 0 ? `о других людях (${counts.readOther})` : "",
+    (counts.readUnconfirmed ?? 0) > 0
+      ? `с неподтверждённой принадлежностью (${counts.readUnconfirmed})`
+      : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? `Страницы ${parts.join(" и ")} в долю не входят.` : "";
 }
 
 /**
@@ -2578,14 +2590,20 @@ export function readShareRegionalSentence(ms: MetricSnapshot, regionKey: string)
   }
   const denominator = readShareDenominator(b);
   if (denominator <= 0) {
-    return `Все прочитанные страницы региона (${b.read}) отнесены к другим лицам; доля негатива о проверяемом лице не приводится.`;
+    /*
+     * «Все чужие» и «принадлежность не подтверждена» — разные ответы, и
+     * подменять второй первым нельзя: во втором случае страницы, возможно, и о
+     * субъекте, но подтвердить это нечем.
+     */
+    return (b.readUnconfirmed ?? 0) > 0
+      ? `Среди прочитанных страниц региона (${b.read}) нет ни одной, принадлежность которой проверяемому лицу подтверждена признаком сверх совпадения имени; доля негатива не приводится.`
+      : `Все прочитанные страницы региона (${b.read}) отнесены к другим лицам; доля негатива о проверяемом лице не приводится.`;
   }
   const head =
     `Негатив среди прочитанных страниц региона: ${b.adverseRead} из ${denominator} ` +
     `(${readSharePercent(b.adverseRead, denominator)}%); прочитано ${b.read} из ${b.requested} отобранных.`;
-  return b.readOther > 0
-    ? `${head} Страницы о других людях (${b.readOther}) в долю не входят.`
-    : head;
+  const excluded = excludedFromShare(b);
+  return excluded ? `${head} ${excluded}` : head;
 }
 
 /** Порядок контуров в резюме фиксирован — формулировка не плавает от прогона. */
@@ -2600,13 +2618,15 @@ const READ_SHARE_REGION_ORDER = ["RU", "UAE"];
  */
 export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
   const parts: string[] = [];
-  let excluded = 0;
+  let other = 0;
+  let unconfirmed = 0;
   for (const regionKey of READ_SHARE_REGION_ORDER) {
     const b = ms.linkReadByRegion?.[regionKey];
     if (!b) continue;
     const denominator = readShareDenominator(b);
     if (denominator <= 0) continue;
-    excluded += b.readOther;
+    other += b.readOther;
+    unconfirmed += b.readUnconfirmed ?? 0;
     parts.push(
       `${regionClientLabel(regionKey)} — ${readSharePercent(
         b.adverseRead,
@@ -2619,15 +2639,20 @@ export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
   /*
    * Исключённые страницы названы теми же словами, что на странице региона.
    *
-   * Знаменатель — прочитанные минус признанные чужими, и страница региона это
-   * говорит. Строка резюме молчала: на живом отчёте 21.08 читатель складывал
-   * «51» и «28», получал 79 при 80 прочитанных и не находил объяснения. Числа
-   * были верны, необъяснённой была разница — а необъяснённое число в отчёте
-   * для банка читается как ошибка (пункт CS).
+   * Знаменатель — прочитанные минус те, что о субъекте не говорят, и страница
+   * региона это называет. Строка резюме молчала: на живом отчёте 21.08
+   * читатель складывал «51» и «28», получал 79 при 80 прочитанных и не находил
+   * объяснения. Числа были верны, необъяснённой была разница — а необъяснённое
+   * число в отчёте читается как ошибка (пункт CS).
    */
-  return excluded > 0
-    ? `${head} Страницы о других людях (${excluded}) в долю не входят.`
-    : head;
+  const excluded = excludedFromShare({
+    requested: 0,
+    read: 0,
+    readOther: other,
+    readUnconfirmed: unconfirmed,
+    adverseRead: 0,
+  });
+  return excluded ? `${head} ${excluded}` : head;
 }
 
 /**

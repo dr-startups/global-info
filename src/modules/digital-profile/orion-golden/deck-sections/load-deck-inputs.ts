@@ -39,6 +39,10 @@ import {
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
+import {
+  UNCONFIRMED_SUBJECT_REASONS,
+  isAnchoredReason,
+} from "../analytics/subject-anchors";
 import { wikipediaCheckInventoryId } from "../../services/evidence-supplement-adapter";
 import { WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT } from "../analytics/run-wikipedia-article-review";
 import { WikipediaArticleReviewSetSchema } from "../contracts/wikipedia-article-review";
@@ -129,6 +133,8 @@ export function bestIdentityDecision(
 export function countIdentityByObservation(input: {
   observationRefGroups: string[][];
   decisionByRef: Map<string, string>;
+  /** Коды причин: по ним считается «совпало только имя». */
+  reasonByRef?: Map<string, string>;
 }): {
   subjectMatchCount: number;
   likelySubjectCount: number;
@@ -136,6 +142,8 @@ export function countIdentityByObservation(input: {
   otherSubjectCount: number;
   /** Нет признаков субъекта вовсе — и нет решения по наблюдению. */
   insufficientCount: number;
+  /** Из неоднозначных: совпало полное имя без подтверждающего признака. */
+  unconfirmedCount: number;
 } {
   let subjectMatchCount = 0;
   let likelySubjectCount = 0;
@@ -146,6 +154,7 @@ export function countIdentityByObservation(input: {
   // плитки на обложке не сходились — 504 материала против 473 в разбивке
   // (шаг 13, C10). Разбивка обязана быть полной.
   let insufficientCount = 0;
+  let unconfirmedCount = 0;
   for (const refs of input.observationRefGroups) {
     const best = bestIdentityDecision(refs, input.decisionByRef);
     if (best === "SUBJECT_MATCH") subjectMatchCount += 1;
@@ -153,6 +162,12 @@ export function countIdentityByObservation(input: {
     else if (best === "AMBIGUOUS") ambiguousCount += 1;
     else if (best === "OTHER_SUBJECT") otherSubjectCount += 1;
     else insufficientCount += 1;
+    if (
+      best === "AMBIGUOUS" &&
+      refs.some((ref) => UNCONFIRMED_SUBJECT_REASONS.has(String(input.reasonByRef?.get(ref) ?? "")))
+    ) {
+      unconfirmedCount += 1;
+    }
   }
   return {
     subjectMatchCount,
@@ -160,6 +175,7 @@ export function countIdentityByObservation(input: {
     ambiguousCount,
     otherSubjectCount,
     insufficientCount,
+    unconfirmedCount,
   };
 }
 
@@ -182,7 +198,12 @@ export function countIdentityByObservation(input: {
  * не попадают в региональную таблицу тем.
  */
 export function countLinkReadByRegion(
-  verdicts: LinkVerdictRow[]
+  verdicts: LinkVerdictRow[],
+  /**
+   * Код причины разметки по адресу улики. Без него счётчик неподтверждённых
+   * страниц остаётся нулевым, и прежние прогоны считаются как считались.
+   */
+  reasonByRef?: Map<string, string>
 ): Record<string, LinkReadRegionCounts> {
   const counts: Record<string, LinkReadRegionCounts> = {};
   const seen = new Set<string>();
@@ -193,12 +214,22 @@ export function countLinkReadByRegion(
     if (!v.region) continue;
     const bucket = mapRegionBucket(v.region);
     if (bucket !== "RU" && bucket !== "UAE") continue;
-    const row = (counts[bucket] ??= { requested: 0, read: 0, readOther: 0, adverseRead: 0 });
+    const row = (counts[bucket] ??= {
+      requested: 0,
+      read: 0,
+      readOther: 0,
+      readUnconfirmed: 0,
+      adverseRead: 0,
+    });
     row.requested += 1;
     if (v.readFailure) continue;
     row.read += 1;
     if (v.subjectMatch === "other") row.readOther += 1;
-    else if (v.subjectMatch === "subject" && v.tone === "adverse") row.adverseRead += 1;
+    else if (UNCONFIRMED_SUBJECT_REASONS.has(String(reasonByRef?.get(ref) ?? ""))) {
+      // Совпало одно имя: страница не о другом лице и не о субъекте — сказать
+      // о ней нечего, и делить на неё нельзя.
+      row.readUnconfirmed = (row.readUnconfirmed ?? 0) + 1;
+    } else if (v.subjectMatch === "subject" && v.tone === "adverse") row.adverseRead += 1;
   }
   return counts;
 }
@@ -783,6 +814,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const identityCounts = countIdentityByObservation({
     observationRefGroups,
     decisionByRef,
+    reasonByRef,
   });
 
   const mergedBundle: VerifiedFindingBundle = {
@@ -1208,7 +1240,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     // Поля нет вовсе, когда чтения в прогоне не было: отсутствие метрики и
     // измеренный ноль — разные утверждения перед клиентом.
     linkReadByRegion: linkVerdicts
-      ? countLinkReadByRegion(linkVerdicts.verdicts ?? [])
+      ? countLinkReadByRegion(linkVerdicts.verdicts ?? [], reasonByRef)
       : undefined,
     linkUnreadCount: linkVerdicts?.summary?.unread,
     linkReading: linkVerdicts?.reading
@@ -1227,6 +1259,13 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     // «Требуют идентификации» покрывает и смешанные признаки, и полное их
     // отсутствие: для читателя это один вопрос — материал не отнесён к лицу.
     ambiguousCount: identityCounts.ambiguousCount + identityCounts.insufficientCount,
+    unconfirmedSubjectCount: identityCounts.unconfirmedCount,
+    /*
+     * Режим прогона читается по кодам причин самой разметки: другого следа
+     * якорей в артефактах нет, а обещать проверенную принадлежность там, где
+     * её не проверяли, отчёт не вправе.
+     */
+    anchoredRun: [...reasonByRef.values()].some(isAnchoredReason),
     otherSubjectCount: identityCounts.otherSubjectCount,
     adverseFindingCount: bundle.findings.filter(
       (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2

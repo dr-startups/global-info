@@ -113,7 +113,7 @@ describe("снимок метрик несёт долю прочитанного
       ])
     );
     expect(inputs.metricSnapshot.linkReadByRegion).toEqual({
-      RU: { requested: 2, read: 1, readOther: 0, adverseRead: 1 },
+      RU: { requested: 2, read: 1, readOther: 0, readUnconfirmed: 0, adverseRead: 1 },
     });
   });
 

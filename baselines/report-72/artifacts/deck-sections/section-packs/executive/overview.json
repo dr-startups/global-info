@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:baf00d81874b749e594adebb6fb327db6a82f3b931f4f92cd53460bde56644ba",
-  "contentVersion": "deck-sections-v164",
+  "contentHash": "sha256:bed104f6c1a891a523767df814ce565a66908e5c7105fa33f118192b8f21fd18",
+  "contentVersion": "deck-sections-v165",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -61,8 +61,8 @@
     "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
   ],
   "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
-  "generatedAt": "2026-09-04T11:51:18.160Z",
-  "inputHash": "sha256:2f9775c3ed561bc93127e7985eb0ae894e2fa8ac910914811b97328f83c2dbcc:b5123bd3a39c0aaf",
+  "generatedAt": "2026-09-04T13:08:45.789Z",
+  "inputHash": "sha256:9134b5514cb2d9d28c497546fafe7976789dd89474461444354b47ad3a20b7de:b5123bd3a39c0aaf",
   "inputs": {
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -200,7 +200,7 @@
             "value": "Россия · ОАЭ"
           }
         ],
-        "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (Россия: 246, ОАЭ: 97). Принадлежность каждого материала к проверяемому лицу проверена.",
+        "narrative": "По собранным источникам: 343 материала из 2 региональных контуров (Россия: 246, ОАЭ: 97).",
         "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 29.",
         "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       },

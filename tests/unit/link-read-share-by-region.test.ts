@@ -38,7 +38,7 @@ describe("счётчик прочитанного по регионам", () => 
       verdict({ evidenceRef: "ref-1", tone: "adverse", theme: "Суд" }),
       verdict({ evidenceRef: "ref-1", tone: "adverse", theme: "Санкции" }),
     ]);
-    expect(counts.RU).toEqual({ requested: 1, read: 1, readOther: 0, adverseRead: 1 });
+    expect(counts.RU).toEqual({ requested: 1, read: 1, readOther: 0, readUnconfirmed: 0, adverseRead: 1 });
   });
 
   it("непрочитанная страница входит только в число отобранных", () => {
@@ -48,7 +48,7 @@ describe("счётчик прочитанного по регионам", () => 
       verdict({ evidenceRef: "ref-1", tone: "adverse", readFailure: "blocked" }),
       verdict({ evidenceRef: "ref-2", tone: "neutral", readFailure: "timeout" }),
     ]);
-    expect(counts.RU).toEqual({ requested: 2, read: 0, readOther: 0, adverseRead: 0 });
+    expect(counts.RU).toEqual({ requested: 2, read: 0, readOther: 0, readUnconfirmed: 0, adverseRead: 0 });
   });
 
   it("страница о другом лице прочитана, но из знаменателя исключена", () => {
@@ -57,7 +57,7 @@ describe("счётчик прочитанного по регионам", () => 
       verdict({ evidenceRef: "ref-2", subjectMatch: "other", tone: "adverse" }),
       verdict({ evidenceRef: "ref-3", subjectMatch: "subject", tone: "adverse" }),
     ]);
-    expect(counts.RU).toEqual({ requested: 3, read: 3, readOther: 2, adverseRead: 1 });
+    expect(counts.RU).toEqual({ requested: 3, read: 3, readOther: 2, readUnconfirmed: 0, adverseRead: 1 });
     // Знаменатель — прочитано минус чужие: 3 − 2 = 1.
     expect(counts.RU!.read - counts.RU!.readOther).toBe(1);
   });
@@ -68,7 +68,7 @@ describe("счётчик прочитанного по регионам", () => 
       verdict({ evidenceRef: "ref-2", subjectMatch: "unclear", tone: "adverse" }),
       verdict({ evidenceRef: "ref-3", subjectMatch: "subject", tone: "adverse" }),
     ]);
-    expect(counts.RU).toEqual({ requested: 3, read: 3, readOther: 0, adverseRead: 1 });
+    expect(counts.RU).toEqual({ requested: 3, read: 3, readOther: 0, readUnconfirmed: 0, adverseRead: 1 });
   });
 
   it("российские вердикты не меняют корзину ОАЭ", () => {
@@ -79,9 +79,9 @@ describe("счётчик прочитанного по регионам", () => 
       verdict({ evidenceRef: "ae-1", region: "AE", tone: "adverse" }),
       verdict({ evidenceRef: "ae-2", region: "UAE", tone: "neutral" }),
     ]);
-    expect(counts.RU).toEqual({ requested: 3, read: 2, readOther: 0, adverseRead: 2 });
+    expect(counts.RU).toEqual({ requested: 3, read: 2, readOther: 0, readUnconfirmed: 0, adverseRead: 2 });
     // Сырой регион `AE` сводится в корзину UAE тем же правилом, что и темы.
-    expect(counts.UAE).toEqual({ requested: 2, read: 2, readOther: 0, adverseRead: 1 });
+    expect(counts.UAE).toEqual({ requested: 2, read: 2, readOther: 0, readUnconfirmed: 0, adverseRead: 1 });
   });
 
   it("вердикт без региона не попадает ни в одну корзину", () => {
@@ -107,7 +107,7 @@ describe("счётчик прочитанного по регионам", () => 
       expect(bucket.read - bucket.readOther).toBeLessThanOrEqual(bucket.read);
       expect(bucket.read).toBeLessThanOrEqual(bucket.requested);
     }
-    expect(counts.RU).toEqual({ requested: 5, read: 4, readOther: 1, adverseRead: 1 });
+    expect(counts.RU).toEqual({ requested: 5, read: 4, readOther: 1, readUnconfirmed: 0, adverseRead: 1 });
   });
 });
 

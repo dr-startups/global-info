@@ -21,6 +21,7 @@ import {
   type P1P2Account,
 } from "../contracts/representative-evidence";
 import { classifyCanonicalThemes, themeLabelRu } from "./canonical-themes";
+import { UNCONFIRMED_SUBJECT_REASONS } from "./subject-anchors";
 import { sourceAttribution } from "../client/client-address";
 
 const MATERIAL_LEVELS = new Set<MaterialityLevel>(["CRITICAL", "HIGH", "MEDIUM"]);
@@ -65,11 +66,11 @@ function maxLevel(levels: MaterialityLevel[]): MaterialityLevel {
  * (`full_name_match` и соседи) сюда не входят: фикстуры и кейсы без якорей
  * судятся прежним правилом.
  */
-const UNANCHORED_REASONS = new Set(["full_name_no_anchor", "registry_inn_unverified"]);
+
 
 export function isMaterialClaim(c: CanonicalClaim): boolean {
   if (c.subjectMatch === "OTHER_SUBJECT") return false;
-  if ((c.materialityReasons ?? []).some((r) => UNANCHORED_REASONS.has(String(r)))) return false;
+  if ((c.materialityReasons ?? []).some((r) => UNCONFIRMED_SUBJECT_REASONS.has(String(r)))) return false;
   if (!MATERIAL_LEVELS.has(c.materialityLevel)) return false;
   if (c.subjectMatch === "AMBIGUOUS" || c.subjectMatch === "INSUFFICIENT_IDENTIFIERS") {
     return c.materialityLevel === "CRITICAL" || c.materialityLevel === "HIGH";

@@ -20,6 +20,7 @@ import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
 import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
+import { UNCONFIRMED_SUBJECT_REASONS } from "../../analytics/subject-anchors";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import { clientAddress } from "../../client/client-address";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -346,11 +347,6 @@ export function normalizeSerpEngine(raw: string | undefined): string | null {
  * алфавит. Основной запрос выбирает `mainSerpTableQuery`, и он же говорит,
  * чьё это было решение.
  */
-/** Коды разрешения субъекта, при которых принадлежность материала не подтверждена. */
-export const UNCONFIRMED_SUBJECT_REASONS = new Set([
-  "full_name_no_anchor",
-  "registry_inn_unverified",
-]);
 
 /**
  * Оценка строки выдачи — одной лестницей, а не тремя тернарниками по месту.

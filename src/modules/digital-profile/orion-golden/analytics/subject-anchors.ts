@@ -39,6 +39,35 @@ export type SubjectAnchors = {
   domains: string[];
 };
 
+/**
+ * Коды причин, при которых принадлежность материала подтверждена только именем.
+ *
+ * Набор один на весь продукт: по нему разметка решает, что материал не факт,
+ * таблица выдачи — что печатать в оценке, а доля негатива — кого не брать в
+ * знаменатель. Пока таких набора было два (в разметке и в построителе выдачи),
+ * они совпадали случайно.
+ */
+export const UNCONFIRMED_SUBJECT_REASONS: ReadonlySet<string> = new Set([
+  "full_name_no_anchor",
+  "registry_inn_unverified",
+]);
+
+/**
+ * Коды причин, которые рождаются только в режиме по якорям.
+ *
+ * По ним отчёт узнаёт, что принадлежность материалов действительно проверяли
+ * признаком, а не одним совпадением имени. Чужая дата и чужой ИНН сюда не
+ * входят: они работают во всех режимах.
+ */
+export function isAnchoredReason(reasonCode: string | undefined | null): boolean {
+  const code = String(reasonCode ?? "");
+  return (
+    code.startsWith("full_name_with_anchor:") ||
+    code === "full_name_with_weak_anchor" ||
+    UNCONFIRMED_SUBJECT_REASONS.has(code)
+  );
+}
+
 /** Есть ли у профиля хоть один якорь: по этому признаку выбирается лестница. */
 export function hasSubjectAnchors(anchors: SubjectAnchors | undefined | null): boolean {
   if (!anchors) return false;
