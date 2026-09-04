@@ -124,6 +124,8 @@ async function tickBaseCollection(deps: Record<string, unknown>) {
         isFixture: false,
         subjectInputHash: "gen-answer-wiring-subject",
         decidedHashes: ["gen-answer-wiring-subject"],
+        // Признак субъекта у кейса есть: проверяется вызов нейро-ответа, а не ворота.
+        hasSubjectAnchor: true,
       }),
     } as never,
   });

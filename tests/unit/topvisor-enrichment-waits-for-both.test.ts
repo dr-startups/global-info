@@ -46,6 +46,7 @@ const personaDecided = {
     isFixture: false,
     subjectInputHash: "topvisor-waits-subject",
     decidedHashes: ["topvisor-waits-subject"],
+    hasSubjectAnchor: true,
   }),
 };
 

@@ -44,7 +44,15 @@ describe("панель в офлайне в сеть не ходит вовсе"
     const { snapshot } = await buildPersonaPanel({ subject: SUBJECT });
     // Мутационная точка: снимут вето — счётчик перестанет быть нулём.
     expect(counter.calls).toEqual([]);
-    expect(snapshot.sources.map((s) => s.status)).toEqual(["OFFLINE", "OFFLINE", "OFFLINE"]);
+    // Источников четыре: к трём прежним добавлена выдача Яндекса — и она молчит
+    // в офлайне тем же кодом, что и остальные.
+    expect(snapshot.sources.map((s) => s.status)).toEqual([
+      "OFFLINE",
+      "OFFLINE",
+      "OFFLINE",
+      "OFFLINE",
+    ]);
+    expect(snapshot.sources.map((s) => s.source)).toContain("yandex");
     for (const source of snapshot.sources) {
       expect(source.code, source.source).toBe("NETWORK_CALLS_DISABLED");
       // Провайдера не спрашивали — технической подробности взяться неоткуда, а

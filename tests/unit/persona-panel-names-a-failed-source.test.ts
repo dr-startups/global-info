@@ -105,8 +105,11 @@ describe("отказ источника называется словами и �
     });
     expect(snapshot.fetchStatus).toBe("FAILED");
     expect(snapshot.cards).toEqual([]);
-    expect(snapshot.sources.map((s) => s.status)).toEqual(["FAILED", "FAILED", "FAILED"]);
-    for (const source of snapshot.sources) {
+    // Четвёртый источник — выдача Яндекса: в офлайн-контуре её реализация не
+    // подменена, поэтому она молчит с кодом OFFLINE, а не отказывает.
+    expect(snapshot.sources.filter((s) => s.status === "FAILED")).toHaveLength(3);
+    expect(snapshot.sources.find((s) => s.source === "yandex")?.status).toBe("OFFLINE");
+    for (const source of snapshot.sources.filter((s) => s.status === "FAILED")) {
       expect(source.code, source.source).toBe("PROVIDER_REQUEST_FAILED");
       expect(source.detail, source.source).toBeTruthy();
     }

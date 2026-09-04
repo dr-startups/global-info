@@ -139,6 +139,49 @@ function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
     };
   }
 
+  if (record?.decision === "ANCHORS_CONFIRMED" && record.anchors) {
+    /*
+     * Малоизвестного человека внешние карточки не находят, и «персоны нет» —
+     * не ответ: по нему прогон DPA-2026-0049 собрал четырёх разных людей.
+     * Оператор называет признаки, и лист печатает их — читатель видит, чем
+     * материал отличали от материала полного тёзки, и может это проверить.
+     */
+    const a = record.anchors;
+    const named = [
+      a.birthDate ? `дата рождения ${a.birthDate}` : "",
+      ...a.phrases.filter((p) => p.strong).map((p) => `«${p.text}»`),
+      ...a.inn.map((i) => `ИНН ${i}`),
+      ...a.domains.map((d) => `сайт ${d}`),
+    ].filter(Boolean);
+    const weak = a.phrases.filter((p) => !p.strong).map((p) => `«${p.text}»`);
+    const confirmedOn = a.confirmedOn.slice(0, 3);
+    return {
+      narrative: [
+        `Перед началом сбора оператор назвал признаки проверяемого лица: ${enumerateRu(
+          named,
+          named.length
+        )}.`,
+        confirmedOn.length > 0
+          ? `Признаки проверены по выдаче до сбора: ${enumerateRu(confirmedOn, confirmedOn.length)}.`
+          : "",
+        weak.length > 0
+          ? `Дополнительно названы менее строгие признаки: ${enumerateRu(weak, weak.length)}.`
+          : "",
+        "Материал отнесён к проверяемому лицу, когда рядом с его именем стоит один из этих признаков.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      bullets: [
+        "Материалы, где совпало только имя, отмечены как «принадлежность не подтверждена»" +
+          " и не входят ни в темы, ни в итоговую оценку.",
+        PER_MATERIAL_NOTE,
+      ],
+      whatToCheck:
+        "Сверить названные признаки с тем, что известно о проверяемом лице:" +
+        " ошибка в признаке уводит из отчёта его материалы и приводит чужие.",
+    };
+  }
+
   if (record?.decision === "APPROVED_WITHOUT_PERSONA") {
     const cause =
       record.cardCount > 0

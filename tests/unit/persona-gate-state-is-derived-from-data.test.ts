@@ -27,6 +27,7 @@ describe("ворота считают состояние по данным", () 
       isFixture: false,
       subjectInputHash: CURRENT,
       decidedHashes: [],
+      hasSubjectAnchor: true,
     });
     expect(state.mode).toBe("PENDING");
     expect(state.reason).toBe("PERSONA_NOT_CONFIRMED");
@@ -38,6 +39,7 @@ describe("ворота считают состояние по данным", () 
         isFixture: false,
         subjectInputHash: CURRENT,
         decidedHashes: [OTHER, CURRENT],
+        hasSubjectAnchor: true,
       }).mode
     ).toBe("CONFIRMED");
   });
@@ -47,6 +49,7 @@ describe("ворота считают состояние по данным", () 
       isFixture: false,
       subjectInputHash: CURRENT,
       decidedHashes: [OTHER],
+      hasSubjectAnchor: true,
     });
     // Мутационная точка: снимут сравнение хешей — здесь встанет CONFIRMED.
     expect(state.mode).toBe("STALE");
@@ -56,7 +59,7 @@ describe("ворота считают состояние по данным", () 
   it("фикстурный кейс проходит при любом из первых трёх состояний", () => {
     for (const decidedHashes of [[], [OTHER], [CURRENT]]) {
       expect(
-        personaGateState({ isFixture: true, subjectInputHash: CURRENT, decidedHashes }).mode
+        personaGateState({ isFixture: true, subjectInputHash: CURRENT, decidedHashes, hasSubjectAnchor: false }).mode
       ).toBe("FIXTURE_BYPASS");
     }
   });
@@ -64,12 +67,12 @@ describe("ворота считают состояние по данным", () 
   it("пятого состояния у предиката нет: недоступность выставляет вызывающий", () => {
     const modes = new Set(
       [
-        personaGateState({ isFixture: true, subjectInputHash: CURRENT, decidedHashes: [] }).mode,
-        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [CURRENT] })
+        personaGateState({ isFixture: true, subjectInputHash: CURRENT, decidedHashes: [], hasSubjectAnchor: true }).mode,
+        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [CURRENT], hasSubjectAnchor: true })
           .mode,
-        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [OTHER] })
+        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [OTHER], hasSubjectAnchor: true })
           .mode,
-        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [] }).mode,
+        personaGateState({ isFixture: false, subjectInputHash: CURRENT, decidedHashes: [], hasSubjectAnchor: true }).mode,
       ].map(String)
     );
     expect([...modes].sort()).toEqual(["CONFIRMED", "FIXTURE_BYPASS", "PENDING", "STALE"]);

@@ -177,6 +177,7 @@ const personaDecided = {
     isFixture: false,
     subjectInputHash: DECIDED_SUBJECT_HASH,
     decidedHashes: [DECIDED_SUBJECT_HASH],
+    hasSubjectAnchor: true,
   }),
 };
 
@@ -548,6 +549,7 @@ describe("unified orion arsenkin collection", () => {
         isFixture: false,
         subjectInputHash: DECIDED_SUBJECT_HASH,
         decidedHashes: [] as string[],
+        hasSubjectAnchor: true,
       }),
     };
 

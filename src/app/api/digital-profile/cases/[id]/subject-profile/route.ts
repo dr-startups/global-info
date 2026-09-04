@@ -69,7 +69,33 @@ function parseEdits(body: Record<string, unknown>): SubjectProfileEdits {
       };
     });
   }
+  const anchorsRaw = body.anchors;
+  let anchors: SubjectProfileEdits["anchors"];
+  if (anchorsRaw !== undefined) {
+    if (!anchorsRaw || typeof anchorsRaw !== "object" || Array.isArray(anchorsRaw)) {
+      throw new ValidationError("anchors must be an object");
+    }
+    const obj = anchorsRaw as Record<string, unknown>;
+    const phrasesRaw = obj.phrases;
+    if (phrasesRaw !== undefined && !Array.isArray(phrasesRaw)) {
+      throw new ValidationError("anchors.phrases must be an array");
+    }
+    anchors = {
+      birthDate: obj.birthDate == null ? null : String(obj.birthDate),
+      phrases: ((phrasesRaw as unknown[]) ?? []).map((p) => {
+        const row = (p ?? {}) as Record<string, unknown>;
+        return {
+          kind: String(row.kind ?? "fact") as NonNullable<SubjectProfileEdits["anchors"]>["phrases"][number]["kind"],
+          text: String(row.text ?? ""),
+          strong: row.strong === true,
+        };
+      }),
+      inn: stringList(obj.inn, "anchors.inn") ?? [],
+      domains: stringList(obj.domains, "anchors.domains") ?? [],
+    };
+  }
   return {
+    anchors,
     contextIdentifiers: stringList(body.contextIdentifiers, "contextIdentifiers"),
     aliases: stringList(body.aliases, "aliases"),
     unrelatedKnownPersons: stringList(body.unrelatedKnownPersons, "unrelatedKnownPersons"),

@@ -30,7 +30,8 @@ import {
   serperOrganicWithExtras,
   type SerperSurfaceBatchResult,
 } from "../providers/serper-surfaces";
-import type { SearchProviderRequest } from "../providers/types";
+import type { ProviderRunResult, SearchProviderRequest } from "../providers/types";
+import { yandexSearchProvider } from "../providers/yandex-search-provider";
 import { hasCyrillic, type OrionRegionCode } from "../search-surfaces/orion-query-plan";
 import { openSanctionsProvider } from "../compliance-providers/open-sanctions-provider";
 import { RISK_TYPE_LABEL_RU } from "../compliance-providers/open-sanctions-mapping";
@@ -40,6 +41,9 @@ import type {
 } from "../compliance-providers/types";
 import { prisma } from "@/server/prisma/client";
 import type { PersonaDecisionRecord } from "../orion-golden/deck-sections/scoped-input";
+import type { SubjectAnchors } from "../orion-golden/analytics/subject-anchors";
+import { checkAnchorsInProbe, type AnchorProbeResult } from "./persona-anchor-probe";
+import { loadCaseSubjectIdentityProfile } from "./subject-profile-admin";
 
 // ---------------------------------------------------------------------------
 // Настройки среза — константы модуля, а не переменные окружения и не настройки:
@@ -66,8 +70,17 @@ export const PERSONA_PANEL_SERPER_LIMIT = 10;
 /** Скольким первым кандидатам каждого языка тянется лид; хвост — сниппетом. */
 const PERSONA_PANEL_LEADS_PER_LANGUAGE = 3;
 
-/** Сколько строк выдачи попадает во вспомогательный блок с каждого запроса. */
-const PERSONA_PANEL_SERP_ROWS = 5;
+/**
+ * Сколько строк выдачи попадает в пробу с каждого запроса.
+ *
+ * Было пять. Малоизвестного человека по пяти заголовкам не узнать: у судьи из
+ * прогона DPA-2026-0049 карточки Википедии нет вовсе, а его страницы стоят в
+ * выдаче на первых местах — и признак («родился 30.11.1977») живёт в сниппете,
+ * а не в заголовке. Десять строк — вся первая страница, за которую уже
+ * заплачено: `PERSONA_PANEL_SERPER_LIMIT` = 10, дороже запрос от этого не
+ * становится.
+ */
+const PERSONA_PANEL_SERP_ROWS = 10;
 
 // ---------------------------------------------------------------------------
 // Хеш входа субъекта
@@ -125,7 +138,7 @@ export function subjectInputHash(input: SubjectHashInput): string {
 // Снимок панели
 // ---------------------------------------------------------------------------
 
-export type PersonaSourceName = "wikipedia" | "knowledge_graph" | "opensanctions";
+export type PersonaSourceName = "wikipedia" | "knowledge_graph" | "opensanctions" | "yandex";
 
 export type PersonaSourceFetchStatus =
   | "SUCCESS"
@@ -217,8 +230,15 @@ export type PersonaCard =
 
 export interface PersonaSerpRow {
   title: string;
+  /**
+   * Сниппет строки — то, ради чего блок и существует: признак субъекта (дата
+   * рождения, должность, работодатель) стоит в нём, а не в заголовке.
+   */
+  snippet: string | null;
   url: string | null;
   domain: string | null;
+  /** Чья это выдача: у Яндекса и Google разные однофамильцы в первой десятке. */
+  engine: "GOOGLE" | "YANDEX";
 }
 
 export interface PersonaPanelSnapshot {
@@ -260,6 +280,11 @@ export interface PersonaPanelDeps {
     region: OrionRegionCode,
     limit: number
   ) => Promise<SerperSurfaceBatchResult>;
+  /**
+   * Выдача Яндекса для пробы: у двух поисковиков разные однофамильцы в первой
+   * десятке (офтальмолога из прогона 0049 было видно только у Яндекса).
+   */
+  yandex?: (request: SearchProviderRequest) => Promise<ProviderRunResult>;
   openSanctions?: (request: ComplianceScreeningRequest) => Promise<ComplianceScreeningResult>;
   /** Общий предел ожидания; по умолчанию — `PERSONA_PANEL_BUDGET_MS`. */
   budgetMs?: number;
@@ -449,7 +474,13 @@ function serperSlice(
       }
       if (item.kind === "organic" && rowsOfBatch < PERSONA_PANEL_SERP_ROWS) {
         rowsOfBatch += 1;
-        serpRows.push({ title: item.title, url: item.url, domain: item.domain });
+        serpRows.push({
+          title: item.title,
+          snippet: item.snippet ?? null,
+          url: item.url,
+          domain: item.domain,
+          engine: "GOOGLE",
+        });
       }
     }
   }
@@ -557,6 +588,22 @@ export async function buildPersonaPanel(input: {
         return batches;
       });
 
+  const yandexImpl = deps.yandex;
+  const yandexTask = offlineDenied(yandexImpl)
+    ? null
+    : withBudget(budgetMs, async () => {
+        const impl = yandexImpl ?? ((request: SearchProviderRequest) => yandexSearchProvider.search(request));
+        return impl({
+          caseId: subject.caseId,
+          subjectFullName: subject.fullName,
+          aliases: subject.aliases ?? [],
+          query: terms[0] ?? subject.fullName,
+          region: "RU",
+          language: "ru",
+          limit: PERSONA_PANEL_SERP_ROWS,
+        });
+      });
+
   const sanctionsTask = offlineDenied(openSanctionsImpl)
     ? null
     : withBudget(budgetMs, async () => {
@@ -572,9 +619,10 @@ export async function buildPersonaPanel(input: {
         });
       });
 
-  const [wikipediaOutcome, serperOutcome, sanctionsOutcome] = await Promise.all([
+  const [wikipediaOutcome, serperOutcome, yandexOutcome, sanctionsOutcome] = await Promise.all([
     wikipediaTask,
     serperTask,
+    yandexTask,
     sanctionsTask,
   ]);
 
@@ -594,6 +642,38 @@ export async function buildPersonaPanel(input: {
     sources.push(sourceAnswered("knowledge_graph", slice.status, slice.code, slice.detail));
   } else {
     sources.push(sourceSilent("knowledge_graph", serperOutcome, budgetMs));
+  }
+
+  // --- Выдача Яндекса
+  if (yandexOutcome?.status !== "SUCCESS") {
+    sources.push(sourceSilent("yandex", yandexOutcome, budgetMs));
+  } else if (yandexOutcome.value.status === "SUCCESS") {
+    serpRows = [
+      ...serpRows,
+      ...yandexOutcome.value.results.slice(0, PERSONA_PANEL_SERP_ROWS).map((r) => ({
+        title: r.title,
+        snippet: r.snippet ?? null,
+        url: r.url ?? null,
+        domain: r.domain ?? null,
+        engine: "YANDEX" as const,
+      })),
+    ];
+    sources.push(sourceAnswered("yandex"));
+  } else {
+    const notConfigured =
+      yandexOutcome.value.status === "NOT_CONFIGURED" || yandexOutcome.value.status === "DISABLED";
+    sources.push(
+      sourceAnswered(
+        "yandex",
+        notConfigured ? "NOT_CONFIGURED" : "FAILED",
+        notConfigured ? "PROVIDER_NOT_CONFIGURED" : "PROVIDER_REQUEST_FAILED",
+        yandexOutcome.value.error
+          ? [yandexOutcome.value.error.code, yandexOutcome.value.error.message]
+              .filter(Boolean)
+              .join(": ")
+          : null
+      )
+    );
   }
 
   // --- Санкционные и PEP-списки
@@ -640,7 +720,18 @@ export async function buildPersonaPanel(input: {
 // Хранение строки и решения
 // ---------------------------------------------------------------------------
 
-export type PersonaDecision = "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
+/**
+ * Ответ оператора на вопрос «про кого собираем».
+ *
+ * `ANCHORS_CONFIRMED` — «карточки его не нашли, но я знаю, чем он отличается»:
+ * для малоизвестного человека это единственный честный ответ, и он несёт
+ * признаки, а не слово. `APPROVED_WITHOUT_PERSONA` остаётся ответом «не знаю» —
+ * ворота его больше не принимают за подтверждение (см. `personaGateState`).
+ */
+export type PersonaDecision =
+  | "PERSONA_SELECTED"
+  | "ANCHORS_CONFIRMED"
+  | "APPROVED_WITHOUT_PERSONA";
 
 export interface PersonaCheckRow {
   id: string;
@@ -687,10 +778,12 @@ function db(deps?: PersonaStoreDeps): PersonaCheckPrisma {
 
 /** Якоря выбранной карточки — обязательство перед последующим сбором. */
 interface PersonaSelectionSnapshot {
-  source: PersonaSourceName;
+  source: PersonaSourceName | "anchors";
   anchors: Record<string, unknown>;
-  /** Карточка целиком — такой, какой её видел оператор. */
-  card: PersonaCard;
+  /** Карточка целиком — такой, какой её видел оператор; у якорей её нет. */
+  card?: PersonaCard;
+  /** Итог пробы: где каждый якорь сработал и какие строки его опровергли. */
+  probe?: AnchorProbeResult;
 }
 
 function anchorsOf(card: PersonaCard): Record<string, unknown> {
@@ -718,6 +811,27 @@ function selectedCardIdOf(row: PersonaCheckRow): string | null {
 function cardsOf(personasJson: unknown): PersonaCard[] {
   const snapshot = personasJson as PersonaPanelSnapshot | null;
   return Array.isArray(snapshot?.cards) ? snapshot.cards : [];
+}
+
+function serpRowsOf(personasJson: unknown): PersonaSerpRow[] {
+  const snapshot = personasJson as PersonaPanelSnapshot | null;
+  return Array.isArray(snapshot?.serpRows) ? snapshot.serpRows : [];
+}
+
+/**
+ * Сильный признак: тот, которым один человек отличается от полного тёзки.
+ *
+ * Дата рождения считается — её оператор вводит в карточке кейса всегда, и она
+ * работает в обе стороны: подтверждает свой материал и опровергает чужой.
+ */
+export function hasStrongSubjectAnchor(anchors: SubjectAnchors | null | undefined): boolean {
+  if (!anchors) return false;
+  return Boolean(
+    anchors.birthDate ||
+      anchors.inn.length > 0 ||
+      anchors.domains.length > 0 ||
+      anchors.phrases.some((p) => p.strong && p.text.trim().length > 0)
+  );
 }
 
 export async function recordPersonaCheck(input: {
@@ -782,9 +896,30 @@ export function personaDecisionForReport(
   if (!row?.decision) return null;
   const decision = row.decision as PersonaDecision;
   const snapshot = row.personasJson as PersonaPanelSnapshot | null;
-  const selectedCard = (row.selectedPersonaJson as PersonaSelectionSnapshot | null)?.card ?? null;
+  const selection = row.selectedPersonaJson as PersonaSelectionSnapshot | null;
+  const selectedCard = selection?.card ?? null;
+  /*
+   * Признаки решения едут в отчёт вместе с адресами, на которых они нашлись:
+   * лист «Кого проверяли» обязан быть проверяемым читателем, а признак без
+   * адреса проверить нечем.
+   */
+  const anchors =
+    selection?.source === "anchors"
+      ? (() => {
+          const a = selection.anchors as unknown as SubjectAnchors;
+          const confirmedOn = [
+            ...new Set(
+              (selection.probe?.hits ?? [])
+                .flatMap((h) => h.rows.map((r) => r.url ?? r.domain ?? ""))
+                .filter(Boolean)
+            ),
+          ];
+          return { ...a, confirmedOn };
+        })()
+      : null;
   return {
     decision,
+    ...(anchors ? { anchors } : {}),
     selected: selectedCard
       ? {
           source: selectedCard.source,
@@ -812,6 +947,8 @@ export async function recordPersonaDecision(input: {
   checkId: string;
   decision: PersonaDecision;
   selectedCardId?: string | null;
+  /** Признаки субъекта — обязательны для `ANCHORS_CONFIRMED`. */
+  anchors?: SubjectAnchors | null;
   decidedBy?: string | null;
   deps?: PersonaStoreDeps;
 }): Promise<PersonaCheckRow> {
@@ -846,6 +983,28 @@ export async function recordPersonaDecision(input: {
     }
     selected = { source: card.source, anchors: anchorsOf(card), card };
   }
+  if (input.decision === "ANCHORS_CONFIRMED") {
+    /*
+     * Решение по якорям записывается только вместе с признаком, который
+     * действительно различает людей. Слабый якорь — одно слово вроде «судья» —
+     * стоит и в чужих текстах: подтверждать им принадлежность значило бы
+     * повторить прогон 0049 другими словами.
+     */
+    const anchors = input.anchors ?? null;
+    if (!anchors || !hasStrongSubjectAnchor(anchors)) {
+      throw new ValidationError(
+        "anchors decision needs at least one strong anchor (birth date, employer, position, INN or domain)"
+      );
+    }
+    const rows = serpRowsOf(row.personasJson);
+    selected = {
+      source: "anchors",
+      anchors: anchors as unknown as Record<string, unknown>,
+      // Итог пробы записывается вместе с решением: лист «Кого проверяли»
+      // печатает, какие признаки проверялись и на каких адресах они нашлись.
+      probe: checkAnchorsInProbe({ anchors, rows }),
+    };
+  }
 
   return client.subjectPersonaCheck.update({
     where: { id: row.id },
@@ -868,6 +1027,7 @@ export type PersonaGateMode = "FIXTURE_BYPASS" | "CONFIRMED" | "STALE" | "PENDIN
 export type PersonaGateBlockReason =
   | "PERSONA_NOT_CONFIRMED"
   | "PERSONA_DECISION_STALE"
+  | "SUBJECT_ANCHORS_MISSING"
   | "PERSONA_GATE_UNAVAILABLE";
 
 export interface PersonaGateInput {
@@ -875,6 +1035,11 @@ export interface PersonaGateInput {
   subjectInputHash: string;
   /** Хеши входа субъекта на момент уже принятых решений этого кейса. */
   decidedHashes: string[];
+  /**
+   * Назван ли хоть один сильный признак субъекта (дата рождения кейса, якорь
+   * профиля). Без него платный сбор не отличит субъекта от полного тёзки.
+   */
+  hasSubjectAnchor: boolean;
 }
 
 /**
@@ -895,6 +1060,16 @@ export type PersonaGateState =
 export function personaGateState(input: PersonaGateInput): PersonaGateState {
   if (input.isFixture) {
     return { mode: "FIXTURE_BYPASS", reason: "PERSONA_GATE_FIXTURE_CASE" };
+  }
+  /*
+   * Признак важнее нажатой кнопки.
+   *
+   * Прогон DPA-2026-0049 открыл ворота ответом «различимой персоны нет»: слово
+   * записано, а отличить субъекта от четырёх тёзок было нечем. Сначала
+   * спрашивается, есть ли признак, — и только потом, названо ли решение.
+   */
+  if (!input.hasSubjectAnchor) {
+    return { mode: "PENDING", reason: "SUBJECT_ANCHORS_MISSING" };
   }
   if (input.decidedHashes.includes(input.subjectInputHash)) {
     return { mode: "CONFIRMED", reason: "PERSONA_DECISION_MATCHES_SUBJECT" };
@@ -921,6 +1096,10 @@ export async function loadPersonaGateInput(
     isFixture: subject.isFixture,
     subjectInputHash: subjectInputHash(subject),
     decidedHashes: rows.map((r) => r.subjectInputHash),
+    // Признак берётся из данных: дата рождения кейса либо якорь профиля.
+    hasSubjectAnchor:
+      Boolean(subject.dateOfBirth) ||
+      hasStrongSubjectAnchor(loadCaseSubjectIdentityProfile(caseId)?.anchors ?? null),
   };
 }
 
@@ -930,6 +1109,8 @@ export const PERSONA_GATE_BLOCK_MESSAGE: Record<PersonaGateBlockReason, string> 
     "persona for this subject is not chosen yet; open the persona panel and decide before a paid run",
   PERSONA_DECISION_STALE:
     "subject data changed after the persona decision; rebuild the persona panel and decide again",
+  SUBJECT_ANCHORS_MISSING:
+    "no subject anchor yet: add the birth date or a distinguishing fact (employer, position, INN) before a paid run",
   PERSONA_GATE_UNAVAILABLE:
     "persona gate state could not be read; a paid run does not start on an unknown gate",
 };

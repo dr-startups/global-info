@@ -423,7 +423,20 @@ export const PERSONA_DECISION_ARTIFACT = "persona-decision.json";
  * решение, по которому шкала ушла из сводной таблицы комплаенса.
  */
 export type PersonaDecisionRecord = {
-  decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
+  decision: "PERSONA_SELECTED" | "ANCHORS_CONFIRMED" | "APPROVED_WITHOUT_PERSONA";
+  /**
+   * Признаки субъекта, названные оператором, и где они нашлись в пробе, —
+   * основание решения `ANCHORS_CONFIRMED`. Лист «Кого проверяли» печатает их
+   * словами: читатель должен видеть, чем материал отличали от материала тёзки.
+   */
+  anchors?: {
+    birthDate: string | null;
+    phrases: Array<{ kind: string; text: string; strong: boolean }>;
+    inn: string[];
+    domains: string[];
+    /** Адреса, на которых признаки нашлись при проверке до сбора. */
+    confirmedOn: string[];
+  } | null;
   /** Выбранная карточка; null — решение принято без персоны. */
   selected: {
     /** `wikipedia` | `knowledge_graph` | `opensanctions`. */

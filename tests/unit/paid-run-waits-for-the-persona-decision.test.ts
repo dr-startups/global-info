@@ -32,6 +32,8 @@ function gate(input: Partial<PersonaGateInput>): PersonaGateInput {
     isFixture: false,
     subjectInputHash: HASH,
     decidedHashes: [],
+    // Признак субъекта у этих кейсов есть: проверяется решение, а не он.
+    hasSubjectAnchor: true,
     ...input,
   };
 }

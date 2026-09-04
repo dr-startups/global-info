@@ -23,12 +23,17 @@ import {
   recordPersonaDecision,
   type PersonaDecision,
 } from "@/modules/digital-profile/services/subject-persona-check";
+import { loadCaseSubjectIdentityProfile } from "@/modules/digital-profile/services/subject-profile-admin";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-const DECISIONS: PersonaDecision[] = ["PERSONA_SELECTED", "APPROVED_WITHOUT_PERSONA"];
+const DECISIONS: PersonaDecision[] = [
+  "PERSONA_SELECTED",
+  "ANCHORS_CONFIRMED",
+  "APPROVED_WITHOUT_PERSONA",
+];
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
@@ -47,11 +52,22 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const selectedCardId =
     typeof body.selectedCardId === "string" ? body.selectedCardId.trim() : null;
 
+  /*
+   * Признаки берутся из профиля кейса, а не из тела запроса: у вопроса «чем
+   * субъект отличается от тёзок» один владелец — файл профиля, который правит
+   * оператор. Иначе решение записывалось бы по одним признакам, а разметка шла
+   * по другим.
+   */
+  const anchors =
+    decision === "ANCHORS_CONFIRMED"
+      ? loadCaseSubjectIdentityProfile(id)?.anchors ?? null
+      : null;
   const row = await recordPersonaDecision({
     caseId: id,
     checkId,
     decision,
     selectedCardId,
+    anchors,
     decidedBy: user.id,
   });
   await recordAudit({
