@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
   "contentHash": "sha256:2cd138502ce8d6a6b886302b98f5ee84def0edbb0ced4ab0d6e2919cce7e80ad",
-  "contentVersion": "deck-sections-v167",
+  "contentVersion": "deck-sections-v168",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjscznt009xvd9gfqk5wgev",
@@ -16,7 +16,7 @@
     "inventory:serp-obs-cmrjsczpe00axvd9g40tyau1t"
   ],
   "fragmentKey": "RU_RELATED",
-  "generatedAt": "2026-09-04T15:37:58.119Z",
+  "generatedAt": "2026-09-04T20:47:25.749Z",
   "inputHash": "sha256:73468f2f5ff6f9bc99266349c137421e7d72601618806ce4895188657044beaf:bd7b1a875c883938",
   "inputs": {
     "evidenceRefs": [

@@ -107,19 +107,68 @@ function escapeForRegExp(text: string): string {
  * этот вопрос по отдельности и разными выражениями — ASCII-только против
  * юникодного, — то есть один и тот же текст могли оценить по-разному.
  */
-export function undeclaredClientTextDomains(
+/**
+ * Находка ворот: домен, его написание в тексте и окружение.
+ *
+ * Отказ обязан называть причину, а не только следствие. Прогон DPA-2026-0053
+ * остановился на «not derived from page evidence: xn--80ankme.ru», и по этой
+ * строке было не найти, откуда домен взялся: клиенту он печатается читаемым
+ * («закон.ru»), полей у слайда четыре, а правка не того места стоит выката и
+ * ещё одной неудачной попытки — так и вышло дважды.
+ */
+export type UndeclaredDomainHit = {
+  /** Машинная форма — та, по которой шла сверка с уликами. */
+  domain: string;
+  /** Написание, каким домен стоит в тексте. */
+  raw: string;
+  /** Окно вокруг него: по нему видно, что это — подпись, заголовок или цитата. */
+  context: string;
+};
+
+/** Сколько знаков текста вокруг находки попадает в отказ. */
+const HIT_CONTEXT_RADIUS = 50;
+
+function hitContext(text: string, raw: string): string {
+  const at = text.toLowerCase().indexOf(raw.toLowerCase());
+  if (at < 0) return raw;
+  const from = Math.max(0, at - HIT_CONTEXT_RADIUS);
+  const to = Math.min(text.length, at + raw.length + HIT_CONTEXT_RADIUS);
+  return `${from > 0 ? "…" : ""}${text.slice(from, to).replace(/\s+/gu, " ").trim()}${
+    to < text.length ? "…" : ""
+  }`;
+}
+
+export function undeclaredClientTextDomainHits(
   text: string,
   allowed: ReadonlySet<string>,
   /**
    * Адреса доказательств страницы — в том виде, в каком отчёт их печатает
    * (`clientAddress`).
    */
-  allowedLinks: ReadonlySet<string> = new Set()
-): string[] {
-  const out: string[] = [];
+  allowedLinks: ReadonlySet<string> = new Set(),
+  /**
+   * Дословные тексты улик страницы: заголовки и описания наблюдений.
+   *
+   * Отчёт печатает их в кавычках как слова самого материала — «Закон.ru: судью
+   * назначили…», «…Court.Read more…», — а имя источника называет отдельно, за
+   * кавычками. Доменоподобная строка внутри такой цитаты **выведена из улик
+   * страницы**: она стоит в заголовке наблюдения. Прогон DPA-2026-0053 на этом
+   * встал дважды и не собрал деку вовсе.
+   *
+   * Кавычки сами по себе ничего не разрешают: сверяется вхождение в текст
+   * улики, поэтому домен, выдуманный моделью и закавыченный, находкой
+   * остаётся.
+   */
+  evidenceTexts: ReadonlySet<string> = new Set()
+): UndeclaredDomainHit[] {
+  const out: UndeclaredDomainHit[] = [];
+  const quoted = [...evidenceTexts].map((t) => String(t ?? "").toLowerCase());
   const check = (raw: string): void => {
     const domain = normalizeDomainForCompare(raw);
-    if (domain && !allowed.has(domain)) out.push(domain);
+    if (!domain || allowed.has(domain)) return;
+    const needle = raw.toLowerCase();
+    if (quoted.some((t) => t.includes(needle))) return;
+    out.push({ domain, raw, context: hitContext(text, raw) });
   };
   /*
    * Свой адрес вырезается целиком и по точному совпадению.
@@ -159,6 +208,18 @@ export function undeclaredClientTextDomains(
   });
   for (const m of rest.matchAll(DOMAIN_TOKEN_RE)) check(m[0]);
   return out;
+}
+
+/** Прежний ответ — только домены; вопрос тот же, разбор один. */
+export function undeclaredClientTextDomains(
+  text: string,
+  allowed: ReadonlySet<string>,
+  allowedLinks: ReadonlySet<string> = new Set(),
+  evidenceTexts: ReadonlySet<string> = new Set()
+): string[] {
+  return undeclaredClientTextDomainHits(text, allowed, allowedLinks, evidenceTexts).map(
+    (h) => h.domain
+  );
 }
 
 const TEXT_BUDGETS = getClientTextFieldBudgets();
@@ -382,6 +443,7 @@ export function validateSectionPack(input: {
       const normRefs = new Set(slide.evidenceRefs.map(normalizeEvidenceRef));
       const allowed = new Set<string>();
       const allowedLinks = new Set<string>();
+      const evidenceTexts = new Set<string>();
       for (const [ref, e] of Object.entries(input.evidenceIndex)) {
         if (!normRefs.has(normalizeEvidenceRef(ref))) continue;
         if (e.domain && e.domain !== "—") allowed.add(normalizeDomainForCompare(e.domain));
@@ -389,25 +451,41 @@ export function validateSectionPack(input: {
         // строкой, а не разбором границ.
         const link = clientAddress(e.url);
         if (link) allowedLinks.add(link);
+        // Слова самого материала: отчёт печатает их в кавычках, и домен внутри
+        // них выведен из улик страницы, а не назван источником.
+        if (e.title) evidenceTexts.add(String(e.title));
+        if (e.snippet) evidenceTexts.add(String(e.snippet));
       }
-      const dynamicTexts = [
-        slide.content.whatWasFound,
-        slide.content.sourceNote,
-        ...(slide.content.highlightExplanations ?? []).map((h) => h.clientReason),
+      const dynamicTextsRaw: Array<[string, string | undefined]> = [
+        ["whatWasFound", slide.content.whatWasFound],
+        ["sourceNote", slide.content.sourceNote],
+        ...(slide.content.highlightExplanations ?? []).map(
+          (h, i) => [`highlightExplanations[${i}]`, h.clientReason] as [string, string | undefined]
+        ),
         // Текст продолжения живёт в буллетах — на базовой странице там лежат
         // цитаты доказательств, разбираемые своими проверками, поэтому в общий
         // разбор буллеты идут только у унаследованной области.
-        ...(inheritedScope && !ownScope ? slide.content.bullets ?? [] : []),
-      ].filter((t): t is string => Boolean(t));
-      for (const text of dynamicTexts) {
+        ...(inheritedScope && !ownScope
+          ? (slide.content.bullets ?? []).map(
+              (b, i) => [`bullets[${i}]`, b] as [string, string | undefined]
+            )
+          : []),
+      ];
+      const dynamicTexts = dynamicTextsRaw.filter((entry): entry is [string, string] =>
+        Boolean(entry[1])
+      );
+      for (const [field, text] of dynamicTexts) {
         // Сверяется нормализованная форма: клиенту домен показывается читаемым
         // («руни.рф»), а в индексе доказательств он лежит в punycode. Без
         // приведения к одной форме читаемая запись выглядела бы «не
         // выведенной из доказательств» — той же ценой, что уже стоил обрезок
         // `xn--h1ajim.xn`: отказ обязательной секции и пустая дека.
-        for (const domain of undeclaredClientTextDomains(text, allowed, allowedLinks)) {
+        for (const hit of undeclaredClientTextDomainHits(text, allowed, allowedLinks, evidenceTexts)) {
+          // Отказ называет поле и само место в тексте: без них правка чинит не
+          // то место, и прогон 0053 стоил двух выкатов вслепую.
           issues.push(
-            `sidebar domain not derived from page evidence on ${slide.slideId}: ${domain}`
+            `sidebar domain not derived from page evidence on ${slide.slideId}: ${hit.domain}` +
+              ` (${field}, «${hit.raw}»: ${hit.context})`
           );
         }
       }

@@ -33,7 +33,9 @@ const ROW: VisibleAssetItem = {
   ref: "inventory:row-no-evidence",
   url: "https://xn--80ankme.ru/news/court.read",
   domain: "xn--80ankme.ru",
-  title: "Судья назначен председателем суда",
+  // Заголовок с именем издания — обычная строка выдачи; у строки без улики он
+  // тоже невыводим из улик страницы.
+  title: "Закон.ru: судья назначен председателем суда",
   adverse: true,
   themeTitle: "Криминальные / судебные материалы",
 };
@@ -52,7 +54,7 @@ describe("строка снимка без улики", () => {
     // Клиенту домен печатается читаемым, а ворота сверяют punycode: проверяются
     // обе формы — в отчёте 0053 в тексте стоял «закон.ru», а в отказе
     // `xn--80ankme.ru`, и по одной строке дефект было не узнать.
-    expect(phrase.sidebar).not.toContain("закон.ru");
+    expect(phrase.sidebar.toLowerCase()).not.toContain("закон.ru");
     expect(phrase.sidebar).not.toContain("xn--80ankme.ru");
     expect(phrase.sidebar).not.toContain("court.read");
   });
@@ -60,6 +62,9 @@ describe("строка снимка без улики", () => {
   it("фраза при этом остаётся фразой, а не прочерком", () => {
     const phrase = highlightPhrase({ row: ROW, evidence: WITH_EVIDENCE });
     expect(phrase.sidebar.trim().length).toBeGreaterThan(20);
+    // Рубрика вместо заголовка: своё слово вместо чужого, которое нечем
+    // подтвердить.
+    expect(phrase.sidebar).toContain("Криминальные / судебные материалы");
   });
 
   it("в перечень источников снимка её домен не попадает", () => {
@@ -81,7 +86,10 @@ describe("строка снимка без улики", () => {
   it("собранный текст проходит те же ворота, что остановили прогон 0053", () => {
     const phrase = highlightPhrase({ row: ROW, evidence: WITH_EVIDENCE });
     const allowed = new Set(["pravo.ru"]);
+    // Обе формы: и то, что печатается клиенту, и то, что уходит на лист
+    // «почему выделено».
     expect(undeclaredClientTextDomains(phrase.sidebar, allowed, new Set())).toEqual([]);
+    expect(undeclaredClientTextDomains(phrase.full, allowed, new Set())).toEqual([]);
   });
 });
 

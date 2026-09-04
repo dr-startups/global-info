@@ -31,7 +31,7 @@ import { serpMaterialKey } from "../../serp-observation/material-key";
 import { clientAddress } from "../client/client-address";
 import {
   normalizeDomainForCompare,
-  undeclaredClientTextDomains,
+  undeclaredClientTextDomainHits,
 } from "./section-validation";
 import { NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 import { pluralRu } from "../../report/i18n/plural-ru";
@@ -1211,6 +1211,7 @@ export function validateAssembly(input: {
       const normRefs = new Set(slide.evidenceRefs.map(normalizeEvidenceRef));
       const allowed = new Set<string>();
       const allowedLinks = new Set<string>();
+      const evidenceTexts = new Set<string>();
       for (const [ref, e] of Object.entries(input.evidenceIndex)) {
         if (!normRefs.has(normalizeEvidenceRef(ref))) continue;
         if (e.domain && e.domain !== "—") allowed.add(normalizeDomainForCompare(e.domain));
@@ -1218,21 +1219,32 @@ export function validateAssembly(input: {
         // строкой, а не разбором границ.
         const link = clientAddress(e.url);
         if (link) allowedLinks.add(link);
+        // Слова самого материала — см. `undeclaredClientTextDomainHits`.
+        if (e.title) evidenceTexts.add(String(e.title));
+        if (e.snippet) evidenceTexts.add(String(e.snippet));
       }
-      const texts = [
-        slide.sourceNote,
-        slide.whatWasFound,
-        ...(slide.highlightExplanations ?? []).map((h) => h.clientReason),
-        ...(inheritedScope && !ownScope ? slide.bullets ?? [] : []),
-      ].filter((t): t is string => Boolean(t));
-      for (const text of texts) {
+      const textsRaw: Array<[string, string | undefined]> = [
+        ["sourceNote", slide.sourceNote],
+        ["whatWasFound", slide.whatWasFound],
+        ...(slide.highlightExplanations ?? []).map(
+          (h, i) => [`highlightExplanations[${i}]`, h.clientReason] as [string, string | undefined]
+        ),
+        ...(inheritedScope && !ownScope
+          ? (slide.bullets ?? []).map((b, i) => [`bullets[${i}]`, b] as [string, string | undefined])
+          : []),
+      ];
+      const texts = textsRaw.filter((entry): entry is [string, string] =>
+        Boolean(entry[1])
+      );
+      for (const [field, text] of texts) {
         // Разбор доменов — общий с секционной валидацией: два своих выражения
         // на один вопрос уже расходились (ASCII против юникода), и напечатанный
         // адрес страницы одно из них читало как чужой домен.
-        for (const domain of undeclaredClientTextDomains(text, allowed, allowedLinks)) {
+        for (const hit of undeclaredClientTextDomainHits(text, allowed, allowedLinks, evidenceTexts)) {
           footerOk = false;
           issues.push(
-            `slide ${slide.slideKey}: sidebar names domain ${domain} not derived from its evidence`
+            `slide ${slide.slideKey}: sidebar names domain ${hit.domain} not derived from its evidence` +
+              ` (${field}, «${hit.raw}»: ${hit.context})`
           );
         }
       }
