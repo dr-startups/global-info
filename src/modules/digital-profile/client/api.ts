@@ -1529,10 +1529,35 @@ export type PersonaPanelDTO = {
   subjectFullName: string;
   subjectDateOfBirth: string | null;
   cards: PersonaCardDTO[];
-  serpRows: Array<{ title: string; url: string | null; domain: string | null }>;
+  serpRows: Array<{
+    title: string;
+    url: string | null;
+    domain: string | null;
+    snippet?: string | null;
+    engine?: "GOOGLE" | "YANDEX";
+  }>;
   sources: PersonaSourceStateDTO[];
   fetchStatus: "SUCCESS" | "FAILED";
   errorCode: string | null;
+};
+
+/** Строка панели, разложенная по признакам оператора. */
+export type PersonaProbeDTO = {
+  hits: Array<{
+    anchor: string;
+    kind: string;
+    strong: boolean;
+    rows: PersonaPanelDTO["serpRows"];
+  }>;
+  missing: string[];
+  conflicts: Array<{
+    title: string;
+    url: string | null;
+    domain: string | null;
+    reason: "foreign_birth_date" | "foreign_inn" | "registry_inn_unverified";
+    value: string;
+  }>;
+  unmatchedRows: PersonaPanelDTO["serpRows"];
 };
 
 export type PersonaCheckStateDTO = {
@@ -1540,10 +1565,17 @@ export type PersonaCheckStateDTO = {
     mode: "FIXTURE_BYPASS" | "CONFIRMED" | "STALE" | "PENDING";
     reason: string;
   };
+  /**
+   * Проба сохранённых признаков по последнему снимку; null — признаков нет.
+   *
+   * Сами признаки сюда не дублируются: на вопрос «какие они» отвечает профиль
+   * кейса (`getSubjectIdentityProfile`), и ответ на него один.
+   */
+  probe: PersonaProbeDTO | null;
   check: {
     checkId: string;
     panel: PersonaPanelDTO;
-    decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA" | null;
+    decision: "PERSONA_SELECTED" | "ANCHORS_CONFIRMED" | "APPROVED_WITHOUT_PERSONA" | null;
     decidedBy: string | null;
     decidedAt: string | null;
     searchedAt: string;
@@ -1565,7 +1597,7 @@ export function decidePersonaCheck(
   caseId: string,
   input: {
     checkId: string;
-    decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
+    decision: "PERSONA_SELECTED" | "ANCHORS_CONFIRMED" | "APPROVED_WITHOUT_PERSONA";
     selectedCardId?: string | null;
   }
 ): Promise<{
@@ -1584,11 +1616,30 @@ export function decidePersonaCheck(
 // Subject identity profile (classification context) — case-owned artifact
 // ---------------------------------------------------------------------------
 
+/**
+ * Признаки субъекта — то, чем он отличается от полного тёзки.
+ *
+ * Приходят со слов клиента и правятся в панели персон; добытое из выдачи сюда
+ * не попадает никогда (см. `discovered` в профиле кейса).
+ */
+export type SubjectAnchorsDTO = {
+  /** Из карточки дела; в теле PUT сервер её не читает — редактируют дело. */
+  birthDate: string | null;
+  phrases: Array<{
+    kind: "employer" | "position" | "birthPlace" | "education" | "fact";
+    text: string;
+    strong: boolean;
+  }>;
+  inn: string[];
+  domains: string[];
+};
+
 export type SubjectIdentityProfileDTO = {
   version?: string;
   caseId: string;
   displayName: string;
   fullNameRu?: { lastName: string; firstName: string; patronymic?: string };
+  anchors?: SubjectAnchorsDTO;
   contextIdentifiers?: string[];
   namesakeProfiles?: Array<{ label: string; noiseTerms: string[] }>;
   aliases: string[];
@@ -1606,6 +1657,7 @@ export type SubjectIdentityProfileDTO = {
 };
 
 export type SubjectProfileEditsInput = {
+  anchors?: SubjectAnchorsDTO;
   contextIdentifiers?: string[];
   aliases?: string[];
   unrelatedKnownPersons?: string[];

@@ -61,6 +61,18 @@ export type SubjectProfileEditResult = {
   droppedSelfConflicting: string[];
 };
 
+/**
+ * Чтение и запись файла профиля кейса.
+ *
+ * Подставляется в проверках: слияние и разбор признаков проверяются без
+ * файловой системы, а офлайн-контур не пишет в `storage/` — там материалы по
+ * делам живых людей.
+ */
+export type SubjectProfileStore = {
+  read: (caseId: string) => SubjectIdentityProfile | null;
+  write: (caseId: string, profile: SubjectIdentityProfile) => void;
+};
+
 export function subjectProfilePath(caseId: string): string {
   return join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), SUBJECT_PROFILE_FILENAME);
 }
@@ -75,6 +87,16 @@ export function loadCaseSubjectIdentityProfile(caseId: string): SubjectIdentityP
     return null;
   }
 }
+
+/** Файловое хранилище профиля кейса — умолчание для продакшна. */
+const defaultProfileStore: SubjectProfileStore = {
+  read: loadCaseSubjectIdentityProfile,
+  write(caseId, profile) {
+    const path = subjectProfilePath(caseId);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+  },
+};
 
 function normalizeList(values: string[] | undefined, field: string): string[] {
   if (values === undefined) return [];
@@ -123,15 +145,38 @@ export function getSubjectProfileForEdit(input: {
   caseId: string;
   subjectName: string;
   subjectAliases?: string[];
+  /** Дата рождения из карточки дела, ISO `YYYY-MM-DD`. */
+  subjectDateOfBirth?: string | null;
+  store?: SubjectProfileStore;
 }): { profile: SubjectIdentityProfile; exists: boolean } {
-  const existing = loadCaseSubjectIdentityProfile(input.caseId);
-  if (existing) return { profile: existing, exists: true };
-  const profile = buildSubjectIdentityProfile({
-    caseId: input.caseId,
-    subjectName: input.subjectName,
-    aliases: input.subjectAliases ?? [],
-  });
-  return { profile, exists: false };
+  const store = input.store ?? defaultProfileStore;
+  const existing = store.read(input.caseId);
+  const profile =
+    existing ??
+    buildSubjectIdentityProfile({
+      caseId: input.caseId,
+      subjectName: input.subjectName,
+      aliases: input.subjectAliases ?? [],
+    });
+  /*
+   * Дата рождения — признак дела, а не поле формы: её правят в карточке
+   * субъекта. До этого шага она попадала в профиль только на бутстрапе, то
+   * есть после первого прогона, — а признаки называют до сбора, и панель
+   * показывала бы «дата не указана» на деле, где она указана.
+   */
+  const withBirthDate =
+    input.subjectDateOfBirth && input.subjectDateOfBirth !== profile.anchors?.birthDate
+      ? {
+          ...profile,
+          anchors: {
+            birthDate: input.subjectDateOfBirth,
+            phrases: profile.anchors?.phrases ?? [],
+            inn: profile.anchors?.inn ?? [],
+            domains: profile.anchors?.domains ?? [],
+          },
+        }
+      : profile;
+  return { profile: withBirthDate, exists: Boolean(existing) };
 }
 
 const ANCHOR_KINDS: SubjectAnchorKind[] = [
@@ -193,7 +238,12 @@ function normalizeAnchors(input: {
   const domains = normalizeList(supplied.domains ?? [], "anchors.domains").map((d) =>
     d.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")
   );
-  const birthDate = String(supplied.birthDate ?? "").trim();
+  /*
+   * Дата берётся из карточки дела (её подставил `getSubjectProfileForEdit`), а
+   * не из тела запроса: у вопроса «когда родился субъект» один владелец, и
+   * кабинет не должен уметь разойтись с ним молча.
+   */
+  const birthDate = String(input.base.anchors?.birthDate ?? "").trim();
   if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
     throw new ValidationError("anchors.birthDate must be an ISO date (YYYY-MM-DD)");
   }
@@ -216,7 +266,9 @@ export function saveSubjectProfileEdits(input: {
   caseId: string;
   subjectName: string;
   subjectAliases?: string[];
+  subjectDateOfBirth?: string | null;
   edits: SubjectProfileEdits;
+  store?: SubjectProfileStore;
 }): SubjectProfileEditResult {
   if (!input.subjectName?.trim()) throw new ValidationError("case subject name is required");
 
@@ -306,9 +358,7 @@ export function saveSubjectProfileEdits(input: {
     },
   };
 
-  const path = subjectProfilePath(input.caseId);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(profile, null, 2)}\n`, "utf8");
+  (input.store ?? defaultProfileStore).write(input.caseId, profile);
 
   return { profile, droppedSelfConflicting };
 }

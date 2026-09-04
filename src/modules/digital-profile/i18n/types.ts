@@ -527,19 +527,58 @@ export interface Dictionary {
     blockedNotConfirmed: string;
     blockedStale: string;
     blockedUnavailable: string;
+    blockedAnchorsMissing: string;
+    /** Форма признаков субъекта (шаг 0054). */
+    anchorsTitle: string;
+    anchorsHint: string;
+    anchorsBirthDate: string;
+    anchorsBirthDateMissing: string;
+    anchorsKindEmployer: string;
+    anchorsKindPosition: string;
+    anchorsKindBirthPlace: string;
+    anchorsKindEducation: string;
+    anchorsKindFact: string;
+    anchorsTextPlaceholder: string;
+    anchorsStrong: string;
+    anchorsStrongByDefault: string;
+    anchorsAddRow: string;
+    anchorsRemoveRow: string;
+    anchorsInn: string;
+    anchorsInnHint: string;
+    anchorsDomains: string;
+    anchorsDomainsHint: string;
+    anchorsSave: string;
+    anchorsSaving: string;
+    anchorsSaved: string;
+    /** Предупреждения формы — по ключу из `subject-anchors-form.ts`. */
+    anchorsNoStrong: string;
+    anchorsOnlyBirthDate: string;
+    anchorsSingleWord: string;
+    anchorsBadInn: string;
+    /** Проба признаков по строкам панели. */
+    probeTitle: string;
+    probeHitRows: string;
+    probeMissing: string;
+    probeConflicts: string;
+    probeConflictsHint: string;
+    probeReasonForeignBirthDate: string;
+    probeReasonForeignInn: string;
+    probeReasonRegistryInn: string;
+    probeUnmatched: string;
+    probeNoAnchors: string;
+    anchorsConfirm: string;
+    decidedAnchors: string;
   };
   /** Панель профиля субъекта (шаг 11.4). */
   subjectProfile: {
     title: string;
-    contextWordsCount: string;
+    anchorsCount: string;
     notSavedYet: string;
-    noContextWarning: string;
+    noAnchorsWarning: string;
+    anchorsElsewhere: string;
     collapse: string;
     edit: string;
-    contextWords: string;
-    contextWordsHint: string;
     aliases: string;
-    inn: string;
     namesakes: string;
     namesakesHint: string;
     otherKnownPeople: string;

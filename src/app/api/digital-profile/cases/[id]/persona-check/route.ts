@@ -25,9 +25,11 @@ import {
   loadLatestPersonaCheck,
   loadPersonaGateInput,
   personaGateState,
+  personaProbeOfCheck,
   recordPersonaCheck,
   subjectInputHash,
 } from "@/modules/digital-profile/services/subject-persona-check";
+import { loadCaseSubjectIdentityProfile } from "@/modules/digital-profile/services/subject-profile-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -81,8 +83,17 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
 
   const gateInput = await loadPersonaGateInput(id);
   const row = await loadLatestPersonaCheck(id);
+  /*
+   * Признаки читаются из профиля кейса, а проба считается здесь и сейчас.
+   *
+   * Оператор правит признаки после того, как панель уже куплена, и должен
+   * увидеть новый ответ, не покупая её заново. Замороженная в снимке проба
+   * отвечала бы на вопрос о прежних признаках.
+   */
+  const anchors = loadCaseSubjectIdentityProfile(id)?.anchors ?? null;
   return jsonOk({
     gate: personaGateState(gateInput),
+    probe: personaProbeOfCheck({ personasJson: row?.personasJson ?? null, anchors }),
     check: row
       ? {
           checkId: row.id,

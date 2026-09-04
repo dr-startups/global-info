@@ -41,7 +41,14 @@ import type {
 } from "../compliance-providers/types";
 import { prisma } from "@/server/prisma/client";
 import type { PersonaDecisionRecord } from "../orion-golden/deck-sections/scoped-input";
-import type { SubjectAnchors } from "../orion-golden/analytics/subject-anchors";
+import {
+  hasStrongSubjectAnchor,
+  hasSubjectAnchors,
+  type SubjectAnchors,
+} from "../orion-golden/analytics/subject-anchors";
+
+// Ворота, кабинет и решение спрашивают о силе признака одну функцию.
+export { hasStrongSubjectAnchor };
 import { checkAnchorsInProbe, type AnchorProbeResult } from "./persona-anchor-probe";
 import { loadCaseSubjectIdentityProfile } from "./subject-profile-admin";
 
@@ -819,19 +826,22 @@ function serpRowsOf(personasJson: unknown): PersonaSerpRow[] {
 }
 
 /**
- * Сильный признак: тот, которым один человек отличается от полного тёзки.
+ * Проба якорей по сохранённому снимку панели.
  *
- * Дата рождения считается — её оператор вводит в карточке кейса всегда, и она
- * работает в обе стороны: подтверждает свой материал и опровергает чужой.
+ * Считается при каждом чтении, а не замораживается в снимке: оператор правит
+ * признаки после сбора панели и должен увидеть новый ответ, не покупая
+ * панель заново. `null` — признаков нет вовсе, и это не пустая проба: «ничего
+ * не нашли» и «нечего искать» — разные ответы.
  */
-export function hasStrongSubjectAnchor(anchors: SubjectAnchors | null | undefined): boolean {
-  if (!anchors) return false;
-  return Boolean(
-    anchors.birthDate ||
-      anchors.inn.length > 0 ||
-      anchors.domains.length > 0 ||
-      anchors.phrases.some((p) => p.strong && p.text.trim().length > 0)
-  );
+export function personaProbeOfCheck(input: {
+  personasJson: unknown;
+  anchors: SubjectAnchors | null | undefined;
+}): AnchorProbeResult | null {
+  const anchors = input.anchors ?? null;
+  if (!anchors || !hasSubjectAnchors(anchors)) return null;
+  const rows = serpRowsOf(input.personasJson);
+  if (rows.length === 0) return null;
+  return checkAnchorsInProbe({ anchors, rows });
 }
 
 export async function recordPersonaCheck(input: {

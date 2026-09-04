@@ -1,10 +1,17 @@
 "use client";
 
 /**
- * Editing panel for the case-owned subject identity profile (classification
- * context): contextIdentifiers, aliases, namesake disambiguation, INN.
- * Saving persists the artifact only — to apply it to an existing report the
- * operator presses «Пересобрать отчёт» in the Unified block.
+ * Панель профиля субъекта: псевдонимы, тёзки, чужие отчества.
+ *
+ * Признаки субъекта (работодатель, должность, ИНН, домены) правятся не здесь, а
+ * в панели персон: их вводят до первой траты, и вопрос «чем субъект отличается
+ * от тёзки» должен иметь один ответ в одном месте. Прежние поля «контекст-слова»
+ * и «ИНН» отсюда убраны — они отвечали на тот же вопрос вторым голосом, а ИНН в
+ * профилях до шага 0054 к тому же поднимался из той самой выдачи, которую им
+ * подтверждали.
+ *
+ * Сохранение пишет только артефакт: чтобы правка попала в готовый отчёт,
+ * оператор нажимает «Пересобрать отчёт» в блоке Unified.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -63,21 +70,17 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
     null
   );
 
-  const [contextText, setContextText] = useState("");
   const [aliasesText, setAliasesText] = useState("");
   const [unrelatedText, setUnrelatedText] = useState("");
   const [wrongPatText, setWrongPatText] = useState("");
   const [namesakesText, setNamesakesText] = useState("");
-  const [innText, setInnText] = useState("");
 
   const applyProfile = useCallback((p: SubjectIdentityProfileDTO) => {
     setProfile(p);
-    setContextText(listToLines(p.contextIdentifiers));
     setAliasesText(listToLines(p.aliases));
     setUnrelatedText(listToLines(p.negativeIdentitySignals?.unrelatedKnownPersons));
     setWrongPatText(listToLines(p.negativeIdentitySignals?.wrongPatronymics));
     setNamesakesText(namesakesToLines(p.namesakeProfiles));
-    setInnText(listToLines(p.knownIdentifiers?.inn));
   }, []);
 
   useEffect(() => {
@@ -101,13 +104,14 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
     setBusy(true);
     setMessage(null);
     try {
+      // Признаки в теле запроса не идут вовсе: их владелец — форма панели
+      // персон, и переслать сюда их прежнее значение значило бы затирать
+      // чужую правку своим устаревшим снимком.
       const result = await saveSubjectIdentityProfile(caseId, {
-        contextIdentifiers: linesToList(contextText),
         aliases: linesToList(aliasesText),
         unrelatedKnownPersons: linesToList(unrelatedText),
         wrongPatronymics: linesToList(wrongPatText),
         namesakeProfiles: linesToNamesakes(namesakesText),
-        inn: linesToList(innText),
       });
       applyProfile(result.profile);
       setExists(true);
@@ -132,21 +136,16 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
     } finally {
       setBusy(false);
     }
-  }, [
-    busy,
-    caseId,
-    contextText,
-    aliasesText,
-    unrelatedText,
-    wrongPatText,
-    namesakesText,
-    innText,
-    applyProfile,
-  ]);
+  }, [busy, caseId, aliasesText, unrelatedText, wrongPatText, namesakesText, applyProfile]);
 
   if (!profile) return null;
 
-  const contextCount = (profile.contextIdentifiers ?? []).length;
+  const anchors = profile.anchors ?? null;
+  const anchorCount =
+    (anchors?.birthDate ? 1 : 0) +
+    (anchors?.phrases.length ?? 0) +
+    (anchors?.inn.length ?? 0) +
+    (anchors?.domains.length ?? 0);
 
   return (
     <div data-testid="subject-profile-panel">
@@ -154,11 +153,9 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
         <div>
           <h3 style={{ margin: 0 }}>{t("subjectProfile.title")}</h3>
           <div className="dp-muted" style={{ marginTop: 4, fontSize: 13 }}>
-            {profile.displayName} · {t("subjectProfile.contextWordsCount")}: {contextCount}
+            {profile.displayName} · {t("subjectProfile.anchorsCount")}: {anchorCount}
             {exists ? "" : ` · ${t("subjectProfile.notSavedYet")}`}
-            {contextCount === 0
-              ? ` — ${t("subjectProfile.noContextWarning")}`
-              : ""}
+            {anchorCount === 0 ? ` — ${t("subjectProfile.noAnchorsWarning")}` : ""}
           </div>
         </div>
         <button
@@ -173,22 +170,9 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
 
       {open ? (
         <div className="dp-stack" style={{ marginTop: 12, gap: 10 }}>
-          <label style={{ display: "block" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              {t("subjectProfile.contextWords")}
-            </div>
-            <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
-              {t("subjectProfile.contextWordsHint")}
-            </div>
-            <textarea
-              className="dp-input"
-              style={{ width: "100%", minHeight: 90, fontFamily: "inherit" }}
-              value={contextText}
-              onChange={(e) => setContextText(e.target.value)}
-              disabled={!canEdit || busy}
-              data-testid="subject-profile-context-input"
-            />
-          </label>
+          <div className="dp-muted" style={{ fontSize: 12 }}>
+            {t("subjectProfile.anchorsElsewhere")}
+          </div>
 
           <label style={{ display: "block" }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("subjectProfile.aliases")}</div>
@@ -197,17 +181,6 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
               style={{ width: "100%", minHeight: 60, fontFamily: "inherit" }}
               value={aliasesText}
               onChange={(e) => setAliasesText(e.target.value)}
-              disabled={!canEdit || busy}
-            />
-          </label>
-
-          <label style={{ display: "block" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("subjectProfile.inn")}</div>
-            <textarea
-              className="dp-input"
-              style={{ width: "100%", minHeight: 40, fontFamily: "inherit" }}
-              value={innText}
-              onChange={(e) => setInnText(e.target.value)}
               disabled={!canEdit || busy}
             />
           </label>

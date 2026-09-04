@@ -90,6 +90,7 @@ const GATE_BLOCK_KEYS: Record<string, string> = {
   PERSONA_NOT_CONFIRMED: "persona.blockedNotConfirmed",
   PERSONA_DECISION_STALE: "persona.blockedStale",
   PERSONA_GATE_UNAVAILABLE: "persona.blockedUnavailable",
+  SUBJECT_ANCHORS_MISSING: "persona.blockedAnchorsMissing",
 };
 
 /** Ключ словаря для отказа старта по воротам; null — отказ не про персону. */

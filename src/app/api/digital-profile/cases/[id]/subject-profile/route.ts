@@ -2,9 +2,10 @@
  * /api/digital-profile/cases/[id]/subject-profile
  *   GET — case-owned subject identity profile (or the generic default built
  *         from the case subject when none is persisted yet)
- *   PUT — save operator edits (contextIdentifiers, aliases, namesakes,
- *         negative signals, INN); self-conflicting negatives are dropped
- *         fail-closed and reported.
+ *   PUT — save operator edits (anchors, aliases, namesakes, negative signals);
+ *         self-conflicting negatives are dropped fail-closed and reported.
+ *         The birth date is not an editable field: it comes from the case
+ *         subject card, whatever the body says.
  *
  * Changes affect classification only after «Пересобрать отчёт» / a new job —
  * this route never triggers collection or render by itself.
@@ -28,13 +29,15 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-async function loadCaseSubject(caseId: string): Promise<{ fullName: string; aliases: string[] }> {
+async function loadCaseSubject(
+  caseId: string
+): Promise<{ fullName: string; aliases: string[]; dateOfBirth: string | null }> {
   const { prisma } = await import("@/server/prisma/client");
   const row = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
     select: {
       subjects: {
-        select: { fullName: true, aliases: true },
+        select: { fullName: true, aliases: true, dateOfBirth: true },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -43,7 +46,12 @@ async function loadCaseSubject(caseId: string): Promise<{ fullName: string; alia
   if (!row) throw new NotFoundError("Case not found");
   const subject = row.subjects[0];
   if (!subject?.fullName) throw new ValidationError("case has no subject");
-  return { fullName: subject.fullName, aliases: subject.aliases ?? [] };
+  return {
+    fullName: subject.fullName,
+    aliases: subject.aliases ?? [],
+    // Дата рождения — признак субъекта, и в профиль она приходит отсюда.
+    dateOfBirth: subject.dateOfBirth ? subject.dateOfBirth.toISOString().slice(0, 10) : null,
+  };
 }
 
 function stringList(value: unknown, field: string): string[] | undefined {
@@ -115,6 +123,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     caseId: id,
     subjectName: subject.fullName,
     subjectAliases: subject.aliases,
+    subjectDateOfBirth: subject.dateOfBirth,
   });
   return jsonOk(data);
 });
@@ -130,6 +139,7 @@ export const PUT = withModule(async (req: NextRequest, ctx: RouteContext) => {
     caseId: id,
     subjectName: subject.fullName,
     subjectAliases: subject.aliases,
+    subjectDateOfBirth: subject.dateOfBirth,
     edits: parseEdits(body),
   });
   return jsonOk(data);

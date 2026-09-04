@@ -50,6 +50,26 @@ export function hasSubjectAnchors(anchors: SubjectAnchors | undefined | null): b
   );
 }
 
+/**
+ * Сильный признак: тот, которым один человек отличается от полного тёзки.
+ *
+ * Дата рождения считается — её оператор вводит в карточке кейса всегда, и она
+ * работает в обе стороны: подтверждает свой материал и опровергает чужой.
+ *
+ * Функция стоит здесь, а не рядом с воротами: на вопрос «хватает ли признака»
+ * отвечают и ворота на сервере, и форма в кабинете, и ответ у них обязан быть
+ * один.
+ */
+export function hasStrongSubjectAnchor(anchors: SubjectAnchors | null | undefined): boolean {
+  if (!anchors) return false;
+  return Boolean(
+    anchors.birthDate ||
+      anchors.inn.length > 0 ||
+      anchors.domains.length > 0 ||
+      anchors.phrases.some((p) => p.strong && p.text.trim().length > 0)
+  );
+}
+
 function norm(text: string): string {
   return String(text ?? "")
     .toLowerCase()

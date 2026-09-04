@@ -477,19 +477,67 @@ export const en: Dictionary = {
       "Collection is unavailable: subject data changed after the persona decision. Rebuild the panel and decide again.",
     blockedUnavailable:
       "Collection is unavailable: the persona decision state could not be read. Try again later — a paid run does not start on an unknown state.",
+    blockedAnchorsMissing:
+      "Collection is unavailable: no subject anchor was named. Enter the date of birth on the case card, or name the employer, position or INN — a full name alone does not tell a full namesake apart.",
+    anchorsTitle: "Subject anchors (as told by the client)",
+    anchorsHint:
+      "What tells the subject apart from a full namesake: where they work, in what role, when they were born, their INN. " +
+      "Anchors come from the client, not from search results — the whole report is classified by them.",
+    anchorsBirthDate: "Date of birth: {value} (from the case card)",
+    anchorsBirthDateMissing:
+      "No date of birth on the case card — it is the strongest anchor; enter it on the case.",
+    anchorsKindEmployer: "Employer",
+    anchorsKindPosition: "Position",
+    anchorsKindBirthPlace: "Place of birth",
+    anchorsKindEducation: "Education",
+    anchorsKindFact: "Other fact",
+    anchorsTextPlaceholder: "For example: Commercial Court of Krasnodar Krai",
+    anchorsStrong: "confirms on its own",
+    anchorsStrongByDefault: "confirms on its own (several words)",
+    anchorsAddRow: "Add an anchor",
+    anchorsRemoveRow: "Remove",
+    anchorsInn: "INN (one per line)",
+    anchorsInnHint:
+      "Only from the client or their documents. Never enter an INN taken from search results: a finding cannot confirm itself.",
+    anchorsDomains: "Sites of the subject or their organisation (one per line)",
+    anchorsDomainsHint: "For example: pro-sud-123.ru",
+    anchorsSave: "Save the anchors",
+    anchorsSaving: "Saving the anchors…",
+    anchorsSaved: "Anchors saved. The next collection or report rebuild is classified by them.",
+    anchorsNoStrong:
+      "No anchor tells the subject apart from a full namesake. A paid run will not start: name the employer, position or INN, or enter the date of birth on the case card.",
+    anchorsOnlyBirthDate:
+      "Only one anchor is named — the date of birth. It is enough to start, but material without a date stays marked “membership unconfirmed”: add the employer or the position.",
+    anchorsSingleWord:
+      "Single-word anchors do not confirm membership on their own — they appear in other people's texts too: {items}. Write the whole phrase, or tick “confirms on its own”.",
+    anchorsBadInn: "These INNs fail the checksum and will not be saved: {items}.",
+    probeTitle: "Anchors in the results already bought",
+    probeHitRows: "rows: {count}",
+    probeMissing:
+      "Found on no row: {items}. Try a shorter wording — the way news articles put it.",
+    probeConflicts: "Rows carrying another person's marks",
+    probeConflictsHint:
+      "These rows will not enter the report as material about the subject. If this is a namesake you know, describe them in “Subject profile” below — then they are recognised on pages without a date or an INN too.",
+    probeReasonForeignBirthDate: "a different date of birth: {value}",
+    probeReasonForeignInn: "another person's INN: {value}",
+    probeReasonRegistryInn:
+      "a registry entry with INN {value} — nothing to check it against, the subject's own INN is not named",
+    probeUnmatched: "Remaining rows — no anchor found",
+    probeNoAnchors: "No anchors named — there is nothing to check in the results.",
+    anchorsConfirm: "The anchors match — this is the subject",
+    decidedAnchors: "Confirmation by anchors recorded — collection can start.",
   },
   subjectProfile: {
-    title: "Subject profile (classification context)",
-    contextWordsCount: "context words",
+    title: "Subject profile (namesakes and name variants)",
+    anchorsCount: "subject anchors",
     notSavedYet: "profile not saved yet (draft from case data)",
-    noContextWarning: "without context words many results stay “ambiguous”",
+    noAnchorsWarning:
+      "no anchors: a full name alone does not tell a full namesake apart — name them in “Choose the subject persona”",
+    anchorsElsewhere:
+      "Subject anchors — employer, position, INN, domains — are entered above, in “Choose the subject persona”: they are named before the first spend.",
     collapse: "Collapse",
     edit: "Edit the subject profile",
-    contextWords: "Context words (one per line)",
-    contextWordsHint:
-      "Companies, industry, roles — they strengthen the match: “Rusal”, “En+ Group”, “oligarch”, “sanctions”…",
     aliases: "Aliases and name variants (one per line)",
-    inn: "Tax ID (one per line)",
     namesakes: "Namesakes: “Label | distinguishing words, comma separated”",
     namesakesHint:
       "For example: “Deripaska Oleg Igorevich (namesake) | igorevich”. Words matching the subject's own name are rejected automatically.",

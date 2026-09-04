@@ -12,7 +12,10 @@ import {
   DigitalProfileApiError,
   type PersonaSourceStateDTO,
 } from "@/modules/digital-profile/client/api";
-import { buildPersonaPanel } from "@/modules/digital-profile/services/subject-persona-check";
+import {
+  buildPersonaPanel,
+  PERSONA_GATE_BLOCK_MESSAGE,
+} from "@/modules/digital-profile/services/subject-persona-check";
 import { t } from "@/modules/digital-profile/i18n";
 import { en } from "@/modules/digital-profile/i18n/dictionaries/en";
 import { ru } from "@/modules/digital-profile/i18n/dictionaries/ru";
@@ -184,11 +187,9 @@ describe("отказ старта по воротам ведёт в панель
     new DigitalProfileApiError("CONFLICT", 409, "persona gate", { reason });
 
   it("каждая причина ворот переводится в обоих кабинетах", () => {
-    for (const reason of [
-      "PERSONA_NOT_CONFIRMED",
-      "PERSONA_DECISION_STALE",
-      "PERSONA_GATE_UNAVAILABLE",
-    ]) {
+    // Список причин берётся у сервера, а не переписывается сюда: новая причина
+    // без слов в словаре печаталась бы оператору пустым местом.
+    for (const reason of Object.keys(PERSONA_GATE_BLOCK_MESSAGE)) {
       const key = personaBlockKey(conflict(reason));
       expect(key, reason).not.toBeNull();
       for (const dict of [ru, en]) phrase(dict, key!);
