@@ -3781,15 +3781,20 @@ export function highlightPhrase(input: {
    * это сломанный текст, — поэтому у безымянной строки имени просто нет, а всё
    * остальное во фразе остаётся.
    *
-   * Причин безымянности две: имя демонстрационных данных (в отчёт не попадает
-   * ни под каким видом) и адрес, который не разбирается в домен вовсе.
+   * Причин безымянности три: имя демонстрационных данных (в отчёт не попадает
+   * ни под каким видом), адрес, который не разбирается в домен вовсе, и —
+   * третья, стоившая прогона DPA-2026-0053, — улики по строке нет в индексе
+   * страницы. Такая строка в `evidenceRefs` слайда не попадает, то есть
+   * названный по ней источник невыводим из улик страницы: обязательная секция
+   * отказывала («sidebar domain not derived from page evidence»), и дека не
+   * собиралась вовсе. Имя и адрес поэтому берутся **только** из улики.
    */
-  const domain = clientSafeDomain(e?.domain ?? input.row.domain);
+  const domain = e ? clientSafeDomain(e.domain) : "";
   // Адрес печатается целиком: обрезанный не открывается, а фраза заводится
   // ровно ради того, чтобы утверждение можно было проверить по первоисточнику.
   // Не поместился в узкую колонку — уйдёт на продолжение, но не пропадёт.
-  const link = clientAddress(e?.url ?? input.row.url);
-  const linkText = clientAddressText(e?.url ?? input.row.url);
+  const link = e ? clientAddress(e.url) : "";
+  const linkText = e ? clientAddressText(e.url) : "";
 
   // Непрочитанная страница решения не приносит: сюжет и цитата в артефакте
   // могли остаться от заголовка выдачи, но выдавать их за содержимое страницы,
@@ -4035,7 +4040,9 @@ export function adverseVisualSidebar(
   for (const row of adverseRows) {
     const f = findingForVisibleRow(row, scoped);
     const e = scoped.evidenceIndex[row.ref];
-    const domain = clientSafeDomain(e?.domain ?? row.domain);
+    // Домен — только из улики: у строки без улики он не выводится из улик
+    // страницы, и названный им источник останавливал сборку деки (0053).
+    const domain = e ? clientSafeDomain(e.domain) : "";
     const phrase = highlightPhrase({ row, evidence: scoped.evidenceIndex, finding: f });
     phrases.push(phrase);
     explanations.push({

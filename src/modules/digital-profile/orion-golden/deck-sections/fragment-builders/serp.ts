@@ -1944,8 +1944,12 @@ export function buildSerpScreenshotFragment(
       ? "Выделенных результатов повышенного внимания на этом снимке нет; зафиксированы деловые и справочные материалы."
       : "На снимке нет сохранённых строк выдачи для описания состава страницы.";
 
+  // Тот же закон, что и у выделенных строк: источник называется по улике
+  // страницы, а не по самой строке снимка (см. `highlightPhrase`).
   const neutralVisibleDomains = [
-    ...new Set(clientSafeDomains(visibleRows.map((v) => v.domain))),
+    ...new Set(
+      clientSafeDomains(visibleRows.map((v) => scoped.evidenceIndex[v.ref]?.domain ?? ""))
+    ),
   ].slice(0, 3);
   // The sidebar footer is narrow: cap the listed domains so the note always
   // ends with a complete phrase instead of clipping mid-sentence.
