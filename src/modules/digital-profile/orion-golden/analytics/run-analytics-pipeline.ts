@@ -40,7 +40,11 @@ import { runSurfaceAnalyzers } from "./surface-analyzers";
 import { resolveItemAdverse, spreadVerdictsOverMaterials } from "./item-adverse";
 import { observationVerdictsForVisuals } from "../../serp-observation/resolve-observation-highlights";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
-import { loadReusableLinkVerdicts, runLinkVerdicts } from "./run-link-verdicts";
+import {
+  applySubjectDecisionVeto,
+  loadReusableLinkVerdicts,
+  runLinkVerdicts,
+} from "./run-link-verdicts";
 import { verdictAuditLogLine } from "./link-verdict-audit-agent";
 import {
   loadReusableWikipediaArticleReview,
@@ -553,15 +557,38 @@ export async function runOrionAnalyticsPipeline(
   // пересборка отчёта либо затирала решения пустым артефактом (флаг выключен),
   // либо молча покупала их заново (флаг включён) — и второе никто не замечал,
   // потому что отчёт от этого не ломается, просто дорожает.
+  const decisionByRefForReading = new Map(
+    subjectResolution.items.map((i) => [i.evidenceRef, i.decision] as const)
+  );
   const reusable = loadReusableLinkVerdicts(input.artifactsDir, { caseId: input.caseId });
-  const linkVerdicts =
+  const linkVerdictsRaw =
     reusable.status === "reuse"
       ? reusable.result
       : await runLinkVerdicts({
           caseId: input.caseId,
           subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
           items: scope.inScope,
+          decisionByRef: decisionByRefForReading,
         });
+  /*
+   * Вето разметки — здесь, а не у каждого читателя вердиктов.
+   *
+   * Стадия чтения знает только ФИО, и её «страница о субъекте» на прогоне
+   * DPA-2026-0049 приводила в резюме карточки ИП и врача-однофамильца. Место
+   * выбрано так, чтобы вето действовало и на переиспользованный артефакт:
+   * реюз смотрит только на `schemaVersion`, и фильтр на свежих решениях
+   * пересборку не защищал бы.
+   */
+  const veto = applySubjectDecisionVeto({
+    verdicts: linkVerdictsRaw.verdicts,
+    decisionByRef: decisionByRefForReading,
+  });
+  const linkVerdicts = { ...linkVerdictsRaw, verdicts: veto.verdicts };
+  if (veto.vetoed > 0) {
+    qualityWarnings.push(
+      `link-verdicts-vetoed-by-subject-resolution:${veto.vetoed} (страницы тёзок не считаются страницами субъекта)`
+    );
+  }
   // Купленное было, переиспользовать не вышло — прежние решения подменены, и
   // неважно, пустым результатом или новой покупкой: в первом случае отчёт
   // обеднел, во втором за то же чтение заплатили второй раз. Условие «новый

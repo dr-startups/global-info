@@ -88,9 +88,24 @@ function domainOf(url: string | null | undefined): string | undefined {
  * Один и тот же адрес, найденный несколькими запросами, читается один раз:
  * содержание страницы от запроса не зависит.
  */
+/**
+ * Порядок чтения: подтверждённые страницы первыми, чужие не читаются вовсе.
+ *
+ * Отбор шёл по позиции в выдаче и о принадлежности не знал: на прогоне
+ * DPA-2026-0049 из 120 купленных страниц десятки были карточками ИП и
+ * врача-однофамильца — деньги за чужие страницы и вердикты, из которых потом
+ * собраны «сюжеты» отчёта. Разметка к этому моменту уже готова (она идёт
+ * раньше чтения), и спросить её ничего не стоит.
+ */
+const READ_PRIORITY: Record<string, number> = {
+  SUBJECT_MATCH: 0,
+  LIKELY_SUBJECT: 1,
+};
+
 export function linksToRead(
   items: RawInventoryItem[],
-  limit = LINK_VERDICT_MAX_LINKS
+  limit = LINK_VERDICT_MAX_LINKS,
+  opts?: { decisionByRef?: Map<string, string> }
 ): Array<{ item: RawInventoryItem; url: string; rank?: number; query?: string; region?: string }> {
   const seen = new Set<string>();
   const rows: Array<{
@@ -100,9 +115,13 @@ export function linksToRead(
     query?: string;
     region?: string;
   }> = [];
+  const decisionByRef = opts?.decisionByRef;
   for (const item of items) {
     const url = String(item.sourceUrl ?? "").trim();
     if (!/^https?:\/\//iu.test(url)) continue;
+    // Страница другого лица не покупается: её вердикт не нужен ни одной
+    // странице отчёта, а прочитать её стоит денег.
+    if (decisionByRef?.get(`inventory:${item.inventoryId}`) === "OTHER_SUBJECT") continue;
     const key = url.replace(/[#?].*$/u, "").toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -116,8 +135,16 @@ export function linksToRead(
       region: item.region ? mapRegionBucket(item.region) : undefined,
     });
   }
+  const priorityOf = (item: RawInventoryItem): number =>
+    decisionByRef
+      ? READ_PRIORITY[decisionByRef.get(`inventory:${item.inventoryId}`) ?? ""] ?? 2
+      : 0;
   return rows
-    .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
+    .sort(
+      (a, b) =>
+        priorityOf(a.item) - priorityOf(b.item) ||
+        (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER)
+    )
     .slice(0, limit);
 }
 
@@ -146,6 +173,37 @@ export type LinkVerdictReuse =
  * купленный и честно размеченный результат, заморозить его лучше, чем затереть
  * пустым. Лечится он новым сбором, а не молчаливой повторной тратой.
  */
+/**
+ * Вето разметки над вердиктом прочитанной страницы.
+ *
+ * Стадия чтения знает о субъекте только ФИО и решает по тексту страницы: на
+ * прогоне DPA-2026-0049 она назвала «страницами субъекта» тринадцать карточек
+ * ИП и четыре страницы офтальмолога, и именно из этих вердиктов собраны
+ * «Основные сюжеты в выдаче» на второй странице отчёта. Разметка знает больше —
+ * она видела якоря, — и её ответ здесь сильнее.
+ *
+ * Применяется один раз, сразу после того как вердикты получены **или
+ * переиспользованы**: артефакт прошлого прогона живёт по `schemaVersion`, и
+ * фильтр только на свежих решениях не защищал бы пересборку отчёта.
+ */
+export function applySubjectDecisionVeto(input: {
+  verdicts: LinkVerdict[];
+  decisionByRef: Map<string, string>;
+}): { verdicts: LinkVerdict[]; vetoed: number } {
+  let vetoed = 0;
+  const verdicts = input.verdicts.map((v) => {
+    if (v.subjectMatch !== "subject") return v;
+    const decision = input.decisionByRef.get(v.evidenceRef);
+    if (!decision || decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") return v;
+    vetoed += 1;
+    // «Другое лицо» так и называется; всё прочее — честное «непонятно»:
+    // разметка не утверждает, что страница о постороннем, она лишь не
+    // подтвердила принадлежность.
+    return { ...v, subjectMatch: decision === "OTHER_SUBJECT" ? ("other" as const) : ("unclear" as const) };
+  });
+  return { verdicts, vetoed };
+}
+
 export function loadReusableLinkVerdicts(
   artifactsDir: string,
   input: { caseId: string }
@@ -209,6 +267,8 @@ export async function runLinkVerdicts(input: {
   subject: { fullName: string; aliases?: string[] };
   /** Материалы предмета аудита (ТОП-20 выдачи). */
   items: RawInventoryItem[];
+  /** Решение разметки по наблюдению: чужие страницы не читаются. */
+  decisionByRef?: Map<string, string>;
   deps?: {
     read?: (url: string) => Promise<LinkPageRead>;
     analyze?: typeof analyzeLinkPages;
@@ -244,7 +304,9 @@ export async function runLinkVerdicts(input: {
   if (!isLinkReadingEnabled(input.deps?.env ?? process.env)) {
     return { ...base, skippedReason: "disabled", requested: 0, readOk: 0, readingBroken: false };
   }
-  const links = linksToRead(input.items, input.deps?.limit ?? LINK_VERDICT_MAX_LINKS);
+  const links = linksToRead(input.items, input.deps?.limit ?? LINK_VERDICT_MAX_LINKS, {
+    decisionByRef: input.decisionByRef,
+  });
   if (links.length === 0) {
     return { ...base, skippedReason: "no-links", requested: 0, readOk: 0, readingBroken: false };
   }

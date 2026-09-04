@@ -1,14 +1,14 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
   "contentHash": "sha256:2b191aebb92a966746c61001f8e3140fb5735c510f2f01ce3ce2b3e67f007d4a",
-  "contentVersion": "deck-sections-v163",
+  "contentVersion": "deck-sections-v164",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"
   ],
   "fragmentKey": "UAE_KNOWLEDGE_AI",
-  "generatedAt": "2026-09-04T11:20:57.119Z",
-  "inputHash": "sha256:e12937f313fcf83805cdc78ddcb1c707fd177151f1e4668732796efc40284164:e75356c3722d93b5",
+  "generatedAt": "2026-09-04T11:51:18.176Z",
+  "inputHash": "sha256:5fb74c557ae40ee42ee80aecd93d7f73b045afa63c478b3fa2b7093dd11f6eb2:e75356c3722d93b5",
   "inputs": {
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsolq6001nvd3wjwaf9z1x"

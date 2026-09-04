@@ -18,6 +18,7 @@ import {
   UNVERIFIED_LABEL,
 } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import { OTHER_SUBJECT_LABEL } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
+import { UNCONFIRMED_SUBJECT_LABEL } from "@/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
 const QUERY = "Умар Кремлёв";
@@ -33,6 +34,8 @@ type RowFixture = {
   readVerdictTone?: "adverse" | "neutral" | "supportive";
   adverse?: boolean;
   readFailure?: string;
+  /** Код причины разметки: им отличается «совпало только имя». */
+  subjectReason?: string;
   /** Второе наблюдение того же материала: свой ref, те же домен и заголовок. */
   alsoRef?: string;
 };
@@ -54,6 +57,7 @@ function scopedRows(rows: RowFixture[], findings: unknown[] = []): ScopedFragmen
         query: QUERY,
         queryPurpose: "subject_lookup",
         subjectDecision: row.subjectDecision ?? "SUBJECT_MATCH",
+        subjectReason: row.subjectReason,
         // Загрузчик кладёт решение прочитанной страницы на все ссылки её
         // материала; второе наблюдение специально оставлено без него, чтобы
         // строка не зависела от того, какая ссылка оказалась первой.
@@ -205,6 +209,9 @@ describe("легенда обещает ровно те оценки, котор
     // значения выбираются: от самого сильного утверждения к самому слабому.
     expect(DECK_TEMPLATE_REGISTRY["serp-table"].legend).toEqual([
       OTHER_SUBJECT_LABEL,
+      // Шаг 0054: «совпало только имя» стоит выше негатива — чужой материал,
+      // покрашенный красным, уводит читателя удалять не своё.
+      UNCONFIRMED_SUBJECT_LABEL,
       RED_MARKER_LABEL,
       "Вероятно",
       UNVERIFIED_LABEL,
@@ -215,6 +222,10 @@ describe("легенда обещает ровно те оценки, котор
   it("каждое значение легенды достижимо построителем", () => {
     const cases: Array<[string, RowFixture]> = [
       [OTHER_SUBJECT_LABEL, { ...CLEAN, subjectDecision: "OTHER_SUBJECT" }],
+      [
+        UNCONFIRMED_SUBJECT_LABEL,
+        { ...CLEAN, subjectDecision: "AMBIGUOUS", subjectReason: "full_name_no_anchor" },
+      ],
       [RED_MARKER_LABEL, { ...CLEAN, title: "Суд назначил слушание по делу федерации" }],
       ["Вероятно", { ...CLEAN, subjectDecision: "LIKELY_SUBJECT" }],
       [UNVERIFIED_LABEL, CLEAN],

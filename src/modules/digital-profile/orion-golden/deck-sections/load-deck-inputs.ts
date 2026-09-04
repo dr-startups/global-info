@@ -713,13 +713,22 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     compositeCount: number;
   }>(join(analyticsDir, "composite-serp-observations.json"));
   const subjectResolution = readJson<{
-    items: Array<{ evidenceRef?: string; decision: string }>;
+    items: Array<{ evidenceRef?: string; decision: string; reasonCode?: string }>;
   }>(join(analyticsDir, "subject-resolution.json"));
 
   const decisionByRef = new Map(
     (subjectResolution.items ?? [])
       .filter((i) => i.evidenceRef)
       .map((i) => [i.evidenceRef!, i.decision] as const)
+  );
+  /*
+   * Код причины едет рядом с решением: «неоднозначно» бывает разным, и таблица
+   * выдачи обязана отличить «совпало только имя» от «сигналы противоречат».
+   */
+  const reasonByRef = new Map(
+    (subjectResolution.items ?? [])
+      .filter((i) => i.evidenceRef && i.reasonCode)
+      .map((i) => [i.evidenceRef!, String(i.reasonCode)] as const)
   );
 
   // Provenance keeps inventory: refs even when observation.evidenceRefs use
@@ -862,6 +871,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         // текста запроса, поэтому владельца текста оно не спрашивает.
         queryPurpose: evidenceIndex[ref]?.queryPurpose ?? obs.queryPurpose,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
+        subjectReason: reasonByRef.get(ref) ?? evidenceIndex[ref]?.subjectReason,
       };
     }
   }

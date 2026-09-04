@@ -186,6 +186,15 @@ export const OTHER_SUBJECT_LABEL = "О другом лице" as const;
 export const UNVERIFIED_LABEL = "Не проверено" as const;
 
 /**
+ * Совпало только имя: признака, отличающего материал от материала полного
+ * тёзки, нет. Стоит **выше** «Нежелательного» — отчёт читает сам субъект, и
+ * чужой негатив, покрашенный красным, стоит ему денег на удаление чужого
+ * материала; приглушённый свой сигнал при этом остаётся в приложении
+ * (решение владельца 04.09.2026).
+ */
+export const UNCONFIRMED_SUBJECT_LABEL = "Принадлежность не подтверждена" as const;
+
+/**
  * Сколько знаков боковая панель отдаёт одной фразе «Почему выделено».
  *
  * Это ёмкость узкой колонки, а не решение построителя: рендерер режет фразу
@@ -461,7 +470,14 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
      * никогда, а «О другом лице» печатал и в легенде не значился: обещание
      * маркера, которого нет, и молчание о маркере, который есть.
      */
-    legend: [OTHER_SUBJECT_LABEL, RED_MARKER_LABEL, "Вероятно", UNVERIFIED_LABEL, "Нейтральный"],
+    legend: [
+      OTHER_SUBJECT_LABEL,
+      UNCONFIRMED_SUBJECT_LABEL,
+      RED_MARKER_LABEL,
+      "Вероятно",
+      UNVERIFIED_LABEL,
+      "Нейтральный",
+    ],
     methodologyNote:
       "Полный адрес материала напечатан в колонке «Ссылка»; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно. «Не проверено» — страница материала не открывалась, и негативных признаков в заголовке нет.",
     maxBulletsPerSlide: 0,
@@ -512,7 +528,14 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
       "Тип источника",
       "Оценка",
     ],
-    legend: [OTHER_SUBJECT_LABEL, RED_MARKER_LABEL, "Вероятно", UNVERIFIED_LABEL, "Нейтральный"],
+    legend: [
+      OTHER_SUBJECT_LABEL,
+      UNCONFIRMED_SUBJECT_LABEL,
+      RED_MARKER_LABEL,
+      "Вероятно",
+      UNVERIFIED_LABEL,
+      "Нейтральный",
+    ],
     methodologyNote:
       "Строки этой таблицы найдены не по имени, а другими запросами прогона, и в таблице по имени их нет. Мест в выдаче здесь не показано: у второго запроса своя нумерация, и сопоставлять её с первой нельзя.",
     maxBulletsPerSlide: 0,

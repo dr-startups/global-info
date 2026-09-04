@@ -10,6 +10,7 @@ import {
   OTHER_SUBJECT_LABEL,
   RED_MARKER_LABEL,
   SIDEBAR_HIGHLIGHT_SLOTS,
+  UNCONFIRMED_SUBJECT_LABEL,
   UNVERIFIED_LABEL,
 } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
@@ -345,6 +346,32 @@ export function normalizeSerpEngine(raw: string | undefined): string | null {
  * алфавит. Основной запрос выбирает `mainSerpTableQuery`, и он же говорит,
  * чьё это было решение.
  */
+/** Коды разрешения субъекта, при которых принадлежность материала не подтверждена. */
+export const UNCONFIRMED_SUBJECT_REASONS = new Set([
+  "full_name_no_anchor",
+  "registry_inn_unverified",
+]);
+
+/**
+ * Оценка строки выдачи — одной лестницей, а не тремя тернарниками по месту.
+ *
+ * Порядок: другое лицо → принадлежность не подтверждена → нежелательный →
+ * вероятно → нейтральный → не проверено.
+ */
+export function serpVerdictLabel(input: {
+  other: boolean;
+  adverse: boolean;
+  likely: boolean;
+  verified: boolean;
+  unconfirmed: boolean;
+}): string {
+  if (input.other) return OTHER_SUBJECT_LABEL;
+  if (input.unconfirmed) return UNCONFIRMED_SUBJECT_LABEL;
+  if (input.adverse) return RED_MARKER_LABEL;
+  if (input.likely) return "Вероятно";
+  return input.verified ? "Нейтральный" : UNVERIFIED_LABEL;
+}
+
 export function pickSerpTableQuery(
   rows: Array<{ query?: string; queryPurpose?: string }>
 ): string | null {
@@ -1257,15 +1284,14 @@ export function buildSerpFragment(
     // более сильная оговорка, чем неоткрытая страница. И ниже «Нежелательного»:
     // непрочитанная строка с негативным сигналом остаётся негативной, глушить
     // сигнал из-за того, что страницу не открыли, — потеря.
-    return other
-      ? OTHER_SUBJECT_LABEL
-      : adverse
-        ? RED_MARKER_LABEL
-        : likely
-          ? "Вероятно"
-          : verified
-            ? "Нейтральный"
-            : UNVERIFIED_LABEL;
+    /*
+     * Совпало только имя — так и печатается, и стоит это выше негатива:
+     * покрашенный красным чужой материал уводит читателя удалять не своё.
+     */
+    const unconfirmed = refs.some((ref) =>
+      UNCONFIRMED_SUBJECT_REASONS.has(String(scoped.evidenceIndex[ref]?.subjectReason ?? ""))
+    );
+    return serpVerdictLabel({ other, adverse, likely, verified, unconfirmed });
   };
 
   /** Тип источника материала — тем же разрешителем, что и у второй таблицы. */

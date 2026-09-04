@@ -149,6 +149,8 @@ export type ScopedEvidenceIndex = Record<
      * когда её никто не открывал.
      */
     analystDecision?: AnalystDecision;
+    /** Код причины решения разметки — им таблица выдачи отличает «только имя». */
+    subjectReason?: string;
     /**
      * Кто добыл наблюдение. Подпись под ответом поискового ИИ выводится из
      * него: «получен официальным Yandex Search API» — утверждение о способе

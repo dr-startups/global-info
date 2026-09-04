@@ -55,8 +55,21 @@ function maxLevel(levels: MaterialityLevel[]): MaterialityLevel {
   return best;
 }
 
-function isMaterialClaim(c: CanonicalClaim): boolean {
+/**
+ * Коды разрешения субъекта, при которых материал в отчёт как факт не идёт.
+ *
+ * Под якорями «AMBIGUOUS» означает ровно «совпало только имя», и такой материал
+ * громче всех: заголовок об уголовном деле у полного тёзки — обычная строка
+ * выдачи. Прогон DPA-2026-0049 собрал из таких строк тему «Арбитражные споры и
+ * нарушения в деятельности ИП» о человеке из Мончегорска. Прежние коды
+ * (`full_name_match` и соседи) сюда не входят: фикстуры и кейсы без якорей
+ * судятся прежним правилом.
+ */
+const UNANCHORED_REASONS = new Set(["full_name_no_anchor", "registry_inn_unverified"]);
+
+export function isMaterialClaim(c: CanonicalClaim): boolean {
   if (c.subjectMatch === "OTHER_SUBJECT") return false;
+  if ((c.materialityReasons ?? []).some((r) => UNANCHORED_REASONS.has(String(r)))) return false;
   if (!MATERIAL_LEVELS.has(c.materialityLevel)) return false;
   if (c.subjectMatch === "AMBIGUOUS" || c.subjectMatch === "INSUFFICIENT_IDENTIFIERS") {
     return c.materialityLevel === "CRITICAL" || c.materialityLevel === "HIGH";
