@@ -36,6 +36,7 @@ function composition(topDomains: string[]): PageRowComposition {
     subjectMatch: 0,
     likelySubject: 0,
     adverseHeadlines: 0,
+    mixedIdentity: 0,
     topDomains,
   };
 }

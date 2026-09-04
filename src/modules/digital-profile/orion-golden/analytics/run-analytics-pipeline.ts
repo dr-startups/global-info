@@ -43,6 +43,7 @@ import { observationVerdictsForVisuals } from "../../serp-observation/resolve-ob
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import {
   applySubjectDecisionVeto,
+  applyVetoToThemeSummaries,
   loadReusableLinkVerdicts,
   runLinkVerdicts,
 } from "./run-link-verdicts";
@@ -590,7 +591,28 @@ export async function runOrionAnalyticsPipeline(
     verdicts: linkVerdictsRaw.verdicts,
     decisionByRef: decisionByRefForReading,
   });
-  const linkVerdicts = { ...linkVerdictsRaw, verdicts: veto.verdicts };
+  /*
+   * Вместе с решениями пересчитываются и темы: их свод сделан до вето, и
+   * таблица тем страницы 25 иначе показывала бы страницы однофамильцев,
+   * которых в доле негатива и в резюме уже нет.
+   */
+  const linkVerdicts = {
+    ...linkVerdictsRaw,
+    verdicts: veto.verdicts,
+    summary: {
+      ...linkVerdictsRaw.summary,
+      themes: applyVetoToThemeSummaries({
+        themes: linkVerdictsRaw.summary.themes,
+        verdicts: veto.verdicts,
+      }),
+    },
+    themesByRegion: Object.fromEntries(
+      Object.entries(linkVerdictsRaw.themesByRegion ?? {}).map(([region, rows]) => [
+        region,
+        applyVetoToThemeSummaries({ themes: rows, verdicts: veto.verdicts }),
+      ])
+    ),
+  };
   if (veto.vetoed > 0) {
     qualityWarnings.push(
       `link-verdicts-vetoed-by-subject-resolution:${veto.vetoed} (страницы тёзок не считаются страницами субъекта)`

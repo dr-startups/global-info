@@ -744,7 +744,12 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     compositeCount: number;
   }>(join(analyticsDir, "composite-serp-observations.json"));
   const subjectResolution = readJson<{
-    items: Array<{ evidenceRef?: string; decision: string; reasonCode?: string }>;
+    items: Array<{
+      evidenceRef?: string;
+      decision: string;
+      reasonCode?: string;
+      conflictingIdentifiers?: string[];
+    }>;
   }>(join(analyticsDir, "subject-resolution.json"));
 
   const decisionByRef = new Map(
@@ -760,6 +765,13 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     (subjectResolution.items ?? [])
       .filter((i) => i.evidenceRef && i.reasonCode)
       .map((i) => [i.evidenceRef!, String(i.reasonCode)] as const)
+  );
+  // Вместе с причиной едет и значение, по которому она решена: приложение
+  // печатает «другая дата рождения (10.08.1983)», а не голое «о другом лице».
+  const conflictsByRef = new Map(
+    (subjectResolution.items ?? [])
+      .filter((i) => i.evidenceRef && (i.conflictingIdentifiers ?? []).length > 0)
+      .map((i) => [i.evidenceRef!, [...new Set(i.conflictingIdentifiers!)].slice(0, 4)] as const)
   );
 
   // Provenance keeps inventory: refs even when observation.evidenceRefs use
@@ -904,6 +916,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         queryPurpose: evidenceIndex[ref]?.queryPurpose ?? obs.queryPurpose,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
         subjectReason: reasonByRef.get(ref) ?? evidenceIndex[ref]?.subjectReason,
+        subjectConflicts: conflictsByRef.get(ref) ?? evidenceIndex[ref]?.subjectConflicts,
       };
     }
   }

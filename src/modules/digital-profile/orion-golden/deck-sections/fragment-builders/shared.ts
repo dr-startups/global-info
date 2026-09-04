@@ -1270,6 +1270,14 @@ export type PageRowComposition = {
   subjectMatch: number;
   likelySubject: number;
   adverseHeadlines: number;
+  /**
+   * Строки, где рядом стоят признаки двух разных людей с этим именем.
+   *
+   * Нейро-ответ прогона DPA-2026-0049 сам оговорился, что «возможно, имелись в
+   * виду разные люди», — а сайдбар под ним печатал «из них о субъекте — 6».
+   * Число не ложь, но читается как подтверждение, которого разметка не давала.
+   */
+  mixedIdentity: number;
   topDomains: string[];
 };
 
@@ -1299,11 +1307,15 @@ export function composePageRowComposition(
   let subjectMatch = 0;
   let likelySubject = 0;
   let adverseHeadlines = 0;
+  let mixedIdentity = 0;
   const domainCounts = new Map<string, number>();
   for (const refs of units) {
     const decisions = refs.map((ref) => scoped.evidenceIndex[ref]?.subjectDecision);
     if (decisions.includes("SUBJECT_MATCH")) subjectMatch += 1;
     else if (decisions.includes("LIKELY_SUBJECT")) likelySubject += 1;
+    if (refs.some((ref) => scoped.evidenceIndex[ref]?.subjectReason === "mixed_identity_signals")) {
+      mixedIdentity += 1;
+    }
     // Негативный заголовок о другом лице фон вокруг субъекта не формирует. Но
     // «о другом лице» — это про всю строку целиком: у первой её ссылки решение
     // может быть чужим, а у второй — своим, и тогда строка о субъекте.
@@ -1334,6 +1346,7 @@ export function composePageRowComposition(
     subjectMatch,
     likelySubject,
     adverseHeadlines,
+    mixedIdentity,
     topDomains,
   };
 }
@@ -1387,7 +1400,15 @@ export function pageRowCompositionBlocks(
       400
     ),
     whyItMatters: clampClientText(
-      composition.adverseHeadlines > 0
+      /*
+       * Смешанные признаки говорятся первыми: пока читатель не знает, что часть
+       * показанного относится к другому человеку с тем же именем, любая другая
+       * фраза страницы читается как утверждение о нём.
+       */
+      composition.mixedIdentity > 0
+        ? `Часть показанного смешивает сведения о разных людях с этим именем (${composition.mixedIdentity}) — ` +
+          "принадлежность этих утверждений проверяемому лицу не подтверждена."
+        : composition.adverseHeadlines > 0
         ? pageAdverseRowsLine(composition.adverseHeadlines)
         : composition.likelySubject > 0
           ? `Часть строк отмечена как «Вероятно» о субъекте — их нельзя игнорировать, но и нельзя включать в подтверждённые выводы без уточнения принадлежности.`

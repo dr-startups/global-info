@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 79,
-  "totalChars": 67828,
+  "totalChars": 67844,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -1428,7 +1428,7 @@
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
-        "Ответов поискового ИИ: 9 — Алиса 9; источников в ответах: 3. На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Ответов поискового ИИ: 9 — Алиса 9; источников в ответах: 3. Часть показанного смешивает сведения о разных людях с этим именем (1) — принадлежность этих утверждений проверяемому лицу не подтверждена. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 0: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Источники ответа: Anders Holmström и Nordkap Capital: профиль предпринимателя (affarsposten.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (finansbladet.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (kapitalnytt.se)",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 1: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",

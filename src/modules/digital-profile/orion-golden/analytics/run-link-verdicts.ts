@@ -205,6 +205,44 @@ export function applySubjectDecisionVeto(input: {
   return { verdicts, vetoed };
 }
 
+/**
+ * Пересчитать темы после вето разметки.
+ *
+ * Стадия чтения сводит темы до того, как применено вето: реюз смотрит только
+ * на `schemaVersion`, и вето поэтому стоит позже. Пока темы оставались
+ * посчитанными по невето́ванным решениям, таблица тем страницы 25 показывала
+ * страницы однофамильцев, которых в доле негатива и в резюме уже не было, —
+ * числа одного отчёта не сходились между собой.
+ *
+ * Считается по тем же правилам, что и сам свод: в тему идут только материалы о
+ * субъекте. Тема, у которой не осталось ни одной страницы, исчезает: пустая
+ * строка в таблице тем — это утверждение о теме без единого материала.
+ */
+export function applyVetoToThemeSummaries(input: {
+  themes: readonly VerdictThemeSummary[];
+  verdicts: readonly LinkVerdict[];
+}): VerdictThemeSummary[] {
+  const byRef = new Map(input.verdicts.map((v) => [v.evidenceRef, v] as const));
+  const out: VerdictThemeSummary[] = [];
+  for (const theme of input.themes) {
+    const kept = theme.evidenceRefs.filter((ref) => byRef.get(ref)?.subjectMatch === "subject");
+    if (kept.length === 0) continue;
+    if (kept.length === theme.evidenceRefs.length) {
+      out.push(theme);
+      continue;
+    }
+    const keptUrls = new Set(kept.map((ref) => byRef.get(ref)!.url));
+    out.push({
+      ...theme,
+      count: kept.length,
+      adverseCount: kept.filter((ref) => byRef.get(ref)!.tone === "adverse").length,
+      evidenceRefs: kept,
+      examples: theme.examples.filter((e) => keptUrls.has(e.url)),
+    });
+  }
+  return out;
+}
+
 export function loadReusableLinkVerdicts(
   artifactsDir: string,
   input: { caseId: string }

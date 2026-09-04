@@ -42,6 +42,56 @@ const IDENTIFICATION_LABEL: Record<string, string> = {
 };
 
 /**
+ * Почему разметка решила именно так — словами и со значением.
+ *
+ * «О другом лице» без причины читателю нечем проверить, а проверить он хочет
+ * именно это: заказчик прогона DPA-2026-0049 не понимал, почему часть
+ * материалов о его однофамильцах. Причина у разметки есть всегда, и значение,
+ * по которому она решила, стоит рядом — его можно сверить глазами.
+ */
+const MEMBERSHIP_REASON: Record<string, { text: string; withValues?: boolean }> = {
+  foreign_birth_date: { text: "на странице другая дата рождения", withValues: true },
+  foreign_inn: { text: "на странице ИНН другого лица", withValues: true },
+  namesake_conflict: { text: "признаки однофамильца", withValues: true },
+  mixed_identity_signals: { text: "на странице признаки двух разных людей" },
+  full_name_no_anchor: {
+    text: "совпало полное имя, других признаков проверяемого лица на странице нет",
+  },
+  registry_inn_unverified: {
+    text: "реестровая запись с ИНН, который нечем сверить: свой ИНН не назван",
+  },
+};
+
+/**
+ * Строка «Принадлежность: …» целиком; `null` — степень неизвестна.
+ *
+ * Пустых скобок не бывает: причина без значения печатается одной фразой, а
+ * причина со значением — фразой и значением. Двоеточие ставится только там,
+ * где за ним действительно перечисление.
+ */
+export function subjectMembershipLine(input: {
+  subjectMatch: string;
+  reason?: string;
+  conflicts?: readonly string[];
+}): string | null {
+  const word = IDENTIFICATION_LABEL[input.subjectMatch];
+  if (!word) return null;
+  const reason = input.reason ? MEMBERSHIP_REASON[input.reason] : undefined;
+  if (!reason) return `Принадлежность: ${word}.`;
+  const values = (input.conflicts ?? []).filter((v) => String(v).trim().length > 0);
+  if (!reason.withValues || values.length === 0) {
+    return `Принадлежность: ${word} — ${reason.text}.`;
+  }
+  // Значение к самой фразе цепляется по-разному: дата и ИНН — один признак в
+  // скобках, слова тёзки — перечисление после двоеточия.
+  const tail =
+    values.length === 1 && input.reason !== "namesake_conflict"
+      ? ` (${values[0]})`
+      : `: ${values.join(", ")}`;
+  return `Принадлежность: ${word} — ${reason.text}${tail}.`;
+}
+
+/**
  * Ставит степень идентификации отдельной строкой сразу под названием темы.
  *
  * Сначала метка дописывалась в саму строку заголовка — и ломала его разбор:
@@ -54,15 +104,39 @@ const IDENTIFICATION_LABEL: Record<string, string> = {
  * Своя строка снимает вопрос: заголовок остаётся заголовком, а метка читается
  * как то, чем она является, — ответом на вопрос «почему материал здесь».
  */
-export function withIdentificationLabel(claim: string, subjectMatch: string): string {
-  const label = IDENTIFICATION_LABEL[subjectMatch];
-  if (!label) return claim;
+export function withIdentificationLabel(
+  claim: string,
+  subjectMatch: string,
+  membership?: { reason?: string; conflicts?: readonly string[] }
+): string {
+  const line = subjectMembershipLine({ subjectMatch, ...membership });
+  if (!line) return claim;
   const lines = claim.split("\n");
   const head = (lines[0] ?? "").trim();
   if (!/^«[^»]+»$/u.test(head)) return claim;
   // Пометка уже стоит — второй раз не дописываем.
   if (/^Принадлежность:/u.test((lines[1] ?? "").trim())) return claim;
-  return [head, `Принадлежность: ${label}.`, ...lines.slice(1)].join("\n");
+  return [head, line, ...lines.slice(1)].join("\n");
+}
+
+/**
+ * Причина разметки для находки — по первой улике, у которой она есть.
+ *
+ * Находка собрана из нескольких материалов, и причина у них может различаться;
+ * печатается первая названная. Перебирать все значило бы печатать в карточке
+ * список кодов вместо ответа на вопрос «почему материал здесь».
+ */
+function membershipOf(
+  finding: { evidenceRefs: string[] },
+  scoped: ScopedFragmentInput
+): { reason?: string; conflicts?: string[] } {
+  for (const ref of finding.evidenceRefs) {
+    const entry = scoped.evidenceIndex[ref];
+    if (entry?.subjectReason) {
+      return { reason: entry.subjectReason, conflicts: entry.subjectConflicts };
+    }
+  }
+  return {};
 }
 
 export function buildAppendixFragment(
@@ -104,7 +178,7 @@ export function buildAppendixFragment(
       // маркером находки (50 знаков) и теряла конец.
       bullets: ambiguous.map((f) =>
         bulletWithFindingId(
-          withIdentificationLabel(themedClaim(f), f.subjectMatch),
+          withIdentificationLabel(themedClaim(f), f.subjectMatch, membershipOf(f, scoped)),
           f.findingId,
           DECK_TEMPLATE_REGISTRY["finding-cards"].layout.itemCharBudget
         )
