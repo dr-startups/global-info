@@ -164,6 +164,10 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
           selectedCardId: cardId ?? null,
         });
         await reload();
+        // Признаки выбранной карточки уезжают в профиль на сервере: форма
+        // обязана показать их сразу, иначе оператор не узнает, чем размечается
+        // его прогон, и не сможет их снять.
+        await reloadProfile();
         setMessage({ kind: "ok", text: t(DECIDED_KEYS[decision]) });
       } catch (err) {
         setMessage(failure(err));
@@ -171,7 +175,7 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
         setBusy(null);
       }
     },
-    [busy, caseId, failure, reload, state?.check?.checkId, t]
+    [busy, caseId, failure, reload, reloadProfile, state?.check?.checkId, t]
   );
 
   const handleSaveAnchors = useCallback(async () => {

@@ -24,6 +24,9 @@ import {
   type PersonaDecision,
 } from "@/modules/digital-profile/services/subject-persona-check";
 import { loadCaseSubjectIdentityProfile } from "@/modules/digital-profile/services/subject-profile-admin";
+import { applyCardAnchorsToProfile } from "@/modules/digital-profile/services/persona-card-anchors";
+import { loadCaseSubject } from "@/modules/digital-profile/agents/mock/mock-utils";
+import type { PersonaCard } from "@/modules/digital-profile/services/subject-persona-check";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +73,33 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     anchors,
     decidedBy: user.id,
   });
+  /*
+   * Карточку выбрал человек глазами — её слова становятся признаками субъекта.
+   *
+   * Известному человеку иначе пришлось бы вводить руками то, что уже написано
+   * в подтверждённой им карточке. Признак при этом добыт не из размечаемого
+   * корпуса, а из отдельного источника; фразы видны в форме признаков, и
+   * оператор снимает их одним щелчком.
+   *
+   * Падение здесь не отменяет записанного решения: оператор видит ошибку и
+   * жмёт ещё раз — тот же ответ по той же строке принимается, а слияние
+   * признаков идемпотентно.
+   */
+  let cardAnchorPhrases = 0;
+  const selectedCard = (row.selectedPersonaJson as { card?: PersonaCard } | null)?.card;
+  if (row.decision === "PERSONA_SELECTED" && selectedCard) {
+    const subject = await loadCaseSubject(id);
+    const before = loadCaseSubjectIdentityProfile(id)?.anchors?.phrases?.length ?? 0;
+    const updated = applyCardAnchorsToProfile({
+      caseId: id,
+      subjectName: subject.fullName,
+      subjectAliases: subject.aliases,
+      subjectDateOfBirth: subject.dateOfBirth,
+      card: selectedCard,
+    });
+    cardAnchorPhrases = Math.max(0, (updated?.anchors?.phrases.length ?? before) - before);
+  }
+
   await recordAudit({
     caseId: id,
     action: "PERSONA_DECIDED",
@@ -78,6 +108,9 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
       checkId: row.id,
       decision: row.decision,
       selectedCardId,
+      // Сколько признаков приехало из карточки: по журналу видно, чем размечен
+      // прогон — словами оператора или словами подтверждённого источника.
+      cardAnchorPhrases,
       // Пустая панель — валидное состояние решения, и причина пустоты по
       // каждому источнику остаётся в снимке строки.
       fetchStatus: row.fetchStatus,
@@ -89,5 +122,6 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     decidedBy: row.decidedBy,
     decidedAt: row.decidedAt,
     selectedPersona: row.selectedPersonaJson,
+    cardAnchorPhrases,
   });
 });

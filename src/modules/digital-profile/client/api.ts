@@ -1605,6 +1605,8 @@ export function decidePersonaCheck(
   decision: string;
   decidedBy: string | null;
   decidedAt: string | null;
+  /** Сколько признаков приехало из подтверждённой карточки. */
+  cardAnchorPhrases?: number;
 }> {
   return request(`/cases/${caseId}/persona-check/decision`, {
     method: "POST",
