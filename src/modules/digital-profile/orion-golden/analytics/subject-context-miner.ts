@@ -134,6 +134,8 @@ export function mineSubjectContextTerms(input: {
 
 export type DerivedContextResolution = {
   resolution: SubjectResolution;
+  /** Почему второй проход не выполнялся; `null` — выполнялся. */
+  skippedReason?: string | null;
   /** Context the subject/operator supplied (profile). */
   suppliedContext: string[];
   /** Context mined automatically from confirmed matches. */
@@ -162,37 +164,33 @@ export function resolveSubjectWithDerivedContext(input: {
     sourceHashes: input.sourceHashes,
   });
 
-  const { minedTerms, matchedItemCount } = mineSubjectContextTerms({
+  /*
+   * Второго прохода нет: контекст субъекта из корпуса не выводится.
+   *
+   * Обещание, записанное выше, оказалось невыполнимым по построению. Термы
+   * брались из бесконфликтных SUBJECT_MATCH первого прохода, а у полного тёзки
+   * конфликтов не бывает: на прогоне DPA-2026-0049 в «эффективный контекст»
+   * попали одновременно «судья, арбитражный, краснодарского» и «офтальмолог,
+   * профессор», после чего 292 материала четырёх разных людей получили
+   * `full_name_with_context` 0.92. Признак принадлежности приходит от
+   * оператора якорем (`subject-anchors.ts`), а не из корпуса, который этим же
+   * признаком подтверждается.
+   *
+   * Словарь `mineSubjectContextTerms` остаётся вызываемым: он пригодится как
+   * подсказка оператору о тёзках, но в разметку его результат не идёт.
+   */
+  const suppliedContext = [...input.subject.contextIdentifiers];
+  const { matchedItemCount } = mineSubjectContextTerms({
     items: input.items,
     resolution: pass1,
     subject: input.subject,
   });
-
-  const suppliedContext = [...input.subject.contextIdentifiers];
-  if (minedTerms.length === 0) {
-    return {
-      resolution: pass1,
-      suppliedContext,
-      minedContext: [],
-      effectiveContext: suppliedContext,
-      matchedItemCount,
-    };
-  }
-
-  const effectiveContext = [...new Set([...suppliedContext, ...minedTerms])];
-  const pass2 = buildSubjectResolution({
-    caseId: input.caseId,
-    datasetId: input.datasetId,
-    subject: { ...input.subject, contextIdentifiers: effectiveContext },
-    items: input.items,
-    sourceHashes: input.sourceHashes,
-  });
-
   return {
-    resolution: pass2,
+    resolution: pass1,
+    skippedReason: "mining_disabled",
     suppliedContext,
-    minedContext: minedTerms,
-    effectiveContext,
+    minedContext: [],
+    effectiveContext: suppliedContext,
     matchedItemCount,
   };
 }

@@ -482,6 +482,8 @@ export async function runOrionAnalyticsPipeline(
     suppliedContext: derived.suppliedContext,
     minedContext: derived.minedContext,
     effectiveContext: derived.effectiveContext,
+    // Почему второго прохода не было — словами в артефакте, а не молчанием.
+    skippedReason: derived.skippedReason ?? null,
     matchedItemCount: derived.matchedItemCount,
   });
   const resolutionByRef = new Map(subjectResolution.items.map((i) => [i.evidenceRef, i]));

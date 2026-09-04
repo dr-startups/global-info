@@ -11,6 +11,35 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import type { SubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile";
+import {
+  anchorPhraseStems,
+  type SubjectAnchors,
+} from "../orion-golden/analytics/subject-anchors";
+
+/**
+ * Контекст-слова прежних кейсов становятся якорями, а не пропадают.
+ *
+ * Дата рождения кейса приезжает в профиль бутстрапом, и одного её появления
+ * достаточно, чтобы включить строгую лестницу. Оператор, который до этого ввёл
+ * «Арбитражный суд Краснодарского края» в поле контекст-слов, не должен
+ * обнаружить, что его ввод перестал читаться: слово из старого поля — тот же
+ * признак, просто названный раньше. Многословная фраза сильна, однословная —
+ * слаба: одно слово стоит и в чужих текстах.
+ */
+function withLegacyContextAsAnchors(p: SubjectIdentityProfile): SubjectAnchors {
+  const anchors = p.anchors!;
+  if (anchors.phrases.length > 0) return anchors;
+  const legacy = (p.contextIdentifiers ?? []).map((t) => String(t ?? "").trim()).filter(Boolean);
+  if (legacy.length === 0) return anchors;
+  return {
+    ...anchors,
+    phrases: legacy.map((text) => ({
+      kind: "fact" as const,
+      text,
+      strong: anchorPhraseStems(text).length > 1,
+    })),
+  };
+}
 
 /** Adapt the content-brain SubjectIdentityProfile into the classifier profile. */
 export function classifierProfileFromIdentityProfile(
@@ -43,8 +72,20 @@ export function classifierProfileFromIdentityProfile(
     aliases: p.aliases ?? [],
     transliterations: p.transliterations ?? [],
     namesakeProfiles: p.namesakeProfiles ?? [],
-    contextIdentifiers: p.contextIdentifiers ?? p.knownIdentifiers?.locations ?? [],
-    knownIdentifiers: { inn: p.knownIdentifiers?.inn ?? [] },
+    // При якорях старое поле пустеет: его слова уже переехали фразами, и два
+    // набора признаков с разной силой были бы двумя ответами на один вопрос.
+    contextIdentifiers: p.anchors ? [] : (p.contextIdentifiers ?? p.knownIdentifiers?.locations ?? []),
+    ...(p.anchors ? { anchors: withLegacyContextAsAnchors(p) } : {}),
+    /*
+     * Идентификатором ИНН становится только от оператора.
+     *
+     * `knownIdentifiers.inn` прежних кейсов заполнял конвейер, добывая номера
+     * по соседству с ФИО из собранного корпуса (прогон DPA-2026-0049: два из
+     * трёх — чужие). Такое поле читается как предложение, а не как признак:
+     * classifier получает пустой список, а сам номер остаётся в файле и виден
+     * оператору.
+     */
+    knownIdentifiers: { inn: p.anchors?.inn ?? [] },
     negativeIdentitySignals: {
       wrongPatronymics: p.negativeIdentitySignals?.wrongPatronymics ?? [],
       wrongNames: p.negativeIdentitySignals?.wrongNames ?? [],

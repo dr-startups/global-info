@@ -10,17 +10,54 @@
  * (operator-edited) profile is never overwritten.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import type { CompositeObservation } from "./composite-serp-merge";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
+import type { SubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile";
 import { buildSubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile-builder";
 import { classifierProfileFromIdentityProfile } from "./job-subject-profile";
 import { compositeObservationsToInventory } from "./canonical-report-prepare";
 import { subjectProfilePath } from "./subject-profile-admin";
 
-export type CaseSubjectRef = { fullName: string; aliases: string[] };
+export type CaseSubjectRef = { fullName: string; aliases: string[]; dateOfBirth?: string | null };
+
+/**
+ * Слить машинную находку в профиль кейса, не тронув то, что ввёл оператор.
+ *
+ * Раньше бутстрап писал файл только при его отсутствии — и кейс с уже
+ * заведённым профилем не получал ни даты рождения, ни обновлённых предложений
+ * (рецензия проекта нашла это на файле 0049 с тремя чужими ИНН). Слияние
+ * решает обе задачи и остаётся идемпотентным: повтор на тех же данных даёт
+ * дословно тот же файл.
+ */
+export function mergeDiscoveredIntoProfile(
+  existing: SubjectIdentityProfile,
+  built: SubjectIdentityProfile,
+  birthDateIso: string | null
+): SubjectIdentityProfile {
+  const anchors = existing.anchors ?? { birthDate: null, phrases: [], inn: [], domains: [] };
+  const merged: SubjectIdentityProfile = {
+    ...existing,
+    anchors: { ...anchors, birthDate: birthDateIso ?? anchors.birthDate ?? null },
+    ...(built.discovered?.inn?.length ? { discovered: { inn: built.discovered.inn } } : {}),
+    negativeIdentitySignals: {
+      ...existing.negativeIdentitySignals,
+      // Чужие отчества выводятся из корпуса и обновляются каждым прогоном:
+      // они называют других людей, а не субъекта, и правкой оператора не являются.
+      wrongPatronymics: uniqStrings([
+        ...(existing.negativeIdentitySignals?.wrongPatronymics ?? []),
+        ...(built.negativeIdentitySignals?.wrongPatronymics ?? []),
+      ]),
+    },
+  };
+  return merged;
+}
+
+function uniqStrings(values: string[]): string[] {
+  return [...new Set(values.map((v) => v.trim()).filter(Boolean))];
+}
 
 /** Case subject from DB; null when unavailable (offline tests inject it). */
 async function loadCaseSubjectSafe(
@@ -33,7 +70,7 @@ async function loadCaseSubjectSafe(
       where: { id: caseId, deletedAt: null },
       select: {
         subjects: {
-          select: { fullName: true, aliases: true },
+          select: { fullName: true, aliases: true, dateOfBirth: true },
           orderBy: { createdAt: "asc" },
           take: 1,
         },
@@ -41,7 +78,11 @@ async function loadCaseSubjectSafe(
     });
     const subject = row?.subjects[0];
     if (!subject?.fullName) return null;
-    return { fullName: subject.fullName, aliases: subject.aliases ?? [] };
+    return {
+      fullName: subject.fullName,
+      aliases: subject.aliases ?? [],
+      dateOfBirth: subject.dateOfBirth ? subject.dateOfBirth.toISOString().slice(0, 10) : null,
+    };
   } catch {
     return null;
   }
@@ -79,19 +120,31 @@ export async function bootstrapSubjectProfileFromCollection(input: {
     observations: input.observations,
   });
 
-  const identity = buildSubjectIdentityProfile({
+  const built = buildSubjectIdentityProfile({
     caseId: input.caseId,
     subjectName: subject.fullName,
     aliases: subject.aliases,
     inventory: { items },
   });
+  const birthDate = subject.dateOfBirth ?? null;
 
+  let identity = mergeDiscoveredIntoProfile(built, built, birthDate);
   let persistedToCaseRoot = false;
   try {
     const path = subjectProfilePath(input.caseId);
-    if (!existsSync(path)) {
+    /*
+     * Файл кейса дополняется, а не подменяется: якоря и тёзки ввёл оператор,
+     * а дата рождения и предложения — машинная часть, и она обновляется каждым
+     * прогоном.
+     */
+    if (existsSync(path)) {
+      const previous = JSON.parse(readFileSync(path, "utf8")) as SubjectIdentityProfile;
+      if (previous?.displayName) identity = mergeDiscoveredIntoProfile(previous, built, birthDate);
+    }
+    const next = `${JSON.stringify(identity, null, 2)}\n`;
+    if (!existsSync(path) || readFileSync(path, "utf8") !== next) {
       mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `${JSON.stringify(identity, null, 2)}\n`, "utf8");
+      writeFileSync(path, next, "utf8");
       persistedToCaseRoot = true;
     }
   } catch {

@@ -31,6 +31,13 @@ import {
 import { transliterateRuToLat } from "../identity/transliterate-ru";
 import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 import { publicDomainOf } from "./public-domain";
+import {
+  anchorHitsInText,
+  foreignBirthDates,
+  hasSubjectAnchors,
+  innsInText,
+  type SubjectAnchors,
+} from "./subject-anchors";
 import type { RawInventoryItem } from "../types";
 import {
   SUBJECT_RESOLUTION_SCHEMA_VERSION,
@@ -65,6 +72,15 @@ export type SubjectIdentity = {
   namesakeProfiles: NamesakeProfile[];
   /** Flattened noise terms across all namesakes (convenience for matching). */
   namesakeNoise: string[];
+  /**
+   * Признаки субъекта сверх имени, названные оператором до сбора.
+   *
+   * Их наличие переключает лестницу решений: полное совпадение ФИО без якоря
+   * перестаёт быть подтверждением принадлежности. Режим выводится из данных, а
+   * не из слова-флага — у профилей прежних кейсов якорей нет, и они судятся
+   * прежней лестницей слово в слово.
+   */
+  anchors?: SubjectAnchors;
 };
 
 function norm(text: string): string {
@@ -448,6 +464,50 @@ export function classifySubjectRelevance(
     if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
 
+  /*
+   * Якоря субъекта: признаки сверх имени, названные оператором.
+   *
+   * Прогон DPA-2026-0049 показал цену их отсутствия: полное ФИО без якоря
+   * считалось подтверждением, и в отчёт о судье попали офтальмолог, депутат и
+   * четыре ИП — все полные тёзки, у которых по построению нет ни чужого
+   * отчества, ни чужого имени, то есть конфликта, которым их можно отличить.
+   */
+  const anchors = subject.anchors;
+  const anchorMode = hasSubjectAnchors(anchors);
+  const anchorHits = anchors
+    ? anchorHitsInText({ text, url: item.sourceUrl ?? null, anchors })
+    : [];
+  const strongAnchor = anchorHits.find((h) => h.strong) ?? null;
+  const weakAnchor = anchorHits.find((h) => !h.strong) ?? null;
+  for (const hit of anchorHits) matchedIdentifiers.push(hit.value);
+
+  /*
+   * Чужая дата рождения — конфликт во всех режимах, а не только под якорями.
+   *
+   * Она приходит из карточки кейса, оператор вводил её и раньше, и своей
+   * стороне решения она ничего не стоит: у депутата гордумы Краснодара в
+   * сниппете стоит «Родился: 10 августа 1983 года» — этого достаточно, чтобы
+   * не приписывать его материалы судье, родившемуся 30.11.1977.
+   */
+  const foreignDates = foreignBirthDates(text, anchors?.birthDate ?? null);
+  conflictingIdentifiers.push(...foreignDates);
+
+  /*
+   * ИНН читается из текста только со словом, которое так его и называет, и
+   * сверяется с ИНН оператора. Свой ИНН на странице сильнее чужого: карточка
+   * организации называет и соучредителей.
+   */
+  const ownInnHit = anchorHits.some((h) => h.kind === "inn");
+  const innsOnPage = anchors ? innsInText(text) : [];
+  const foreignInns =
+    anchors && anchors.inn.length > 0 && !ownInnHit
+      ? innsOnPage.filter((i) => !anchors.inn.includes(i))
+      : [];
+  conflictingIdentifiers.push(...foreignInns);
+  /** Реестровая страница с чужим ИНН при неизвестном своём — не проверить. */
+  const unverifiedRegistryInn =
+    anchorMode && (anchors?.inn.length ?? 0) === 0 && innsOnPage.length > 0;
+
   let decision: SubjectRelevanceDecision;
   let reasonCode: string;
   let confidence: number;
@@ -469,7 +529,8 @@ export function classifySubjectRelevance(
     (derivedPatronymicConflicts.length > 0 ||
       queryLinePatronymicConflicts.length > 0 ||
       derivedGivenNameConflicts.length > 0) &&
-    !matchedStrong
+    !matchedStrong &&
+    !strongAnchor
   ) {
     /*
      * Именная тройка названа целиком, и чужой в ней — отчество или имя.
@@ -490,6 +551,18 @@ export function classifySubjectRelevance(
           ? "suggestion_foreign_patronymic"
           : "given_name_conflict";
     confidence = 0.9;
+  } else if ((foreignDates.length > 0 || foreignInns.length > 0) && !strongAnchor && !matchedStrong) {
+    /*
+     * Чужой различитель на странице и ни одного своего: это другой человек.
+     *
+     * Ветка стоит выше общей «оба сигнала сразу», потому что называет, что
+     * именно разошлось, — дата рождения или ИНН. Свой якорь её перебивает:
+     * страница, где найдены и свой признак, и чужой, — страница о двух людях,
+     * и она уходит в неоднозначные ниже.
+     */
+    decision = "OTHER_SUBJECT";
+    reasonCode = foreignDates.length > 0 ? "foreign_birth_date" : "foreign_inn";
+    confidence = 0.9;
   } else if (hasConflict && !hasGivenName) {
     // Surname + composer/wrong-person context → other subject.
     decision = "OTHER_SUBJECT";
@@ -500,6 +573,32 @@ export function classifySubjectRelevance(
     decision = "AMBIGUOUS";
     reasonCode = "mixed_identity_signals";
     confidence = 0.5;
+  } else if (hasSurname && hasGivenName && anchorMode) {
+    /*
+     * Строгая ветка: имя названо, и решает признак сверх имени.
+     *
+     * Полное ФИО без якоря — гипотеза, а не факт: она печатается как
+     * «принадлежность не подтверждена», не входит ни в темы, ни в уровень
+     * риска, ни в счёт «о субъекте». Это и есть правка, ради которой шаг
+     * заведён.
+     */
+    if (strongAnchor) {
+      decision = "SUBJECT_MATCH";
+      reasonCode = `full_name_with_anchor:${strongAnchor.kind}`;
+      confidence = strongAnchor.kind === "inn" ? 0.98 : 0.92;
+    } else if (weakAnchor) {
+      decision = "LIKELY_SUBJECT";
+      reasonCode = "full_name_with_weak_anchor";
+      confidence = 0.7;
+    } else if (unverifiedRegistryInn) {
+      decision = "AMBIGUOUS";
+      reasonCode = "registry_inn_unverified";
+      confidence = 0.45;
+    } else {
+      decision = "AMBIGUOUS";
+      reasonCode = "full_name_no_anchor";
+      confidence = 0.5;
+    }
   } else if (hasSurname && hasGivenName) {
     decision = "SUBJECT_MATCH";
     reasonCode = matchedStrong
@@ -672,12 +771,93 @@ export function buildSubjectResolution(input: {
     subjectDisplayName: input.subject.displayName,
     items: classified,
   });
+  /*
+   * Под якорями домен ничего не подтверждает.
+   *
+   * `promoteLikelyBySharedDomain` поднимает строку до «вероятно» за то, что на
+   * том же домене уже есть подтверждённый материал. В строгом режиме это
+   * означало бы: страница судьи на rusprofile.ru поднимает страницы четырёх
+   * чужих ИП на том же rusprofile.ru. Признак принадлежности — якорь, а не
+   * сосед по домену.
+   */
+  const anchored = hasSubjectAnchors(input.subject.anchors);
+  const promoted = anchored
+    ? base
+    : promoteLikelyBySharedDomain({ items: input.items, resolution: base });
   // Наследование по межъязыковой ссылке — последним: сестра получает
   // окончательное решение источника, а не промежуточное.
   return inheritLanglinkDecisions({
     items: input.items,
-    resolution: promoteLikelyBySharedDomain({ items: input.items, resolution: base }),
+    resolution: anchored
+      ? inheritAnchoredDecisionByUrl({ items: input.items, resolution: promoted })
+      : promoted,
   });
+}
+
+/**
+ * Адрес страницы, приведённый к виду, в котором две её строки узнают друг друга.
+ *
+ * Наблюдения одной страницы различаются запросом и сниппетом: по запросу
+ * «ФИО инн» сниппет может не нести якоря, который стоит в сниппете той же
+ * страницы по запросу «ФИО». Решение принадлежит странице, а не строке.
+ */
+export function normalizeUrlForIdentity(raw: string | null | undefined): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const params = [...url.searchParams.entries()].filter(
+      ([k]) => !/^(utm_|yclid$|gclid$|fbclid$|from$|ref$)/i.test(k)
+    );
+    const query = params.length
+      ? `?${params.map(([k, v]) => `${k}=${v}`).sort().join("&")}`
+      : "";
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const path = url.pathname.replace(/\/+$/, "");
+    return `${host}${path}${query}`;
+  } catch {
+    return value.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+  }
+}
+
+/**
+ * Пост-проход строгого режима: бесконфликтная строка наследует подтверждение
+ * заякоренной строки того же адреса.
+ *
+ * Конфликтная не наследует никогда: страница, где найден чужой различитель,
+ * решается сама.
+ */
+export function inheritAnchoredDecisionByUrl(input: {
+  items: RawInventoryItem[];
+  resolution: SubjectResolution;
+}): SubjectResolution {
+  const urlByRef = new Map<string, string>();
+  for (const item of input.items) {
+    const url = normalizeUrlForIdentity(item.sourceUrl);
+    if (url) urlByRef.set(`inventory:${item.inventoryId}`, url);
+  }
+  const anchoredUrls = new Set<string>();
+  for (const row of input.resolution.items) {
+    const url = urlByRef.get(row.evidenceRef);
+    if (!url) continue;
+    if (row.decision === "SUBJECT_MATCH" && row.conflictingIdentifiers.length === 0) {
+      anchoredUrls.add(url);
+    }
+  }
+  if (anchoredUrls.size === 0) return input.resolution;
+
+  const items = input.resolution.items.map((row) => {
+    if (row.decision === "SUBJECT_MATCH" || row.conflictingIdentifiers.length > 0) return row;
+    const url = urlByRef.get(row.evidenceRef);
+    if (!url || !anchoredUrls.has(url)) return row;
+    return {
+      ...row,
+      decision: "SUBJECT_MATCH" as const,
+      reasonCode: "url_inherited",
+      confidence: Math.max(row.confidence, 0.9),
+    };
+  });
+  return { ...input.resolution, items };
 }
 
 /** Profile shape consumed by the classifier (subset of SubjectIdentityProfile). */
@@ -697,6 +877,8 @@ export type ClassifierSubjectProfile = {
   transliterations?: string[];
   contextIdentifiers?: string[];
   namesakeProfiles?: NamesakeProfile[];
+  /** Признаки субъекта сверх имени, названные оператором (см. `subject-anchors`). */
+  anchors?: SubjectAnchors;
   knownIdentifiers?: { inn?: string[] };
   negativeIdentitySignals?: {
     wrongPatronymics?: string[];
@@ -818,7 +1000,17 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
     patronymics,
     aliases: [...new Set([...(profile.aliases ?? []), ...(profile.transliterations ?? [])])],
     strongIdentifiers: profile.knownIdentifiers?.inn ?? [],
-    contextIdentifiers: [...new Set(profile.contextIdentifiers ?? [])],
+    /*
+     * У вопроса «чем материал подтверждается сверх имени» один владелец.
+     *
+     * Когда якоря есть, контекст-слова не читаются: иначе у профиля два
+     * набора признаков с разной силой, и на прогоне 0049 победил бы тот, что
+     * намайнен из смешанного корпуса.
+     */
+    contextIdentifiers: hasSubjectAnchors(profile.anchors)
+      ? []
+      : [...new Set(profile.contextIdentifiers ?? [])],
+    ...(profile.anchors ? { anchors: profile.anchors } : {}),
     wrongFirstNames: (profile.negativeIdentitySignals?.wrongNames ?? []).filter(notSelfConflicting),
     wrongPatronymics: (profile.negativeIdentitySignals?.wrongPatronymics ?? []).filter(
       notSelfConflicting

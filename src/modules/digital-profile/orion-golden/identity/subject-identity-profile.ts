@@ -2,6 +2,10 @@
  * R10.7b — Canonical subject identity profile for binding / disambiguation.
  */
 
+import type { SubjectAnchors } from "../analytics/subject-anchors";
+
+export type { SubjectAnchors };
+
 export type SubjectFullNameRu = {
   lastName: string;
   firstName: string;
@@ -14,6 +18,15 @@ export type SubjectNamesakeProfile = {
   label: string;
   /** Tokens whose presence indicates this OTHER subject, not ours. */
   noiseTerms: string[];
+};
+
+/** ИНН, добытый из корпуса: предложение оператору, а не идентификатор. */
+export type DiscoveredInn = {
+  inn: string;
+  /** Код инспекции — первые две цифры; названия региона не выдумываем. */
+  regionCode: string;
+  /** Адреса, на которых он найден: оператор может проверить их глазами. */
+  urls: string[];
 };
 
 export type SubjectIdentityProfile = {
@@ -30,6 +43,22 @@ export type SubjectIdentityProfile = {
   givenNames?: string[];
   familyNames?: string[];
   patronymics?: string[];
+  /**
+   * Признаки субъекта сверх имени, названные оператором до сбора.
+   *
+   * Единственный владелец вопроса «чем материал подтверждается»: когда блок
+   * заполнен, `contextIdentifiers` не читаются вовсе.
+   */
+  anchors?: SubjectAnchors;
+  /**
+   * Найденное конвейером в собранном корпусе — **предложение оператору**.
+   *
+   * Прогон DPA-2026-0049: три чужих ИНН, добытых по соседству с ФИО, лежали в
+   * `knownIdentifiers.inn`, читались как идентификаторы субъекта и
+   * подтверждали 44 материала чужих людей. Корпус, собранный по одному
+   * совпадению имени, не может подтверждать сам себя.
+   */
+  discovered?: { inn?: DiscoveredInn[] };
   /** Words that strengthen a match (occupation/sector/affiliation, subject-supplied). */
   contextIdentifiers?: string[];
   /** Known homonyms and their disambiguating noise terms (subject-supplied). */

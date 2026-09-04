@@ -4,7 +4,12 @@
 
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { RawInventoryItem } from "../types";
-import type { SubjectFullNameRu, SubjectIdentityProfile } from "./subject-identity-profile";
+import type {
+  DiscoveredInn,
+  SubjectFullNameRu,
+  SubjectIdentityProfile,
+} from "./subject-identity-profile";
+import { innsInText } from "../analytics/subject-anchors";
 import { transliterateRuToLat } from "./transliterate-ru";
 import {
   isSelfConflictingNegativeSignal,
@@ -115,13 +120,26 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * ИНН, встреченные рядом с точным ФИО, — **предложения оператору**.
+ *
+ * Раньше три верхних по частоте уезжали в `knownIdentifiers.inn` и работали как
+ * идентификаторы субъекта: на прогоне DPA-2026-0049 два из трёх принадлежали
+ * рязанскому и московскому однофамильцам, и 44 материала чужих людей получили
+ * `strong_identifier_match` 0.98. Совпадение ФИО — единственное, что связывало
+ * эти ИНН с субъектом, то есть корпус подтверждал сам себя.
+ *
+ * Теперь результат едет с адресами, по которым его видно, и идентификатором
+ * становится только после того, как оператор назовёт его сам.
+ */
 function discoverInnsLinkedToSubject(
   items: RawInventoryItem[],
   full?: SubjectFullNameRu,
   displayName?: string
-): string[] {
+): DiscoveredInn[] {
   /** Count INN co-occurrence only with exact subject FIO (incl. patronymic when known). */
   const counts = new Map<string, number>();
+  const urls = new Map<string, string[]>();
   const exactHints = uniq([
     full?.patronymic
       ? `${full.lastName} ${full.firstName} ${full.patronymic}`
@@ -161,20 +179,24 @@ function discoverInnsLinkedToSubject(
       if (sawWrong && !sawOwn) continue;
     }
 
-    for (const inn of extractIds(text, INN_RE)) {
-      // Prefer personal 12-digit INN; allow 10-digit only with exact FIO + registry context
-      if (inn.length === 12) {
-        counts.set(inn, (counts.get(inn) ?? 0) + 2);
-      } else if (inn.length === 10 && /\b(инн|огрн|егрюл|контрагент|ип\b)/i.test(text)) {
-        counts.set(inn, (counts.get(inn) ?? 0) + 1);
+    // Контрольная сумма отсекает то, что ИНН не является: хвост дроби
+    // «11398.600000000002» на странице реестра давал «ИНН 600000000002».
+    for (const inn of innsInText(text)) {
+      const weight = inn.length === 12 ? 2 : 1;
+      counts.set(inn, (counts.get(inn) ?? 0) + weight);
+      const url = String(item.sourceUrl ?? "").trim();
+      if (url) {
+        const list = urls.get(inn) ?? [];
+        if (!list.includes(url)) list.push(url);
+        urls.set(inn, list);
       }
     }
   }
 
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([inn]) => inn);
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([inn]) => ({ inn, regionCode: inn.slice(0, 2), urls: (urls.get(inn) ?? []).slice(0, 5) }));
 }
 
 function discoverOgrn(items: RawInventoryItem[], nameHints: string[]): { ogrn: string[]; ogrnip: string[] } {
@@ -254,10 +276,13 @@ export function buildSubjectIdentityProfile(input: {
   const wrongPatronymics = discoverWrongPatronymics(items, fullNameRu);
   const locations = discoverLocations(items, nameVariants);
 
+  /*
+   * Запросы по добытому ИНН не строятся: искать по чужому идентификатору
+   * значит покупать материалы о другом человеке за деньги клиента.
+   */
   const queryVariants = uniq([
     ...nameVariants,
     ...transliterations,
-    ...inns.map((inn) => `ИНН ${inn}`),
     ...(fullNameRu ? [`ИП ${fullNameRu.lastName} ${fullNameRu.firstName}`] : []),
   ]);
 
@@ -269,8 +294,8 @@ export function buildSubjectIdentityProfile(input: {
     aliases,
     transliterations,
     queryVariants,
+    ...(inns.length ? { discovered: { inn: inns } } : {}),
     knownIdentifiers: {
-      inn: inns.length ? inns : undefined,
       ogrn: ogrn.length ? ogrn : undefined,
       ogrnip: ogrnip.length ? ogrnip : undefined,
       locations: locations.length ? locations : undefined,

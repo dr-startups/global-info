@@ -16,6 +16,12 @@ import type {
   SubjectIdentityProfile,
   SubjectNamesakeProfile,
 } from "../orion-golden/identity/subject-identity-profile";
+import type {
+  SubjectAnchorKind,
+  SubjectAnchorPhrase,
+  SubjectAnchors,
+} from "../orion-golden/analytics/subject-anchors";
+import { anchorPhraseStems, isValidInn } from "../orion-golden/analytics/subject-anchors";
 import { buildSubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile-builder";
 import {
   isSelfConflictingNegativeSignal,
@@ -32,6 +38,12 @@ const MAX_LIST_ENTRIES = 100;
 const MAX_ENTRY_LENGTH = 160;
 
 export type SubjectProfileEdits = {
+  /**
+   * Признаки субъекта сверх имени, названные оператором со слов клиента.
+   * Заполненный блок делает `contextIdentifiers` неиспользуемым: у вопроса
+   * «чем материал подтверждается» один владелец.
+   */
+  anchors?: SubjectAnchors;
   /** Business-context words that strengthen a match (companies, sector, status). */
   contextIdentifiers?: string[];
   aliases?: string[];
@@ -122,6 +134,78 @@ export function getSubjectProfileForEdit(input: {
   return { profile, exists: false };
 }
 
+const ANCHOR_KINDS: SubjectAnchorKind[] = [
+  "employer",
+  "position",
+  "birthPlace",
+  "education",
+  "fact",
+];
+
+/**
+ * Якоря оператора: проверка и перенос прежних контекст-слов.
+ *
+ * Однословный якорь по умолчанию слабый — одно слово («судья») стоит и в
+ * чужих текстах; сильным его делает только явное решение оператора. Фраза без
+ * значимых слов якорем быть не может: по ней нечего искать.
+ */
+function normalizeAnchors(input: {
+  edits: SubjectProfileEdits;
+  base: SubjectIdentityProfile;
+  contextIdentifiers: string[];
+  inn: string[];
+}): SubjectAnchors | null {
+  const supplied = input.edits.anchors ?? input.base.anchors ?? null;
+  if (!supplied) return null;
+
+  const phrases: SubjectAnchorPhrase[] = [];
+  for (const raw of supplied.phrases ?? []) {
+    const text = String(raw?.text ?? "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    if (text.length > MAX_ENTRY_LENGTH) {
+      throw new ValidationError(`anchors: entry too long (max ${MAX_ENTRY_LENGTH} chars)`);
+    }
+    const kind = ANCHOR_KINDS.includes(raw?.kind as SubjectAnchorKind)
+      ? (raw.kind as SubjectAnchorKind)
+      : "fact";
+    if (anchorPhraseStems(text).length === 0) {
+      throw new ValidationError(`anchors: "${text}" has no searchable words`);
+    }
+    const multiWord = anchorPhraseStems(text).length > 1;
+    phrases.push({ kind, text, strong: raw?.strong === true || multiWord });
+  }
+  // Прежние контекст-слова переезжают фразами один раз: два набора признаков
+  // с разной силой — это два ответа на один вопрос.
+  for (const legacy of input.contextIdentifiers) {
+    if (phrases.some((p) => p.text.toLowerCase() === legacy.toLowerCase())) continue;
+    if (anchorPhraseStems(legacy).length === 0) continue;
+    phrases.push({
+      kind: "fact",
+      text: legacy,
+      strong: anchorPhraseStems(legacy).length > 1,
+    });
+  }
+
+  const anchorInn = normalizeList(supplied.inn ?? [], "anchors.inn");
+  for (const v of anchorInn) {
+    if (!isValidInn(v)) throw new ValidationError(`anchors.inn: "${v}" fails the INN checksum`);
+  }
+  const domains = normalizeList(supplied.domains ?? [], "anchors.domains").map((d) =>
+    d.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")
+  );
+  const birthDate = String(supplied.birthDate ?? "").trim();
+  if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    throw new ValidationError("anchors.birthDate must be an ISO date (YYYY-MM-DD)");
+  }
+
+  return {
+    birthDate: birthDate || null,
+    phrases,
+    inn: anchorInn.length ? anchorInn : input.inn.filter((v) => isValidInn(v)),
+    domains,
+  };
+}
+
 /**
  * Merge editable fields into the persisted profile (existing file or generic
  * default) and write it atomically to the case-scoped artifact root.
@@ -160,6 +244,12 @@ export function saveSubjectProfileEdits(input: {
       throw new ValidationError(`inn: "${v}" is not a valid 10/12-digit INN`);
     }
   }
+  const anchors = normalizeAnchors({
+    edits: input.edits,
+    base,
+    contextIdentifiers,
+    inn,
+  });
 
   // Never persist negative signals that would fire on the subject's own name.
   const ownNameText = ownNameTextOfVariants([
@@ -191,11 +281,19 @@ export function saveSubjectProfileEdits(input: {
   const profile: SubjectIdentityProfile = {
     ...base,
     caseId: input.caseId,
-    contextIdentifiers,
+    /*
+     * Контекст-слова живут ровно до появления якорей: после этого они
+     * переезжают в них фразами, а поле остаётся пустым, чтобы у признака не
+     * было двух владельцев с разной силой.
+     */
+    contextIdentifiers: anchors ? [] : contextIdentifiers,
+    ...(anchors ? { anchors } : {}),
     aliases,
     namesakeProfiles,
     knownIdentifiers: {
       ...base.knownIdentifiers,
+      // Идентификатором ИНН становится якорем; поле остаётся для совместимости
+      // с прежними файлами и читателями, не относящимися к разметке.
       inn: inn.length ? inn : undefined,
     },
     negativeIdentitySignals: {
