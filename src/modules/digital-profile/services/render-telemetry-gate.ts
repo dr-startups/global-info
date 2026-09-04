@@ -46,6 +46,7 @@ import { join } from "node:path";
 import {
   classifyLayoutTelemetryRows,
   readLayoutTelemetryRows,
+  type LayoutTelemetryRow,
 } from "../orion-golden/classic/generate-first36-geometry-artifacts";
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { CanonicalPrepareBlockerCode } from "./canonical-report-prepare";
@@ -113,6 +114,22 @@ export function compliancePagesOf(manifest: ReportDeckManifest | null): number[]
     .filter((p) => Number.isFinite(p) && p > 0);
 }
 
+/** По скольким страницам отказ печатает подробность классификатора. */
+const DROP_DETAIL_PAGES = 3;
+
+/** Имя блока страницы: по нему видно, какой шаблон переполнен. */
+function blockNameOf(rows: LayoutTelemetryRow[], page: number): string {
+  const row = rows.find(
+    (r) =>
+      Number((r as { page?: unknown }).page ?? 0) === page &&
+      Number((r as { droppedBullets?: unknown }).droppedBullets ?? 0) +
+        Number((r as { droppedLines?: unknown }).droppedLines ?? 0) >
+        0
+  );
+  const name = String((row as { name?: unknown } | undefined)?.name ?? "").trim();
+  return name || "—";
+}
+
 /** Судить телеметрию рендера, лежащую в каталоге его артефактов. */
 export function judgeRenderTelemetry(
   renderDir: string,
@@ -135,9 +152,27 @@ export function judgeRenderTelemetry(
   const dropped = issues.filter((i) => i.code === "CONTENT_DROPPED_BY_RENDERER");
   if (dropped.length > 0) {
     const pages = [...new Set(dropped.map((i) => i.page))].sort((a, b) => a - b);
+    /*
+     * Подробность классификатора доезжает до отказа.
+     *
+     * «Выбросил содержимое на страницах 62» не говорит ни что не поместилось,
+     * ни насколько: блоки, строки и обе высоты классификатор уже посчитал, а
+     * ворота их выбрасывали. Отказ, по которому нельзя действовать,
+     * останавливает платный прогон на последнем шаге и ничего не сообщает —
+     * прогон DPA-2026-0053 стоил из-за этого лишнего круга. Подробность даётся
+     * по первым страницам: она нужна, чтобы понять причину, а не чтобы
+     * перечислить документ.
+     */
+    const details = dropped
+      .slice(0, DROP_DETAIL_PAGES)
+      .map((i) => `стр. ${i.page} ${blockNameOf(read.rows, i.page)}: ${i.detail}`)
+      .join("; ");
+    const more = dropped.length > DROP_DETAIL_PAGES ? ` и ещё ${dropped.length - DROP_DETAIL_PAGES}` : "";
     return {
       blocker: "CONTENT_DROPPED_BY_RENDERER",
-      detail: `рендерер выбросил содержимое на страницах ${pages.join(", ")} (${path})`,
+      detail:
+        `рендерер выбросил содержимое на страницах ${pages.join(", ")} (${path}) — ` +
+        `${details}${more}`,
       warnings: [],
     };
   }
