@@ -11,6 +11,7 @@ import {
   type ObservationVerdictByRef,
 } from "./resolve-observation-highlights";
 import { serpMaterialKey } from "./material-key";
+import type { SubjectContextMask } from "../config/subject-context-words";
 import {
   SERP_SNAPSHOT_CAPTION,
   type PersistedSerpObservation,
@@ -30,13 +31,20 @@ export function selectVisibleObservationsForEngine(
   observations: PersistedSerpObservation[],
   engine: "YANDEX" | "GOOGLE",
   limit = VISIBLE_PER_ENGINE,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  /**
+   * Слова признаков субъекта.
+   *
+   * Порядок строк снимка выводится из того же ответа, что и рамка: без маски
+   * вперёд выходили страницы самого суда, а настоящий негатив уезжал вниз.
+   */
+  subjectContext?: SubjectContextMask | null
 ): PersistedSerpObservation[] {
   const sorted = observations
     .filter((o) => o.engine === engine)
     .sort((a, b) => a.rank - b.rank);
   const framed = (o: PersistedSerpObservation): boolean =>
-    classifyObservationHighlight(o, verdictByRef?.[o.id]).isHighlighted;
+    classifyObservationHighlight(o, verdictByRef?.[o.id], undefined, subjectContext).isHighlighted;
 
   const highlighted: PersistedSerpObservation[] = [];
   const neutral: PersistedSerpObservation[] = [];
@@ -85,6 +93,8 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
    * кластерные ярлыки сюжетов — язык резюме, а не рубрики справочника.
    */
   verdictByRef?: ObservationVerdictByRef;
+  /** Слова признаков субъекта: рамки и легенда следуют им наравне со счётом. */
+  subjectContext?: SubjectContextMask | null;
 }): SerpSnapshotViewModel {
   const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
@@ -94,25 +104,32 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
   );
 
   const verdictByRef = input.verdictByRef;
+  const subjectContext = input.subjectContext;
   const yandexObs = selectVisibleObservationsForEngine(
     observations,
     "YANDEX",
     VISIBLE_PER_ENGINE,
-    verdictByRef
+    verdictByRef,
+    subjectContext
   );
   const googleObs = selectVisibleObservationsForEngine(
     observations,
     "GOOGLE",
     VISIBLE_PER_ENGINE,
-    verdictByRef
+    verdictByRef,
+    subjectContext
   );
   const visible = [...yandexObs, ...googleObs];
 
   // Themes/legend only from rows that appear in the PNG columns.
-  const { grouping } = buildObservationThemeGrouping(visible, language, verdictByRef);
+  const { grouping } = buildObservationThemeGrouping(visible, language, verdictByRef, subjectContext);
 
-  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping, verdictByRef));
-  const googleResults = googleObs.map((o) => observationToResultView(o, grouping, verdictByRef));
+  const yandexResults = yandexObs.map((o) =>
+    observationToResultView(o, grouping, verdictByRef, subjectContext)
+  );
+  const googleResults = googleObs.map((o) =>
+    observationToResultView(o, grouping, verdictByRef, subjectContext)
+  );
 
   const dateLabel = new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ru-RU", {
     day: "numeric",

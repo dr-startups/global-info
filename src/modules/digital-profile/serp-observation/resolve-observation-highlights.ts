@@ -368,9 +368,10 @@ export function classifyObservationHighlight(
 
 function toLoadedResult(
   obs: PersistedSerpObservation,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  subjectContext?: SubjectContextMask | null
 ): LoadedResult {
-  const hl = classifyObservationHighlight(obs, verdictByRef?.[obs.id]);
+  const hl = classifyObservationHighlight(obs, verdictByRef?.[obs.id], undefined, subjectContext);
   const engine: SerpEngine = obs.engine === "YANDEX" ? "YANDEX" : "GOOGLE";
   return {
     id: obs.id,
@@ -394,9 +395,11 @@ function toLoadedResult(
 export function buildObservationThemeGrouping(
   observations: PersistedSerpObservation[],
   language: SerpLanguage = "ru",
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  /** Слова признаков субъекта: рамка снимка и счёт страницы — один ответ. */
+  subjectContext?: SubjectContextMask | null
 ): { loaded: LoadedResult[]; grouping: ThemeGrouping } {
-  const loaded = observations.map((o) => toLoadedResult(o, verdictByRef));
+  const loaded = observations.map((o) => toLoadedResult(o, verdictByRef, subjectContext));
   const grouping = buildConsistentThemeGrouping(loaded, language);
   return { loaded, grouping };
 }
@@ -404,9 +407,10 @@ export function buildObservationThemeGrouping(
 export function observationToResultView(
   obs: PersistedSerpObservation,
   grouping: ThemeGrouping,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  subjectContext?: SubjectContextMask | null
 ): ResultView {
-  const loaded = toLoadedResult(obs, verdictByRef);
+  const loaded = toLoadedResult(obs, verdictByRef, subjectContext);
   const mark = grouping.highlights.get(obs.id);
   return {
     rank: obs.rank,

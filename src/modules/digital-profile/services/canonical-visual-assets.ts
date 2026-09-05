@@ -39,6 +39,7 @@ import {
   type SubjectContextMask,
 } from "../config/subject-context-words";
 import type { SubjectAnchors } from "../orion-golden/analytics/subject-anchors";
+import { transliterateRuToEn } from "../search-surfaces/orion-query-plan";
 import {
   classifyObservationHighlight,
   type ObservationVerdictByRef,
@@ -270,20 +271,46 @@ function meta(
   };
 }
 
-/** Most frequent non-empty query among rows (stable tie-break by first seen). */
-function dominantQuery(items: RawInventoryItem[], fallback: string): string {
+/**
+ * Запрос, которым подписан снимок выдачи.
+ *
+ * Снимок собран строками нескольких запросов, и в строке поиска стоит один из
+ * них — клиент читает его как «вот что ищут про меня». Прежнее правило брало
+ * самый частый, и в контуре ОАЭ отчёта 86 им оказался «Egorov Aleksey» — без
+ * отчества, хотя сбор шёл и по «Egorov Aleksey Evgenevich» (55 наблюдений
+ * против 33). Запрос без отчества занижает то, что мы проверяли на самом деле.
+ *
+ * Порядок предпочтений: больше частей имени субъекта → меньше лишних слов →
+ * чаще встречается → раньше встретился. Латиница сверяется той же
+ * транслитерацией, которой строится план запросов.
+ */
+export function snapshotQueryOf(queries: ReadonlyArray<string>, fallback: string): string {
   const counts = new Map<string, number>();
-  for (const it of items) {
-    const q = String(it.query ?? "").trim();
+  for (const raw of queries) {
+    const q = String(raw ?? "").trim();
     if (!q) continue;
     counts.set(q, (counts.get(q) ?? 0) + 1);
   }
+  if (counts.size === 0) return fallback;
+  const fold = (value: string): string =>
+    value.toLowerCase().replace(/ё/gu, "е").trim();
+  const parts = fold(fallback)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((p) => p.length > 1)
+    .map((p) => [p, fold(transliterateRuToEn(p))]);
   let best = "";
-  let bestCount = 0;
-  for (const [q, c] of counts) {
-    if (c > bestCount) {
+  let bestRank: [number, number, number] = [-1, Number.MAX_SAFE_INTEGER, -1];
+  for (const [q, count] of counts) {
+    const tokens = fold(q).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const matched = parts.filter((forms) => tokens.some((t) => forms.includes(t))).length;
+    const rank: [number, number, number] = [matched, tokens.length - matched, count];
+    if (
+      rank[0] > bestRank[0] ||
+      (rank[0] === bestRank[0] &&
+        (rank[1] < bestRank[1] || (rank[1] === bestRank[1] && rank[2] > bestRank[2])))
+    ) {
       best = q;
-      bestCount = c;
+      bestRank = rank;
     }
   }
   return best || fallback;
@@ -324,8 +351,20 @@ async function buildSerpSnapshotAsset(input: {
   const filtered = filterObservationsForSyntheticSerp(allObs, input.subjectName);
   const visibleIds = new Set(
     [
-      ...selectVisibleObservationsForEngine(filtered, "YANDEX", undefined, input.verdictByRef),
-      ...selectVisibleObservationsForEngine(filtered, "GOOGLE", undefined, input.verdictByRef),
+        ...selectVisibleObservationsForEngine(
+        filtered,
+        "YANDEX",
+        undefined,
+        input.verdictByRef,
+        input.subjectContext
+      ),
+      ...selectVisibleObservationsForEngine(
+        filtered,
+        "GOOGLE",
+        undefined,
+        input.verdictByRef,
+        input.subjectContext
+      ),
     ].map((o) => o.id)
   );
   if (visibleIds.size === 0) return false;
@@ -333,9 +372,13 @@ async function buildSerpSnapshotAsset(input: {
   const vm = buildSyntheticSerpViewModelFromObservations({
     observations: allObs,
     subjectName: input.subjectName,
-    queryText: dominantQuery(attributable, input.subjectName),
+    queryText: snapshotQueryOf(
+      attributable.map((it) => String(it.query ?? "")),
+      input.subjectName
+    ),
     language: input.region === "UAE" ? "en" : "ru",
     verdictByRef: input.verdictByRef,
+    subjectContext: input.subjectContext,
   });
   const png = await renderSerpSnapshotPng(vm);
 
@@ -969,46 +1012,52 @@ export async function buildCanonicalVisualAssets(input: {
         previewOpts.onFailure?.(url, reason);
       },
     });
-    const drawnItems: Array<{ row: RawInventoryItem; item: ImageGridItem }> = [];
+    const drawnItems: Array<{
+      row: RawInventoryItem;
+      /** Запись строки — тот же ответ, каким покрашена её плитка. */
+      visible: VisibleAssetItem;
+      item: ImageGridItem;
+    }> = [];
     const notShown: NotShownRow[] = [];
     for (const r of slice) {
-      // Решение по прочитанной странице действует и на сетке: без него плитка
-      // краснела по словарю там, где страницу открыли и признали благоприятной.
-      const hl = classifyObservationHighlight(
-        {
-          url: r.sourceUrl ?? null,
-          domain: domainOf(r.sourceUrl) || null,
-          title: r.title ?? null,
-          snippet: r.snippet ?? null,
-        } as unknown as PersistedSerpObservation,
-        input.verdictByRef?.[refOf(r)],
-        analystDecisionOf(r)
-      );
+      /*
+       * Строка классифицируется **один раз**: и рамка плитки, и запись строки
+       * берут ответ отсюда.
+       *
+       * Ответов было два — свой вызов здесь и ещё один внутри `toVisibleItem`,
+       * — и когда у второго появились признаки субъекта, а у первого нет,
+       * страница 31 отчёта 86 напечатала «1 изображение ведёт на негативный
+       * источник» над пятью красными плитками. Решение по прочитанной странице
+       * действует и на сетке: без него плитка краснела по словарю там, где
+       * страницу открыли и признали благоприятной.
+       */
+      const visible = toVisibleItem(r, input.verdictByRef, subjectContext);
       const url = urlOf(r);
       const previewBase64 = url ? previews.get(url) : undefined;
       if (!previewBase64) {
         notShown.push({
           ref: refOf(r),
-          adverse: hl.isHighlighted,
+          adverse: visible.adverse === true,
           reason: (url ? reasonByUrl.get(url) : undefined) ?? "no_url",
         });
         continue;
       }
       drawnItems.push({
         row: r,
+        visible,
         item: {
           title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
           domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
           previewBase64,
-          highlight: hl.isHighlighted,
-          frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
-          themeLabel: hl.themeTitle ?? undefined,
+          highlight: visible.adverse === true,
+          frameTone: visible.adverse ? ("red" as const) : ("none" as const),
+          themeLabel: visible.themeTitle ?? undefined,
         },
       });
     }
     // Одна выборка кормит и краску, и счёт: `visibleItems` — ровно те строки,
     // что попали в PNG, поэтому счётные строки страницы считают нарисованное.
-    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row, input.verdictByRef, subjectContext));
+    const visibleItems = drawnItems.map((d) => d.visible);
     if (drawnItems.length === 0) {
       // Рисовать нечего — ассета нет, страница уходит в текстовую ветку. Мета
       // без картинки нужна ей, чтобы назвать словами, что найдено и не показано.
