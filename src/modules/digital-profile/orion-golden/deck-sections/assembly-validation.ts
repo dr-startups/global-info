@@ -166,6 +166,11 @@ export function blockingIssues(input: {
   /*
    * Повтор блока блокирует с первой же страницы, а не с порога в три.
    *
+   * С шага 0056 сюда доезжает только то, что не догнала починка сборщика
+   * (`repairRepeatedBlocks`): второй одинаковый блок снимается до проверки и
+   * называется в разборе сборки. Ворота остаются растяжкой — на случай, если
+   * починка и проверка когда-нибудь разойдутся в понимании «одинаково».
+   *
    * Порог существенности заведён для эвристик, которые ошибаются на живых
    * данных. Здесь ошибаться нечему: сравниваются два блока одной страницы,
    * страницы с сырыми строками провайдера исключены, и ложных срабатываний на
@@ -300,55 +305,10 @@ export type SerpObservationForGate = {
   domain?: string;
 };
 
-/**
- * Блоки клиентского текста страницы — в том виде, в каком их сравнивают на повтор.
- *
- * Единица сравнения — то, что видит клиент. На карточной странице матрицы
- * рисков это заголовок карточки **вместе** с телом: заголовок стоит строкой
- * таблицы, и в буллет он намеренно не входит — там он был бы напечатан второй
- * раз. Пока сравнивалось одно тело, две разные темы с одинаковым телом
- * («Всего по теме: 3 материала» плюс постоянная оговорка о неподтверждённой
- * принадлежности) объявлялись повтором, и отчёт не собирался вовсе — прогон
- * DPA-2026-0053.
- *
- * Заголовки берутся, только когда строк таблицы ровно столько же, сколько
- * буллетов: иначе соответствие карточки и строки неизвестно, а выдумывать его
- * значит сравнивать не то, что напечатано.
- *
- * Блок, от которого после нормализации не осталось ни слова (одно тире,
- * многоточие), клиенту текстом не виден и в сравнение не идёт: краснеть на
- * вёрстке вместо повтора — не то же самое.
- */
-export function printedBlocksForRepeatCheck(
-  slide: {
-    narrative?: string | undefined;
-    bullets?: string[] | undefined;
-    sourceNote?: string | undefined;
-    table?: { rows: string[][] } | undefined;
-  },
-  templateId: string
-): Array<{ key: string; excerpt: string }> {
-  const bullets = slide.bullets ?? [];
-  const rows = slide.table?.rows ?? [];
-  const headlineOf = (index: number): string =>
-    templateId === "risk-matrix" && rows.length === bullets.length
-      ? String(rows[index]?.[0] ?? "")
-      : "";
-  const raw: Array<{ text: string; headline: string }> = [
-    { text: String(slide.narrative ?? ""), headline: "" },
-    ...bullets.map((b, i) => ({ text: String(b ?? ""), headline: headlineOf(i) })),
-    { text: String(slide.sourceNote ?? ""), headline: "" },
-  ];
-  const out: Array<{ key: string; excerpt: string }> = [];
-  for (const block of raw) {
-    const text = withoutFindingMarkers(block.text);
-    if (!text) continue;
-    const key = normalizeForCompare(`${block.headline} ${text}`);
-    if (!key) continue;
-    out.push({ key, excerpt: text.replace(/\s+/gu, " ").slice(0, 90) });
-  }
-  return out;
-}
+// Разбор блоков на повтор живёт в нейтральном модуле: его читают и сборщик
+// (починка), и эта проверка (растяжка), и ответ у них один.
+export { printedBlocksForRepeatCheck } from "./repeated-blocks";
+import { printedBlocksForRepeatCheck } from "./repeated-blocks";
 
 /** Домен в сравнимом виде: без схемы, без www, в нижнем регистре. */
 function bareDomain(raw: string | undefined): string {
@@ -800,8 +760,12 @@ export function validateAssembly(input: {
   checks.noPlaceholderWithAvailableAsset = visualOk;
 
   // Внутренние коды в клиентском тексте (шаг 07.8): отчёт читает человек, и
-  // техническая константа в скобках не сообщает ему ничего.
-  const internalCodes = scanDeckForInternalCodes(rendererSlides);
+  // техническая константа в скобках не сообщает ему ничего. Токен из заголовка
+  // или сниппета улики — не код, а название из источника (`ROSNEFT_OIL`,
+  // прогон DPA-2026-0053): по форме неотличим, по происхождению — да.
+  const internalCodes = scanDeckForInternalCodes(rendererSlides, {
+    quotedTexts: quotedEvidenceTexts(input.evidenceIndex),
+  });
   checks.noInternalCodesInClientText = internalCodes.length === 0;
   for (const f of internalCodes.slice(0, 10)) {
     issues.push(`internal code ${f.code} in client text of ${f.slide}`);
@@ -1453,4 +1417,19 @@ export function validateAssembly(input: {
   });
 
   return { passed: issues.length === 0, issues, notes, checks, blocking, skipped };
+}
+
+/**
+ * Заголовки и сниппеты улик всей деки — текст, который отчёт цитирует, а не
+ * пишет сам. Область — вся дека, а не улики одного слайда: вопрос ворот кодов
+ * «наша ли это константа», и цитата из любого источника отчёта на него отвечает.
+ */
+function quotedEvidenceTexts(index: ScopedEvidenceIndex | undefined): string[] {
+  if (!index) return [];
+  const texts: string[] = [];
+  for (const e of Object.values(index)) {
+    if (e.title) texts.push(String(e.title));
+    if (e.snippet) texts.push(String(e.snippet));
+  }
+  return texts;
 }

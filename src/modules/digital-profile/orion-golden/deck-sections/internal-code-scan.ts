@@ -187,9 +187,30 @@ export interface InternalCodeFinding {
  * текста, а не предупреждение.
  */
 export function scanDeckForInternalCodes(
-  slides: readonly ClientVisibleSlide[]
+  slides: readonly ClientVisibleSlide[],
+  opts?: {
+    /**
+     * Тексты, которые дека цитирует, а не пишет сама: заголовки и сниппеты
+     * улик. Токен из них — не наш код, а название из источника.
+     */
+    quotedTexts?: Iterable<string>;
+  }
 ): InternalCodeFinding[] {
-  return scanDeck(slides, findInternalCodes);
+  /*
+   * По форме название канала `ROSNEFT_OIL` из заголовка страницы выдачи и наша
+   * константа неотличимы; различимо происхождение. Живой прогон 04.09
+   * (DPA-2026-0053) встал на трёх страницах, цитировавших такой заголовок, —
+   * и остановил оплаченный отчёт из-за чужого названия. Правило то же, что у
+   * ворот чужих доменов: текст, взятый из улики, судить как свой нельзя.
+   *
+   * Сверка — по целому токену тем же выражением, каким ищутся коды: улика с
+   * `ROSNEFT_OIL_EXPORT` не оправдывает `ROSNEFT_OIL` в нашем тексте.
+   */
+  const quoted = new Set<string>();
+  for (const text of opts?.quotedTexts ?? []) {
+    for (const code of findInternalCodes(text)) quoted.add(code);
+  }
+  return scanDeck(slides, findInternalCodes).filter((f) => !quoted.has(f.code));
 }
 
 /**

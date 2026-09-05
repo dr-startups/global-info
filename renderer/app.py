@@ -140,6 +140,8 @@ class OrionBulletMeasureResponse(BaseModel):
 
     version: str
     pages: list[dict] = []
+    #: Потери блоков сайдбара — страница, поле, строки, высоты. Пусто — потерь нет.
+    sidebars: list[dict] = []
 
 
 def _file_info(key: str, path: str) -> FileInfo:
@@ -269,6 +271,7 @@ def orion_measure_layout(req: OrionGoldenRenderRequest) -> OrionBulletMeasureRes
     return OrionBulletMeasureResponse(
         version=str(result.get("version") or ""),
         pages=list(result.get("pages") or []),
+        sidebars=list(result.get("sidebars") or []),
     )
 
 

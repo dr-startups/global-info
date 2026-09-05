@@ -507,16 +507,30 @@ export function withContinuations(
   const firstCharCap = tpl.layout.maxBulletCharsPerSlide;
   const overflowsChars =
     firstCharCap !== undefined && bullets.reduce((n, b) => n + b.length, 0) > firstCharCap;
-  const needsPaging = firstBulletCap > 0 && (bullets.length > firstBulletCap || overflowsChars);
-  const bulletChunks = needsPaging
-    ? packBulletPages(
-        bullets,
-        firstBulletCap,
-        contBulletCap,
-        tpl.layout.itemCharBudget,
-        firstCharCap
-      )
-    : [bullets];
+  /*
+   * Первый лист без списка вовсе — `firstPageBullets: 0`.
+   *
+   * Страница AI-ответов с картинкой: базовый лист — панель с полной колонкой
+   * сайдбара, а тела ответов идут только на продолжения. Пока тела делили
+   * базовый лист с панелью, сайдбару доставалась треть высоты, дека клала в
+   * него столько же, сколько во всякую панель, и рендерер выбрасывал блоки —
+   * прогон DPA-2026-0053, стр. 62. Ноль здесь — не «разбивка не нужна», а
+   * «на первом листе списку нет места».
+   */
+  const firstPageEmpty = opts?.firstPageBullets === 0 && bullets.length > 0;
+  const needsPaging =
+    firstPageEmpty || (firstBulletCap > 0 && (bullets.length > firstBulletCap || overflowsChars));
+  const bulletChunks = firstPageEmpty
+    ? [[], ...packBulletPages(bullets, contBulletCap, contBulletCap, tpl.layout.itemCharBudget)]
+    : needsPaging
+      ? packBulletPages(
+          bullets,
+          firstBulletCap,
+          contBulletCap,
+          tpl.layout.itemCharBudget,
+          firstCharCap
+        )
+      : [bullets];
   const addresses = base.content.table?.rowAddresses;
   const needsRowPaging = tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide;
   const rowChunks = needsRowPaging ? chunk(rows, tpl.maxTableRowsPerSlide) : [rows];

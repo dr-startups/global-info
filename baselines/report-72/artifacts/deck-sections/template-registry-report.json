@@ -369,7 +369,7 @@
       },
       "budgets": {
         "narrativeChars": 600,
-        "itemChars": 1200,
+        "itemChars": 1000,
         "maxBulletsPerSlide": 6,
         "maxTableRowsPerSlide": 0
       },

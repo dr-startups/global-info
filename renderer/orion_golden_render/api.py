@@ -117,7 +117,23 @@ def measure_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
     вопрос с одним ответом.
     """
     _draw_deck(payload, log_assets=False)
-    return {"version": BULLET_MEASURE_VERSION, "pages": get_bullet_measure()}
+    # Потери сайдбара — той же мерой: телеметрия того же прохода, отобранная
+    # по роли. Раньше вердикт знал только буллеты, и страница 62 прогона
+    # DPA-2026-0053 дошла до выпуска с сайдбаром, потерявшим два блока.
+    sidebars = [
+        {
+            "page": int(row.get("page") or 0),
+            "field": str(row.get("name") or "")
+            .replace(f"_p{row.get('page')}", "")
+            .replace("orion_sidebar_", ""),
+            "droppedLines": int(row.get("droppedLines") or 0),
+            "requiredHeight": int(row.get("requiredHeight") or 0),
+            "availableHeight": int(row.get("availableHeight") or 0),
+        }
+        for row in get_layout_telemetry()
+        if str(row.get("role") or "") == "sidebar" and int(row.get("droppedLines") or 0) > 0
+    ]
+    return {"version": BULLET_MEASURE_VERSION, "pages": get_bullet_measure(), "sidebars": sidebars}
 
 
 def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:

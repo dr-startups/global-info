@@ -1376,14 +1376,23 @@ class _Ctx:
         max_items: int = 8,
         max_chars: int = 900,
         bottom: int | None = None,
+        x: int | None = None,
+        width: int | None = None,
     ) -> int:
         """Нарисовать список буллетов; вернуть нижнюю Y.
+
+        `x`/`width` — колонка списка; по умолчанию вся полоса содержимого.
+        Страница AI-ответов печатает тела под панелью в левой колонке, а
+        справа стоит сайдбар полной высоты: без колонки список залезал бы
+        под него, а с сайдбаром в треть высоты тот терял блоки (0053, стр. 62).
 
         `bottom` — граница, ниже которой рисовать нельзя: по умолчанию низ
         полосы содержимого, но на странице, где под списком стоит ещё карточка,
         её место обязан вычесть тот, кто эту карточку рисует. Иначе список
         занимает лист целиком, а карточке остаётся ноль.
         """
+        col_x = MARGIN_X if x is None else x
+        col_w = CONTENT_W if width is None else width
         dangling = re.compile(
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-|\()\s*$",
             re.I,
@@ -1477,7 +1486,7 @@ class _Ctx:
                     bold_line, _, size_pt = _bullet_line_style(line, is_first=(li == 0))
                     total += measure_text_height(
                         text,
-                        CONTENT_W,
+                        col_w,
                         size_pt,
                         line_spacing=1.12,
                         paragraph_spacing_pt=0,
@@ -1522,7 +1531,7 @@ class _Ctx:
                 role="bullets",
                 font_family=FONT,
                 font_size_pt=FS_BODY,
-                box_width=CONTENT_W,
+                box_width=col_w,
                 box_height=page_avail,
                 available_height=page_avail,
                 required_height=_bullet_block_height([t for t in prepared if t]),
@@ -1561,7 +1570,7 @@ class _Ctx:
             avail = max(0, CONTENT_BOTTOM - y)
         if avail < 200_000:
             return y
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
+        box = self.slide.shapes.add_textbox(Emu(col_x), Emu(y), Emu(col_w), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
         first_para = True

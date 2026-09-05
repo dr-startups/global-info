@@ -172,6 +172,59 @@ def main() -> int:
     )
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
+    # Мера отдаёт потери сайдбара — иначе дека узнаёт о них только у ворот
+    # выпуска, когда отчёт уже не выдан (прогон DPA-2026-0053, стр. 62).
+    import base64  # noqa: PLC0415
+    import io  # noqa: PLC0415
+
+    from PIL import Image  # noqa: PLC0415
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1200, 420), (0xF2, 0xF5, 0xF3)).save(buf, format="PNG")
+    unbreakable = "слово" * 320  # одно «предложение» длиннее любой колонки: ни целого предложения не влезет
+    panel = app.OrionGoldenRenderRequest(
+        reportSpec={"subject": {"displayName": "Субъект меры"}},
+        deckManifest={
+            "finalSlides": [
+                {
+                    "slideKey": "p10_ru_serp_visual",
+                    "template": "orion_golden_surface_panel",
+                    "templateId": "serp-screenshot-analysis",
+                    "title": "Россия — снимок выдачи",
+                    "assetRefs": ["ru_serp_snapshot"],
+                    "visualAnalysis": {
+                        "sidebarMode": "context",
+                        "headlineConclusion": "Вывод панели.",
+                        "whatIsVisible": unbreakable,
+                        "recommendedActions": ["Сверить."],
+                    },
+                    "pageNumber": 1,
+                    "totalPageCount": 1,
+                }
+            ]
+        },
+        assets=[
+            {
+                "assetRef": "ru_serp_snapshot",
+                "kind": "serp_screenshot",
+                "title": "Снимок",
+                "imageData": base64.b64encode(buf.getvalue()).decode("ascii"),
+            }
+        ],
+    )
+    measured = app.orion_measure_layout(panel)
+    losses = list(getattr(measured, "sidebars", None) or [])
+    check(
+        "мера называет потерю блока сайдбара: страницу и поле",
+        any(int(l.get("page") or 0) == 1 and l.get("field") == "whatIsVisible" and int(l.get("droppedLines") or 0) > 0 for l in losses),
+        f"sidebars={losses!r}"[:200],
+    )
+    clean = app.orion_measure_layout(deck(1, "К-мера"))
+    check(
+        "у страницы без потерь список потерь сайдбара пуст",
+        list(getattr(clean, "sidebars", None) or []) == [],
+        f"sidebars={getattr(clean, 'sidebars', None)!r}"[:200],
+    )
     print_tap_counters(passed=passed_checks, failed=len(failures))
     return 1 if failures else 0
 

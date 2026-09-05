@@ -96,7 +96,10 @@ export type AssemblyRejection = {
   detail: string;
 };
 
+import { repairRepeatedBlocks, type RepeatRepair } from "./repeated-blocks";
+
 /** Снятое предложение с указанием страницы — для разбора сборки. */
+
 export type DedupRemoval = { slideId: string; sentence: string };
 
 /**
@@ -174,6 +177,15 @@ export type RendererSlide = {
   whatToCheck?: string;
   sourceNote?: string;
   statusNote?: string;
+  /**
+   * Доля объявленного бюджета колонки сайдбара, которую берёт эта страница.
+   *
+   * Ставится циклом меры (`runDeckBuildMeasured`), когда рендерер сообщил о
+   * потере блока сайдбара на этой странице; без потерь поля нет. Живёт на
+   * слайде, а не рядом: полезную нагрузку рендерера собирают из этих же
+   * объектов и при выпуске, и при возобновлении с этапа отрисовки.
+   */
+  sidebarBudgetScale?: number;
   highlightExplanations?: Array<{ clientReason: string; frameTone: "red" | "amber" }>;
   kpis?: Array<{ label: string; value: string; tone?: string }>;
   emptyStateReason?: string;
@@ -190,6 +202,8 @@ export type DeckAssemblyResult = {
    * сверить.
    */
   dedupRemovals: DedupRemoval[];
+  /** Снятые со страниц повторные блоки — см. `repairRepeatedBlocks`. */
+  repeatRepairs: RepeatRepair[];
 };
 
 export function assembleDeck(input: {
@@ -210,6 +224,8 @@ export function assembleDeck(input: {
    * знает отрисовка, а не число в реестре.
    */
   bulletRecut?: BulletRecutPlan;
+  /** Масштаб колонки сайдбара по слайдам — из цикла меры. */
+  sidebarScales?: ReadonlyMap<string, number>;
 }): DeckAssemblyResult {
   const rejections: AssemblyRejection[] = [];
   const errors: string[] = [];
@@ -237,6 +253,7 @@ export function assembleDeck(input: {
       rejections,
       errors,
       dedupRemovals: [],
+      repeatRepairs: [],
     };
   }
 
@@ -308,6 +325,7 @@ export function assembleDeck(input: {
       rejections,
       errors,
       dedupRemovals: [],
+      repeatRepairs: [],
     };
   }
 
@@ -345,6 +363,7 @@ export function assembleDeck(input: {
       rejections,
       errors,
       dedupRemovals: [],
+      repeatRepairs: [],
     };
   }
 
@@ -526,6 +545,9 @@ export function assembleDeck(input: {
         ? slide.content.statusNote
         : undefined,
       highlightExplanations: slide.content.highlightExplanations,
+      ...(input.sidebarScales?.has(slide.slideId)
+        ? { sidebarBudgetScale: input.sidebarScales.get(slide.slideId) }
+        : {}),
       kpis: slide.content.kpis,
       emptyStateReason: slide.emptyStateReason,
     };
@@ -626,7 +648,14 @@ export function assembleDeck(input: {
     ),
   };
 
-  return { deckManifest, rendererSlides, rejections, errors, dedupRemovals };
+  /*
+   * Повторный блок на странице снимается здесь, а не ловится воротами: ворота
+   * останавливали отчёт целиком с первой же страницы (прогон DPA-2026-0053,
+   * матрица рисков). Снятое названо в разборе сборки — дефект виден, отчёт
+   * выдан.
+   */
+  const repeatRepairs = repairRepeatedBlocks(rendererSlides, isDataRowTemplate);
+  return { deckManifest, rendererSlides, rejections, errors, dedupRemovals, repeatRepairs };
 }
 
 /**

@@ -250,6 +250,11 @@ export function buildKnowledgeAiFragment(
     noUnderlyingData: aiUnits.length === 0,
     noDataReason: "no-ai-answers",
   });
+  /*
+   * С картинкой базовый лист — панель с полной колонкой сайдбара, тела ответов
+   * — на продолжениях. Без картинки список печатается на базовом листе: там
+   * сайдбар идёт карточками во всю ширину, и ужимать нечего.
+   */
   slides.push(...withContinuations(aiBase, "ai-overview"));
 
   return { slides, status: "READY" };

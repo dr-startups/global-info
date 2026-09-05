@@ -142,7 +142,7 @@ describe("панель знаний вместо ответа", () => {
 });
 
 describe("разбивка ответов по листам", () => {
-  it("первый лист делит место с панелью, продолжения несут по ответу с источниками", () => {
+  it("первый лист печатает тела в левой колонке, продолжения несут по ответу с источниками", () => {
     const long = (seed: string) =>
       Array.from({ length: 12 }, (_, i) => `${seed} — предложение номер ${i + 1} длинное настолько, чтобы ответ занял весь свой бюджет.`).join(" ");
     const rows: Row[] = [
@@ -156,7 +156,7 @@ describe("разбивка ответов по листам", () => {
     const { slides } = buildKnowledgeAiFragment("RU_KNOWLEDGE_AI", "RU_PROFILE", "Россия", scopedInput(rows), extras);
     const pages = slides.filter((s) => s.baseSlotId === "p19_ru_knowledge_2");
     const chars = (s: (typeof pages)[number]) => (s.content.bullets ?? []).reduce((n, b) => n + b.length, 0);
-    expect(chars(pages[0]!)).toBeLessThanOrEqual(1600);
+    expect(chars(pages[0]!)).toBeLessThanOrEqual(1000);
     for (const p of pages.slice(1)) {
       expect((p.content.bullets ?? []).length).toBeLessThanOrEqual(3);
       expect(chars(p)).toBeLessThanOrEqual(3600);

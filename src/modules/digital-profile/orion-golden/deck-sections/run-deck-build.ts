@@ -59,6 +59,7 @@ import {
 import {
   measureVerdictHasLoss,
   planBulletRecut,
+  planSidebarShrink,
   type BulletItemFold,
   type BulletMeasureAdapter,
   type BulletMeasureVerdict,
@@ -142,6 +143,8 @@ export function runDeckBuild(input: {
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
   /** Разбивка буллетов по страницам, снятая с меры рендерера. */
   bulletRecut?: BulletRecutPlan;
+  /** Масштаб колонки сайдбара по слайдам — из цикла меры. */
+  sidebarScales?: ReadonlyMap<string, number>;
 }): DeckBuildResult {
   const buildLog: DeckBuildResult["buildLog"] = input.prebuiltBuildLog ?? [];
   const artifacts: Record<string, string> = {};
@@ -219,6 +222,7 @@ export function runDeckBuild(input: {
     expectedDatasetId: ctx.sourceDatasetId,
     layoutVariants: input.layoutVariants,
     bulletRecut: input.bulletRecut,
+    sidebarScales: input.sidebarScales,
   });
   const deckManifestPath = join(input.outputRoot, "report-deck-manifest.json");
   writeFileSync(deckManifestPath, JSON.stringify(assembly.deckManifest, null, 2), "utf8");
@@ -238,6 +242,8 @@ export function runDeckBuild(input: {
         // Что сняла вычистка повторов — чтобы укоротившуюся страницу было с чем
         // сверить, а не только заметить, что она стала короче.
         dedupRemovals: assembly.dedupRemovals,
+        // Снятые повторные блоки: дефект виден в разборе, а отчёт выдан.
+        repeatRepairs: assembly.repeatRepairs,
       },
       null,
       2
@@ -420,6 +426,8 @@ export type BulletFitReport = {
     iteration: number;
     lossyPages: Array<{ slideKey: string; droppedBullets: number; droppedLines: number }>;
     movedSlots: Array<{ baseSlotId: string; before: number[]; after: number[] }>;
+    /** Страницы, чью колонку сайдбара ужали по потере меры, и новая доля бюджета. */
+    shrunkSidebars?: Array<{ slideKey: string; scale: number }>;
   }>;
 };
 
@@ -537,6 +545,7 @@ export async function runDeckBuildMeasured(
    * теряла содержимое и гоняла цикл по кругу до отказа.
    */
   const plan = new Map<string, number[]>();
+  let sidebarScales = new Map<string, number>();
   for (let iteration = 1; iteration <= limit; iteration += 1) {
     /*
      * Сборка не закрылась — мерить нечего, и спрашивать об этом рендерер
@@ -582,16 +591,35 @@ export async function runDeckBuildMeasured(
       before: chains.find((c) => c.baseSlotId === baseSlotId)?.pages.map((p) => p.bulletCount) ?? [],
       after,
     }));
-    report.iterations.push({ iteration, lossyPages, movedSlots });
+    /*
+     * Потеря сайдбара лечится тем же циклом: колонка потерявшей страницы
+     * ужимается, и дека собирается заново. Страница → слайд по нумерации
+     * полезной нагрузки — так же, как телеметрия её называет.
+     */
+    const finalSlides =
+      (payload.deckManifest as { finalSlides?: Array<{ slideKey?: string; pageNumber?: number }> })
+        .finalSlides ?? [];
+    const pageSlideKeys = new Map(
+      finalSlides
+        .filter((f) => typeof f.pageNumber === "number" && typeof f.slideKey === "string")
+        .map((f) => [f.pageNumber as number, f.slideKey as string] as const)
+    );
+    const shrunk = planSidebarShrink({ verdict, pageSlideKeys, previous: sidebarScales });
+    const shrunkSidebars = [...shrunk.entries()]
+      .filter(([key, scale]) => sidebarScales.get(key) !== scale)
+      .map(([slideKey, scale]) => ({ slideKey, scale }));
+    report.iterations.push({ iteration, lossyPages, movedSlots, shrunkSidebars });
     // Двигать нечего (мера жалуется на страницу, которой перекладка не
     // управляет) или мерить следующую сборку уже нечем — дальше идти незачем.
-    if (fresh.size === 0 || iteration === limit) break;
+    if ((fresh.size === 0 && shrunk.size === 0) || iteration === limit) break;
     for (const [baseSlotId, counts] of fresh) plan.set(baseSlotId, counts);
+    if (shrunk.size > 0) sidebarScales = shrunk;
     result = runDeckBuild({
       ...built,
       prebuiltPacks: result.packs,
       prebuiltBuildLog: result.buildLog,
       bulletRecut: plan,
+      sidebarScales,
     });
     report.builds += 1;
   }
@@ -1406,7 +1434,9 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
    * `recommendedActions` выходил пустым на всех 16 панелях эталона-72.
    */
   const said = new Set<string>();
-  let left = SIDEBAR_COLUMN_CHAR_BUDGET;
+  // Колонка ужимается по мере рендерера: потерявшая блок страница берёт долю
+  // объявленного бюджета, а не весь его.
+  let left = Math.round(SIDEBAR_COLUMN_CHAR_BUDGET * (s.sidebarBudgetScale ?? 1));
   /** Взять текст в свой потолок, но не больше остатка колонки. */
   const claim = (text: string | undefined, cap: number): string | undefined => {
     const kept = withoutRepeatedSentences(sidebarSafe(text, Math.min(cap, left)), said);

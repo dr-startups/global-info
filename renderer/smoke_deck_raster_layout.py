@@ -264,14 +264,36 @@ AI_ANSWER_BULLETS = [
 ]
 
 
-def render_ai_answers_pages() -> list[tuple[bytes, bytes]] | None:
+#: Сайдбар страницы AI-ответов на **максимуме** объявленного бюджета колонки
+#: (`SIDEBAR_COLUMN_CHAR_BUDGET` = 660): вывод 300, действие 260, значимость —
+#: остаток. Смок раньше проверял 150 знаков и не мог увидеть, что верхняя
+#: треть листа держит шесть строк (прогон DPA-2026-0053, стр. 62).
+def _filler(prefix: str, n: int) -> str:
+    text = prefix
+    while len(text) < n:
+        text += " Это предложение добавлено, чтобы поле стояло на объявленном пределе."
+    return text[:n].rsplit(" ", 1)[0] + "."
+
+
+AI_SIDEBAR_AT_BUDGET = {
+    "headlineConclusion": _filler("Ответов поискового ИИ: 2 — Алиса 1, Google 1; источников в ответах: 2.", 300),
+    "clientMeaning": _filler("Справочный AI-блок читают до перехода к материалам.", 100),
+    "recommendedActions": [_filler("Сверить ответ с официальной биографией и документами.", 260)],
+    "provenanceLabel": "Источники — tass.ru, en.wikipedia.org.",
+}
+
+
+def render_ai_answers_pages() -> tuple[list[tuple[bytes, bytes]], list[dict]] | None:
     """Страница AI-ответов и её продолжение; None — растр не от LibreOffice.
 
     Отчёт 83: шаблон `ai-overview` шёл в макет «картинка + сайдбар», который
-    буллеты не рисует, — текст ответов не попадал на бумагу ни разу, а
-    продолжения выходили пустыми. Проверяется текстовый слой PDF: тела обоих
-    ответов и строки источников нарисованы на первой странице, продолжение
-    печатает свои буллеты без картинки.
+    буллеты не рисует, — текст ответов не попадал на бумагу ни разу. Прогон
+    DPA-2026-0053: панель и сайдбар стояли в верхней трети, сайдбару доставалось
+    шесть строк при бюджете колонки в 660 знаков, и рендерер выбрасывал его
+    блоки. Теперь сайдбар получает полную колонку справа, а тела ответов идут
+    под картинкой в левой колонке; продолжение печатает тела во всю ширину.
+    Проверяется текстовый слой PDF и телеметрия: сайдбар на максимуме бюджета
+    и тело ответа на первом листе нарисованы без единой потери.
     """
     from orion_golden_render import render_orion_golden  # noqa: PLC0415
 
@@ -291,11 +313,7 @@ def render_ai_answers_pages() -> list[tuple[bytes, bytes]] | None:
         "title": "Россия — AI-ответы поисковых систем",
         "assetRefs": ["ru_ai_answers"],
         "bullets": AI_ANSWER_BULLETS[:2],
-        "visualAnalysis": {
-            "headlineConclusion": "Ответов поискового ИИ: 2 — Алиса 1, Google 1; источников в ответах: 2.",
-            "whatIsVisible": "Ответ ИИ читают до перехода к материалам.",
-            "recommendedActions": ["Сверить ответ с официальной биографией."],
-        },
+        "visualAnalysis": {"sidebarMode": "context", **AI_SIDEBAR_AT_BUDGET},
         "pageNumber": 1,
         "totalPageCount": 2,
     }
@@ -318,7 +336,8 @@ def render_ai_answers_pages() -> list[tuple[bytes, bytes]] | None:
     if len(pages) < 2 or out.get("pdfExportMode") != "libreoffice" or not out.get("pdfBase64"):
         return None
     pdf = base64.b64decode(out["pdfBase64"])
-    return [(base64.b64decode(p["contentBase64"]), pdf) for p in pages[:2]]
+    telemetry = (out.get("layoutTelemetry") or {}).get("entries") or []
+    return [(base64.b64decode(p["contentBase64"]), pdf) for p in pages[:2]], telemetry
 
 
 #: Вводный абзац листа второй таблицы, заведомо длиннее своего потолка.
@@ -703,12 +722,13 @@ def main() -> int:
     # именно этих фраз — по текстовому слою PDF: растр умеет сказать «чернила
     # есть», но не «нарисована вторая фраза», а выброшен бывает как раз
     # блок целиком, и колонка при этом остаётся заполненной заголовком.
-    ai_pages = render_ai_answers_pages()
-    if ai_pages is None:
+    ai_rendered = render_ai_answers_pages()
+    if ai_rendered is None:
         print("# SKIP страница AI-ответов — растр не получен от LibreOffice")
     else:
         import fitz  # noqa: PLC0415
 
+        ai_pages, ai_telemetry = ai_rendered
         with tempfile.TemporaryDirectory() as tmp:
             paths = []
             for i, (png, _) in enumerate(ai_pages, start=1):
@@ -727,17 +747,30 @@ def main() -> int:
             doc = fitz.open(str(pdf_path))
             first = " ".join(doc[0].get_text().split())
             second = " ".join(doc[1].get_text().split()) if len(doc) > 1 else ""
+        dropped = [
+            f"{r.get('name')}: строк={r.get('droppedLines')} блоков={r.get('droppedBullets')}"
+            for r in ai_telemetry
+            if (r.get("droppedLines") or 0) + (r.get("droppedBullets") or 0) > 0
+        ]
         check(
-            "тело ответа Алисы нарисовано на первой странице",
-            "владельцем дилерского холдинга" in first,
+            "сайдбар на максимуме бюджета и тело ответа на первом листе нарисованы без потерь",
+            not dropped,
+            "; ".join(dropped) or f"записей телеметрии: {len(ai_telemetry)}",
         )
-        check("строка источника нарисована на первой странице", "Источник: tass.ru" in first)
+        check("строка состава нарисована на первой странице", "Ответов поискового ИИ: 2" in first)
+        check(
+            "рекомендация нарисована на первой странице целиком",
+            "Сверить ответ с официальной биографией" in first,
+        )
+        check(
+            "тело ответа Алисы и его источник нарисованы на первой странице",
+            "владельцем дилерского холдинга" in first and "Источник: tass.ru" in first,
+        )
         check(
             "продолжение печатает тело ответа Google",
             "born in Serpukhov" in second,
-            "вторая страница пуста" if not second.strip() else second[:120],
+            "вторая страница пуста" if not second.strip() else second[:160],
         )
-        check("строка состава считает ответы", "Ответов поискового ИИ: 2" in first)
 
     panel = render_surface_panel_page()
     if panel is None:

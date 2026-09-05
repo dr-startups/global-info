@@ -46,6 +46,7 @@ npm run build     # сборка приложения
 
 ```bash
 npx tsx scripts/run-orion-deck-sections-report72.ts   # 20 ворот, код 1 при провале
+npx tsx scripts/replay-deck-from-job.ts <каталог джобы>  # реплей настоящего прогона: сборка, отрисовка, суд
 python3 renderer/smoke_deck_raster_layout.py          # растр, шкала кеглей, гарнитура в PDF
 python3 renderer/smoke_search_table_layout.py         # ширины колонок и высоты строк таблиц
 ```

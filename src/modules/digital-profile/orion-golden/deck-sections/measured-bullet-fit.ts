@@ -38,9 +38,28 @@ export type BulletMeasurePage = {
   droppedLines: number;
 };
 
+/**
+ * Потеря блока сайдбара, замеченная мерой.
+ *
+ * Сайдбар в вердикте не значился: цикл «мера → перекладка → пересборка» знал
+ * только буллеты, и страница 62 прогона DPA-2026-0053 дошла до настоящего
+ * рендера с сайдбаром, в который не влезли два блока. Страница названа
+ * номером — так её знает телеметрия; в слайд её переводит вызывающий по
+ * нумерации полезной нагрузки.
+ */
+export type SidebarMeasureLoss = {
+  page: number;
+  field: string;
+  droppedLines: number;
+  requiredHeight: number;
+  availableHeight: number;
+};
+
 export type BulletMeasureVerdict = {
   version: string;
   pages: BulletMeasurePage[];
+  /** Пусто у прежних рендереров — тогда сайдбар судят только ворота выпуска. */
+  sidebars?: SidebarMeasureLoss[];
 };
 
 /** Форма вердикта, которую строитель умеет читать. Меняется форма — меняется строка. */
@@ -65,8 +84,29 @@ export function parseBulletMeasureVerdict(raw: unknown): BulletMeasureVerdict {
   if (!Array.isArray(body.pages)) {
     throw new Error("bullet measure response has no pages array");
   }
+  const sidebarsRaw = Array.isArray((raw as { sidebars?: unknown }).sidebars)
+    ? ((raw as { sidebars: unknown[] }).sidebars)
+    : [];
+  const sidebars: SidebarMeasureLoss[] = sidebarsRaw.map((row, i) => {
+    const r = (row ?? {}) as Record<string, unknown>;
+    const num = (key: string): number => {
+      const value = r[key];
+      return typeof value === "number" && Number.isFinite(value) ? value : 0;
+    };
+    if (typeof r.field !== "string" || !r.field) {
+      throw new Error(`bullet measure sidebar row ${i} has no field`);
+    }
+    return {
+      page: num("page"),
+      field: r.field,
+      droppedLines: num("droppedLines"),
+      requiredHeight: num("requiredHeight"),
+      availableHeight: num("availableHeight"),
+    };
+  });
   return {
     version: BULLET_MEASURE_VERSION,
+    sidebars,
     pages: body.pages.map((page, i) => {
       const p = (page ?? {}) as Record<string, unknown>;
       const num = (key: string): number => {
@@ -124,7 +164,42 @@ export type BulletRecutPlan = ReadonlyMap<string, number[]>;
 
 /** Есть ли в вердикте хоть одна потеря — единственное условие продолжения цикла. */
 export function measureVerdictHasLoss(verdict: BulletMeasureVerdict): boolean {
-  return verdict.pages.some((p) => p.droppedBullets > 0 || p.droppedLines > 0);
+  return (
+    verdict.pages.some((p) => p.droppedBullets > 0 || p.droppedLines > 0) ||
+    (verdict.sidebars ?? []).some((s) => s.droppedLines > 0)
+  );
+}
+
+/** Шаг ужатия колонки за одну итерацию и предел, ниже которого ужимать нечего. */
+const SIDEBAR_SHRINK_STEP = 0.75;
+const SIDEBAR_SHRINK_FLOOR = 0.25;
+
+/**
+ * План ужатия колонки сайдбара по потерям меры.
+ *
+ * На каждую страницу с потерей колонка становится на четверть уже, чем была;
+ * ниже четверти бюджета план не идёт — такой сайдбар уже ничего не говорит, и
+ * пусть цикл честно не сойдётся, а не молча выдаст пустую панель. Масштабы
+ * страниц без потерь сохраняются: план накопительный, как и план перекладки.
+ */
+export function planSidebarShrink(input: {
+  verdict: BulletMeasureVerdict;
+  /** Номер страницы → ключ слайда, по нумерации полезной нагрузки. */
+  pageSlideKeys: ReadonlyMap<number, string>;
+  previous: ReadonlyMap<string, number>;
+}): Map<string, number> {
+  const plan = new Map(input.previous);
+  let changed = false;
+  for (const loss of input.verdict.sidebars ?? []) {
+    if (loss.droppedLines <= 0) continue;
+    const slideKey = input.pageSlideKeys.get(loss.page);
+    if (!slideKey) continue;
+    const current = plan.get(slideKey) ?? 1;
+    if (current <= SIDEBAR_SHRINK_FLOOR) continue;
+    plan.set(slideKey, Math.max(SIDEBAR_SHRINK_FLOOR, current * SIDEBAR_SHRINK_STEP));
+    changed = true;
+  }
+  return changed ? plan : new Map();
 }
 
 /**

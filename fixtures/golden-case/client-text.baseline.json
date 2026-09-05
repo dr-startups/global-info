@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
-  "slideCount": 79,
-  "totalChars": 67844,
+  "slideCount": 80,
+  "totalChars": 67959,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,10 +21,10 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 4–10",
-        "Цифровой профиль — Россия — стр. 11–55",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 56–75",
-        "Комплаенс-проверка — стр. 76–78",
-        "Приложение — стр. 79–79"
+        "Цифровой профиль — Россия — стр. 11–56",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 57–76",
+        "Комплаенс-проверка — стр. 77–79",
+        "Приложение — стр. 80–80"
       ]
     },
     {
@@ -1433,8 +1433,6 @@
         "Источники ответа: Anders Holmström и Nordkap Capital: профиль предпринимателя (affarsposten.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (finansbladet.se), Anders Holmström и Nordkap Capital: профиль предпринимателя (kapitalnytt.se)",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 1: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 2: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 3: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 4: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se.",
         "Негативных заголовков на этой странице нет."
       ]
@@ -1442,21 +1440,34 @@
     {
       "slideKey": "p19_ru_knowledge_2__cont1",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 2/3)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 2/4)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
+        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 3: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
+        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 4: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 5: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 6: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
-        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 7: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
         "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
       ]
     },
     {
       "slideKey": "p19_ru_knowledge_2__cont2",
       "text": {
-        "title": "Россия — AI-ответы поисковых систем (продолжение 3/3)"
+        "title": "Россия — AI-ответы поисковых систем (продолжение 3/4)"
+      },
+      "baseSlotId": "p19_ru_knowledge_2",
+      "template": "orion_golden_prose",
+      "bullets": [
+        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 6: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
+        "Ответ поискового ИИ Яндекса, зафиксированный в выдаче. Запрос: «Anders Holmström». AI summary 7: Anders Holmström is associated with Nordkap Capital; mentions tax inquiry and Dubai expansion.",
+        "Источники — affarsposten.se, finansbladet.se и kapitalnytt.se."
+      ]
+    },
+    {
+      "slideKey": "p19_ru_knowledge_2__cont3",
+      "text": {
+        "title": "Россия — AI-ответы поисковых систем (продолжение 4/4)"
       },
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
