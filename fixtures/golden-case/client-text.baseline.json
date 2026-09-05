@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 80,
-  "totalChars": 67959,
+  "totalChars": 68004,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -2231,7 +2231,7 @@
       "baseSlotId": "slot_appendix_main",
       "template": "orion_golden_executive_card",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Принадлежность: не разобрана. Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Holmstrom, Johan» Всего по теме: 1 материал, с негативным контекстом — 1. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
+        "«PEP / RCA / watchlist-сигналы» Принадлежность: не разобрана. Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Potential PEP match in Dow Jones Risk & Compliance (fixture).» Всего по теме: 1 материал, с негативным контекстом — 1. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, difc-briefing.ae и ещё 8."
       ]
     }

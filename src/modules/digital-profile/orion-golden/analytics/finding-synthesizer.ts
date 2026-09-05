@@ -528,9 +528,60 @@ const NON_QUOTABLE_EVIDENCE_TYPES = new Set([
   "wikipedia_check",
 ]);
 
+/**
+ * Несёт ли текст сигнал темы — не считая слов, которыми написан сам субъект.
+ *
+ * Слово «Судьи» в заголовке профиля на портале о судьях совпадает с темой
+ * «Криминальные / судебные материалы», но о материале не говорит ничего: это
+ * должность субъекта (`config/subject-context-words.ts`).
+ */
+function carriesThemeSignal(
+  text: string,
+  theme: ThemeDef,
+  subjectContext?: SubjectContextMask | null
+): boolean {
+  const value = String(text ?? "");
+  if (!value.trim()) return false;
+  if (theme.keywords.test(value)) {
+    if (!allDictionaryHitsAreSubjectContext(value, theme.keywords, subjectContext)) return true;
+  }
+  const adverse = getAdversePatterns();
+  return (
+    adverse.test(value) && !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
+  );
+}
+
+/**
+ * Предложение сниппета, в котором стоит сигнал темы.
+ *
+ * Длиннее бюджета — ужимается по границе слова и закрывается многоточием.
+ * Правилу «целое или ничего» это не противоречит: многоточие поисковика значит
+ * «неизвестно, что отрезано», а наше — «фраза продолжается, адрес рядом».
+ */
+function signalSentenceOf(
+  snippet: string,
+  theme: ThemeDef,
+  subjectContext: SubjectContextMask | null | undefined,
+  budget: number
+): string {
+  const flat = String(snippet ?? "").replace(/\s+/gu, " ").trim();
+  if (!flat) return "";
+  const sentences = flat.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  const signal = sentences.find((x) => carriesThemeSignal(x, theme, subjectContext));
+  if (!signal) return "";
+  if (signal.length <= budget) return signal;
+  const slice = signal.slice(0, budget - 1);
+  const cut = slice.slice(0, slice.lastIndexOf(" ")).replace(/[\s,;:—-]+$/u, "");
+  return cut.length >= 40 ? `${cut}…` : "";
+}
+
 export function resolveExampleQuote(
   item: RawInventoryItem,
-  theme: ThemeDef
+  theme: ThemeDef,
+  /**
+   * Слова признаков субъекта: совпадение по ним сигналом темы не считается.
+   */
+  subjectContext?: SubjectContextMask | null
 ): ClaimEvidenceExample | null {
   if (NON_QUOTABLE_EVIDENCE_TYPES.has(String(item.evidenceType ?? "").toLowerCase())) {
     return null;
@@ -538,7 +589,30 @@ export function resolveExampleQuote(
   const domain = domainOf(item.sourceUrl);
   const title = cleanExampleTitle(String(item.title ?? ""));
   const rawTitle = String(item.title ?? "");
-  if (title && !isWeakExampleTitle(rawTitle, { theme })) {
+  /*
+   * У обвиняющей темы цитата обязана нести её сигнал.
+   *
+   * Блок «Криминальные / судебные материалы» отчёта 86 процитировал заголовок
+   * «Судьи России — Егоров Алексей Евгеньевич — Краснодарский край», а темой
+   * материал стал из-за фразы сниппета про захват земли лесного фонда.
+   * Читатель видит имя на портале о судьях и делает единственный возможный
+   * вывод: криминальной темой объявили его должность.
+   *
+   * Описательной темы это не касается: там нейтральный заголовок и есть
+   * доказательство.
+   */
+  const mustCarrySignal = themeCarriesRisk(theme);
+  if (mustCarrySignal) {
+    const fromSnippet = carriesThemeSignal(rawTitle, theme, subjectContext)
+      ? ""
+      : signalSentenceOf(String(item.snippet ?? ""), theme, subjectContext, 220);
+    if (fromSnippet) return { title: fromSnippet, domain, url: item.sourceUrl };
+  }
+  if (
+    title &&
+    !isWeakExampleTitle(rawTitle, { theme }) &&
+    (!mustCarrySignal || carriesThemeSignal(rawTitle, theme, subjectContext))
+  ) {
     const q = quoteForClaim(rawTitle, 220);
     if (
       q &&
@@ -555,10 +629,20 @@ export function resolveExampleQuote(
     .trim();
   // PDF-47/48 — SERP-truncated title still carries theme keywords («Рыбка»,
   // «Навальный»): close the snippet into a complete headline, never «…,».
-  const titleCarriesTheme = theme.keywords.test(rawTitle) || theme.keywords.test(title);
+  /*
+   * Совпадение словами признаков субъекта сигналом не считается и здесь:
+   * иначе запасная ветка вернула бы «Председатель Арбитражного суда
+   * Краснодарского края. Приём граждан по средам.» доказательством
+   * криминальной темы — ровно то, ради чего правка и заведена.
+   */
+  const titleCarriesTheme =
+    carriesThemeSignal(rawTitle, theme, subjectContext) ||
+    carriesThemeSignal(title, theme, subjectContext);
   if (
     snip.length >= 40 &&
-    (theme.keywords.test(snip) || getAdversePatterns().test(snip) || titleCarriesTheme)
+    (themeCarriesRisk(theme)
+      ? carriesThemeSignal(snip, theme, subjectContext) || titleCarriesTheme
+      : theme.keywords.test(snip) || getAdversePatterns().test(snip) || titleCarriesTheme)
   ) {
     const headline = snippetToClientHeadline(snip);
     if (
@@ -577,7 +661,8 @@ export function resolveExampleQuote(
 export function pickClaimExamples(
   items: RawInventoryItem[],
   theme: ThemeDef,
-  adverseItems: RawInventoryItem[] = []
+  adverseItems: RawInventoryItem[] = [],
+  subjectContext?: SubjectContextMask | null
 ): ClaimEvidenceExample[] {
   const adverseSet = new Set(adverseItems);
   const ranked = [...items].sort(
@@ -588,7 +673,7 @@ export function pickClaimExamples(
   const examples: ClaimEvidenceExample[] = [];
   const seen = new Set<string>();
   for (const i of ranked) {
-    const ex = resolveExampleQuote(i, theme);
+    const ex = resolveExampleQuote(i, theme, subjectContext);
     if (!ex?.title) continue;
     const key = `${ex.title.toLowerCase()}|${ex.domain}`;
     if (seen.has(key)) continue;
@@ -792,13 +877,25 @@ function themesFor(
 
 /** Same evidence + same normalized claim must collapse into one contribution. */
 export function claimFingerprint(themeId: string, item: RawInventoryItem): string {
-  const normalizedClaim = String(item.title ?? "")
-    .toLowerCase()
-    .replace(/ё/gu, "е")
-    .replace(/[^\p{L}\p{N} ]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-  return `${themeId}|${normalizedClaim}`;
+  /*
+   * Утверждение опознаётся тем, что увидит клиент: домен плюс текст, из
+   * которого берётся цитата.
+   *
+   * По заголовку различать нельзя: поисковик режет его по своей ширине, и один
+   * профиль судьи вошёл в криминальную тему дважды — «…— Краснодарский край» и
+   * «…— Краснодарский...», два адреса одной страницы (второй — её постраничная
+   * навигация). Блок напечатал «Всего по теме: 2 материала» об одной странице.
+   */
+  const normalize = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/ё/gu, "е")
+      .replace(/[^\p{L}\p{N} ]+/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+  const snippet = normalize(String(item.snippet ?? ""));
+  const claim = snippet || normalize(String(item.title ?? ""));
+  return `${themeId}|${domainOf(item.sourceUrl)}|${claim}`;
 }
 
 function riskFor(theme: ThemeDef, adverseCount: number, total: number): RiskLevel {
@@ -1030,7 +1127,7 @@ export function synthesizeFindings(input: {
           : 0.35;
 
     // PDF-44 H.1/H.2 — rank by theme substance; never quote bare FIO / SEO-bio.
-    const examples = pickClaimExamples(items, theme, adverseItems);
+    const examples = pickClaimExamples(items, theme, adverseItems, subjectContext);
 
     // PDF-40 G.2b — concrete quotes + domains; theme prepended by consumers.
     const claim = buildClientFacingClaim({
