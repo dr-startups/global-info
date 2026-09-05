@@ -27,6 +27,10 @@ import {
 } from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
 import {
+  hasSubjectAnchors,
+  type SubjectAnchors,
+} from "../orion-golden/analytics/subject-anchors";
+import {
   PERSONA_DECISION_ARTIFACT,
   type PersonaDecisionRecord,
 } from "../orion-golden/deck-sections/scoped-input";
@@ -977,6 +981,26 @@ function writeRenderCheckpoint(
  * записывается словами, а не пропуском файла; лист «Кого проверяли» при этом
  * печатается в любом случае и говорит, что решения не было.
  */
+/**
+ * Запись решения о персоне несёт признаки **прогона**, а не только решения.
+ *
+ * Признаки бывают названы и при решении «различимой персоны нет»: панель
+ * малоизвестного человека не находит, а работодателя, должность и дату
+ * рождения оператор ввёл. Прогон DPA-2026-0053 шёл именно так — 92 материала
+ * отнесены к субъекту по этим признакам, — а лист «Кого проверяли» о них
+ * молчал, потому что запись их не несла.
+ *
+ * Признаки, добытые пробой панели, сильнее: у них есть адреса, на которых они
+ * нашлись до сбора, и перезаписывать их профилем нельзя.
+ */
+function withRunAnchors(
+  record: PersonaDecisionRecord | null,
+  anchors: SubjectAnchors | null | undefined
+): PersonaDecisionRecord | null {
+  if (!record || record.anchors || !hasSubjectAnchors(anchors)) return record;
+  return { ...record, anchors: { ...(anchors as SubjectAnchors), confirmedOn: [] } };
+}
+
 function writePersonaDecisionArtifact(
   analyticsDir: string,
   caseId: string,
@@ -1040,7 +1064,11 @@ export async function runCanonicalReportPrepare(
   const renderDir = join(input.artifactsDir, "render");
   mkdirSync(analyticsDir, { recursive: true });
   mkdirSync(renderDir, { recursive: true });
-  writePersonaDecisionArtifact(analyticsDir, input.caseId, input.personaDecision ?? null);
+  writePersonaDecisionArtifact(
+    analyticsDir,
+    input.caseId,
+    withRunAnchors(input.personaDecision ?? null, subjectProfile.anchors)
+  );
 
   const resumeFrom = input.resumeFrom ?? "full";
   /*
@@ -1409,6 +1437,9 @@ export async function runCanonicalReportPrepare(
         subjectDecisionByRef: Object.fromEntries(
           analytics.subjectResolution.items.map((i) => [i.evidenceRef, i.decision])
         ),
+        // Портрет обложки берётся из подтверждённой строки, а рамку по словам
+        // должности субъекта плитка не получает.
+        subjectAnchors: subjectProfile.anchors ?? null,
         realSerpScreenshots: supplement.serpScreenshots,
         // REMEDIATION §5.2 — resume/rebuild reuses URL→preview without re-fetch.
         previewCacheDir: join(input.artifactsDir, "image-preview-cache"),
@@ -1561,7 +1592,13 @@ export async function runCanonicalReportPrepare(
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
         contentVersion: DECK_CONTENT_VERSION,
-        subject: { displayName: subjectDisplayName, aliases: subjectProfile.aliases ?? [] },
+        subject: {
+          displayName: subjectDisplayName,
+          aliases: subjectProfile.aliases ?? [],
+          // Признаки прогона: по ним дека не красит негативом слова, которыми
+          // написан сам субъект (должность, работодатель).
+          anchors: subjectProfile.anchors ?? null,
+        },
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,
         metricSnapshot: deckInputs.metricSnapshot,

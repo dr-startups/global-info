@@ -10,6 +10,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import type { SubjectContextAnchors } from "../../config/subject-context-words";
 import { join } from "node:path";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { Finding } from "../contracts/finding";
@@ -530,7 +531,14 @@ export type UncategorizedMaterialsDeckInput = {
     string,
     {
       count: number;
-      examples: Array<{ title: string; evidenceRef: string; domain?: string }>;
+      /** Из них подтверждённых — их и обещает строка «о субъекте». */
+      subjectMatchCount?: number;
+      examples: Array<{
+        title: string;
+        evidenceRef: string;
+        domain?: string;
+        subjectMatch?: string;
+      }>;
     }
   >;
 };
@@ -558,6 +566,14 @@ export type CanonicalDeckInputs = {
   complianceScreenings: ComplianceScreeningRecord[];
   /** Решение оператора о персоне субъекта; null — решения у кейса нет. */
   personaDecision: PersonaDecisionRecord | null;
+  /**
+   * Признаки субъекта прогона — из записи решения о персоне.
+   *
+   * Сборке деки они нужны, чтобы слова должности и работодателя не красили
+   * строки негативом. Живой конвейер кладёт их в профиль сам; реплею и
+   * скриптам взять их больше неоткуда — профиля кейса у них нет.
+   */
+  subjectAnchors: SubjectContextAnchors | null;
   /**
    * Строки наблюдений как есть, до сборки индекса доказательств.
    *
@@ -1150,18 +1166,26 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           evidenceRef?: string;
           domain?: string;
           region?: string;
+          subjectMatch?: string;
         }>;
       }>(uncategorizedPath);
       const byRegion: UncategorizedMaterialsDeckInput["byRegion"] = {};
       for (const [region, bucket] of Object.entries(raw.byRegion ?? {})) {
         byRegion[region] = {
           count: Number(bucket?.count ?? 0) || 0,
+          // Строка «Другие материалы о субъекте» обещает подтверждённые, и
+          // счёт с решением каждой строки едут вместе с ней: артефакт прежнего
+          // прогона их не несёт, и тогда строки не будет вовсе.
+          ...(typeof bucket?.subjectMatchCount === "number"
+            ? { subjectMatchCount: bucket.subjectMatchCount }
+            : {}),
           examples: (bucket?.examples ?? [])
             .filter((e) => e?.evidenceRef)
             .map((e) => ({
               title: String(e.title ?? "").trim() || "(без заголовка)",
               evidenceRef: String(e.evidenceRef),
               domain: e.domain ? String(e.domain) : undefined,
+              ...(e.subjectMatch ? { subjectMatch: String(e.subjectMatch) } : {}),
             })),
         };
       }
@@ -1226,9 +1250,17 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     try {
       const artifact = readJson<{ record?: PersonaDecisionRecord | null }>(personaPath);
       const record = artifact.record ?? null;
-      // Признак — данные: решением считается только записанное слово решения.
+      /*
+       * Признак — данные: решением считается только записанное слово решения.
+       *
+       * `ANCHORS_CONFIRMED` в списке стоять обязан: без него лист «Кого
+       * проверяли» печатал бы «решения нет» ровно там, где решение принято по
+       * признакам оператора, — то есть на самом строгом из трёх состояний.
+       */
       personaDecision =
-        record?.decision === "PERSONA_SELECTED" || record?.decision === "APPROVED_WITHOUT_PERSONA"
+        record?.decision === "PERSONA_SELECTED" ||
+        record?.decision === "ANCHORS_CONFIRMED" ||
+        record?.decision === "APPROVED_WITHOUT_PERSONA"
           ? record
           : null;
     } catch {
@@ -1305,6 +1337,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     surfaceCollectionHints,
     complianceScreenings,
     personaDecision,
+    subjectAnchors: personaDecision?.anchors ?? null,
     serpObservations: observations.observations,
   };
 }

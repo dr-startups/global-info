@@ -22,6 +22,7 @@ import type { SubjectRelevanceDecision, SurfaceKind } from "../contracts/common"
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
 import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
 import { resolveItemAdverse } from "./item-adverse";
+import type { SubjectContextMask } from "../../config/subject-context-words";
 
 export type ResolutionLookup = Map<string, SubjectResolutionItem>; // by evidenceRef
 
@@ -114,7 +115,9 @@ function groupBy(
 function buildUnit(
   acc: UnitAccumulator,
   lookup: ResolutionLookup,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  /** Слова признаков субъекта: «негативных: N» по должности не считает. */
+  subjectContext?: SubjectContextMask | null
 ): SurfaceAnalysisUnit {
   const collected = acc.items.filter((i) => !isEmptyMarker(i));
   const emptyMarkers = acc.items.length - collected.length;
@@ -122,7 +125,8 @@ function buildUnit(
   const likelySubject = collected.filter((i) => decisionFor(i, lookup) === "LIKELY_SUBJECT");
   const otherSubject = collected.filter((i) => decisionFor(i, lookup) === "OTHER_SUBJECT");
   const ambiguous = collected.filter((i) => decisionFor(i, lookup) === "AMBIGUOUS");
-  const isAdverse = (item: RawInventoryItem): boolean => resolveItemAdverse(item, verdictByRef);
+  const isAdverse = (item: RawInventoryItem): boolean =>
+    resolveItemAdverse(item, verdictByRef, subjectContext);
   const adverseSubject = subjectMatched.filter(isAdverse);
 
   // Empty markers (NO_RESULTS / «не найден») mean the surface was probed —
@@ -249,12 +253,14 @@ export function runSurfaceAnalyzers(input: {
    * прочитанная страница.
    */
   verdictByRef?: ObservationVerdictByRef;
+  /** Маска слов, которыми написан сам субъект (см. синтез находок). */
+  subjectContext?: SubjectContextMask | null;
 }): Record<SurfaceKind, SurfaceAnalysis> {
   const out = {} as Record<SurfaceKind, SurfaceAnalysis>;
   for (const def of SURFACE_ANALYZERS) {
     const selected = input.items.filter(def.select);
     const units = groupBy(selected, def.surface, def.withEngine).map((acc) =>
-      buildUnit(acc, input.resolutionLookup, input.verdictByRef)
+      buildUnit(acc, input.resolutionLookup, input.verdictByRef, input.subjectContext)
     );
     out[def.surface] = SurfaceAnalysisSchema.parse({
       schemaVersion: SURFACE_ANALYSIS_SCHEMA_VERSION,

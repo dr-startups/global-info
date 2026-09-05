@@ -79,6 +79,14 @@ async function buildRuGrid(input: {
   allowImagePreviewNetwork?: boolean;
   previewCacheDir?: string;
   previewFetch?: Record<string, unknown>;
+  /**
+   * Решения о принадлежности строк.
+   *
+   * Портрет обложки берётся только из подтверждённой строки (шаг 0057), а без
+   * карты решений подтверждённых строк нет вовсе. Тесты, которым портрет нужен
+   * как доказательство чего-то другого, карту передают.
+   */
+  subjectDecisionByRef?: Record<string, string>;
 }) {
   const fetchImpl = vi.fn(async (url: string) => {
     const idx = input.rows.findIndex((r) => r.imageUrl === String(url));
@@ -87,6 +95,7 @@ async function buildRuGrid(input: {
   const visuals = await buildCanonicalVisualAssets({
     subjectName: "Anders Holmström",
     items: input.rows,
+    ...(input.subjectDecisionByRef ? { subjectDecisionByRef: input.subjectDecisionByRef } : {}),
     ...(input.allowImagePreviewNetwork === undefined
       ? {}
       : { allowImagePreviewNetwork: input.allowImagePreviewNetwork }),
@@ -224,6 +233,7 @@ describe("кэш превью — не сеть", () => {
         rows,
         withPreview: new Set([0]),
         previewCacheDir: dir,
+        subjectDecisionByRef: { "inventory:img-0": "SUBJECT_MATCH" },
       });
 
       expect(fetchImpl).not.toHaveBeenCalled();
@@ -282,10 +292,25 @@ describe("кэш превью — не сеть", () => {
 describe("обложка берёт портрет из нарисованного", () => {
   it("портрет — первая строка с превью, а не первая строка набора", async () => {
     const rows = Array.from({ length: 6 }, (_, i) => imageRow(i));
-    const { visuals } = await buildRuGrid({ rows, withPreview: new Set([3, 4, 5]) });
+    // Все строки подтверждены: вопрос этого теста — превью, а не
+    // принадлежность. Кого берут на обложку при разных решениях, проверяет
+    // `cover-portrait-is-the-subject.test.ts`.
+    const { visuals } = await buildRuGrid({
+      rows,
+      withPreview: new Set([3, 4, 5]),
+      subjectDecisionByRef: Object.fromEntries(
+        rows.map((r) => [`inventory:${r.inventoryId}`, "SUBJECT_MATCH"])
+      ),
+    });
 
     const portrait = visuals.assets.find((a) => a.assetRef === "cover_portrait");
     expect(portrait?.evidenceRefs).toEqual(["inventory:img-3"]);
     expect(portrait?.imageData).toBeTruthy();
+  });
+
+  it("без решений о принадлежности портрета нет вовсе", async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => imageRow(i));
+    const { visuals } = await buildRuGrid({ rows, withPreview: new Set([0, 1, 2]) });
+    expect(visuals.assets.find((a) => a.assetRef === "cover_portrait")).toBeUndefined();
   });
 });

@@ -17,10 +17,19 @@ import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import type { WikipediaArticleReview } from "../contracts/wikipedia-article-review";
 import { serpMaterialKey } from "../../serp-observation/material-key";
 import type { AnalystDecision } from "../../serp-observation/resolve-observation-highlights";
+import type { SubjectContextAnchors } from "../../config/subject-context-words";
 
 export type SubjectProfileInput = {
   displayName: string;
   aliases: string[];
+  /**
+   * Признаки субъекта, названные оператором.
+   *
+   * Деке они нужны ровно для одного: слова, которыми написан сам субъект
+   * (работодатель, должность), не красят его строки негативом
+   * (`config/subject-context-words.ts`). Признаков нет — поведение прежнее.
+   */
+  anchors?: SubjectContextAnchors | null;
 };
 
 /** Прочитанное и негативное по одному региональному контуру. */
@@ -456,9 +465,16 @@ export const PERSONA_DECISION_ARTIFACT = "persona-decision.json";
 export type PersonaDecisionRecord = {
   decision: "PERSONA_SELECTED" | "ANCHORS_CONFIRMED" | "APPROVED_WITHOUT_PERSONA";
   /**
-   * Признаки субъекта, названные оператором, и где они нашлись в пробе, —
-   * основание решения `ANCHORS_CONFIRMED`. Лист «Кого проверяли» печатает их
-   * словами: читатель должен видеть, чем материал отличали от материала тёзки.
+   * Признаки субъекта, которыми проверялась принадлежность в этом прогоне.
+   *
+   * Не только основание решения `ANCHORS_CONFIRMED`: признаки бывают названы и
+   * при решении «различимой персоны нет» — так шёл прогон DPA-2026-0053, где
+   * 92 материала отнесены к субъекту по дате рождения, работодателю и ИНН, а
+   * лист «Кого проверяли» о них молчал. Лист печатает их словами при любом
+   * решении: читатель должен видеть, чем материал отличали от материала тёзки.
+   *
+   * `confirmedOn` — адреса, на которых признаки нашлись **до сбора**; пусто,
+   * когда пробы не было (признаки приехали из профиля кейса, а не из панели).
    */
   anchors?: {
     birthDate: string | null;
@@ -482,8 +498,15 @@ export type PersonaDecisionRecord = {
      */
     datesOfBirth: string[];
   } | null;
-  /** Состояние источников панели на момент решения. */
-  sources: Array<{ source: string; status: string }>;
+  /**
+   * Состояние источников панели на момент решения.
+   *
+   * `code` — машинная причина отказа (`PersonaSourceReasonCode`), по ней лист
+   * называет случившееся словами. Без неё лист говорил «источник не ответил»
+   * там, где источник ответил отказом, — и спорил с листом комплаенса, где
+   * причина названа верно.
+   */
+  sources: Array<{ source: string; status: string; code?: string | null }>;
   /** Сколько различимых карточек панель показала оператору. */
   cardCount: number;
   /**

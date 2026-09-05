@@ -27,6 +27,7 @@ import {
   type ObservationVerdictByRef,
 } from "../../serp-observation/resolve-observation-highlights";
 import { serpMaterialKey } from "../../serp-observation/material-key";
+import type { SubjectContextMask } from "../../config/subject-context-words";
 import { evidenceRefOf } from "./analysis-scope";
 import { sourceTypeFromDomain, type SourceType } from "./source-type";
 import { publicDomainOf } from "./public-domain";
@@ -150,9 +151,15 @@ export function spreadVerdictsOverMaterials(
  */
 export function resolveItemAdverse(
   item: RawInventoryItem,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  /** Слова признаков субъекта: должность на его странице — не улика. */
+  subjectContext?: SubjectContextMask | null
 ): boolean {
-  return resolveRowAdverse(adverseRowOf(item), verdictByRef?.[evidenceRefOf(item)]);
+  return resolveRowAdverse(
+    adverseRowOf(item),
+    verdictByRef?.[evidenceRefOf(item)],
+    subjectContext
+  );
 }
 
 /**

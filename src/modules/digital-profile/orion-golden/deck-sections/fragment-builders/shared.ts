@@ -41,6 +41,10 @@ import {
 import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import {
+  buildSubjectContextMask,
+  type SubjectContextMask,
+} from "../../../config/subject-context-words";
+import {
   pageReadAsFavourable,
   resolveRowAdverse,
   type ObservationVerdict,
@@ -136,7 +140,18 @@ export type UncategorizedMaterialsExtras = {
     string,
     {
       count: number;
-      examples: Array<{ title: string; evidenceRef: string; domain?: string }>;
+      /**
+       * Из них подтверждённых. Строка региона обещает материалы **о субъекте**,
+       * а вероятные к ним не относятся. Артефакт прежнего прогона поля не
+       * несёт — тогда строка не печатается вовсе.
+       */
+      subjectMatchCount?: number;
+      examples: Array<{
+        title: string;
+        evidenceRef: string;
+        domain?: string;
+        subjectMatch?: string;
+      }>;
     }
   >;
 };
@@ -754,6 +769,9 @@ export function clampClientText(text: string, max: number): string {
  * PDF-46 I.4 — fit a multi-line theme bullet by dropping whole structural lines
  * (why → 2nd quote → where → scale). Never flatten+mid-cut «контекстом — 10».
  */
+/** Короче этого цитата перестаёт быть утверждением и становится обрубком. */
+const MIN_QUOTE_CHARS = 60;
+
 export function fitStructuredBullet(text: string, maxChars: number): string {
   const reflowed = reflowThemeBullet(String(text ?? ""));
   const markerMatch = reflowed.match(/(\s*\[finding-[^\]]+\])\s*$/u);
@@ -816,7 +834,32 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
       if (wasQuote) dropGistAfter(kept, idx);
     }
   }
-  while (lenOf(kept) > maxChars && kept.length > 2) kept.pop();
+  /*
+   * Обещание цитаты живёт вместе с цитатой.
+   *
+   * Стр. 12 отчёта 85: «Найдены публикации о финансовых претензиях и долговых
+   * спорах:.» — и пустой лист. Общий сброс хвоста уносил **единственную**
+   * цитату блока, оставляя рамку, которая её обещает: двоеточие с точкой на
+   * пустой странице читается как сбой программы, а не как отчёт.
+   *
+   * Порядок такой: последнюю цитату не выбрасываем, а ужимаем внутри кавычек
+   * (`clampClientText` сохраняет источник); не помещается и ужатая — снимаем
+   * вместе с ней и обещание.
+   */
+  while (lenOf(kept) > maxChars && kept.length > 2) {
+    if (isQuote(kept[kept.length - 1] ?? "") && kept.filter(isQuote).length === 1) break;
+    kept.pop();
+  }
+  if (lenOf(kept) > maxChars) {
+    const idx = kept.findIndex(isQuote);
+    if (idx >= 0) {
+      const room = maxChars - lenOf(kept.filter((_, i) => i !== idx)) - 1;
+      const clamped = room >= MIN_QUOTE_CHARS ? clampClientText(kept[idx]!, room) : "";
+      if (clamped) kept[idx] = clamped;
+      else kept.splice(idx, 1);
+    }
+  }
+  if (!kept.some(isQuote)) kept = kept.filter((l) => !/:\s*$/u.test(l));
   // Ещё раз после подгонки: цитату мог унести общий сброс хвоста.
   kept = kept.filter((l, i) => !isGist(l) || isQuote(kept[i - 1] ?? ""));
   if (lenOf(kept) > maxChars) {
@@ -1225,7 +1268,15 @@ export function evidenceRowWasRead(e: ScopedEvidenceIndex[string] | undefined): 
  */
 export function evidenceRowAdverse(
   e: ScopedEvidenceIndex[string] | undefined,
-  verdict: ObservationVerdict | undefined = evidenceRowVerdict(e)
+  verdict: ObservationVerdict | undefined = evidenceRowVerdict(e),
+  /**
+   * Слова, которыми написан сам субъект.
+   *
+   * Передаёт их тот, у кого есть профиль страницы (`subjectContextOf`): без
+   * них лист выдачи красил «Нежелательным» карточку суда, в котором субъект
+   * председательствует, а лист подсказок — запрос «…судья».
+   */
+  subjectContext?: SubjectContextMask | null
 ): boolean {
   if (!e) return false;
   return resolveRowAdverse(
@@ -1236,8 +1287,14 @@ export function evidenceRowAdverse(
       snippet: e.snippet,
       analystDecision: e.analystDecision,
     },
-    verdict
+    verdict,
+    subjectContext
   );
+}
+
+/** Маска слов субъекта по признакам его профиля; без признаков — `null`. */
+export function subjectContextOf(scoped: ScopedFragmentInput): SubjectContextMask | null {
+  return buildSubjectContextMask(scoped.subject?.anchors);
 }
 
 /**
@@ -1275,7 +1332,8 @@ export function evidenceRowsAreOtherSubject(
  */
 export function evidenceRowsAdverse(scoped: ScopedFragmentInput, refs: string[]): boolean {
   const verdict = refs.map((ref) => evidenceRowVerdict(scoped.evidenceIndex[ref])).find(Boolean);
-  return refs.some((ref) => evidenceRowAdverse(scoped.evidenceIndex[ref], verdict));
+  const subjectContext = subjectContextOf(scoped);
+  return refs.some((ref) => evidenceRowAdverse(scoped.evidenceIndex[ref], verdict, subjectContext));
 }
 
 /** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
@@ -2007,13 +2065,17 @@ const SYNTHESIZED_CLAIM_RE = /(?:Всего по теме|В корпусе):/u;
 function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string {
   if (!THEME_SCALE_LINE_RE.test(String(f.claim ?? ""))) return "";
   const regions = scoped.scope?.regions ?? [];
+  const subjectContext = subjectContextOf(scoped);
   const adverseByMaterial = new Map<string, boolean>();
   for (const ref of f.evidenceRefs) {
     const e = scoped.evidenceIndex[ref];
     if (!e) continue;
     if (!regions.some((r) => regionMatches(r, e.region))) continue;
     const key = evidenceMaterialKey(e, ref);
-    adverseByMaterial.set(key, (adverseByMaterial.get(key) ?? false) || evidenceRowAdverse(e));
+    adverseByMaterial.set(
+      key,
+      (adverseByMaterial.get(key) ?? false) || evidenceRowAdverse(e, undefined, subjectContext)
+    );
   }
   if (adverseByMaterial.size === 0) return "";
   return themeScaleLine(

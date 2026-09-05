@@ -939,7 +939,13 @@ export function personaDecisionForReport(
             selectedCard.source === "opensanctions" ? selectedCard.datesOfBirth : [],
         }
       : null,
-    sources: (snapshot?.sources ?? []).map((s) => ({ source: s.source, status: s.status })),
+    // Причина отказа едет вместе с состоянием: без неё лист «Кого проверяли»
+    // выдумывал «источник не ответил» там, где источник ответил отказом.
+    sources: (snapshot?.sources ?? []).map((s) => ({
+      source: s.source,
+      status: s.status,
+      ...(s.code ? { code: s.code } : {}),
+    })),
     cardCount: cardsOf(row.personasJson).length,
     decidedAt: row.decidedAt ? new Date(row.decidedAt).toISOString() : null,
   };

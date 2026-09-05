@@ -44,6 +44,12 @@ import {
 import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import { sourceAttribution } from "../client/client-address";
 import { readableSnippet, resolveItemAdverse, resolveItemReadFavourably } from "./item-adverse";
+import {
+  allDictionaryHitsAreSubjectContext,
+  buildSubjectContextMask,
+  type SubjectContextMask,
+} from "../../config/subject-context-words";
+import type { SubjectAnchors } from "./subject-anchors";
 import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
 import { pluralRu } from "../../report/i18n/plural-ru";
 
@@ -81,7 +87,21 @@ export type UncategorizedMaterialsBlock = {
   topExamples: UncategorizedMaterial[];
   /** Full ref list (not capped) for §3.3 verification. */
   allEvidenceRefs: string[];
-  byRegion: Record<string, { count: number; examples: UncategorizedMaterial[] }>;
+  byRegion: Record<
+    string,
+    {
+      count: number;
+      /**
+       * Из них подтверждённых. Поле заведено отдельно, потому что строка
+       * региона обещает материалы **о субъекте**, а вероятные к ним не
+       * относятся: на листе ОАЭ отчёта 85 стояло «Другие материалы о субъекте:
+       * 84» при четырёх подтверждённых. Прежние артефакты поля не несут — тогда
+       * строка не печатается вовсе, а не печатает смешанное число.
+       */
+      subjectMatchCount?: number;
+      examples: UncategorizedMaterial[];
+    }
+  >;
 };
 
 export type FindingSynthesisResult = {
@@ -738,7 +758,9 @@ export function cleanExampleTitle(raw: string): string {
 function themesFor(
   item: RawInventoryItem,
   /** Страницу прочитали и признали благоприятной (и человек с этим не спорил). */
-  favourablyRead: boolean
+  favourablyRead: boolean,
+  /** Слова признаков субъекта: тему по ним материал не получает. */
+  subjectContext?: SubjectContextMask | null
 ): ThemeDef[] {
   const text = themeMatchText(item);
   const url = String(item.sourceUrl ?? "");
@@ -755,7 +777,16 @@ function themesFor(
     // «обвинения не подтвердились»), темой риска не является: иначе отчёт
     // говорит противоположное источнику. Совпадение по площадке так не
     // снимается — отрицание относится к словам, а не к тому, что это за сайт.
-    return theme.keywords.test(text) && !dictionaryHitIsNegated(text, theme.keywords);
+    if (!theme.keywords.test(text)) return false;
+    if (dictionaryHitIsNegated(text, theme.keywords)) return false;
+    /*
+     * Тема, совпавшая **только** словами признаков субъекта, о материале
+     * ничего не говорит: это его должность. Так тема «Криминальные / судебные
+     * материалы» собрала у председателя суда карточку самого суда, регламент
+     * арбитражных судов и его собственное досье
+     * (`config/subject-context-words.ts`).
+     */
+    return !allDictionaryHitsAreSubjectContext(text, theme.keywords, subjectContext);
   });
 }
 
@@ -851,7 +882,15 @@ export function synthesizeFindings(input: {
    * иначе отчёт предлагает субъекту убирать то, что говорит о нём хорошо.
    */
   verdictByRef?: ObservationVerdictByRef;
+  /**
+   * Признаки субъекта, названные оператором.
+   *
+   * Из них строится маска слов, которыми написан он сам: они не дают ни темы,
+   * ни негатива. Без признаков маски нет и поведение прежнее.
+   */
+  subjectAnchors?: SubjectAnchors | null;
 }): FindingSynthesisResult {
+  const subjectContext = buildSubjectContextMask(input.subjectAnchors);
   const themeAssignments = new Map<string, string[]>();
   const byDecisionTheme = new Map<string, RawInventoryItem[]>(); // `${decision}|${themeId}`
   const seenClaimFingerprints = new Map<string, Set<string>>(); // `${decision}|${themeId}` -> fingerprints
@@ -877,7 +916,11 @@ export function synthesizeFindings(input: {
     // SUBJECT_MATCH/LIKELY without keyword hits → uncategorized (§3.2), not a
     // finding (never enters the risk matrix). AMBIGUOUS without hits still gets
     // a review theme so they reach «Требует подтверждения» / appendix (§2.1).
-    let themes = themesFor(item, resolveItemReadFavourably(item, input.verdictByRef));
+    let themes = themesFor(
+      item,
+      resolveItemReadFavourably(item, input.verdictByRef),
+      subjectContext
+    );
     if (themes.length === 0) {
       if (decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") {
         if (!seenUncategorizedRefs.has(ref)) {
@@ -917,10 +960,18 @@ export function synthesizeFindings(input: {
 
   const byRegion: UncategorizedMaterialsBlock["byRegion"] = {};
   for (const row of uncategorizedItems) {
-    const bucket = byRegion[row.region] ?? { count: 0, examples: [] };
+    const bucket = byRegion[row.region] ?? { count: 0, subjectMatchCount: 0, examples: [] };
     bucket.count += 1;
+    if (row.subjectMatch === "SUBJECT_MATCH") {
+      bucket.subjectMatchCount = (bucket.subjectMatchCount ?? 0) + 1;
+    }
     if (bucket.examples.length < UNCATEGORIZED_PER_REGION_N) {
       bucket.examples.push(row);
+    } else if (row.subjectMatch === "SUBJECT_MATCH") {
+      // Подтверждённый материал вытесняет вероятный: примеры печатает строка
+      // «о субъекте», и вероятные в неё всё равно не попадут.
+      const spare = bucket.examples.findIndex((e) => e.subjectMatch !== "SUBJECT_MATCH");
+      if (spare >= 0) bucket.examples[spare] = row;
     }
     byRegion[row.region] = bucket;
   }
@@ -942,7 +993,9 @@ export function synthesizeFindings(input: {
     subjectMatch: "SUBJECT_MATCH" | "LIKELY_SUBJECT" | "AMBIGUOUS" | "OTHER_SUBJECT"
   ): Finding => {
     const theme = FINDING_THEMES.find((t) => t.themeId === themeId)!;
-    const adverseItems = items.filter((i) => resolveItemAdverse(i, input.verdictByRef));
+    const adverseItems = items.filter((i) =>
+      resolveItemAdverse(i, input.verdictByRef, subjectContext)
+    );
     const risk = riskFor(theme, adverseItems.length, items.length);
     const evidenceRefs = items.map(refOf);
     const domains = [...new Set(items.map((i) => domainOf(i.sourceUrl)).filter(Boolean))];

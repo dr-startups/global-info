@@ -5,6 +5,10 @@
 
 import { getAdversePatterns, getStrongAdversePatterns } from "../config/finding-themes";
 import { dictionaryHitIsNegated } from "../config/negated-dictionary-hit";
+import {
+  allDictionaryHitsAreSubjectContext,
+  type SubjectContextMask,
+} from "../config/subject-context-words";
 import { buildConsistentThemeGrouping } from "../serp-snapshot/snapshot-consistency";
 import type { LoadedResult, ResultView, SerpEngine, SerpLanguage, ThemeGrouping } from "../serp-snapshot/types";
 import type { PersistedSerpObservation } from "./types";
@@ -261,7 +265,19 @@ export type AdverseRowInput = {
  * «Офшоры» среднего уровня и печатался «Нежелательным» при прочитанной и
  * признанной благоприятной странице с двумя цитатами.
  */
-export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVerdict): boolean {
+export function resolveRowAdverse(
+  row: AdverseRowInput,
+  verdict?: ObservationVerdict,
+  /**
+   * Слова, которыми написан сам субъект (работодатель, должность).
+   *
+   * Действует только на словарной ветке — там, где строку краснит **слово**.
+   * Правку аналитика, вердикт прочитанной страницы и список площадок она не
+   * трогает: у площадки вопрос «кто опубликовал», и должность субъекта на него
+   * не отвечает.
+   */
+  subjectContext?: SubjectContextMask | null
+): boolean {
   if (row.analystDecision === "NEUTRAL") return false;
   if (row.analystDecision === "ADVERSE") return true;
   if (verdict) {
@@ -282,7 +298,11 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
   const dictionary = SOFT_PROFILE_DOMAIN_RE.test(domain)
     ? getStrongAdversePatterns()
     : getAdversePatterns();
-  return dictionary.test(text) && !dictionaryHitIsNegated(text, dictionary);
+  if (!dictionary.test(text)) return false;
+  if (dictionaryHitIsNegated(text, dictionary)) return false;
+  // Совпало **только** словами признаков субъекта — значит, о сюжете не
+  // сказано ничего: это его должность (`config/subject-context-words.ts`).
+  return !allDictionaryHitsAreSubjectContext(text, dictionary, subjectContext);
 }
 
 /**
@@ -325,13 +345,15 @@ export function classifyObservationHighlight(
    * элементе инвентаря, а рисованные активы строятся из него. Не передали —
    * поведение прежнее.
    */
-  analystDecision?: AnalystDecision | null
+  analystDecision?: AnalystDecision | null,
+  /** Слова признаков субъекта — тот же аргумент, что у `resolveRowAdverse`. */
+  subjectContext?: SubjectContextMask | null
 ): {
   isHighlighted: boolean;
   riskTheme: string | null;
   themeTitle: string | null;
 } {
-  if (!resolveRowAdverse({ ...obs, analystDecision }, verdict)) {
+  if (!resolveRowAdverse({ ...obs, analystDecision }, verdict, subjectContext)) {
     return { isHighlighted: false, riskTheme: null, themeTitle: null };
   }
   if (verdict?.tone === "adverse" && verdict.quoted) {

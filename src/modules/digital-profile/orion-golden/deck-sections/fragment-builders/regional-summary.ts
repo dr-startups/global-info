@@ -42,7 +42,18 @@ import {
  */
 const EXAMPLE_TITLE_BUDGET = 120;
 
-function uncategorizedBulletForRegion(
+/**
+ * Строка «Другие материалы о субъекте» — только о подтверждённых.
+ *
+ * На листе ОАЭ отчёта 85 стояло «Другие материалы о субъекте: 84» при четырёх
+ * подтверждённых материалах региона: счёт складывал `SUBJECT_MATCH` и
+ * `LIKELY_SUBJECT`, а ярлык обещал первое. Правило то же, по которому
+ * «вероятно» не входит в KPI: о субъекте — значит подтверждено.
+ *
+ * Артефакт прежнего прогона счёта подтверждённых не несёт. Тогда строки нет
+ * вовсе: смешанное число печатать нельзя, а выдумывать разбивку не из чего.
+ */
+export function uncategorizedBulletForRegion(
   regionKey: string,
   extras?: FragmentExtras
 ): { bullet: string; evidenceRefs: string[]; count: number } | null {
@@ -55,9 +66,10 @@ function uncategorizedBulletForRegion(
   for (const alias of regionAliases) {
     const bucket = block.byRegion[alias];
     if (!bucket) continue;
-    count += bucket.count;
+    count += bucket.subjectMatchCount ?? 0;
     for (const ex of bucket.examples) {
       if (examples.length >= 4) break;
+      if (ex.subjectMatch !== "SUBJECT_MATCH") continue;
       examples.push(ex);
     }
   }

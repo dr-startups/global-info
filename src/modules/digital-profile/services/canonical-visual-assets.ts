@@ -35,6 +35,11 @@ import {
   selectVisibleObservationsForEngine,
 } from "../serp-observation/synthetic-asset";
 import {
+  buildSubjectContextMask,
+  type SubjectContextMask,
+} from "../config/subject-context-words";
+import type { SubjectAnchors } from "../orion-golden/analytics/subject-anchors";
+import {
   classifyObservationHighlight,
   type ObservationVerdictByRef,
 } from "../serp-observation/resolve-observation-highlights";
@@ -183,7 +188,9 @@ function toSerpObservation(item: RawInventoryItem, rank: number): PersistedSerpO
 
 function toVisibleItem(
   item: RawInventoryItem,
-  verdictByRef?: ObservationVerdictByRef
+  verdictByRef?: ObservationVerdictByRef,
+  /** Слова признаков субъекта: должность на его же странице — не негатив. */
+  subjectContext?: SubjectContextMask | null
 ): VisibleAssetItem {
   const hl = classifyObservationHighlight(
     {
@@ -193,7 +200,8 @@ function toVisibleItem(
       snippet: item.snippet ?? null,
     } as unknown as PersistedSerpObservation,
     verdictByRef?.[refOf(item)],
-    analystDecisionOf(item)
+    analystDecisionOf(item),
+    subjectContext
   );
   return {
     ref: refOf(item),
@@ -297,6 +305,8 @@ async function buildSerpSnapshotAsset(input: {
   slotId: string;
   /** Решения по прочитанным страницам: рамки и легенда следуют им. */
   verdictByRef?: ObservationVerdictByRef;
+  /** Слова признаков субъекта: рамку по ним не ставят. */
+  subjectContext?: SubjectContextMask | null;
 }): Promise<boolean> {
   // Only engine-attributable rows can appear in a Yandex/Google column.
   const attributable = input.items.filter((it) => engineOf(it) !== null && it.sourceUrl);
@@ -331,7 +341,7 @@ async function buildSerpSnapshotAsset(input: {
 
   const visibleItems = observations
     .filter((o) => visibleIds.has(o.obs.id))
-    .map((o) => toVisibleItem(o.item, input.verdictByRef));
+    .map((o) => toVisibleItem(o.item, input.verdictByRef, input.subjectContext));
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: "serp_screenshot",
@@ -370,6 +380,8 @@ async function buildListPanelAsset(input: {
   subjectDecisionByRef?: Record<string, string>;
   /** Решения по прочитанным страницам: рамка на панели следует им. */
   verdictByRef?: ObservationVerdictByRef;
+  /** Слова признаков субъекта: рамку по ним не ставят. */
+  subjectContext?: SubjectContextMask | null;
   /** Test hook (§5.1): force this panel to throw. */
   injectFailureForAssetRef?: string;
 }): Promise<boolean> {
@@ -384,7 +396,7 @@ async function buildListPanelAsset(input: {
   // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
   const decided = titled.map((r) =>
     panelRowWithOwnership({
-      item: toVisibleItem(r, input.verdictByRef),
+      item: toVisibleItem(r, input.verdictByRef, input.subjectContext),
       decision: input.subjectDecisionByRef?.[refOf(r)],
       meta: input.rowMeta?.(r),
     })
@@ -468,6 +480,14 @@ export async function buildCanonicalVisualAssets(input: {
    * листе противоречили друг другу.
    */
   verdictByRef?: ObservationVerdictByRef;
+  /**
+   * Признаки субъекта, названные оператором.
+   *
+   * Из них строится маска слов, которыми написан сам субъект: должность на его
+   * собственной странице красной рамки не даёт. Без признаков поведение
+   * прежнее — маски нет вовсе.
+   */
+  subjectAnchors?: SubjectAnchors | null;
   /** Optional clock for freshness tests. */
   nowMs?: number;
   /** Test-only (§5.1): throw inside the builder for this assetRef. */
@@ -484,6 +504,17 @@ export async function buildCanonicalVisualAssets(input: {
    * шести были пустыми — Википедия, ТАСС, МГИМО, — и причина (запрос уходил
    * без `User-Agent`, а Викимедиа отвечает на такие 403) не была видна нигде.
    */
+  // Маска признаков субъекта считается один раз на прогон: её спрашивает
+  // каждая нарисованная строка.
+  const subjectContext = buildSubjectContextMask(input.subjectAnchors);
+  /**
+   * Строка о субъекте — по решению аналитики, а не по имени в заголовке.
+   *
+   * Карты решений нет (вызов без аналитики) — подтверждённых строк нет вовсе:
+   * молчание не равно подтверждению.
+   */
+  const isConfirmedRow = (item: RawInventoryItem): boolean =>
+    input.subjectDecisionByRef?.[refOf(item)] === "SUBJECT_MATCH";
   const previewFailures = new Map<string, number>();
   const previewOpts: ImagePreviewFetchOptions = {
     concurrency: 4,
@@ -561,7 +592,7 @@ export async function buildCanonicalVisualAssets(input: {
          */
         const visibleItems = firstPerMaterial(organic)
           .slice(0, 10)
-          .map((it) => toVisibleItem(it, input.verdictByRef));
+          .map((it) => toVisibleItem(it, input.verdictByRef, subjectContext));
         const asset: RendererAssetEntry = {
           assetRef: `${assetRef}_real_${real.id}`,
           kind: "live_serp",
@@ -585,6 +616,7 @@ export async function buildCanonicalVisualAssets(input: {
         return true;
       }
       return buildSerpSnapshotAsset({
+        subjectContext,
         assetRef,
         region,
         slotId,
@@ -611,6 +643,7 @@ export async function buildCanonicalVisualAssets(input: {
   if (
     await runAsset("suggestion_panel", "p11_ru_suggestions_yandex", "ru_suggestions_yandex", () =>
       buildListPanelAsset({
+        subjectContext,
         assetRef: "ru_suggestions_yandex",
         kind: "surface_panel",
         title:
@@ -638,6 +671,7 @@ export async function buildCanonicalVisualAssets(input: {
   if (
     await runAsset("suggestion_panel", "p12_ru_suggestions_google", "ru_suggestions_google", () =>
       buildListPanelAsset({
+        subjectContext,
         assetRef: "ru_suggestions_google",
         kind: "surface_panel",
         title:
@@ -663,6 +697,7 @@ export async function buildCanonicalVisualAssets(input: {
   if (
     await runAsset("suggestion_panel", "p28_uae_suggestions", "uae_suggestions", () =>
       buildListPanelAsset({
+        subjectContext,
         assetRef: "uae_suggestions",
         kind: "surface_panel",
         title: "ОАЭ — поисковые подсказки",
@@ -695,6 +730,7 @@ export async function buildCanonicalVisualAssets(input: {
     if (
       await runAsset("related_panel", relatedSlots[i], assetRef, () =>
         buildListPanelAsset({
+        subjectContext,
           assetRef,
           kind: "surface_panel",
           title: `Россия — связанные запросы (${i + 1})`,
@@ -718,6 +754,7 @@ export async function buildCanonicalVisualAssets(input: {
   if (
     await runAsset("related_panel", "p32_uae_related", "uae_related", () =>
       buildListPanelAsset({
+        subjectContext,
         assetRef: "uae_related",
         kind: "surface_panel",
         title: "ОАЭ — связанные запросы",
@@ -817,7 +854,7 @@ export async function buildCanonicalVisualAssets(input: {
       })
     );
     const used = [answer, ...sourceRows.slice(0, 8)].filter((r): r is RawInventoryItem => Boolean(r));
-    const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef));
+    const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef, subjectContext));
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "knowledge_panel",
@@ -879,15 +916,33 @@ export async function buildCanonicalVisualAssets(input: {
 
   // --- Image grids -----------------------------------------------------------
   const images = by((it) => surfaceOf(it) === "images");
-  const ruImages = images.filter((it) => regionOf(it.region) === "RU");
-  const uaeImages = images.filter((it) => regionOf(it.region) === "UAE");
+  /*
+   * Подтверждённые строки — первыми, остальные в порядке сбора.
+   *
+   * Сортировка устойчивая и меняет только порядок: на лист попадают те же
+   * шесть плиток, но начинается он с материалов о субъекте. Порядок здесь не
+   * украшение — из него берётся портрет обложки, и он же решает, что
+   * достанется первой сетке, когда картинок больше двадцати четырёх.
+   */
+  const subjectFirst = (rows: RawInventoryItem[]): RawInventoryItem[] => {
+    const confirmed = rows.filter((r) => isConfirmedRow(r));
+    const rest = rows.filter((r) => !isConfirmedRow(r));
+    return [...confirmed, ...rest];
+  };
+  const ruImages = subjectFirst(images.filter((it) => regionOf(it.region) === "RU"));
+  const uaeImages = subjectFirst(images.filter((it) => regionOf(it.region) === "UAE"));
   const imageSlots = ["p14_ru_images_1", "p15_ru_images_2", "p16_ru_images_3", "p17_ru_images_4"];
   const ruImageChunks = chunk(ruImages, 6).slice(0, 4);
   /**
-   * Первое разрешившееся RU-превью уходит на обложку (`cover_portrait`) —
-   * квадрат со скруглёнными углами справа от имени субъекта. Своего поиска
-   * ради обложки не делается: берётся уже собранное превью, и если его нет,
-   * обложка рисует абстрактную графику бренда, а не пустую рамку.
+   * Портрет обложки — лицо проверяемого, а не первая картинка выдачи.
+   *
+   * Своего поиска ради обложки не делается: берётся уже собранное превью. Но
+   * берётся оно только у строки, о которой решение говорит «о субъекте», и
+   * только у ненегативной. В отчёте 85 обложку занял профиль сотрудника РНИМУ
+   * — однофамилец-офтальмолог, стоявший в сетке первым, — при том что
+   * фотографии самого судьи лежали в той же сетке. Чужое лицо на первой
+   * странице обесценивает отчёт целиком, поэтому пустая обложка (графика
+   * бренда) здесь честнее заполненной.
    */
   let coverPortraitPushed = false;
   const buildGrid = async (
@@ -953,7 +1008,7 @@ export async function buildCanonicalVisualAssets(input: {
     }
     // Одна выборка кормит и краску, и счёт: `visibleItems` — ровно те строки,
     // что попали в PNG, поэтому счётные строки страницы считают нарисованное.
-    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row, input.verdictByRef));
+    const visibleItems = drawnItems.map((d) => toVisibleItem(d.row, input.verdictByRef, subjectContext));
     if (drawnItems.length === 0) {
       // Рисовать нечего — ассета нет, страница уходит в текстовую ветку. Мета
       // без картинки нужна ей, чтобы назвать словами, что найдено и не показано.
@@ -986,15 +1041,22 @@ export async function buildCanonicalVisualAssets(input: {
       buildImageGridSvg({ title, items: drawnItems.map((d) => d.item) })
     );
     if (!coverPortraitPushed) {
-      push({
-        assetRef: "cover_portrait",
-        kind: "cover_portrait",
-        title: "Портрет субъекта",
-        caption: "Фото из поисковой выдачи",
-        imageData: drawnItems[0]!.item.previewBase64,
-        evidenceRefs: [visibleItems[0]!.ref],
-      });
-      coverPortraitPushed = true;
+      // Ненегативная строка о субъекте: обложка — не место для кадра из
+      // криминального сюжета, даже когда он о самом субъекте.
+      const portraitIndex = drawnItems.findIndex(
+        (d) => isConfirmedRow(d.row) && !d.item.highlight
+      );
+      if (portraitIndex >= 0) {
+        push({
+          assetRef: "cover_portrait",
+          kind: "cover_portrait",
+          title: "Портрет субъекта",
+          caption: "Фото из поисковой выдачи",
+          imageData: drawnItems[portraitIndex]!.item.previewBase64,
+          evidenceRefs: [visibleItems[portraitIndex]!.ref],
+        });
+        coverPortraitPushed = true;
+      }
     }
     const asset: RendererAssetEntry = {
       assetRef,

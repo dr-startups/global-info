@@ -44,9 +44,27 @@ const PERSONA_SOURCE_LABELS: Record<string, string> = {
 const PERSONA_SOURCE_STATUS_LABELS: Record<string, string> = {
   SUCCESS: "данные получены",
   NOT_CONFIGURED: "доступ не настроен",
-  FAILED: "источник не ответил",
+  // «Источник не ответил» — утверждение о факте, которого мы не наблюдали: на
+  // прогоне 0053 OpenSanctions ответил, и ответил отказом («ключ не принят»),
+  // а лист комплаенса на стр. 65 говорил об этом честно. Один факт, два
+  // ответа. Без записанной причины лист говорит ровно то, что знает.
+  FAILED: "данных от источника нет",
   TIMEOUT: "ответ не получен в отведённое время",
   OFFLINE: "сбор шёл без обращения к внешним сервисам",
+};
+
+/**
+ * Причина отказа — словами кода, записанного пробой панели.
+ *
+ * Код закрытый (`PersonaSourceReasonCode`), и перевод его в слова живёт здесь:
+ * снимок несёт код, а не готовую фразу, — иначе русская фраза печаталась бы в
+ * английском кабинете.
+ */
+const PERSONA_SOURCE_REASON_LABELS: Record<string, string> = {
+  NETWORK_CALLS_DISABLED: "сбор шёл без обращения к внешним сервисам",
+  PERSONA_PANEL_BUDGET_EXCEEDED: "ответ не получен в отведённое время",
+  PROVIDER_NOT_CONFIGURED: "доступ не настроен",
+  PROVIDER_REQUEST_FAILED: "запрос к источнику не выполнен",
 };
 
 /**
@@ -96,10 +114,60 @@ function sourcesClause(record: PersonaDecisionRecord): string {
   const parts = record.sources.map(
     (s) =>
       `${PERSONA_SOURCE_LABELS[s.source] ?? "источник не назван"} — ${
-        PERSONA_SOURCE_STATUS_LABELS[s.status] ?? "состояние не записано"
+        (s.code ? PERSONA_SOURCE_REASON_LABELS[s.code] : undefined) ??
+        PERSONA_SOURCE_STATUS_LABELS[s.status] ??
+        "состояние не записано"
       }`
   );
   return parts.length > 0 ? `Источники на момент решения: ${parts.join("; ")}.` : "";
+}
+
+const ANCHORED_NOTE =
+  "Материалы, где совпало только имя, отмечены как «принадлежность не подтверждена»" +
+  " и не входят ни в темы, ни в итоговую оценку.";
+
+const ANCHORED_CHECK =
+  "Сверить названные признаки с тем, что известно о проверяемом лице:" +
+  " ошибка в признаке уводит из отчёта его материалы и приводит чужие.";
+
+/**
+ * Признаки, которыми проверялась принадлежность, — строками абзаца.
+ *
+ * Печатаются при **любом** решении о персоне, а не только на ветке
+ * `ANCHORS_CONFIRMED`. В отчёте 85 прогон шёл с решением «различимой персоны
+ * нет» и с признаками оператора одновременно: 92 материала отнесены к субъекту
+ * по дате рождения, работодателю, должности и ИНН, — а лист «Кого проверяли»
+ * о них молчал. Читатель отчёта — сам субъект, и он обязан видеть, чем его
+ * материал отличали от материала полного тёзки.
+ *
+ * Малоизвестного человека внешние карточки не находят, и «персоны нет» — не
+ * ответ: по нему прогон DPA-2026-0049 собрал четырёх разных людей.
+ */
+function anchorNarrativeLines(record: PersonaDecisionRecord | undefined): string[] {
+  const a = record?.anchors;
+  if (!a) return [];
+  const named = [
+    a.birthDate ? `дата рождения ${a.birthDate}` : "",
+    ...a.phrases.filter((p) => p.strong).map((p) => `«${p.text}»`),
+    ...a.inn.map((i) => `ИНН ${i}`),
+    ...a.domains.map((d) => `сайт ${d}`),
+  ].filter(Boolean);
+  if (named.length === 0) return [];
+  const weak = a.phrases.filter((p) => !p.strong).map((p) => `«${p.text}»`);
+  const confirmedOn = (a.confirmedOn ?? []).slice(0, 3);
+  return [
+    `Перед началом сбора оператор назвал признаки проверяемого лица: ${enumerateRu(
+      named,
+      named.length
+    )}.`,
+    confirmedOn.length > 0
+      ? `Признаки проверены по выдаче до сбора: ${enumerateRu(confirmedOn, confirmedOn.length)}.`
+      : "",
+    weak.length > 0
+      ? `Дополнительно названы менее строгие признаки: ${enumerateRu(weak, weak.length)}.`
+      : "",
+    "Материал отнесён к проверяемому лицу, когда рядом с его именем стоит один из этих признаков.",
+  ].filter(Boolean);
 }
 
 /**
@@ -111,6 +179,7 @@ function sourcesClause(record: PersonaDecisionRecord): string {
  * «страница потерялась».
  */
 function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
+  const anchorLines = anchorNarrativeLines(record);
   if (record?.decision === "PERSONA_SELECTED" && record.selected) {
     const card = record.selected;
     const sourceLabel = PERSONA_CARD_LABELS[card.source] ?? "источник карточки не назван";
@@ -128,6 +197,7 @@ function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
       narrative: [
         `Перед началом сбора оператор выбрал карточку «${card.title}» — ${sourceLabel}${addressPart}${birthPart}.`,
         "Отчёт целиком собран по этой персоне.",
+        ...anchorLines,
       ].join("\n"),
       bullets: [NAMESAKE_WARNING, PER_MATERIAL_NOTE],
       whatToCheck:
@@ -139,46 +209,11 @@ function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
     };
   }
 
-  if (record?.decision === "ANCHORS_CONFIRMED" && record.anchors) {
-    /*
-     * Малоизвестного человека внешние карточки не находят, и «персоны нет» —
-     * не ответ: по нему прогон DPA-2026-0049 собрал четырёх разных людей.
-     * Оператор называет признаки, и лист печатает их — читатель видит, чем
-     * материал отличали от материала полного тёзки, и может это проверить.
-     */
-    const a = record.anchors;
-    const named = [
-      a.birthDate ? `дата рождения ${a.birthDate}` : "",
-      ...a.phrases.filter((p) => p.strong).map((p) => `«${p.text}»`),
-      ...a.inn.map((i) => `ИНН ${i}`),
-      ...a.domains.map((d) => `сайт ${d}`),
-    ].filter(Boolean);
-    const weak = a.phrases.filter((p) => !p.strong).map((p) => `«${p.text}»`);
-    const confirmedOn = a.confirmedOn.slice(0, 3);
+  if (record?.decision === "ANCHORS_CONFIRMED" && anchorLines.length > 0) {
     return {
-      narrative: [
-        `Перед началом сбора оператор назвал признаки проверяемого лица: ${enumerateRu(
-          named,
-          named.length
-        )}.`,
-        confirmedOn.length > 0
-          ? `Признаки проверены по выдаче до сбора: ${enumerateRu(confirmedOn, confirmedOn.length)}.`
-          : "",
-        weak.length > 0
-          ? `Дополнительно названы менее строгие признаки: ${enumerateRu(weak, weak.length)}.`
-          : "",
-        "Материал отнесён к проверяемому лицу, когда рядом с его именем стоит один из этих признаков.",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      bullets: [
-        "Материалы, где совпало только имя, отмечены как «принадлежность не подтверждена»" +
-          " и не входят ни в темы, ни в итоговую оценку.",
-        PER_MATERIAL_NOTE,
-      ],
-      whatToCheck:
-        "Сверить названные признаки с тем, что известно о проверяемом лице:" +
-        " ошибка в признаке уводит из отчёта его материалы и приводит чужие.",
+      narrative: anchorLines.join("\n"),
+      bullets: [ANCHORED_NOTE, PER_MATERIAL_NOTE],
+      whatToCheck: ANCHORED_CHECK,
     };
   }
 
@@ -196,11 +231,13 @@ function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
       narrative: [
         `Перед началом сбора оператор записал решение «различимой персоны нет»: ${cause}.`,
         sourcesClause(record),
-        "Сбор шёл по данным субъекта, которые ввёл оператор.",
+        ...(anchorLines.length > 0
+          ? anchorLines
+          : ["Сбор шёл по данным субъекта, которые ввёл оператор."]),
       ]
         .filter(Boolean)
         .join("\n"),
-      bullets: [UNCONFIRMED_WARNING, PER_MATERIAL_NOTE],
+      bullets: [anchorLines.length > 0 ? ANCHORED_NOTE : UNCONFIRMED_WARNING, PER_MATERIAL_NOTE],
       // Регистр читателя: сбор панели — работа оператора, и требовать её от
       // читателя значит дать ему указание, которое он выполнить не может.
       whatToCheck:

@@ -144,9 +144,12 @@ describe("снимок решения о персоне для отчёта", ()
     expect(record?.decision).toBe("APPROVED_WITHOUT_PERSONA");
     expect(record?.selected).toBeNull();
     expect(record?.cardCount).toBe(2);
+    // Причина отказа едет вместе с состоянием (шаг 0057): без неё лист «Кого
+    // проверяли» называл словами то, чего не наблюдал, — «источник не ответил»
+    // там, где источник ответил отказом.
     expect(record?.sources).toEqual([
       { source: "wikipedia", status: "SUCCESS" },
-      { source: "knowledge_graph", status: "NOT_CONFIGURED" },
+      { source: "knowledge_graph", status: "NOT_CONFIGURED", code: "PROVIDER_NOT_CONFIGURED" },
       { source: "opensanctions", status: "SUCCESS" },
     ]);
   });

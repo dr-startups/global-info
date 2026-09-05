@@ -79,7 +79,7 @@ export async function replayDeckFromJob(jobDir: string, outDir: string): Promise
       reportRunId: inputs.reportRunId,
       sourceDatasetId: inputs.sourceDatasetId,
       contentVersion: DECK_CONTENT_VERSION,
-      subject: { displayName: subjectName, aliases: [] },
+      subject: { displayName: subjectName, aliases: [], anchors: inputs.subjectAnchors },
       bundle: inputs.mergedBundle,
       surfaceUnits: inputs.surfaceUnits,
       metricSnapshot: inputs.metricSnapshot,

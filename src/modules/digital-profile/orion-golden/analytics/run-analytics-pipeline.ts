@@ -39,6 +39,7 @@ import {
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers } from "./surface-analyzers";
 import { resolveItemAdverse, spreadVerdictsOverMaterials } from "./item-adverse";
+import { buildSubjectContextMask } from "../../config/subject-context-words";
 import { observationVerdictsForVisuals } from "../../serp-observation/resolve-observation-highlights";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import {
@@ -473,6 +474,10 @@ export async function runOrionAnalyticsPipeline(
   // automatically derived context: terms mined from conflict-free
   // SUBJECT_MATCH items enrich contextIdentifiers, no manual input required.
   const subject = subjectIdentityFromProfile(input.subjectProfile);
+  // Маска слов, которыми написан сам субъект: спрашивают её и темы находок, и
+  // предикат негатива, и разбор поверхностей — ответ обязан быть один.
+  const subjectAnchors = subject.anchors ?? null;
+  const subjectContext = buildSubjectContextMask(subjectAnchors);
   const derived = resolveSubjectWithDerivedContext({
     caseId: input.caseId,
     datasetId,
@@ -789,7 +794,7 @@ export async function runOrionAnalyticsPipeline(
     if (d === "SUBJECT_MATCH") relevantCount += 1;
     else if (d === "AMBIGUOUS") ambiguousCount += 1;
     else if (d === "OTHER_SUBJECT") otherSubjectCount += 1;
-    if (d === "SUBJECT_MATCH" && resolveItemAdverse(item, verdictByRef)) {
+    if (d === "SUBJECT_MATCH" && resolveItemAdverse(item, verdictByRef, subjectContext)) {
       newAdverse += 1;
     }
   }
@@ -806,6 +811,7 @@ export async function runOrionAnalyticsPipeline(
     resolutionLookup: resolutionByRef,
     sourceHashes,
     verdictByRef,
+    subjectContext,
   });
 
   // 4. Finding synthesis → VerifiedFindingBundle.
@@ -820,6 +826,7 @@ export async function runOrionAnalyticsPipeline(
     sourceHashes,
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
     verdictByRef,
+    subjectAnchors,
   });
   synthesis = {
     ...synthesis,

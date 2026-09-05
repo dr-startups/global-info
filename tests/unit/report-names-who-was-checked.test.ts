@@ -183,7 +183,10 @@ describe("решение «различимой персоны нет» печа
 
   it("состояние каждого источника названо словами, а не кодом", () => {
     const text = sheetText(personaSlide(ALL_SOURCES_FAILED));
-    expect(text).toContain("Википедия — источник не ответил");
+    // «Источник не ответил» — утверждение о факте, которого мы не наблюдали
+    // (шаг 0057): отказ провайдера тоже ответ. Без записанного кода причины
+    // лист говорит ровно то, что знает.
+    expect(text).toContain("Википедия — данных от источника нет");
     expect(text).toContain("панель знаний Google — доступ не настроен");
     expect(text).toContain("OpenSanctions — ответ не получен в отведённое время");
     expect(text).not.toMatch(/NOT_CONFIGURED|TIMEOUT|FAILED/u);

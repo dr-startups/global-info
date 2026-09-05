@@ -607,6 +607,36 @@ export function classifySubjectRelevance(
         ? "full_name_with_context"
         : "full_name_match";
     confidence = matchedStrong ? 0.98 : matchedContext.length > 0 ? 0.92 : 0.85;
+  } else if (hasSurname && !hasGivenName && anchorMode) {
+    /*
+     * Под якорями принадлежность подтверждает признак, а не запрос.
+     *
+     * Правило §2.2 («искали полное имя — значит, одна фамилия в заголовке всё
+     * же о субъекте») старше якорей, и на прогоне DPA-2026-0053 оно дало 201
+     * решение «вероятно о субъекте»: боксёр, тенор, дизайнер, officer из ICIJ,
+     * PDF списка Навального, статья SSRN, юрфирма Egorov Puginsky. Все семь
+     * чужих записей исполнительного резюме пришли ровно оттуда. Запрос — это
+     * намерение оператора, а не свойство материала, и там, где признаки
+     * названы, отвечать на принадлежность должны они.
+     *
+     * Домен в подъёме не участвует: он говорит, **где** опубликовано, а не о
+     * ком. С полным именем он подтверждает (`full_name_with_anchor:domain`), с
+     * одной фамилией — нет: на портале о судьях пишут не только о субъекте.
+     */
+    const ownStrongAnchor = anchorHits.find((h) => h.strong && h.kind !== "domain") ?? null;
+    if (ownStrongAnchor) {
+      decision = "LIKELY_SUBJECT";
+      reasonCode = "surname_with_anchor";
+      confidence = 0.68;
+    } else if (queryContainsSubjectFullName(itemQueryText(item), subject)) {
+      decision = "AMBIGUOUS";
+      reasonCode = "surname_query_no_anchor";
+      confidence = 0.45;
+    } else {
+      decision = "AMBIGUOUS";
+      reasonCode = "surname_only";
+      confidence = 0.4;
+    }
   } else if (hasSurname && !hasGivenName) {
     // Surname without given name: never SUBJECT_MATCH. Strong context, a
     // soft-surface full-name phrase, or a subject full-name query (§2.2) →
