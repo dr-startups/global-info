@@ -24,7 +24,12 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
 
   const jobId = req.nextUrl.searchParams.get("jobId") ?? "";
   const artifact = req.nextUrl.searchParams.get("artifact") ?? "";
-  const meta = await resolveCanonicalArtifactForDownload({ caseId: id, jobId, artifact });
+  const meta = await resolveCanonicalArtifactForDownload({
+    caseId: id,
+    jobId,
+    artifact,
+    role: user.role,
+  });
 
   const buffer = readFileSync(meta.path);
   await recordAudit({

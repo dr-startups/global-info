@@ -154,7 +154,12 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     job &&
     job.status === "COMPLETED" &&
     (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL")
-      ? await getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
+      ? await getCanonicalDownloadAvailability({
+          caseId: id,
+          jobId: job.unifiedJobId,
+          // Кнопка не предлагает того, чего скачивание не отдаст.
+          role: user.role,
+        })
       : { pdf: false, pptx: false, contactSheet: false };
   const gptCopyRetry = await evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
   // Пауза — единственное действие, доступное посреди работы: остальные кнопки

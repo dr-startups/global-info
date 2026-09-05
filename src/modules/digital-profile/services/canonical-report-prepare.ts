@@ -323,6 +323,12 @@ export type CanonicalPrepareInput = {
    * нет», и артефакт скажет это словами.
    */
   personaDecision?: PersonaDecisionRecord | null;
+  /**
+   * Состояние документа этой сборки: черновик для проверки аналитиком или
+   * выпуск. Читает его обложка (`fragment-builders/front-matter.ts`); поля нет
+   * — обложка прежняя.
+   */
+  documentState?: "draft" | "released";
 };
 
 export type CanonicalPrepareResult = {
@@ -1266,6 +1272,7 @@ export async function runCanonicalReportPrepare(
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
           complianceScreenings: deckInputs.complianceScreenings,
           personaDecision: deckInputs.personaDecision ?? undefined,
+          ...(input.documentState ? { documentState: input.documentState } : {}),
           ...deckFreshnessExtras,
         },
       },
@@ -1614,6 +1621,7 @@ export async function runCanonicalReportPrepare(
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
           complianceScreenings: deckInputs.complianceScreenings,
           personaDecision: deckInputs.personaDecision ?? undefined,
+          ...(input.documentState ? { documentState: input.documentState } : {}),
           ...deckFreshnessExtras,
         },
       },

@@ -2,7 +2,7 @@
   "version": "deck-coverage-reconciliation-v1",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-09-05T14:50:04.200Z",
+  "generatedAt": "2026-09-05T17:51:03.541Z",
   "baseSlotCoverage": 37,
   "requiredBaseSlotCount": 37,
   "physicalPageCount": 51,

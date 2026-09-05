@@ -18,6 +18,8 @@
  */
 
 import { existsSync, realpathSync } from "node:fs";
+import type { DpRole } from "../auth/roles";
+import { downloadDenialForRole, isReleasedReport } from "./report-release-state";
 import { basename, join, resolve, sep } from "node:path";
 import { AppError } from "../http/errors";
 import { loadUnifiedCollectionJob, unifiedArtifactsDir } from "./unified-collection-job-store";
@@ -118,6 +120,15 @@ export async function resolveCanonicalArtifactForDownload(input: {
   caseId: string;
   jobId: string;
   artifact: string;
+  /**
+   * Роль спрашивающего.
+   *
+   * Черновик собран для проверки аналитиком: в нём стоят материалы, которые
+   * ещё могут оказаться о другом человеке, и темы «Требует подтверждения».
+   * Клиенту он не отдаётся. Роли нет — проверка не делается: у служебных
+   * вызовов (реплей, диагностика) роли не бывает, и выдумывать её нельзя.
+   */
+  role?: DpRole;
 }): Promise<ResolvedCanonicalArtifact> {
   const { caseId } = input;
   if (!input.jobId) {
@@ -150,6 +161,20 @@ export async function resolveCanonicalArtifactForDownload(input: {
     );
   }
 
+  if (input.role) {
+    const denial = downloadDenialForRole({
+      role: input.role,
+      released: isReleasedReport(job.release),
+    });
+    if (denial) {
+      throw new CanonicalArtifactError(
+        409,
+        denial,
+        "report is a draft: only a released report is available for this role"
+      );
+    }
+  }
+
   const jobRoot = canonicalizePath(unifiedArtifactsDir(caseId, job.unifiedJobId));
   const resolved = resolveArtifactPath(input.artifact, job.reportLinks, jobRoot);
 
@@ -166,12 +191,14 @@ export async function resolveCanonicalArtifactForDownload(input: {
 export async function getCanonicalDownloadAvailability(input: {
   caseId: string;
   jobId: string;
+  /** Кнопка не предлагает того, чего скачивание не отдаст: предикат один. */
+  role?: DpRole;
 }): Promise<CanonicalDownloadAvailability> {
   const kinds: CanonicalArtifactKind[] = ["pdf", "pptx", "contactSheet"];
   const out: CanonicalDownloadAvailability = { pdf: false, pptx: false, contactSheet: false };
   for (const artifact of kinds) {
     try {
-      await resolveCanonicalArtifactForDownload({ ...input, artifact });
+      await resolveCanonicalArtifactForDownload({ ...input, artifact, ...(input.role ? { role: input.role } : {}) });
       out[artifact] = true;
     } catch {
       out[artifact] = false;

@@ -247,6 +247,21 @@ function composeFragment(
   }
 }
 
+/**
+ * Отпечаток входа фрагмента — то, чем ключуется кэш пакета.
+ *
+ * Вынесен наружу ради проверки: «состояние документа меняет ключ» — это
+ * утверждение о кэше, и проверять его надо тем же выражением, каким кэш
+ * ключуется, а не пересборкой отчёта.
+ */
+export function fragmentInputHash(
+  key: FragmentKey,
+  scoped: ScopedFragmentInput,
+  extras: FragmentExtras
+): string {
+  return `${scopedInputHash(scoped)}:${extrasHash(key, extras)}`;
+}
+
 function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
   const base =
     key === "EXECUTIVE_SUMMARY"
@@ -278,8 +293,14 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
             // зависит. Отдать его всем ключам значило бы обесценить каждый
             // готовый пакет прогона, где решение просто появилось.
             key === "FRONT_MATTER_MAIN"
-            ? extras.personaDecision ?? null
-            : null;
+              ? {
+                  personaDecision: extras.personaDecision ?? null,
+                  // Обложку печатает этот же пакет. Не входи состояние в ключ,
+                  // выпуск взял бы обложку черновика из кэша и напечатал бы
+                  // клиенту слово «черновик».
+                  documentState: extras.documentState ?? null,
+                }
+              : null;
   const slots = slotsForFragment(key);
   // Visual asset bindings are fragment inputs: adding/removing an asset for a
   // slot the fragment owns must regenerate it (layout templates are NOT here —
@@ -356,7 +377,7 @@ export function buildSectionPackForFragment(
     evidenceIndex: ctx.evidenceIndex,
     surfaceCollectionHints: ctx.extras.surfaceCollectionHints,
   });
-  const inputHash = `${scopedInputHash(scoped)}:${extrasHash(key, ctx.extras)}`;
+  const inputHash = fragmentInputHash(key, scoped, ctx.extras);
 
   // Cache: identical inputHash + promptVersion reuses the persisted pack —
   // no regeneration and (on LLM fragments) no new LLM call.

@@ -188,6 +188,13 @@ export type FragmentExtras = {
   gptCaseAnalysis?: GptCaseAnalysisExtras;
   /** Themeless subject materials — regional summary only, not risk matrix. */
   uncategorizedMaterials?: UncategorizedMaterialsExtras;
+  /**
+   * Состояние документа: черновик для проверки аналитиком или выпуск.
+   *
+   * Читает его только обложка — и печатает строку о том, что это черновик.
+   * Поля нет вовсе (прежние прогоны, эталоны, реплей) — обложка прежняя.
+   */
+  documentState?: "draft" | "released";
   /** Coverage/provider hints for empty-state copy (§7.4). */
   surfaceCollectionHints?: SurfaceCollectionHint[];
   /**

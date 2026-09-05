@@ -41,6 +41,8 @@ export type DpAction =
   | "report.generateClient"
   | "report.downloadInternal"
   | "report.downloadClient"
+  /** Выпустить отчёт: пересобрать и пометить документ проверенным. */
+  | "report.release"
   | "users.manage"
   | "auditLogs.view";
 
@@ -64,6 +66,8 @@ const PERMISSIONS: Record<DpAction, DpRole[]> = {
   "report.generateClient": ["ADMIN", "REVIEWER"],
   "report.downloadInternal": ["ADMIN", "ANALYST", "REVIEWER"],
   "report.downloadClient": ["ADMIN", "REVIEWER", "CLIENT_VIEWER"],
+  // Выпуск — работа того, кто отчёт готовит: он же его и проверяет.
+  "report.release": ["ADMIN", "ANALYST"],
   "users.manage": [],
   "auditLogs.view": [],
 };

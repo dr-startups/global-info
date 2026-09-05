@@ -2,6 +2,8 @@
  * Unified ORION collection job types: base (Yandex/Serper) + Arsenkin enrichment → composite → Golden.
  */
 
+import type { ReportReleaseState } from "./report-release-state";
+
 export type UnifiedCollectionStage =
   | "BASE_COLLECTION"
   | "ARSENKIN_ENRICHMENT"
@@ -177,6 +179,13 @@ export type UnifiedCollectionJob = {
   lastErrorCode: string | null;
   artifactPaths: Record<string, string>;
   reportLinks: { pdf?: string; pptx?: string; contactSheet?: string };
+  /**
+   * Состояние документа: черновик или выпуск (`services/report-release-state.ts`).
+   *
+   * Поля нет вовсе у прогонов до этого шага — они читаются как черновик:
+   * молчание подтверждением не является.
+   */
+  release?: ReportReleaseState;
   /**
    * Compact funnel snapshot (§0.1). Full detail lives in
    * `report-quality-summary.json` under the job artifact directory.

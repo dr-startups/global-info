@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { withReleaseRequest, type ReportReleaseState } from "./report-release-state";
 import { join } from "node:path";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors";
 import {
@@ -60,6 +61,8 @@ export type UnifiedRebuildRestoreSnapshot = {
   progress: number;
   completedAt: string | null;
   reportLinks: Record<string, string>;
+  /** Состояние документа на момент снимка; у прежних снимков его нет. */
+  release?: ReportReleaseState;
   startedAt?: string | null;
   lastError?: string | null;
   lastErrorCode?: string | null;
@@ -89,6 +92,14 @@ export function restoreStateAfterFailedRebuild(
     progress: snapshot.progress,
     completedAt: snapshot.completedAt,
     reportLinks: snapshot.reportLinks,
+    /*
+     * Запрос выпуска снимается вместе с состоянием.
+     *
+     * Иначе он дожил бы до следующей пересборки — той, что о выпуске не
+     * просила, — и она молча выпустила бы отчёт: сборка по запросу помечает
+     * результат выпуском, а запрос лежит на джобе, а не в вызове.
+     */
+    ...(snapshot.release ? { release: { ...snapshot.release, requested: null } } : {}),
     lastError: snapshot.lastError ?? null,
     lastErrorCode: snapshot.lastErrorCode ?? null,
     // Возраст тоже возвращается: иначе прогон уносит с собой право работать
@@ -367,6 +378,14 @@ export async function rebuildUnifiedReport(input: {
   caseId: string;
   jobId: string;
   actorId: string;
+  /**
+   * Пересобрать и выпустить.
+   *
+   * Запрос кладётся на джобу тем же патчем, каким пересборка принимается:
+   * отдельная запись могла бы осиротеть — принята пересборка, а запроса нет,
+   * или наоборот. Расходует его успешная сборка (`releaseStateAfterPrepare`).
+   */
+  requestRelease?: boolean;
   deps?: RebuildUnifiedReportDeps;
 }): Promise<RebuildUnifiedReportResult> {
   const jobId = String(input.jobId ?? "").trim();
@@ -450,6 +469,7 @@ export async function rebuildUnifiedReport(input: {
         progress: job.progress,
         completedAt: job.completedAt ?? null,
         reportLinks: job.reportLinks ?? {},
+        ...(job.release ? { release: job.release } : {}),
         // Пересборка запускается и с отказа: вернуть «ровно как было» значит
         // вернуть и причину, и отсчёт возраста.
         startedAt: job.startedAt ?? null,
@@ -496,6 +516,15 @@ export async function rebuildUnifiedReport(input: {
         pollAttempt: 0,
         nextPollAt: null,
         warnings: [...job.warnings.filter((w) => w !== REBUILD_MARKER), REBUILD_MARKER],
+        ...(input.requestRelease
+          ? {
+              release: withReleaseRequest({
+                previous: job.release,
+                by: input.actorId,
+                nowIso: nowFn().toISOString(),
+              }),
+            }
+          : {}),
       }) ?? job;
 
     result = {

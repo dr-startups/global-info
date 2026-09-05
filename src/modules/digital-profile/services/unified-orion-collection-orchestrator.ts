@@ -4,7 +4,9 @@
  * Does not rewrite Yandex/Serper / runOrionSearchProfile.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { releaseStateAfterPrepare } from "./report-release-state";
 import type { PrismaClient } from "@prisma/client";
 import {
   claimUnifiedJobLease,
@@ -1833,6 +1835,9 @@ async function stepPrepare(
         binding: b,
         merge: m,
         personaDecision,
+        // Выпуск или черновик — по запросу, лежащему на джобе: пересборка
+        // асинхронна, и вопрос задаётся уже после неё.
+        documentState: job.release?.requested ? "released" : "draft",
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromGptCopy
@@ -2124,10 +2129,33 @@ async function stepPrepare(
         pptx: prepared.pptx,
         ...(prepared.contactSheet ? { contactSheet: prepared.contactSheet } : {}),
       },
+      // Любая сборка — черновик; выпуском её делает только запрос, лежавший на
+      // джобе. Хеш документа записывается вместе с состоянием: им выпуск
+      // отличим от любого другого файла.
+      release: releaseStateAfterPrepare({
+        previous: job.release,
+        documentSha256: sha256OfFile(prepared.pdf),
+        nowIso: new Date().toISOString(),
+      }),
       warnings: warningsForReady,
       ...(reportQuality ? { reportQuality } : {}),
     }) ?? job
   );
+}
+
+/**
+ * Хеш выпущенного документа — по файлу, а не по имени.
+ *
+ * Файла нет (рендер отдал ссылку, но артефакт не дожил) — хеша нет: выдумывать
+ * его нечем, а состояние выпуска и без него остаётся верным.
+ */
+function sha256OfFile(path: string | undefined): string | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    return createHash("sha256").update(readFileSync(path)).digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 export async function getUnifiedCollectionStatus(caseId: string): Promise<UnifiedCollectionJob | null> {
