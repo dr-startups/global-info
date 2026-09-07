@@ -215,7 +215,12 @@ export function CaseTabs({
 
       {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}
       {tab === "reviewSheet" ? (
-        <ReviewSheetTab caseId={caseDetail.id} jobId={unifiedJob?.unifiedJobId ?? null} />
+        <ReviewSheetTab
+          caseId={caseDetail.id}
+          jobId={unifiedJob?.unifiedJobId ?? null}
+          release={unifiedJob?.release ?? null}
+          onReleased={onEvidenceChanged}
+        />
       ) : null}
       {tab === "report" ? (
         <ReportPreviewPanel caseId={caseDetail.id} unifiedJob={unifiedJob} />

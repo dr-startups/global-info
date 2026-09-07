@@ -435,6 +435,15 @@ export const en: Dictionary = {
     reason: "Why it was decided so",
     empty: "The document prints no items of this kind.",
     countLine: "{total} total, {open} open",
+    stateDraft: "Draft — not available to the client",
+    stateReleased: "Released — this document is available to the client",
+    draftHint:
+      "Every build produces a draft. Release rebuilds the report with the decisions applied and marks the result; no paid calls are made.",
+    openAtRelease: "open items at release: {count}",
+    release: "Release",
+    releaseConfirm:
+      "Open items: {evidence} materials, {finding} themes, {compliance} compliance. Release is allowed — the count is recorded in the release.",
+    releaseConfirmCta: "Confirm release",
     decisionsNotice:
       "A decision is saved immediately. Only the result reaches the report: neither the name nor the date is printed — they stay here and in the audit log.",
     staleDocument:

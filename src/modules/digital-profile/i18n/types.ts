@@ -427,6 +427,13 @@ export interface Dictionary {
     reason: string;
     empty: string;
     countLine: string;
+    stateDraft: string;
+    stateReleased: string;
+    draftHint: string;
+    openAtRelease: string;
+    release: string;
+    releaseConfirm: string;
+    releaseConfirmCta: string;
     decisionsNotice: string;
     staleDocument: string;
     decided: string;

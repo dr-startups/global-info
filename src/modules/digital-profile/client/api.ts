@@ -1333,9 +1333,21 @@ export type JobReportQualityDTO = {
   };
 };
 
+/** Состояние документа: черновик даёт любая сборка, выпуск — отдельное действие. */
+export type ReportReleaseStatus = {
+  state: "draft" | "released";
+  requested?: { by: string; at: string } | null;
+  releasedAt?: string | null;
+  releasedBy?: string | null;
+  documentSha256?: string | null;
+  /** Сколько пунктов листа оставались открытыми в выпущенном документе. */
+  openItems?: number | null;
+};
+
 export type UnifiedCollectionJobStatus = {
   jobId: string;
   unifiedJobId: string;
+  release?: ReportReleaseStatus | null;
   stage: string;
   status: string;
   progress: number;
@@ -1699,6 +1711,29 @@ export function rebuildUnifiedReport(
   // Rebuild only re-runs analytics/assembly/render from persisted composite —
   // never POST /unified-collection (paid) and never /recover.
   return request(`/cases/${caseId}/unified-collection/rebuild-report`, {
+    method: "POST",
+    body: JSON.stringify({ jobId }),
+  });
+}
+
+/**
+ * Выпустить отчёт: та же пересборка, но с запросом выпуска на джобе.
+ *
+ * Платных вызовов нет — путь тот же, что у «Пересобрать отчёт». Пометить
+ * выпуском готовый файл нельзя намеренно: он собран до последних решений
+ * аналитика.
+ */
+export function releaseUnifiedReport(
+  caseId: string,
+  jobId: string
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+}> {
+  return request(`/cases/${caseId}/unified-collection/release`, {
     method: "POST",
     body: JSON.stringify({ jobId }),
   });

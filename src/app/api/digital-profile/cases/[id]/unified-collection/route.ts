@@ -184,6 +184,9 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           enrichmentRunIds: job.enrichmentRunIds ?? [],
           compositeDatasetId: job.compositeDatasetId,
           reportLinks: job.reportLinks,
+          // Состояние документа: черновик перед тобой или выпуск. Без него
+          // кабинет не отличает проверенный документ от только что собранного.
+          release: job.release ?? null,
           downloadArtifacts,
           artifactPaths: job.artifactPaths,
           createdAt: job.createdAt,

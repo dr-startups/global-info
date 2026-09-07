@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, EmptyState, ErrorBox, Notice } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
+import { releaseUnifiedReport, type ReportReleaseStatus } from "./api";
 import type {
   ReviewSheet,
   ReviewSheetItem,
@@ -37,10 +38,24 @@ const GROUPS = [
 
 type LiveSheet = ReviewSheet & { currentDecisionsDigest?: string };
 
-export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: string | null }) {
-  const { t } = useDigitalProfileI18n();
+export function ReviewSheetTab({
+  caseId,
+  jobId,
+  release,
+  onReleased,
+}: {
+  caseId: string;
+  jobId?: string | null;
+  /** Состояние документа: черновик перед аналитиком или уже выпуск. */
+  release?: ReportReleaseStatus | null;
+  onReleased?: () => void;
+}) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
   const canDecide = can("evidence.create");
+  const canRelease = can("report.release");
+  const [confirmingRelease, setConfirmingRelease] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const [sheet, setSheet] = useState<LiveSheet | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,6 +121,21 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
     [caseId, load]
   );
 
+  const doRelease = useCallback(async () => {
+    if (!jobId) return;
+    setReleasing(true);
+    setError(null);
+    try {
+      await releaseUnifiedReport(caseId, jobId);
+      setConfirmingRelease(false);
+      onReleased?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReleasing(false);
+    }
+  }, [caseId, jobId, onReleased]);
+
   const shown = useMemo(() => {
     const items = sheet?.items ?? [];
     return openOnly ? items.filter((i) => i.open) : items;
@@ -127,6 +157,63 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
     <div>
       <h2 className="dp-h2">{t("reviewSheet.title")}</h2>
       <p className="dp-muted">{t("reviewSheet.lead")}</p>
+      <div className="dp-card" style={{ marginBottom: "0.75rem" }}>
+        <div>
+          <strong>
+            {release?.state === "released"
+              ? t("reviewSheet.stateReleased")
+              : t("reviewSheet.stateDraft")}
+          </strong>
+        </div>
+        {release?.state === "released" ? (
+          <div className="dp-muted">
+            {release.releasedAt ? fmtDate(release.releasedAt) : ""}
+            {release.releasedBy ? ` · ${release.releasedBy}` : ""}
+            {typeof release.openItems === "number"
+              ? ` · ${t("reviewSheet.openAtRelease", { count: release.openItems })}`
+              : ""}
+          </div>
+        ) : (
+          <div className="dp-muted">{t("reviewSheet.draftHint")}</div>
+        )}
+        {canRelease && jobId ? (
+          confirmingRelease ? (
+            <div style={{ marginTop: "0.5rem" }}>
+              <div>
+                {t("reviewSheet.releaseConfirm", {
+                  evidence: sheet.summary.evidence.open,
+                  finding: sheet.summary.finding.open,
+                  compliance: sheet.summary.compliance.open,
+                })}
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.4rem" }}>
+                <button
+                  className="dp-btn dp-btn-primary dp-btn-sm"
+                  disabled={releasing}
+                  onClick={() => void doRelease()}
+                >
+                  {t("reviewSheet.releaseConfirmCta")}
+                </button>
+                <button
+                  className="dp-btn dp-btn-sm"
+                  disabled={releasing}
+                  onClick={() => setConfirmingRelease(false)}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="dp-btn dp-btn-primary dp-btn-sm"
+              style={{ marginTop: "0.5rem" }}
+              onClick={() => setConfirmingRelease(true)}
+            >
+              {t("reviewSheet.release")}
+            </button>
+          )
+        ) : null}
+      </div>
       <Notice>{t("reviewSheet.decisionsNotice")}</Notice>
       {sheet.currentDecisionsDigest && sheet.currentDecisionsDigest !== sheet.decisionsDigest ? (
         <Notice>{t("reviewSheet.staleDocument")}</Notice>

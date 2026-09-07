@@ -31,6 +31,19 @@ export type ReportReleaseState = {
   releasedBy?: string | null;
   /** sha256 выпущенного PDF: чем этот документ отличим от любого другого. */
   documentSha256?: string | null;
+  /**
+   * Сколько пунктов листа проверки оставались нерешёнными в выпущенном
+   * документе.
+   *
+   * Выпуск при открытых пунктах разрешён (решение владельца 7), значит отчёт
+   * уходит клиенту с материалами, чью принадлежность никто не подтверждал. На
+   * вопрос «что было известно на момент выпуска» надо отвечать данными:
+   * пересчёт через месяц даст другое число — набор решений к тому времени уже
+   * другой.
+   *
+   * У черновика поля нет: там это не факт, а мгновение.
+   */
+  openItems?: number | null;
 };
 
 /**
@@ -55,10 +68,19 @@ export function releaseStateAfterPrepare(input: {
   previous: ReportReleaseState | null | undefined;
   documentSha256: string | null;
   nowIso: string;
+  /** Число открытых пунктов листа этой сборки; листа нет — числа нет. */
+  openItems?: number | null;
 }): ReportReleaseState {
   const requested = input.previous?.requested ?? null;
   if (!requested) {
-    return { state: "draft", requested: null, releasedAt: null, releasedBy: null, documentSha256: null };
+    return {
+      state: "draft",
+      requested: null,
+      releasedAt: null,
+      releasedBy: null,
+      documentSha256: null,
+      openItems: null,
+    };
   }
   return {
     state: "released",
@@ -66,6 +88,7 @@ export function releaseStateAfterPrepare(input: {
     releasedAt: input.nowIso,
     releasedBy: requested.by,
     documentSha256: input.documentSha256,
+    openItems: input.openItems ?? null,
   };
 }
 

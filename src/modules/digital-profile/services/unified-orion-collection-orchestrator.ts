@@ -7,6 +7,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { releaseStateAfterPrepare } from "./report-release-state";
+import { openItemsOf, type ReviewSheet } from "./review-sheet";
+import { reviewSheetPath } from "./review-sheet-artifact";
 import type { PrismaClient } from "@prisma/client";
 import {
   claimUnifiedJobLease,
@@ -1831,7 +1833,7 @@ async function stepPrepare(
       const res = await runCanonicalReportPrepare({
         caseId,
         unifiedJobId: job.unifiedJobId,
-        artifactsDir: unifiedArtifactsDir(caseId, job.unifiedJobId),
+        artifactsDir: unifiedArtifactsDir(job.caseId, job.unifiedJobId),
         binding: b,
         merge: m,
         personaDecision,
@@ -2136,6 +2138,9 @@ async function stepPrepare(
         previous: job.release,
         documentSha256: sha256OfFile(prepared.pdf),
         nowIso: new Date().toISOString(),
+        // Число открытых пунктов берётся у листа этой же сборки: он собран
+        // подготовкой минутой раньше, и второго счёта открытых в продукте нет.
+        openItems: openItemsOf(readReviewSheetOfJob(unifiedArtifactsDir(job.caseId, job.unifiedJobId))),
       }),
       warnings: warningsForReady,
       ...(reportQuality ? { reportQuality } : {}),
@@ -2149,6 +2154,23 @@ async function stepPrepare(
  * Файла нет (рендер отдал ссылку, но артефакт не дожил) — хеша нет: выдумывать
  * его нечем, а состояние выпуска и без него остаётся верным.
  */
+/**
+ * Лист проверки собранной джобы — или `null`, если его нет.
+ *
+ * Отсутствие листа не отменяет выпуск: документ собран, состояние верно, число
+ * открытых просто не записано. Выдумывать здесь ноль нельзя — «открытых нет» и
+ * «не считали» разные утверждения.
+ */
+function readReviewSheetOfJob(artifactsDir: string): ReviewSheet | null {
+  const path = reviewSheetPath(artifactsDir);
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as ReviewSheet;
+  } catch {
+    return null;
+  }
+}
+
 function sha256OfFile(path: string | undefined): string | null {
   if (!path || !existsSync(path)) return null;
   try {

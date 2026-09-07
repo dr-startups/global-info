@@ -715,6 +715,20 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
 }
 
 /**
+ * Сколько пунктов листа ждут аналитика — один счёт на весь продукт.
+ *
+ * Число попадает в запись выпуска, то есть в юридически значимый документ:
+ * второй обход по пунктам разошёлся бы с этой сводкой ровно тогда, когда цена
+ * расхождения выше всего. Листа нет — числа нет: ноль и «не считали» разные
+ * утверждения.
+ */
+export function openItemsOf(sheet: ReviewSheet | null | undefined): number | null {
+  if (!sheet?.summary) return null;
+  const s = sheet.summary;
+  return s.evidence.open + s.finding.open + s.compliance.open;
+}
+
+/**
  * Наложить действующие решения на уже собранный лист.
  *
  * Отпечаток в файле отвечает на «что вошло в сборку», а вкладке нужен ответ на
