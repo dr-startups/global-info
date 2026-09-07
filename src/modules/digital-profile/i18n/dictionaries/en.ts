@@ -68,6 +68,7 @@ export const en: Dictionary = {
     riskFindings: "Risk Findings",
     evidenceQuality: "Evidence Quality",
     auditSummary: "Audit Summary",
+    reviewSheet: "Pre-release review",
     reportPreview: "Report Preview",
   },
   agents: {
@@ -415,6 +416,25 @@ export const en: Dictionary = {
     allItems: "Evidence items",
     identityCol: "Identity / autocomplete",
     includeImage: "Include image",
+  },
+  reviewSheet: {
+    title: "Pre-release review",
+    lead: "What the assembled document prints and what the machine decided about each item.",
+    readOnlyNotice:
+      "Read-only for now: analyst decisions come next. An open item means the machine could not decide, not that something is wrong.",
+    noJob: "No report assembled yet — nothing to review.",
+    notBuilt: "No review sheet for this run: the report was built before the sheet existed.",
+    openOnly: "Open only",
+    allItems: "All items",
+    groupEvidence: "Materials",
+    groupFinding: "Themes",
+    groupCompliance: "Compliance",
+    openBadge: "awaiting a decision",
+    framedBadge: "red-framed",
+    pages: "Pages",
+    reason: "Why it was decided so",
+    empty: "The document prints no items of this kind.",
+    countLine: "{total} total, {open} open",
   },
   createCase: {
     title: "Create case",

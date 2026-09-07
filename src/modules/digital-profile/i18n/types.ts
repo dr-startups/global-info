@@ -85,6 +85,7 @@ export interface Dictionary {
     riskFindings: string;
     evidenceQuality: string;
     auditSummary: string;
+    reviewSheet: string;
     reportPreview: string;
   };
   agents: {
@@ -408,6 +409,24 @@ export interface Dictionary {
     allItems: string;
     identityCol: string;
     includeImage: string;
+  };
+  reviewSheet: {
+    title: string;
+    lead: string;
+    readOnlyNotice: string;
+    noJob: string;
+    notBuilt: string;
+    openOnly: string;
+    allItems: string;
+    groupEvidence: string;
+    groupFinding: string;
+    groupCompliance: string;
+    openBadge: string;
+    framedBadge: string;
+    pages: string;
+    reason: string;
+    empty: string;
+    countLine: string;
   };
   createCase: {
     title: string;

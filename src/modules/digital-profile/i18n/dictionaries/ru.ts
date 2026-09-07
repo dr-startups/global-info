@@ -68,6 +68,7 @@ export const ru: Dictionary = {
     riskFindings: "Риск-находки",
     evidenceQuality: "Качество доказательств",
     auditSummary: "Сводка аудита",
+    reviewSheet: "Проверка перед выпуском",
     reportPreview: "Предпросмотр отчёта",
   },
   agents: {
@@ -416,6 +417,25 @@ export const ru: Dictionary = {
     allItems: "Элементы доказательств",
     identityCol: "Identity / autocomplete",
     includeImage: "Включить изображение",
+  },
+  reviewSheet: {
+    title: "Проверка перед выпуском",
+    lead: "Что напечатано в собранном документе и что о каждом пункте решила машина.",
+    readOnlyNotice:
+      "Пока только чтение: решения аналитика — следующий шаг. Открытый пункт значит «машина решить не смогла», а не «плохо».",
+    noJob: "Отчёт ещё не собран — проверять нечего.",
+    notBuilt: "Лист проверки для этого прогона не собран: отчёт построен до его появления.",
+    openOnly: "Только открытые",
+    allItems: "Все пункты",
+    groupEvidence: "Материалы",
+    groupFinding: "Темы",
+    groupCompliance: "Комплаенс",
+    openBadge: "ждёт решения",
+    framedBadge: "в красной рамке",
+    pages: "Страницы",
+    reason: "Почему так решено",
+    empty: "Пунктов этого вида в документе нет.",
+    countLine: "всего {total}, из них открытых {open}",
   },
   createCase: {
     title: "Создать кейс",

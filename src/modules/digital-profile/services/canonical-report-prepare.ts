@@ -80,6 +80,7 @@ import { genAnswerCoverageCells } from "./base-collection-manifest";
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
+import { writeReviewSheet } from "./review-sheet-artifact";
 import { observationVerdictsForVisuals } from "../serp-observation/resolve-observation-highlights";
 import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-version";
 import {
@@ -1656,6 +1657,31 @@ export async function runCanonicalReportPrepare(
     pageCount = deck.assembly.deckManifest.pageCount;
     deckManifest = deck.assembly.deckManifest;
     rendererSlides = deck.assembly.rendererSlides;
+  }
+
+  /*
+   * Лист проверки — здесь, а не в сборке деки.
+   *
+   * Сюда сходятся все три пути (полная сборка, возобновление с рендера, повтор
+   * стадии 2), и на каждом из них дека уже известна. Написанный внутри сборки
+   * лист не появился бы у возобновления, которое деку переиспользует, — а
+   * вкладка проверки показала бы пустоту там, где документ есть.
+   *
+   * Отказ записи прогон не роняет: лист — рабочий артефакт проверки, а не
+   * условие выпуска документа.
+   */
+  try {
+    writeReviewSheet({
+      caseId: input.caseId,
+      artifactsDir: input.artifactsDir,
+      slides: rendererSlides,
+    });
+  } catch (error) {
+    console.warn(
+      `[digital-profile][лист проверки] не записан: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 
   // Idempotent: prior successful render artifacts for the same assembly hash.

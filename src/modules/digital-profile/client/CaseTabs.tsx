@@ -38,6 +38,7 @@ import { SurfacesTab } from "./SurfacesTab";
 import { SerpSnapshotTab } from "./SerpSnapshotTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
 import { EvidenceQualityTab } from "./EvidenceQualityTab";
+import { ReviewSheetTab } from "./ReviewSheetTab";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -58,6 +59,7 @@ type TabKey =
   | "risk"
   | "evidenceQuality"
   | "audit"
+  | "reviewSheet"
   | "report";
 
 export function CaseTabs({
@@ -134,6 +136,9 @@ export function CaseTabs({
     { key: "risk", label: t("tabs.riskFindings"), count: riskFindings.length, raw: true },
     { key: "evidenceQuality", label: t("tabs.evidenceQuality"), raw: true },
     { key: "audit", label: t("tabs.auditSummary"), raw: true },
+    // Лист проверки несёт машинные решения о принадлежности — клиенту он не
+    // показывается, как и остальные внутренние данные модуля.
+    { key: "reviewSheet", label: t("tabs.reviewSheet"), raw: true },
     { key: "report", label: t("tabs.reportPreview") },
   ];
   const tabs = allTabs.filter((tb) => canViewRaw || !tb.raw);
@@ -209,6 +214,9 @@ export function CaseTabs({
       ) : null}
 
       {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}
+      {tab === "reviewSheet" ? (
+        <ReviewSheetTab caseId={caseDetail.id} jobId={unifiedJob?.unifiedJobId ?? null} />
+      ) : null}
       {tab === "report" ? (
         <ReportPreviewPanel caseId={caseDetail.id} unifiedJob={unifiedJob} />
       ) : null}
