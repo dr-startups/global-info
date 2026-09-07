@@ -77,6 +77,15 @@ export type ReviewSheetItem = {
   /** Наблюдения, из которых сложен пункт: у материала их бывает много. */
   refs?: string[];
   /**
+   * Ключи материалов темы.
+   *
+   * «Подтвердить тему» — это подтвердить принадлежность её улик, и ничего
+   * сверх того: иначе отчёт объявил бы тему подтверждённой при
+   * неподтверждённых материалах. Раскладывает решение вкладка, а ключи даёт
+   * лист — второго ответа на «из чего сложена тема» нет.
+   */
+  materialKeys?: string[];
+  /**
    * Действующие решения аналитика по вопросу: «чей материал» и «негативен ли».
    *
    * В отчёт они не попадают ни именем, ни датой (решение владельца 6) — здесь
@@ -163,6 +172,7 @@ export type ReviewSheetFinding = {
   theme: string;
   subjectMatch: string;
   riskLevel?: string | null;
+  evidenceRefs?: readonly string[] | null;
 };
 
 export type ReviewSheetComplianceItem = {
@@ -267,6 +277,21 @@ const REASON_LABELS: Readonly<Record<string, string>> = {
   compliance_match_confirmed: "совпадение подтверждено аналитиком",
   compliance_review_pending: "совпадение ждёт проверки аналитиком",
 };
+
+/**
+ * Ключ пункта-темы — тема, а не находка.
+ *
+ * Идентификатор находки хешируется от состава её улик и меняется вместе с ним:
+ * решение, привязанное к нему, отвалилось бы на первой же пересборке — ровно
+ * тогда, когда должно сработать. Идентификатор устроен как
+ * `finding-<тема>-<корзина>-<хеш>`, и тема из него читается; чужую форму
+ * разбирать не пытаемся — тогда ключом остаётся сам идентификатор.
+ */
+export function reviewThemeKeyOf(findingId: string): string {
+  const parts = String(findingId ?? "").split("-");
+  if (parts.length >= 4 && parts[0] === "finding" && parts[1]) return `theme:${parts[1]}`;
+  return findingId;
+}
 
 export function reasonLabel(code: string): string {
   const known = REASON_LABELS[code];
@@ -626,24 +651,87 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       findingPages.set(id, list);
     }
   }
-  const findingItems: ReviewSheetItem[] = [];
+  /*
+   * Одна тема — один пункт, сколькими бы корзинами она ни жила.
+   *
+   * Подтверждённая тема стоит в матрице, «принадлежность не подтверждена» — в
+   * приложении, и это одна и та же тема. Аналитик думает темой, а не корзиной:
+   * два пункта на неё заставляли бы решать дважды и по-разному.
+   */
+  const themeDrafts = new Map<
+    string,
+    {
+      title: string;
+      states: string[];
+      places: ReviewPlace[];
+      open: boolean;
+      materialKeys: Set<string>;
+    }
+  >();
   for (const finding of [...(input.findings ?? []), ...(input.ambiguousFindings ?? [])]) {
     const onSlides = findingPages.get(finding.findingId);
     // Тема, которую не печатает ни одна страница, на листе не стоит: решать по
     // ней нечего, а пункт обещал бы клиенту то, чего он не увидит.
     if (!onSlides || onSlides.length === 0) continue;
-    const places = onSlides
-      .map((slide) => placeOf(slide, "блок темы"))
-      .filter((p) => p.page > 0)
-      .sort((a, b) => a.page - b.page);
+    const key = reviewThemeKeyOf(finding.findingId);
+    const draft = themeDrafts.get(key) ?? {
+      title: finding.theme,
+      states: [],
+      places: [],
+      open: false,
+      materialKeys: new Set<string>(),
+    };
+    const state = findingState(finding.subjectMatch);
+    if (!draft.states.includes(state)) draft.states.push(state);
+    if (finding.subjectMatch === "LIKELY_SUBJECT") draft.open = true;
+    for (const slide of onSlides) {
+      const place = placeOf(slide, "блок темы");
+      if (place.page > 0 && !draft.places.some((p) => p.page === place.page)) {
+        draft.places.push(place);
+      }
+    }
+    // Ключи материалов темы: по ним «подтвердить тему» раскладывается на
+    // решения о принадлежности её улик — иначе тема объявлялась бы
+    // подтверждённой при неподтверждённых уликах.
+    for (const ref of finding.evidenceRefs ?? []) {
+      const fields = fieldsByRef.get(ref);
+      if (fields) draft.materialKeys.add(serpMaterialKey(fields, ref));
+    }
+    themeDrafts.set(key, draft);
+  }
+  const findingItems: ReviewSheetItem[] = [];
+  for (const [key, draft] of themeDrafts) {
+    const places = [...draft.places].sort((a, b) => a.page - b.page);
+    const decisions = decisionsOf(key);
     findingItems.push({
       kind: "finding",
-      key: finding.findingId,
-      open: finding.subjectMatch === "LIKELY_SUBJECT",
-      title: finding.theme,
-      state: findingState(finding.subjectMatch),
+      key,
+      open: draft.open && !decisions?.presence,
+      title: draft.title,
+      state: draft.states.join("; "),
       pages: [...new Set(places.map((p) => p.page))],
       places,
+      ...(draft.materialKeys.size > 0 ? { materialKeys: [...draft.materialKeys].sort() } : {}),
+      ...(decisions ? { decisions } : {}),
+    });
+  }
+  /*
+   * Снятая тема — из решений, а не из напечатанного: в деке её нет по
+   * построению, и без этого прохода решение исчезло бы вместе со своей кнопкой.
+   */
+  for (const row of activeBySlot.values()) {
+    if (row.itemKind !== "finding" || row.decisionKind !== "presence") continue;
+    if (row.status !== "EXCLUDED") continue;
+    if (findingItems.some((i) => i.key === row.itemKey)) continue;
+    findingItems.push({
+      kind: "finding",
+      key: row.itemKey,
+      open: false,
+      title: row.itemKey.replace(/^theme:/u, ""),
+      state: "снята из отчёта решением проверки",
+      pages: [],
+      places: [],
+      ...(decisionsOf(row.itemKey) ? { decisions: decisionsOf(row.itemKey) } : {}),
     });
   }
 

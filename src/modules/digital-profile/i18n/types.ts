@@ -448,6 +448,8 @@ export interface Dictionary {
     actNotAdverse: string;
     actAdverse: string;
     actExclude: string;
+    actConfirmTheme: string;
+    actRemoveTheme: string;
     actClear: string;
     kind: Record<string, string>;
     status: Record<string, string>;

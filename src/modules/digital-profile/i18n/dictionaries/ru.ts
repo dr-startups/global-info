@@ -462,6 +462,8 @@ export const ru: Dictionary = {
     actNotAdverse: "Не негатив",
     actAdverse: "Негатив",
     actExclude: "Убрать из отчёта",
+    actConfirmTheme: "Подтвердить тему",
+    actRemoveTheme: "Снять тему",
     actClear: "Снять решение",
     kind: { belonging: "принадлежность", adverse: "негатив", presence: "показ в отчёте" },
     status: {

@@ -96,6 +96,7 @@ export type AppliedOverrideRecord = {
     | "review_adverse"
     | "review_neutral"
     | "review_excluded"
+    | "review_finding_excluded"
     | "approved_finding";
   matchKey: string;
   inventoryId?: string;
@@ -501,6 +502,23 @@ export function applyAnalystOverrides(input: {
     byMaterial.set(key, [...(byMaterial.get(key) ?? []), it]);
   }
   for (const ov of input.overrides.reviewDecisions ?? []) {
+    /*
+     * Решение о теме записывается правкой, а применяется позже.
+     *
+     * Здесь находок ещё нет — их синтезирует шаг после, — поэтому запись несёт
+     * ключ темы, а снимает находку загрузчик входов деки, когда находки уже
+     * собраны. Материалы темы при этом остаются: тема это наше утверждение, а
+     * строки выдачи реальны.
+     */
+    if (ov.itemKind === "finding") {
+      if (ov.decisionKind !== "presence" || ov.status !== "EXCLUDED") continue;
+      applied.push({
+        kind: "review_finding_excluded",
+        matchKey: ov.itemKey,
+        effect: "тема не печатается",
+      });
+      continue;
+    }
     if (ov.itemKind !== "evidence") continue;
     // «Снимаю решение» ничего не меняет: смысл ответа — перестать перекрывать
     // машину, и запись о нём живёт в истории, а не в наборе правок.

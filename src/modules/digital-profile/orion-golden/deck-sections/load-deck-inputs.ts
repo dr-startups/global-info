@@ -38,6 +38,7 @@ import {
   type ObservationVerdict,
 } from "../../serp-observation/resolve-observation-highlights";
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
+import { reviewThemeKeyOf } from "../../services/review-sheet";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 import {
@@ -374,6 +375,31 @@ export function dropAnalystExcludedFromDeckInputs(input: {
     finding.evidenceRefs = keep(finding.evidenceRefs);
   }
   return { count, ranksByRegion };
+}
+
+/**
+ * Убрать находки тем, снятых решением проверки.
+ *
+ * Тема — это наше утверждение о субъекте: сняли — значит отчёт его не делает,
+ * и находка уходит из деки целиком (матрица, региональные блоки, приложение).
+ * Материалы темы при этом остаются на своих местах: поисковик их показывает, и
+ * вычёркивать строку выдачи ради снятого вывода значило бы соврать о выдаче.
+ *
+ * Ключ темы читается из идентификатора находки (`reviewThemeKeyOf`) — тем же
+ * разбором, каким лист проверки ключует свой пункт.
+ */
+export function dropExcludedFindingsFromDeckInputs(input: {
+  findings: Finding[];
+  excludedThemeKeys: ReadonlySet<string>;
+}): { count: number } {
+  if (input.excludedThemeKeys.size === 0) return { count: 0 };
+  const kept = input.findings.filter(
+    (f) => !input.excludedThemeKeys.has(reviewThemeKeyOf(f.findingId))
+  );
+  const count = input.findings.length - kept.length;
+  input.findings.length = 0;
+  input.findings.push(...kept);
+  return { count };
 }
 
 /**
@@ -1042,6 +1068,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         excludedRefs.add(sibling);
       }
     }
+    dropExcludedFindingsFromDeckInputs({
+      findings: mergedBundle.findings,
+      excludedThemeKeys: new Set(
+        applied
+          .filter((r) => String(r?.kind ?? "") === "review_finding_excluded")
+          .map((r) => String(r?.matchKey ?? ""))
+          .filter(Boolean)
+      ),
+    });
     removedByAnalyst = dropAnalystExcludedFromDeckInputs({
       evidenceIndex,
       surfaceUnits,

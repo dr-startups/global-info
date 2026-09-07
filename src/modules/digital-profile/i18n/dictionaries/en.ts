@@ -461,6 +461,8 @@ export const en: Dictionary = {
     actNotAdverse: "Not adverse",
     actAdverse: "Adverse",
     actExclude: "Remove from report",
+    actConfirmTheme: "Confirm theme",
+    actRemoveTheme: "Remove theme",
     actClear: "Clear decision",
     kind: { belonging: "belonging", adverse: "adverse", presence: "shown in the report" },
     status: {

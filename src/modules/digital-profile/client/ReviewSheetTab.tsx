@@ -89,6 +89,49 @@ export function ReviewSheetTab({
     void load();
   }, [load]);
 
+  /**
+   * «Подтвердить тему» — это подтвердить принадлежность её материалов.
+   *
+   * Раскладывается прямо здесь, решениями по материалам: отдельного признака
+   * «тема подтверждена» в продукте нет и не заводится — иначе отчёт объявил бы
+   * тему подтверждённой при неподтверждённых уликах.
+   */
+  const confirmTheme = useCallback(
+    async (item: ReviewSheetItem) => {
+      const keys = item.materialKeys ?? [];
+      if (keys.length === 0) return;
+      setSaving(`${item.key}|belonging`);
+      setError(null);
+      try {
+        for (const key of keys) {
+          const res = await fetch(
+            `/api/digital-profile/cases/${caseId}/unified-collection/review-decisions`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                itemKind: "evidence",
+                itemKey: key,
+                decisionKind: "belonging",
+                status: "CONFIRMED_SUBJECT",
+              }),
+            }
+          );
+          if (!res.ok) {
+            const json = (await res.json()) as { error?: string };
+            throw new Error(json.error ?? `HTTP ${res.status}`);
+          }
+        }
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSaving(null);
+      }
+    },
+    [caseId, load]
+  );
+
   const decide = useCallback(
     async (item: ReviewSheetItem, decisionKind: string, status: string) => {
       setSaving(`${item.key}|${decisionKind}`);
@@ -249,9 +292,10 @@ export function ReviewSheetTab({
                   <ReviewRow
                     key={`${item.kind}:${item.key}`}
                     item={item}
-                    canDecide={canDecide && item.kind === "evidence"}
+                    canDecide={canDecide && (item.kind === "evidence" || item.kind === "finding")}
                     saving={saving}
                     onDecide={decide}
+                    onConfirmTheme={confirmTheme}
                   />
                 ))}
               </ul>
@@ -268,11 +312,13 @@ function ReviewRow({
   canDecide,
   saving,
   onDecide,
+  onConfirmTheme,
 }: {
   item: ReviewSheetItem;
   canDecide: boolean;
   saving: string | null;
   onDecide: (item: ReviewSheetItem, kind: string, status: string) => void | Promise<void>;
+  onConfirmTheme: (item: ReviewSheetItem) => void | Promise<void>;
 }) {
   const { t } = useDigitalProfileI18n();
   const decided = item.decisions ?? {};
@@ -309,7 +355,38 @@ function ReviewRow({
           </div>
         ) : null
       )}
-      {canDecide ? (
+      {canDecide && item.kind === "finding" ? (
+        <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+          {(item.materialKeys ?? []).length > 0 ? (
+            <button
+              className="dp-btn dp-btn-sm"
+              disabled={saving === `${item.key}|belonging`}
+              onClick={() => void onConfirmTheme(item)}
+            >
+              {t("reviewSheet.actConfirmTheme")}
+            </button>
+          ) : null}
+          <button
+            className="dp-btn dp-btn-sm"
+            disabled={
+              saving === `${item.key}|presence` || decided.presence?.status === "EXCLUDED"
+            }
+            onClick={() => void onDecide(item, "presence", "EXCLUDED")}
+          >
+            {t("reviewSheet.actRemoveTheme")}
+          </button>
+          {decided.presence ? (
+            <button
+              className="dp-btn dp-btn-sm"
+              disabled={saving === `${item.key}|presence`}
+              onClick={() => void onDecide(item, "presence", "CLEARED")}
+            >
+              {t("reviewSheet.actClear")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {canDecide && item.kind === "evidence" ? (
         <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
           {EVIDENCE_ACTIONS.map((a) => (
             <button
