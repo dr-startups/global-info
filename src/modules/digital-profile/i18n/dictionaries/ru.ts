@@ -436,6 +436,24 @@ export const ru: Dictionary = {
     reason: "Почему так решено",
     empty: "Пунктов этого вида в документе нет.",
     countLine: "всего {total}, из них открытых {open}",
+    decisionsNotice:
+      "Решение сохраняется сразу. В отчёт попадает только результат: ни имени, ни даты документ не печатает — они остаются здесь и в журнале.",
+    staleDocument:
+      "Есть решения, принятые после сборки документа. Пересоберите отчёт, иначе в PDF их нет.",
+    decided: "Решено",
+    actConfirmSubject: "Это субъект",
+    actOtherSubject: "Другой человек",
+    actNotAdverse: "Не негатив",
+    actAdverse: "Негатив",
+    actClear: "Снять решение",
+    kind: { belonging: "принадлежность", adverse: "негатив" },
+    status: {
+      CONFIRMED_SUBJECT: "материал о субъекте",
+      OTHER_SUBJECT: "материал о другом лице",
+      ADVERSE: "негативный",
+      NEUTRAL: "не негативный",
+      CLEARED: "решение снято",
+    },
   },
   createCase: {
     title: "Создать кейс",

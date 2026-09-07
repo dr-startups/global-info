@@ -427,6 +427,16 @@ export interface Dictionary {
     reason: string;
     empty: string;
     countLine: string;
+    decisionsNotice: string;
+    staleDocument: string;
+    decided: string;
+    actConfirmSubject: string;
+    actOtherSubject: string;
+    actNotAdverse: string;
+    actAdverse: string;
+    actClear: string;
+    kind: Record<string, string>;
+    status: Record<string, string>;
   };
   createCase: {
     title: string;

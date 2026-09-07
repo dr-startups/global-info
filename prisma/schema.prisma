@@ -250,6 +250,7 @@ model Case {
   unifiedCollectionJobs UnifiedCollectionJobRecord[]
   workflowSteps      WorkflowStep[]
   personaChecks      SubjectPersonaCheck[]
+  reviewDecisions    DpReviewDecision[]
 
   @@index([status])
   @@index([deletedAt])
@@ -721,6 +722,44 @@ model SubjectPersonaCheck {
 
   @@index([caseId, searchedAt])
   @@map("dp_subject_persona_checks")
+}
+
+/// Решение аналитика по пункту листа проверки перед выпуском отчёта.
+///
+/// История, а не перезапись: новое решение гасит прежнее (`isActive=false`) и
+/// ссылается на него. Выпуск отчёта юридически значим, и на вопрос «почему в
+/// отчёте нет X» надо отвечать данными — кто решил, когда и что решал раньше.
+///
+/// Ключ пункта — ключ материала (`serpMaterialKey`), тот же, которым лист
+/// проверки считает пункты, а таблица выдачи сводит строки: одна страница,
+/// найденная четырьмя запросами, — четыре наблюдения и один пункт.
+model DpReviewDecision {
+  id                 String   @id @default(cuid())
+  caseId             String
+  /// evidence | finding | compliance
+  itemKind           String
+  /// Ключ материала: содержит «/», «|» и «:», поэтому в путях не адресуется
+  itemKey            String
+  /// На какой вопрос отвечено: belonging | adverse
+  decisionKind       String
+  /// belonging: CONFIRMED_SUBJECT | OTHER_SUBJECT | CLEARED
+  /// adverse:   ADVERSE | NEUTRAL | CLEARED
+  status             String
+  /// Примечание аналитика: внутреннее, в отчёт не печатается
+  note               String?
+  isActive           Boolean  @default(true)
+  previousDecisionId String?
+  decidedBy          String?
+  decidedAt          DateTime @default(now())
+  /// ui | import | fixture
+  source             String   @default("ui")
+  metadata           Json?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, isActive])
+  @@index([caseId, itemKind, itemKey])
+  @@map("dp_review_decisions")
 }
 
 /// Единица долговечной работы (шаг 12). Строка этой таблицы — и запись о

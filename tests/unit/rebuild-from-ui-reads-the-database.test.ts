@@ -29,6 +29,7 @@ const server = vi.hoisted(() => {
       riskFinding: delegate("riskFinding"),
       wikipediaCheck: delegate("wikipediaCheck"),
       serpCapture: delegate("serpCapture"),
+      reviewDecision: delegate("reviewDecision"),
     },
   };
 });
@@ -154,6 +155,7 @@ describe("пересборка отчёта из интерфейса", () => {
       "riskFinding",
       "wikipediaCheck",
       "serpCapture",
+      "reviewDecision",
     ] as const) {
       expect(passed![name]).toBe(server.client[name]);
     }

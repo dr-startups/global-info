@@ -22,6 +22,16 @@ import {
   unifiedArtifactsDir,
 } from "@/modules/digital-profile/services/unified-collection-job-store";
 import { reviewSheetPath } from "@/modules/digital-profile/services/review-sheet-artifact";
+import {
+  applyDecisionsToSheet,
+  type ReviewSheet,
+} from "@/modules/digital-profile/services/review-sheet";
+import {
+  listReviewDecisions,
+  reviewDecisionsDigest,
+  type ReviewDecisionPrisma,
+} from "@/modules/digital-profile/services/review-decision-store";
+import { prisma } from "@/server/prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -48,5 +58,22 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     // Отчёт этой джобы собран до появления листа — так и сказано словами.
     throw new NotFoundError("review sheet is not built for this job");
   }
-  return jsonOk(JSON.parse(readFileSync(path, "utf8")) as unknown);
+  const sheet = JSON.parse(readFileSync(path, "utf8")) as ReviewSheet;
+
+  /*
+   * Действующие решения накладываются при выдаче, а не берутся из файла.
+   *
+   * В файле стоит отпечаток того набора, который вошёл в **сборку**, — по нему
+   * вкладка и узнаёт, что документ старше решений. Показывать при этом
+   * устаревший список решений значило бы отвечать на вопрос «что решено» из
+   * снимка недельной давности.
+   */
+  const rows = await listReviewDecisions(id, prisma as unknown as ReviewDecisionPrisma);
+  return jsonOk({
+    ...applyDecisionsToSheet(sheet, rows),
+    /** Отпечаток решений, вошедших в документ. */
+    decisionsDigest: sheet.decisionsDigest,
+    /** Отпечаток решений на сейчас: расходится — документ надо пересобрать. */
+    currentDecisionsDigest: reviewDecisionsDigest(rows),
+  });
 });

@@ -19,6 +19,7 @@ import {
   buildReviewSheet,
   type ReviewSheet,
   type ReviewSheetComplianceItem,
+  type ReviewSheetDecision,
   type ReviewSheetFinding,
   type ReviewSheetObservation,
   type ReviewSheetResolution,
@@ -53,6 +54,8 @@ export function buildReviewSheetFromJobDir(input: {
   caseId: string;
   artifactsDir: string;
   slides?: readonly ReviewSheetSlide[];
+  /** Решения аналитика: их отпечаток и есть ответ «что вошло в эту сборку». */
+  decisions?: readonly ReviewSheetDecision[];
 }): ReviewSheet {
   const analyticsDir = join(input.artifactsDir, "analytics");
   const slides =
@@ -95,6 +98,7 @@ export function buildReviewSheetFromJobDir(input: {
     findings: bundle?.findings ?? [],
     ambiguousFindings,
     compliance,
+    decisions: input.decisions ?? [],
   });
 }
 
@@ -103,6 +107,7 @@ export function writeReviewSheet(input: {
   caseId: string;
   artifactsDir: string;
   slides?: readonly ReviewSheetSlide[];
+  decisions?: readonly ReviewSheetDecision[];
 }): string {
   const sheet = buildReviewSheetFromJobDir(input);
   const path = reviewSheetPath(input.artifactsDir);

@@ -14,10 +14,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, EmptyState, ErrorBox, Notice } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 import type {
   ReviewSheet,
   ReviewSheetItem,
 } from "../services/review-sheet";
+
+/** Что предлагается решить по материалу — вопрос и ответы к нему. */
+const EVIDENCE_ACTIONS: Array<{ kind: string; status: string; labelKey: string }> = [
+  { kind: "belonging", status: "CONFIRMED_SUBJECT", labelKey: "reviewSheet.actConfirmSubject" },
+  { kind: "belonging", status: "OTHER_SUBJECT", labelKey: "reviewSheet.actOtherSubject" },
+  { kind: "adverse", status: "NEUTRAL", labelKey: "reviewSheet.actNotAdverse" },
+  { kind: "adverse", status: "ADVERSE", labelKey: "reviewSheet.actAdverse" },
+];
 
 const GROUPS = [
   { kind: "evidence" as const, labelKey: "reviewSheet.groupEvidence" },
@@ -25,9 +34,14 @@ const GROUPS = [
   { kind: "compliance" as const, labelKey: "reviewSheet.groupCompliance" },
 ];
 
+type LiveSheet = ReviewSheet & { currentDecisionsDigest?: string };
+
 export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: string | null }) {
   const { t } = useDigitalProfileI18n();
-  const [sheet, setSheet] = useState<ReviewSheet | null>(null);
+  const { can } = useDpAuth();
+  const canDecide = can("evidence.create");
+  const [sheet, setSheet] = useState<LiveSheet | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openOnly, setOpenOnly] = useState(true);
@@ -40,7 +54,7 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
       const res = await fetch(
         `/api/digital-profile/cases/${caseId}/unified-collection/review-sheet?jobId=${encodeURIComponent(jobId)}`
       );
-      const json = (await res.json()) as { data?: ReviewSheet; error?: string };
+      const json = (await res.json()) as { data?: LiveSheet; error?: string };
       if (res.status === 404) {
         setSheet(null);
         setError(t("reviewSheet.notBuilt"));
@@ -58,6 +72,38 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
   useEffect(() => {
     void load();
   }, [load]);
+
+  const decide = useCallback(
+    async (item: ReviewSheetItem, decisionKind: string, status: string) => {
+      setSaving(`${item.key}|${decisionKind}`);
+      setError(null);
+      try {
+        const res = await fetch(
+          `/api/digital-profile/cases/${caseId}/unified-collection/review-decisions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              itemKind: item.kind,
+              itemKey: item.key,
+              decisionKind,
+              status,
+            }),
+          }
+        );
+        if (!res.ok) {
+          const json = (await res.json()) as { error?: string };
+          throw new Error(json.error ?? `HTTP ${res.status}`);
+        }
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSaving(null);
+      }
+    },
+    [caseId, load]
+  );
 
   const shown = useMemo(() => {
     const items = sheet?.items ?? [];
@@ -80,7 +126,10 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
     <div>
       <h2 className="dp-h2">{t("reviewSheet.title")}</h2>
       <p className="dp-muted">{t("reviewSheet.lead")}</p>
-      <Notice>{t("reviewSheet.readOnlyNotice")}</Notice>
+      <Notice>{t("reviewSheet.decisionsNotice")}</Notice>
+      {sheet.currentDecisionsDigest && sheet.currentDecisionsDigest !== sheet.decisionsDigest ? (
+        <Notice>{t("reviewSheet.staleDocument")}</Notice>
+      ) : null}
 
       <div style={{ margin: "0.75rem 0" }}>
         <label>
@@ -109,7 +158,13 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
             ) : (
               <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                 {rows.map((item) => (
-                  <ReviewRow key={`${item.kind}:${item.key}`} item={item} />
+                  <ReviewRow
+                    key={`${item.kind}:${item.key}`}
+                    item={item}
+                    canDecide={canDecide && item.kind === "evidence"}
+                    saving={saving}
+                    onDecide={decide}
+                  />
                 ))}
               </ul>
             )}
@@ -120,8 +175,19 @@ export function ReviewSheetTab({ caseId, jobId }: { caseId: string; jobId?: stri
   );
 }
 
-function ReviewRow({ item }: { item: ReviewSheetItem }) {
+function ReviewRow({
+  item,
+  canDecide,
+  saving,
+  onDecide,
+}: {
+  item: ReviewSheetItem;
+  canDecide: boolean;
+  saving: string | null;
+  onDecide: (item: ReviewSheetItem, kind: string, status: string) => void | Promise<void>;
+}) {
   const { t } = useDigitalProfileI18n();
+  const decided = item.decisions ?? {};
   return (
     <li className="dp-card" style={{ marginBottom: "0.5rem" }}>
       <div style={{ display: "flex", gap: "0.5rem", alignItems: "baseline", flexWrap: "wrap" }}>
@@ -144,6 +210,39 @@ function ReviewRow({ item }: { item: ReviewSheetItem }) {
       {item.pages.length > 0 ? (
         <div className="dp-muted">
           {t("reviewSheet.pages")}: {item.pages.join(", ")}
+        </div>
+      ) : null}
+      {Object.entries(decided).map(([kind, d]) =>
+        d ? (
+          <div key={kind} className="dp-muted">
+            {t("reviewSheet.decided")}: {t(`reviewSheet.status.${d.status}`)}
+            {d.decidedBy ? ` · ${d.decidedBy}` : ""}
+            {d.decidedAt ? ` · ${d.decidedAt.slice(0, 10)}` : ""}
+          </div>
+        ) : null
+      )}
+      {canDecide ? (
+        <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+          {EVIDENCE_ACTIONS.map((a) => (
+            <button
+              key={`${a.kind}:${a.status}`}
+              className="dp-btn dp-btn-sm"
+              disabled={saving === `${item.key}|${a.kind}` || decided[a.kind]?.status === a.status}
+              onClick={() => void onDecide(item, a.kind, a.status)}
+            >
+              {t(a.labelKey)}
+            </button>
+          ))}
+          {Object.keys(decided).map((kind) => (
+            <button
+              key={`clear:${kind}`}
+              className="dp-btn dp-btn-sm"
+              disabled={saving === `${item.key}|${kind}`}
+              onClick={() => void onDecide(item, kind, "CLEARED")}
+            >
+              {t("reviewSheet.actClear")} · {t(`reviewSheet.kind.${kind}`)}
+            </button>
+          ))}
         </div>
       ) : null}
     </li>

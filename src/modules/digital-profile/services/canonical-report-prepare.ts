@@ -81,6 +81,7 @@ import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
 import { writeReviewSheet } from "./review-sheet-artifact";
+import { listReviewDecisions } from "./review-decision-store";
 import { observationVerdictsForVisuals } from "../serp-observation/resolve-observation-highlights";
 import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-version";
 import {
@@ -1675,6 +1676,10 @@ export async function runCanonicalReportPrepare(
       caseId: input.caseId,
       artifactsDir: input.artifactsDir,
       slides: rendererSlides,
+      // Отпечаток решений листа обязан быть отпечатком тех решений, которые
+      // вошли в **эту** сборку: по нему вкладка отличит решение, стоящее в
+      // документе, от принятого уже после него.
+      decisions: await listReviewDecisions(input.caseId, input.prisma),
     });
   } catch (error) {
     console.warn(

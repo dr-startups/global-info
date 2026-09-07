@@ -84,6 +84,13 @@ function caseWithDatabaseWork() {
       ],
     },
     serpCapture: { findMany: async () => [] },
+    // Делегат решений аналитика: без него сторож бандла отказывает — он и
+    // заведён затем, чтобы забытый делегат не проходил молча.
+    reviewDecision: {
+      findMany: async () => [],
+      updateMany: async () => ({ count: 0 }),
+      create: async (args: { data: unknown }) => args.data,
+    },
   };
 }
 

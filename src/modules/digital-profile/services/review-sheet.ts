@@ -38,6 +38,12 @@
  */
 
 import { serpMaterialKey } from "../serp-observation/material-key";
+import {
+  REVIEW_DECISION_KINDS,
+  activeReviewDecisions,
+  reviewDecisionSlot,
+  reviewDecisionsDigest,
+} from "./review-decision-store";
 
 export const REVIEW_SHEET_ARTIFACT = "review-sheet.json";
 export const REVIEW_SHEET_VERSION = "review-sheet-v1" as const;
@@ -70,11 +76,35 @@ export type ReviewSheetItem = {
   places: ReviewPlace[];
   /** Наблюдения, из которых сложен пункт: у материала их бывает много. */
   refs?: string[];
+  /**
+   * Действующие решения аналитика по вопросу: «чей материал» и «негативен ли».
+   *
+   * В отчёт они не попадают ни именем, ни датой (решение владельца 6) — здесь
+   * они затем, чтобы вкладка показала, что уже решено, и не предлагала решать
+   * заново.
+   */
+  decisions?: Partial<Record<string, ReviewItemDecision>>;
+};
+
+/** Решение аналитика в том виде, в каком его показывает вкладка. */
+export type ReviewItemDecision = {
+  status: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  note?: string;
 };
 
 export type ReviewSheet = {
   version: typeof REVIEW_SHEET_VERSION;
   caseId: string;
+  /**
+   * Отпечаток решений, вошедших в **эту** сборку.
+   *
+   * По нему вкладка отличает решение, уже стоящее в документе, от принятого
+   * после сборки: иначе аналитик видит своё решение в списке и не понимает,
+   * почему его нет в PDF.
+   */
+  decisionsDigest: string;
   summary: {
     evidence: { total: number; open: number; framed: number };
     finding: { total: number; open: number };
@@ -152,6 +182,19 @@ export type ReviewSheetInput = {
   findings?: readonly ReviewSheetFinding[] | null;
   ambiguousFindings?: readonly ReviewSheetFinding[] | null;
   compliance?: { items?: readonly ReviewSheetComplianceItem[] | null } | null;
+  /** Решения аналитика — те же строки, что применяет пересборка. */
+  decisions?: readonly ReviewSheetDecision[] | null;
+};
+
+export type ReviewSheetDecision = {
+  itemKind: string;
+  itemKey: string;
+  decisionKind: string;
+  status: string;
+  note?: string | null;
+  isActive?: boolean;
+  decidedBy?: string | null;
+  decidedAt: string | Date;
 };
 
 // --------------------------------------------------------------------------
@@ -370,6 +413,39 @@ function placeOf(slide: ReviewSheetSlide, as: string): ReviewPlace {
 }
 
 export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
+  /*
+   * Решения аналитика: действующие — по одному на пару «пункт + вопрос».
+   * Считает их то же хранилище, что применяет пересборка, — второго ответа на
+   * «что решено» в продукте нет.
+   */
+  const decisionRows = (input.decisions ?? []).map((d) => ({
+    id: `${d.itemKind}|${d.itemKey}|${d.decisionKind}|${String(d.decidedAt)}`,
+    caseId: input.caseId,
+    itemKind: d.itemKind,
+    itemKey: d.itemKey,
+    decisionKind: d.decisionKind,
+    status: d.status,
+    note: d.note ?? null,
+    isActive: d.isActive !== false,
+    decidedBy: d.decidedBy ?? null,
+    decidedAt: d.decidedAt,
+  }));
+  const activeBySlot = activeReviewDecisions(decisionRows);
+  const decisionsOf = (key: string): Partial<Record<string, ReviewItemDecision>> | undefined => {
+    const out: Record<string, ReviewItemDecision> = {};
+    for (const kind of REVIEW_DECISION_KINDS) {
+      const row = activeBySlot.get(reviewDecisionSlot(key, kind));
+      if (!row) continue;
+      out[kind] = {
+        status: row.status,
+        ...(row.decidedBy ? { decidedBy: row.decidedBy } : {}),
+        decidedAt: row.decidedAt instanceof Date ? row.decidedAt.toISOString() : String(row.decidedAt),
+        ...(row.note ? { note: row.note } : {}),
+      };
+    }
+    return Object.keys(out).length > 0 ? out : undefined;
+  };
+
   const slides = input.slides ?? [];
   const bySlotSlides = slidesBySlot(slides);
   const slotPages = pagesBySlot(slides);
@@ -479,10 +555,14 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
     }
     const places = [...draft.places].sort((a, b) => a.page - b.page);
     if (draft.framedAs !== undefined) framedCount += 1;
+    const decisions = decisionsOf(draft.key);
     items.push({
       kind: "evidence",
       key: draft.key,
-      open: !decision || OPEN_DECISIONS.has(decision),
+      // Отвеченная принадлежность закрывает пункт: решать по нему больше
+      // нечего. Решение о негативе принадлежность не закрывает — это другой
+      // вопрос, и открытым пункт остаётся по своему.
+      open: (!decision || OPEN_DECISIONS.has(decision)) && !decisions?.belonging,
       title: draft.fields.title ?? draft.fields.url ?? draft.key,
       ...(draft.fields.url ? { url: draft.fields.url } : {}),
       ...(draft.fields.domain ? { domain: draft.fields.domain } : {}),
@@ -492,6 +572,7 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       pages: [...new Set(places.map((p) => p.page))],
       places,
       refs,
+      ...(decisions ? { decisions } : {}),
     });
   }
 
@@ -575,6 +656,7 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
   return {
     version: REVIEW_SHEET_VERSION,
     caseId: input.caseId,
+    decisionsDigest: reviewDecisionsDigest(decisionRows),
     summary: {
       evidence: {
         total: items.length,
@@ -588,6 +670,71 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       },
     },
     items: [...items, ...findingItems, ...complianceItems],
+  };
+}
+
+/**
+ * Наложить действующие решения на уже собранный лист.
+ *
+ * Отпечаток в файле отвечает на «что вошло в сборку», а вкладке нужен ответ на
+ * «что решено сейчас»: пересобирать лист ради этого не надо — меняются только
+ * признак открытости и сами решения. Пересчёт живёт здесь, а не в маршруте,
+ * чтобы правило «отвеченная принадлежность закрывает пункт» осталось одним.
+ */
+export function applyDecisionsToSheet(
+  sheet: ReviewSheet,
+  decisions: readonly ReviewSheetDecision[]
+): ReviewSheet {
+  const rows = decisions.map((d) => ({
+    id: `${d.itemKind}|${d.itemKey}|${d.decisionKind}|${String(d.decidedAt)}`,
+    caseId: sheet.caseId,
+    itemKind: d.itemKind,
+    itemKey: d.itemKey,
+    decisionKind: d.decisionKind,
+    status: d.status,
+    note: d.note ?? null,
+    isActive: d.isActive !== false,
+    decidedBy: d.decidedBy ?? null,
+    decidedAt: d.decidedAt,
+  }));
+  const active = activeReviewDecisions(rows);
+  const items = sheet.items.map((item) => {
+    const out: Record<string, ReviewItemDecision> = {};
+    for (const kind of REVIEW_DECISION_KINDS) {
+      const row = active.get(reviewDecisionSlot(item.key, kind));
+      if (!row) continue;
+      out[kind] = {
+        status: row.status,
+        ...(row.decidedBy ? { decidedBy: row.decidedBy } : {}),
+        decidedAt:
+          row.decidedAt instanceof Date ? row.decidedAt.toISOString() : String(row.decidedAt),
+        ...(row.note ? { note: row.note } : {}),
+      };
+    }
+    const has = Object.keys(out).length > 0;
+    // Машинная открытость пункта записана в файле; решение аналитика её
+    // закрывает, но снять решение — значит вернуть её как была, поэтому
+    // исходный признак берётся из листа, а не пересчитывается.
+    const machineOpen = item.open || Boolean(item.decisions?.belonging);
+    return {
+      ...item,
+      open: item.kind === "evidence" ? machineOpen && !out.belonging : item.open,
+      ...(has ? { decisions: out } : {}),
+      ...(has ? {} : { decisions: undefined }),
+    };
+  });
+  const count = (kind: ReviewItemKind) => {
+    const rowsOfKind = items.filter((i) => i.kind === kind);
+    return { total: rowsOfKind.length, open: rowsOfKind.filter((i) => i.open).length };
+  };
+  return {
+    ...sheet,
+    items,
+    summary: {
+      evidence: { ...count("evidence"), framed: sheet.summary.evidence.framed },
+      finding: count("finding"),
+      compliance: count("compliance"),
+    },
   };
 }
 

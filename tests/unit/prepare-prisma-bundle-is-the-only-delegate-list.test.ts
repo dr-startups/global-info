@@ -34,6 +34,7 @@ const server = vi.hoisted(() => {
       riskFinding: delegate("riskFinding"),
       wikipediaCheck: delegate("wikipediaCheck"),
       serpCapture: delegate("serpCapture"),
+      reviewDecision: delegate("reviewDecision"),
       // Делегат, к подготовке отчёта отношения не имеющий.
       auditLog: delegate("auditLog"),
     },
@@ -48,7 +49,7 @@ vi.mock("@/server/prisma/client", () => ({
 }));
 
 describe("бандл prisma для подготовки отчёта", () => {
-  it("собирает ровно семь делегатов и ничего лишнего", () => {
+  it("собирает ровно восемь делегатов и ничего лишнего", () => {
     const bundle = buildPreparePrismaBundle(server.client as never);
 
     expect([...PREPARE_PRISMA_DELEGATES]).toEqual([
@@ -59,6 +60,9 @@ describe("бандл prisma для подготовки отчёта", () => {
       "riskFinding",
       "wikipediaCheck",
       "serpCapture",
+      // Решения аналитика читает подготовка: без делегата лист проверки писал
+      // бы отпечаток пустого набора при принятых решениях.
+      "reviewDecision",
     ]);
     expect(Object.keys(bundle).sort()).toEqual([...PREPARE_PRISMA_DELEGATES].sort());
     for (const name of PREPARE_PRISMA_DELEGATES) {

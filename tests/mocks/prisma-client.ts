@@ -34,4 +34,10 @@ export const prisma = {
   serpCapture: {
     findMany: async () => [],
   },
+  // Решения аналитика: офлайн их нет, и пустой список — честный ответ.
+  reviewDecision: {
+    findMany: async () => [],
+    updateMany: async () => ({ count: 0 }),
+    create: async (args: { data: Record<string, unknown> }) => args.data,
+  },
 };

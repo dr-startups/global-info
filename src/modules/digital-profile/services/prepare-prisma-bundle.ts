@@ -32,6 +32,7 @@ export const PREPARE_PRISMA_DELEGATES = [
   "riskFinding",
   "wikipediaCheck",
   "serpCapture",
+  "reviewDecision",
 ] as const;
 
 /** Отбор делегатов из клиента базы. Единственное место, где список записан. */
@@ -44,6 +45,7 @@ export function buildPreparePrismaBundle(client: PreparePrismaBundle): PreparePr
     riskFinding: client.riskFinding,
     wikipediaCheck: client.wikipediaCheck,
     serpCapture: client.serpCapture,
+    reviewDecision: client.reviewDecision,
   };
 }
 

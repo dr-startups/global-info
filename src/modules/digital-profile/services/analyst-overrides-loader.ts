@@ -27,6 +27,13 @@ import {
 import { normalizeUrl } from "./evidence-service";
 import type { AdminReviewStatus } from "../orion-golden/evidence/admin-review-decision";
 import { loadAdminReviewDecisions } from "../orion-golden/evidence/admin-review-decision-store";
+import { serpMaterialKey } from "../serp-observation/material-key";
+import {
+  REVIEW_DECISION_CLEARED,
+  activeReviewDecisions,
+  listReviewDecisions,
+  type ReviewDecisionPrisma,
+} from "./review-decision-store";
 
 export type ClassificationOverride = {
   searchResultId: string;
@@ -40,6 +47,22 @@ export type ManualReviewOverride = {
   evidenceId: string;
   status: AdminReviewStatus | string;
   source: "orion_manual_review";
+};
+
+/**
+ * Решение аналитика по пункту листа проверки.
+ *
+ * Ключ здесь — **ключ материала**, а не наблюдения: одна страница, найденная
+ * четырьмя запросами, лежит в наборе четырьмя ссылками, и решение принадлежит
+ * материалу. То же правило, по которому раскладываются решения по прочитанным
+ * страницам и правки классического контура.
+ */
+export type ReviewDecisionOverride = {
+  itemKind: string;
+  itemKey: string;
+  decisionKind: string;
+  status: string;
+  source: "review_decision";
 };
 
 export type ApprovedFindingOverride = {
@@ -57,6 +80,8 @@ export type AnalystOverridesBundle = {
   classification: ClassificationOverride[];
   manualReview: ManualReviewOverride[];
   approvedFindings: ApprovedFindingOverride[];
+  /** Решения аналитика из `dp_review_decisions`; у старых наборов поля нет. */
+  reviewDecisions?: ReviewDecisionOverride[];
 };
 
 export type AppliedOverrideRecord = {
@@ -66,6 +91,10 @@ export type AppliedOverrideRecord = {
     | "identity_other_subject"
     | "manual_review_wrong_subject"
     | "manual_review_excluded"
+    | "review_confirmed_subject"
+    | "review_other_subject"
+    | "review_adverse"
+    | "review_neutral"
     | "approved_finding";
   matchKey: string;
   inventoryId?: string;
@@ -79,7 +108,7 @@ export type AnalystOverridesAppliedArtifact = {
   applied: AppliedOverrideRecord[];
 };
 
-export type AnalystOverridesPrisma = {
+export type AnalystOverridesPrisma = Partial<ReviewDecisionPrisma> & {
   searchResult: {
     // `any` args: PrismaClient delegates must assign without enum/filter friction.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -267,6 +296,24 @@ export async function loadAnalystOverrides(input: {
     });
   }
 
+  /*
+   * Решения аналитика из таблицы: действующие, то есть последние активные на
+   * пару «пункт + вопрос». История сюда не едет — набор правок отвечает на
+   * «что применить», а не на «что решали раньше».
+   */
+  const reviewDecisions: ReviewDecisionOverride[] = [];
+  for (const row of activeReviewDecisions(
+    await listReviewDecisions(input.caseId, input.prisma)
+  ).values()) {
+    reviewDecisions.push({
+      itemKind: row.itemKind,
+      itemKey: row.itemKey,
+      decisionKind: row.decisionKind,
+      status: row.status,
+      source: "review_decision",
+    });
+  }
+
   const approvedFindings: ApprovedFindingOverride[] = [];
   const findings = await input.prisma.riskFinding.findMany({
     where: { caseId: input.caseId, reviewStatus: "REVIEWED" },
@@ -297,6 +344,7 @@ export async function loadAnalystOverrides(input: {
     classification,
     manualReview,
     approvedFindings,
+    reviewDecisions,
   };
 }
 
@@ -304,7 +352,7 @@ function setIdentityDecision(
   resolutionByRef: Map<string, SubjectResolutionItem>,
   subjectResolution: SubjectResolution,
   inventoryId: string,
-  decision: "OTHER_SUBJECT",
+  decision: "OTHER_SUBJECT" | "SUBJECT_MATCH",
   reasonCode: string
 ): void {
   const evidenceRef = `inventory:${inventoryId}`;
@@ -414,6 +462,78 @@ export function applyAnalystOverrides(input: {
         applied.push({
           kind: "manual_review_excluded",
           matchKey: ov.evidenceId,
+          inventoryId: item.inventoryId,
+          effect: "exclude from adverse counts",
+        });
+      }
+    }
+  }
+
+  /*
+   * Решения аналитика по пунктам листа проверки.
+   *
+   * Идут после правок классического контура и сильнее их: лист проверки — это
+   * то, что аналитик видел последним, и его ответ новее. Раскладываются по
+   * **ключу материала**: одна страница, найденная четырьмя запросами, лежит в
+   * наборе четырьмя ссылками, и решение по одной из них оставило бы остальные
+   * как были — строка таблицы, рамка снимка и плитка сетки разошлись бы.
+   */
+  const byMaterial = new Map<string, RawInventoryItem[]>();
+  for (const it of input.items) {
+    const key = serpMaterialKey(
+      { url: it.sourceUrl, domain: domainOf(it.sourceUrl), title: it.title },
+      `inventory:${it.inventoryId}`
+    );
+    byMaterial.set(key, [...(byMaterial.get(key) ?? []), it]);
+  }
+  for (const ov of input.overrides.reviewDecisions ?? []) {
+    if (ov.itemKind !== "evidence") continue;
+    // «Снимаю решение» ничего не меняет: смысл ответа — перестать перекрывать
+    // машину, и запись о нём живёт в истории, а не в наборе правок.
+    if (ov.status === REVIEW_DECISION_CLEARED) continue;
+    const matched = byMaterial.get(ov.itemKey) ?? [];
+    for (const item of matched) {
+      if (ov.decisionKind === "belonging" && ov.status === "CONFIRMED_SUBJECT") {
+        setIdentityDecision(
+          input.resolutionByRef,
+          input.subjectResolution,
+          item.inventoryId,
+          "SUBJECT_MATCH",
+          "analyst_confirmed"
+        );
+        applied.push({
+          kind: "review_confirmed_subject",
+          matchKey: ov.itemKey,
+          inventoryId: item.inventoryId,
+          effect: "decision:=SUBJECT_MATCH",
+        });
+      } else if (ov.decisionKind === "belonging" && ov.status === "OTHER_SUBJECT") {
+        setIdentityDecision(
+          input.resolutionByRef,
+          input.subjectResolution,
+          item.inventoryId,
+          "OTHER_SUBJECT",
+          "analyst_other_subject"
+        );
+        applied.push({
+          kind: "review_other_subject",
+          matchKey: ov.itemKey,
+          inventoryId: item.inventoryId,
+          effect: "decision:=OTHER_SUBJECT",
+        });
+      } else if (ov.decisionKind === "adverse" && ov.status === "ADVERSE") {
+        markAdverse(item, null);
+        applied.push({
+          kind: "review_adverse",
+          matchKey: ov.itemKey,
+          inventoryId: item.inventoryId,
+          effect: "classification:=adverse_media",
+        });
+      } else if (ov.decisionKind === "adverse" && ov.status === "NEUTRAL") {
+        markNeutral(item);
+        applied.push({
+          kind: "review_neutral",
+          matchKey: ov.itemKey,
           inventoryId: item.inventoryId,
           effect: "exclude from adverse counts",
         });

@@ -435,6 +435,24 @@ export const en: Dictionary = {
     reason: "Why it was decided so",
     empty: "The document prints no items of this kind.",
     countLine: "{total} total, {open} open",
+    decisionsNotice:
+      "A decision is saved immediately. Only the result reaches the report: neither the name nor the date is printed — they stay here and in the audit log.",
+    staleDocument:
+      "Some decisions were made after the document was assembled. Rebuild the report, otherwise the PDF does not have them.",
+    decided: "Decided",
+    actConfirmSubject: "This is the subject",
+    actOtherSubject: "Another person",
+    actNotAdverse: "Not adverse",
+    actAdverse: "Adverse",
+    actClear: "Clear decision",
+    kind: { belonging: "belonging", adverse: "adverse" },
+    status: {
+      CONFIRMED_SUBJECT: "about the subject",
+      OTHER_SUBJECT: "about another person",
+      ADVERSE: "adverse",
+      NEUTRAL: "not adverse",
+      CLEARED: "decision cleared",
+    },
   },
   createCase: {
     title: "Create case",
