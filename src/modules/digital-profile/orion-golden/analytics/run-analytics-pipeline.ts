@@ -71,6 +71,8 @@ import {
 } from "../executive-summary/run-stage";
 import {
   applyAnalystOverrides,
+  dropExcludedThemesFromSynthesis,
+  isAnalystExcluded,
   loadAnalystOverrides,
   mergeGuaranteedFindings,
   type AnalystOverridesBundle,
@@ -511,6 +513,17 @@ export async function runOrionAnalyticsPipeline(
     subjectResolution,
     overrides: overridesBundle,
   });
+  /*
+   * Аналитика считается по материалам без снятых решением проверки.
+   *
+   * Снятый материал прежде снимался только в загрузчике входов деки — а
+   * резюме, состав тем и канонические утверждения рождаются здесь, раньше, и
+   * успевали его процитировать. «Не печатается нигде» было неправдой для
+   * первых страниц. Реестр расположения ниже по-прежнему видит **все**
+   * материалы и называет снятые своей причиной: «не анализировали» и «не
+   * собирали» — разные утверждения.
+   */
+  const analysisItems = input.items.filter((item) => !isAnalystExcluded(item));
 
   // 2c. Optional GPT identity disambiguation of AMBIGUOUS (§2.4).
   // Fail-safe: errors leave materials AMBIGUOUS. Never raises to SUBJECT_MATCH.
@@ -519,7 +532,7 @@ export async function runOrionAnalyticsPipeline(
       caseId: input.caseId,
       datasetId,
       subject,
-      items: input.items,
+      items: analysisItems,
       resolutionByRef,
       subjectResolution,
       sourceHashes,
@@ -536,7 +549,7 @@ export async function runOrionAnalyticsPipeline(
   // честно говорить, о субъекте ли материал. А темы риска и итоговая оценка
   // строятся только по предмету аудита — иначе вывод опирается на то, чего
   // проверяющий в выдаче не увидит.
-  const scope = resolveAnalysisScope(input.items);
+  const scope = resolveAnalysisScope(analysisItems);
   emit("analysis-scope.json", {
     ...scope.summary,
     caseId: input.caseId,
@@ -772,7 +785,7 @@ export async function runOrionAnalyticsPipeline(
    * ровно тот спор с таблицей выдачи, который дека уже закрыла у себя.
    */
   const verdictByRef = spreadVerdictsOverMaterials(
-    input.items,
+    analysisItems,
     observationVerdictsForVisuals(linkVerdicts)
   );
 
@@ -807,7 +820,7 @@ export async function runOrionAnalyticsPipeline(
   const surfaceAnalyses = runSurfaceAnalyzers({
     caseId: input.caseId,
     datasetId,
-    items: input.items,
+    items: analysisItems,
     resolutionLookup: resolutionByRef,
     sourceHashes,
     verdictByRef,
@@ -836,7 +849,7 @@ export async function runOrionAnalyticsPipeline(
       sourceHashes,
       bundle: synthesis.bundle,
       guaranteed: overrideResult.guaranteedFindings,
-      items: input.items,
+      items: analysisItems,
       applied: overrideResult.applied,
     }),
   };
@@ -853,7 +866,7 @@ export async function runOrionAnalyticsPipeline(
     const themeResult = await runGptThemeSuggestion({
       caseId: input.caseId,
       datasetId,
-      items: input.items,
+      items: analysisItems,
       uncategorized: synthesis.uncategorized,
       sourceHashes,
       enabled: isGptThemesEnabled() || Boolean(input.gptThemesCaller),
@@ -901,6 +914,23 @@ export async function runOrionAnalyticsPipeline(
       };
     }
   }
+
+  /*
+   * Снятые темы уходят из синтеза здесь — до резюме и утверждений.
+   *
+   * Загрузчик входов деки снимет их ещё раз для своих входов, но резюме
+   * рождается раньше него и успевало назвать снятую тему.
+   */
+  const withoutExcludedThemes = dropExcludedThemesFromSynthesis({
+    findings: synthesis.bundle.findings,
+    ambiguousFindings: synthesis.ambiguousFindings,
+    applied: overrideResult.applied,
+  });
+  synthesis = {
+    ...synthesis,
+    bundle: { ...synthesis.bundle, findings: withoutExcludedThemes.findings },
+    ambiguousFindings: withoutExcludedThemes.ambiguousFindings,
+  };
 
   // 5. Executive summary wired to actual pipeline output.
   const executiveSummaryInput = buildExecutiveSummaryInput({
@@ -973,7 +1003,7 @@ export async function runOrionAnalyticsPipeline(
     datasetId,
     subjectId: subject.displayName || input.caseId,
     sourceHashes,
-    items: input.items,
+    items: analysisItems,
     synthesis,
     dispositionLedger,
   });
@@ -1011,7 +1041,7 @@ export async function runOrionAnalyticsPipeline(
     subjectName: subject.displayName || input.caseId,
     claimsBundle: canonicalClaims,
     representative: representative.selection,
-    itemsByRef: new Map(input.items.map((i) => [`inventory:${i.inventoryId}`, i])),
+    itemsByRef: new Map(analysisItems.map((i) => [`inventory:${i.inventoryId}`, i])),
     ...(input.factExtractionCaller ? { caller: input.factExtractionCaller, enabled: true } : {}),
   });
   emit("extracted-facts.json", factExtraction);

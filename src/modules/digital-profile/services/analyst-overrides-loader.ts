@@ -28,6 +28,7 @@ import { normalizeUrl } from "./evidence-service";
 import type { AdminReviewStatus } from "../orion-golden/evidence/admin-review-decision";
 import { loadAdminReviewDecisions } from "../orion-golden/evidence/admin-review-decision-store";
 import { serpMaterialKey } from "../serp-observation/material-key";
+import { reviewThemeKeyOf } from "./review-sheet";
 import {
   REVIEW_DECISION_CLEARED,
   activeReviewDecisions,
@@ -393,6 +394,48 @@ function markExcluded(item: RawInventoryItem): void {
   const meta = { ...(item.rawMetadata ?? {}) };
   meta.analystExcluded = true;
   item.rawMetadata = meta;
+}
+
+/**
+ * Снят ли материал решением проверки — один ответ на конвейер, подготовку и
+ * реестр. Признак ставит `markExcluded`; читать его в трёх местах тремя
+ * проверками поля значило бы завести три ответа.
+ */
+export function isAnalystExcluded(item: RawInventoryItem): boolean {
+  return (item.rawMetadata as { analystExcluded?: unknown } | undefined)?.analystExcluded === true;
+}
+
+/**
+ * Убрать находки снятых тем из синтеза — до резюме и утверждений.
+ *
+ * Резюме, состав тем и канонические утверждения считаются в конвейере
+ * аналитики, а находки снятых тем прежде снимались только в загрузчике входов
+ * деки — то есть уже после того, как резюме их назвало. Здесь они снимаются
+ * там, где рождаются. Ключ темы читается из идентификатора находки тем же
+ * разбором, каким лист проверки ключует пункт.
+ */
+export function dropExcludedThemesFromSynthesis<
+  T extends { findingId: string },
+>(input: {
+  findings: T[];
+  ambiguousFindings: T[];
+  applied: AppliedOverrideRecord[];
+}): { findings: T[]; ambiguousFindings: T[]; removedThemeKeys: string[] } {
+  const excluded = new Set(
+    input.applied
+      .filter((r) => r.kind === "review_finding_excluded")
+      .map((r) => r.matchKey)
+      .filter(Boolean)
+  );
+  if (excluded.size === 0) {
+    return { findings: input.findings, ambiguousFindings: input.ambiguousFindings, removedThemeKeys: [] };
+  }
+  const keep = (f: T) => !excluded.has(reviewThemeKeyOf(f.findingId));
+  return {
+    findings: input.findings.filter(keep),
+    ambiguousFindings: input.ambiguousFindings.filter(keep),
+    removedThemeKeys: [...excluded].sort(),
+  };
 }
 
 function markNeutral(item: RawInventoryItem): void {

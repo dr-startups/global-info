@@ -24,6 +24,7 @@ import {
 } from "./composite-dataset-builder";
 import type { FindingSynthesisResult } from "./finding-synthesizer";
 import { resolveFindingThemesConfig } from "../../config/finding-themes";
+import { isAnalystExcluded } from "../../services/analyst-overrides-loader";
 
 const ADVERSE_THEME_HINT =
   /уголов|criminal|арест|санкц|sanction|корруп|corrupt|фбк|расследован|investigat|суд|court|офшор|offshore|pep|rca|watch.?list|скандал|yacht|рыбк|navalny|навальн/iu;
@@ -423,8 +424,7 @@ export function buildObservationDispositionLedger(
       material,
       invalid,
       outOfScope: input.outOfScopeByRef?.get(ref) ?? null,
-      excludedByAnalyst:
-        (item.rawMetadata as { analystExcluded?: boolean } | undefined)?.analystExcluded === true,
+      excludedByAnalyst: isAnalystExcluded(item),
     });
 
     if (!decided.reasonCode?.trim()) unreasoned += 1;

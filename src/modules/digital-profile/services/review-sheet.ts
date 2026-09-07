@@ -86,6 +86,11 @@ export type ReviewSheetItem = {
    */
   materialKeys?: string[];
   /**
+   * Пункт рождён решением, а не напечатанным: в деке его нет, он стоит в
+   * листе, чтобы решение было видно и отменяемо. Отменили — пункт уходит.
+   */
+  fromDecision?: true;
+  /**
    * Действующие решения аналитика по вопросу: «чей материал» и «негативен ли».
    *
    * В отчёт они не попадают ни именем, ни датой (решение владельца 6) — здесь
@@ -598,7 +603,13 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       // Отвеченная принадлежность закрывает пункт: решать по нему больше
       // нечего. Решение о негативе принадлежность не закрывает — это другой
       // вопрос, и открытым пункт остаётся по своему.
-      open: (!decision || OPEN_DECISIONS.has(decision)) && !decisions?.belonging,
+      // Отвеченная принадлежность закрывает пункт, снятие — тоже: решать по
+      // убранному из отчёта нечего. Решение о негативе не закрывает — это
+      // другой вопрос.
+      open:
+        (!decision || OPEN_DECISIONS.has(decision)) &&
+        !decisions?.belonging &&
+        !decisions?.presence,
       title: draft.fields.title ?? draft.fields.url ?? draft.key,
       ...(draft.fields.url ? { url: draft.fields.url } : {}),
       ...(draft.fields.domain ? { domain: draft.fields.domain } : {}),
@@ -638,6 +649,7 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       // Страниц у него нет: он нигде не напечатан, и обещать страницу нельзя.
       pages: [],
       places: [],
+      fromDecision: true,
       ...(decisionsOf(row.itemKey) ? { decisions: decisionsOf(row.itemKey) } : {}),
     });
   }
@@ -731,6 +743,7 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       state: "снята из отчёта решением проверки",
       pages: [],
       places: [],
+      fromDecision: true,
       ...(decisionsOf(row.itemKey) ? { decisions: decisionsOf(row.itemKey) } : {}),
     });
   }
@@ -841,7 +854,7 @@ export function applyDecisionsToSheet(
     decidedAt: d.decidedAt,
   }));
   const active = activeReviewDecisions(rows);
-  const items = sheet.items.map((item) => {
+  const items = sheet.items.flatMap((item) => {
     const out: Record<string, ReviewItemDecision> = {};
     for (const kind of REVIEW_DECISION_KINDS) {
       const row = active.get(reviewDecisionSlot(item.key, kind));
@@ -855,16 +868,28 @@ export function applyDecisionsToSheet(
       };
     }
     const has = Object.keys(out).length > 0;
+    // Пункт, рождённый решением о снятии, живёт ровно пока живёт решение:
+    // отменили — в деке его нет, и в листе ему стоять нечем.
+    if (item.fromDecision && !out.presence) return [];
     // Машинная открытость пункта записана в файле; решение аналитика её
     // закрывает, но снять решение — значит вернуть её как была, поэтому
-    // исходный признак берётся из листа, а не пересчитывается.
-    const machineOpen = item.open || Boolean(item.decisions?.belonging);
-    return {
-      ...item,
-      open: item.kind === "evidence" ? machineOpen && !out.belonging : item.open,
-      ...(has ? { decisions: out } : {}),
-      ...(has ? {} : { decisions: undefined }),
-    };
+    // исходный признак восстанавливается из листа, а не пересчитывается.
+    const closedByDecision = Boolean(item.decisions?.belonging) || Boolean(item.decisions?.presence);
+    const machineOpen = item.open || closedByDecision;
+    const open =
+      item.kind === "evidence"
+        ? machineOpen && !out.belonging && !out.presence
+        : item.kind === "finding"
+          ? machineOpen && !out.presence
+          : item.open;
+    return [
+      {
+        ...item,
+        open,
+        ...(has ? { decisions: out } : {}),
+        ...(has ? {} : { decisions: undefined }),
+      },
+    ];
   });
   const count = (kind: ReviewItemKind) => {
     const rowsOfKind = items.filter((i) => i.kind === kind);

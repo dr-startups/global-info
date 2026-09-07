@@ -82,6 +82,7 @@ import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
 import { writeReviewSheet } from "./review-sheet-artifact";
 import { buildComplianceVisualBindings } from "./compliance-visual-pages";
+import { isAnalystExcluded } from "./analyst-overrides-loader";
 import { loadFile as loadPrivateFile } from "../storage/private-store";
 import { listReviewDecisions } from "./review-decision-store";
 import { observationVerdictsForVisuals } from "../serp-observation/resolve-observation-highlights";
@@ -1426,6 +1427,11 @@ export async function runCanonicalReportPrepare(
           ? {
               searchResult: input.prisma.searchResult,
               riskFinding: input.prisma.riskFinding,
+              // Решения аналитика читает тот же загрузчик правок. Пока этого
+              // делегата здесь не было, таблица решений до конвейера не
+              // доезжала вовсе: сторож бандла видел его на входе подготовки,
+              // а внутренняя передача конвейеру молча шла веткой «данных нет».
+              reviewDecision: input.prisma.reviewDecision,
             }
           : null,
     });
@@ -1442,9 +1448,7 @@ export async function runCanonicalReportPrepare(
         // «не быть плиткой сетки и строкой снимка». Признак ставит загрузчик
         // правок, читают его здесь и в загрузчике входов деки — второго ответа
         // на «снят ли материал» нет.
-        items: items.filter(
-          (it) => (it.rawMetadata as { analystExcluded?: boolean } | undefined)?.analystExcluded !== true
-        ),
+        items: items.filter((it) => !isAnalystExcluded(it)),
         // Рамку на снимке выдачи ставит прочитанная страница, а не словарь слов
         // в заголовке; легенда говорит теми же кластерными ярлыками, что резюме.
         verdictByRef: observationVerdictsForVisuals(analytics.linkVerdicts),
@@ -1527,9 +1531,12 @@ export async function runCanonicalReportPrepare(
           .join("; ");
         visualAssetWarning = `visual-asset-partial-failures:${visuals.failed.length} (${head})`;
       }
+      // На диск уходит **объединённый** набор — вместе со снимками комплаенса,
+      // добавленными выше. Пока писались `visuals.*`, снимок жил только в
+      // памяти этой сборки и исчезал на первом же возобновлении.
       writeFileSync(
         join(input.artifactsDir, "report-assets.json"),
-        `${JSON.stringify(visuals.assets, null, 2)}\n`,
+        `${JSON.stringify(rendererAssets, null, 2)}\n`,
         "utf8"
       );
       writeFileSync(
@@ -1537,7 +1544,7 @@ export async function runCanonicalReportPrepare(
         `${JSON.stringify(
           {
             counts: visuals.counts,
-            visualAssets: visuals.visualAssets,
+            visualAssets: visualAssetsBySlot,
             failed: visuals.failed,
           },
           null,
