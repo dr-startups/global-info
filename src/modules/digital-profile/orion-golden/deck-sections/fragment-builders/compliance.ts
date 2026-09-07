@@ -24,6 +24,7 @@ import {
   countryNamesRu,
   enumerateRu,
   makeSlotSlide,
+  visualSlide,
 } from "./shared";
 import { buildContinuationSlide, continuationTitle } from "../continuation-slide";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -307,7 +308,7 @@ export function buildComplianceFragment(
   extras: FragmentExtras
 ): FragmentBuildOutput {
   const slots = slotsForFragment("COMPLIANCE_MAIN");
-  const [summarySlot, dowSlot, lexisSlot] = slots;
+  const [summarySlot, dowSlot, lexisSlot, lexisSlot2] = slots;
   // p36_lexis_visual_2 is covered via EXPLICIT_SLOT_MERGES → p35_lexis_visual:
   // its v72 content does not justify a standalone page in this dataset.
   const complianceUnits = scoped.surfaceUnits.filter((u) => u.surface === "compliance");
@@ -655,7 +656,41 @@ export function buildComplianceFragment(
     sourceNote: string;
     emptyStateReason?: string;
   }): SlideContentContract[] => {
+    /*
+     * Загруженный снимок отчёта базы — это и есть страница.
+     *
+     * Просьба владельца: «в блок Lexis Nexis мы будем добавлять скриншот
+     * реального отчёта и руками его описывать». Описание ложится в те же три
+     * поля сайдбара, которые страница печатает и без снимка, — новых мест для
+     * клиентского текста не заводится. Под снимком стоит происхождение
+     * документом: имени аналитика в отчёте нет (решение владельца 6), но у
+     * напечатанного текста обязан быть источник.
+     *
+     * Записи базы при этом не теряются: если они есть, их листы идут
+     * продолжениями за снимком.
+     */
+    const visual = (extras.visualAssets?.[input.slot.slotId] ?? []).find((a) => a.hasImage);
+    const shot = visual
+      ? visualSlide({
+          slot: input.slot,
+          sectionId,
+          extras,
+          scoped,
+          content: {
+            narrative: input.narrative,
+            whatWasFound: visual.analystDescription?.whatItShows ?? whatWasFoundFor(input.hits),
+            whyItMatters: visual.analystDescription?.whyItMatters ?? input.whyWithRecords,
+            whatToCheck: visual.analystDescription?.whatToDo ?? input.whatToCheckWithRecords,
+            sourceNote: visual.sourceLine ?? input.sourceNote,
+          },
+          evidenceRefs: input.hits.map(([r]) => r),
+          findingIds: [],
+          metrics: { hits: input.hits.length, complianceVisual: 1 },
+        })
+      : null;
+
     if (input.hits.length === 0) {
+      if (shot) return [shot];
       const copy = emptyPageCopy(input.provider, input.providerKey);
       return [
         makeSlotSlide({
@@ -678,7 +713,10 @@ export function buildComplianceFragment(
     // Записей больше, чем помещается на лист, — они уходят на продолжения, а не
     // теряются и не режутся: карточка приезжает к аналитику целиком.
     const pages = packRecordPages(input.hits, input.infoRows.length);
-    return pages.map(({ hits: pageHits, firstRecordIndex }, pageIndex) => {
+    const recordPages = pages.map(({ hits: pageHits, firstRecordIndex }, rawIndex) => {
+      // Со снимком все листы записей — продолжения: сама страница слота занята
+      // картинкой, и первый лист записей идёт за ней.
+      const pageIndex = shot ? rawIndex + 1 : rawIndex;
       const isCont = pageIndex > 0;
       const base = makeSlotSlide({
         slot: input.slot,
@@ -710,9 +748,10 @@ export function buildComplianceFragment(
         isContinuation: true,
         continuationOf: input.slot.slotId,
         continuationIndex: pageIndex,
-        title: continuationTitle(base.title, pageIndex + 1, pages.length),
+        title: continuationTitle(base.title, pageIndex + 1, pages.length + (shot ? 1 : 0)),
       };
     });
+    return shot ? [shot, ...recordPages] : recordPages;
   };
 
   /**
@@ -1008,6 +1047,41 @@ export function buildComplianceFragment(
       emptyStateReason: VISUAL_ASSET_UNAVAILABLE,
     }),
   ];
+  /*
+   * Вторая страница снимка LexisNexis получает свой лист.
+   *
+   * Слияние `p36_lexis_visual_2` → `p35_lexis_visual` объявлено причиной «у
+   * второй страницы нет своего содержимого». Со вторым снимком причина
+   * перестаёт быть верной — и только тогда лист появляется: без снимков он
+   * остаётся объединённым, как сегодня.
+   */
+  const secondShot = lexisSlot2
+    ? (extras.visualAssets?.[lexisSlot2.slotId] ?? []).find((a) => a.hasImage)
+    : undefined;
+  if (lexisSlot2 && secondShot) {
+    slides.push(
+      visualSlide({
+        slot: lexisSlot2,
+        sectionId,
+        extras,
+        scoped,
+        content: {
+          narrative: "Страница профиля LexisNexis — продолжение снимка отчёта.",
+          whatWasFound: secondShot.analystDescription?.whatItShows ?? "Вторая страница снимка отчёта.",
+          ...(secondShot.analystDescription?.whyItMatters
+            ? { whyItMatters: secondShot.analystDescription.whyItMatters }
+            : {}),
+          ...(secondShot.analystDescription?.whatToDo
+            ? { whatToCheck: secondShot.analystDescription.whatToDo }
+            : {}),
+          sourceNote: secondShot.sourceLine ?? "Источник: LexisNexis.",
+        },
+        evidenceRefs: [],
+        findingIds: [],
+        metrics: { complianceVisual: 2 },
+      })
+    );
+  }
   return { slides, status: "READY" };
 }
 

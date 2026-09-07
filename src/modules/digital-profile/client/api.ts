@@ -897,20 +897,28 @@ export type ComplianceVisualImportResult = {
   pageCount: number;
   approved: true;
   storageKeys: string[];
-  kind: "dow_jones_report" | "world_check_report";
+  kind: "dow_jones_report" | "world_check_report" | "lexisnexis_report";
 };
 
 export async function importComplianceVisualPages(
   caseId: string,
   input: {
-    provider: "DOW_JONES" | "WORLD_CHECK";
+    provider: "DOW_JONES" | "WORLD_CHECK" | "LEXISNEXIS";
     files: File[];
     matchedName?: string;
+    /** Дата отчёта базы: печатается под снимком, это не дата загрузки. */
+    reportDate?: string;
+    /** Описание аналитика — три поля сайдбара страницы. */
+    description?: { whatItShows?: string; whyItMatters?: string; whatToDo?: string };
   }
 ): Promise<ComplianceVisualImportResult> {
   const body = new FormData();
   body.append("provider", input.provider);
   if (input.matchedName?.trim()) body.append("matchedName", input.matchedName.trim());
+  if (input.reportDate?.trim()) body.append("reportDate", input.reportDate.trim());
+  for (const [field, value] of Object.entries(input.description ?? {})) {
+    if (typeof value === "string" && value.trim()) body.append(field, value.trim());
+  }
   for (const file of input.files) body.append("files", file);
   return request<ComplianceVisualImportResult>(`/cases/${caseId}/compliance/visual-import`, {
     method: "POST",

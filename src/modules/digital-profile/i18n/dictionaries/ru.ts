@@ -385,6 +385,13 @@ export const ru: Dictionary = {
     lexisResultLine: "Источник: {source}, файл: {file}.",
     uploadDowJonesVisual: "Загрузить скриншоты Dow Jones",
     uploadWorldCheckVisual: "Загрузить скриншоты World-Check",
+    uploadLexisVisual: "Снимок отчёта LexisNexis",
+    visualDescriptionHint:
+      "Описание попадёт в отчёт тремя полями страницы; под снимком будет напечатано «Отчёт <база> от <дата>». Имени аналитика в отчёте нет.",
+    visualReportDate: "Дата отчёта базы",
+    visualWhatItShows: "Что показывает экран",
+    visualWhyItMatters: "Почему это важно",
+    visualWhatToDo: "Что сделать",
     visualUploadHint:
       "Скриншоты страниц PNG/JPEG/WebP (макс. 4). Помечаются как approved для First36 visual-слотов.",
     visualUploadSuccess: "{provider}: сохранено approved visual-страниц: {pages}.",

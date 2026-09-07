@@ -81,6 +81,8 @@ import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
 import { writeReviewSheet } from "./review-sheet-artifact";
+import { buildComplianceVisualBindings } from "./compliance-visual-pages";
+import { loadFile as loadPrivateFile } from "../storage/private-store";
 import { listReviewDecisions } from "./review-decision-store";
 import { observationVerdictsForVisuals } from "../serp-observation/resolve-observation-highlights";
 import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-version";
@@ -1461,6 +1463,63 @@ export async function runCanonicalReportPrepare(
       });
       rendererAssets = visuals.assets;
       visualAssetsBySlot = visuals.visualAssets;
+      /*
+       * Снимки отчётов баз комплаенса — ручной блок аналитика.
+       *
+       * Они не строятся из наблюдений, а загружаются человеком, поэтому едут
+       * не через построитель визуальных активов, а рядом с ним: тот собирает
+       * снимки выдачи из данных прогона, а эти уже готовы. Слот у каждой
+       * страницы свой, и страница без слота не привязывается вовсе — молча
+       * ужать её в чужой значило бы потерять снимок.
+       */
+      const complianceVisuals = await buildComplianceVisualBindings(
+        input.complianceHits ??
+          (input.prisma?.databaseProfile
+            ? await input.prisma.databaseProfile.findMany({ where: { caseId: input.caseId } })
+            : []),
+        async (page) => {
+          const inline = String(page.imageBase64 ?? page.contentBase64 ?? "").trim();
+          if (inline.length >= 800) return inline;
+          const key = String(page.storageKey ?? "").trim();
+          if (!key) return null;
+          try {
+            const bytes = await loadPrivateFile(key);
+            return bytes.length >= 500 ? bytes.toString("base64") : null;
+          } catch {
+            return null;
+          }
+        }
+      );
+      for (const bound of complianceVisuals) {
+        rendererAssets = [
+          ...rendererAssets,
+          {
+            assetRef: bound.assetRef,
+            kind: "compliance_visual_page",
+            title: bound.title,
+            caption: bound.sourceLine,
+            imageData: bound.imageData,
+            ...(bound.storageKey ? { storageKey: bound.storageKey } : {}),
+            evidenceRefs: bound.evidenceRefs,
+            status: "ready",
+          } as RendererAssetEntry,
+        ];
+        visualAssetsBySlot = {
+          ...visualAssetsBySlot,
+          [bound.slotId]: [
+            {
+              assetRef: bound.assetRef,
+              kind: "compliance_visual_page",
+              title: bound.title,
+              hasImage: true,
+              evidenceRefs: bound.evidenceRefs,
+              visibleItems: [],
+              ...(bound.description ? { analystDescription: bound.description } : {}),
+              sourceLine: bound.sourceLine,
+            },
+          ],
+        };
+      }
       if (visuals.failed.length > 0) {
         const head = visuals.failed
           .slice(0, 3)

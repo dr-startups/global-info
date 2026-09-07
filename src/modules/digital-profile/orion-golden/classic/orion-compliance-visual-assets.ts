@@ -20,7 +20,7 @@ function asObj(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-export type ComplianceVisualProvider = "DOW_JONES" | "WORLD_CHECK";
+export type ComplianceVisualProvider = "DOW_JONES" | "WORLD_CHECK" | "LEXISNEXIS";
 
 export type ComplianceVisualPageInput = {
   pageNumber: number;
@@ -31,7 +31,9 @@ export type ComplianceVisualPageInput = {
 };
 
 export type ComplianceVisualMeta = {
-  kind: "dow_jones_report" | "world_check_report";
+  kind: "dow_jones_report" | "world_check_report" | "lexisnexis_report";
+  reportDate?: string;
+  description?: { whatItShows?: string; whyItMatters?: string; whatToDo?: string };
   approved: boolean;
   approvedAt?: string;
   approvedBy?: string;
@@ -49,7 +51,9 @@ export function parseComplianceVisualMeta(raw: unknown): ComplianceVisualMeta | 
   const kind =
     kindRaw === "world_check_report" || /world.?check/i.test(kindRaw)
       ? ("world_check_report" as const)
-      : ("dow_jones_report" as const);
+      : kindRaw === "lexisnexis_report" || /lexis/i.test(kindRaw)
+        ? ("lexisnexis_report" as const)
+        : ("dow_jones_report" as const);
   return {
     kind,
     approved: visual.approved === true || String(visual.approved).toLowerCase() === "true",
@@ -71,12 +75,23 @@ export function buildApprovedComplianceVisualMeta(input: {
   pages: ComplianceVisualPageInput[];
   approvedBy?: string;
   approvedAt?: string;
+  /** Дата самого отчёта базы — печатается под снимком. */
+  reportDate?: string;
+  /** Описание аналитика тремя полями сайдбара; проверено при сохранении. */
+  description?: { whatItShows?: string; whyItMatters?: string; whatToDo?: string };
 }): ComplianceVisualMeta {
   return {
-    kind: input.provider === "WORLD_CHECK" ? "world_check_report" : "dow_jones_report",
+    kind:
+      input.provider === "WORLD_CHECK"
+        ? "world_check_report"
+        : input.provider === "LEXISNEXIS"
+          ? "lexisnexis_report"
+          : "dow_jones_report",
     approved: true,
     approvedAt: input.approvedAt ?? new Date().toISOString(),
     approvedBy: input.approvedBy,
+    ...(input.reportDate ? { reportDate: input.reportDate } : {}),
+    ...(input.description ? { description: input.description } : {}),
     renderedPages: input.pages.map((p, idx) => ({
       pageNumber: p.pageNumber || idx + 1,
       storageKey: p.storageKey,
@@ -88,12 +103,14 @@ export function buildApprovedComplianceVisualMeta(input: {
 }
 
 function providerLabel(provider: string): string {
+  if (/lexis/i.test(provider)) return "LexisNexis";
   if (/world.?check/i.test(provider)) return "World-Check";
   if (/dow.?jones/i.test(provider)) return "Dow Jones";
   return provider;
 }
 
 function assetRefPrefix(provider: string): string {
+  if (/lexis/i.test(provider)) return "lexisnexis_visual_page";
   return /world.?check/i.test(provider) ? "world_check_visual_page" : "dow_jones_visual_page";
 }
 
@@ -122,7 +139,7 @@ export async function buildComplianceVisualAssets(
 
   for (const row of profiles) {
     const provider = String(row.provider ?? "").toUpperCase();
-    if (provider !== "DOW_JONES" && provider !== "WORLD_CHECK") continue;
+    if (provider !== "DOW_JONES" && provider !== "WORLD_CHECK" && provider !== "LEXISNEXIS") continue;
 
     const meta = parseComplianceVisualMeta(row.rawMetadataSafe);
     if (!meta || !meta.approved || meta.renderedPages.length === 0) continue;

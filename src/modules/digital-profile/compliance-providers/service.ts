@@ -44,6 +44,10 @@ import {
 } from "../services/compliance-inventory-adapter";
 import type { ImportedEvidenceDocument, LexisNexisSignal } from "../types";
 import { ValidationError } from "../http/errors";
+import {
+  validateAnalystVisualDescription,
+  type AnalystVisualDescription,
+} from "../services/compliance-visual-pages";
 
 export const COMPLIANCE_FINDING_OWNER = "compliance-layer-v1";
 
@@ -396,7 +400,7 @@ export type ComplianceVisualImportResult = {
   pageCount: number;
   approved: true;
   storageKeys: string[];
-  kind: "dow_jones_report" | "world_check_report";
+  kind: "dow_jones_report" | "world_check_report" | "lexisnexis_report";
 };
 
 /**
@@ -409,13 +413,28 @@ export async function importApprovedComplianceVisuals(
     provider: ComplianceVisualProvider;
     pages: Array<{ fileName: string; mimeType: string; buffer: Buffer }>;
     matchedName?: string;
+    /** Дата отчёта базы — печатается под снимком; не дата загрузки. */
+    reportDate?: string;
+    /** Описание аналитика тремя полями сайдбара. */
+    description?: AnalystVisualDescription;
   },
   ctx: ActorContext = {}
 ): Promise<ComplianceVisualImportResult> {
   await loadCaseSubject(caseId);
-  if (input.provider !== "DOW_JONES" && input.provider !== "WORLD_CHECK") {
-    throw new ValidationError("provider must be DOW_JONES or WORLD_CHECK");
+  if (
+    input.provider !== "DOW_JONES" &&
+    input.provider !== "WORLD_CHECK" &&
+    input.provider !== "LEXISNEXIS"
+  ) {
+    throw new ValidationError("provider must be DOW_JONES, WORLD_CHECK or LEXISNEXIS");
   }
+  /*
+   * Описание проверяется здесь, при сохранении, а не в сборке отчёта: аналитик
+   * видит отказ сразу, а не через пять минут — и не «никогда», если сборку
+   * запустит кто-то другой.
+   */
+  const description = validateAnalystVisualDescription(input.description);
+  if (!description.ok) throw new ValidationError(`описание снимка: ${description.reason}`);
   if (!input.pages.length) throw new ValidationError("At least one screenshot page is required");
   if (input.pages.length > COMPLIANCE_VISUAL_MAX_PAGES) {
     throw new ValidationError(`At most ${COMPLIANCE_VISUAL_MAX_PAGES} pages are allowed`);
@@ -504,6 +523,8 @@ export async function importApprovedComplianceVisuals(
     pages: renderedPages,
     approvedBy: ctx.actorId ?? undefined,
     approvedAt: now.toISOString(),
+    ...(input.reportDate?.trim() ? { reportDate: input.reportDate.trim() } : {}),
+    ...(description.value ? { description: description.value } : {}),
   });
 
   await prisma.databaseProfile.update({

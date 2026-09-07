@@ -26,6 +26,10 @@ type RouteContext = { params: Promise<{ id: string }> };
 const MAX_BYTES = 12 * 1024 * 1024;
 const MAX_PAGES = 4;
 
+function str(value: FormDataEntryValue | null): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function collectFiles(form: FormData): File[] {
   const out: File[] = [];
   for (const key of ["files", "file", "pages"]) {
@@ -47,8 +51,12 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   });
 
   const providerRaw = String(form.get("provider") ?? "").toUpperCase();
-  if (providerRaw !== "DOW_JONES" && providerRaw !== "WORLD_CHECK") {
-    throw new ValidationError("provider must be DOW_JONES or WORLD_CHECK");
+  if (
+    providerRaw !== "DOW_JONES" &&
+    providerRaw !== "WORLD_CHECK" &&
+    providerRaw !== "LEXISNEXIS"
+  ) {
+    throw new ValidationError("provider must be DOW_JONES, WORLD_CHECK or LEXISNEXIS");
   }
   const provider = providerRaw as ComplianceVisualProvider;
 
@@ -77,6 +85,14 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
       provider,
       pages,
       matchedName: typeof matchedName === "string" ? matchedName : undefined,
+      // Дата отчёта базы и описание аналитика: первая печатается под снимком
+      // происхождением, второе — тремя полями сайдбара.
+      reportDate: str(form.get("reportDate")),
+      description: {
+        whatItShows: str(form.get("whatItShows")),
+        whyItMatters: str(form.get("whyItMatters")),
+        whatToDo: str(form.get("whatToDo")),
+      },
     },
     actorOf(user)
   );

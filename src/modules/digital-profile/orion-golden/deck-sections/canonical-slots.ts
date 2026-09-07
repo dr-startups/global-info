@@ -148,6 +148,20 @@ export type NotShownRow = {
 
 /** Metadata of a bound visual asset (image bytes stay in the renderer payload). */
 export type VisualAssetMeta = {
+  /**
+   * Описание снимка словами аналитика — тремя полями сайдбара.
+   *
+   * Едет вместе со снимком, а не отдельным полем страницы: описание
+   * принадлежит картинке, и разлучить их значило бы завести случай «описание
+   * есть, снимка нет».
+   */
+  analystDescription?: {
+    whatItShows?: string;
+    whyItMatters?: string;
+    whatToDo?: string;
+  };
+  /** Происхождение под снимком: «Отчёт LexisNexis от <дата отчёта>». */
+  sourceLine?: string;
   assetRef: string;
   kind: string;
   title: string;

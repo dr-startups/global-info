@@ -385,6 +385,13 @@ export const en: Dictionary = {
     lexisResultLine: "Source: {source}, file: {file}.",
     uploadDowJonesVisual: "Upload Dow Jones screenshots",
     uploadWorldCheckVisual: "Upload World-Check screenshots",
+    uploadLexisVisual: "LexisNexis report screenshot",
+    visualDescriptionHint:
+      "The description goes into the report as the three page fields; under the screenshot the report prints «<database> report of <date>». The analyst's name never appears in the report.",
+    visualReportDate: "Report date",
+    visualWhatItShows: "What the screen shows",
+    visualWhyItMatters: "Why it matters",
+    visualWhatToDo: "What to do",
     visualUploadHint: "PNG/JPEG/WebP page screenshots (max 4). Marked approved for First36 visual slots.",
     visualUploadSuccess: "{provider}: {pages} approved visual page(s) saved.",
     visualInvalidFileType: "Only PNG, JPEG, or WebP screenshots are supported.",

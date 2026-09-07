@@ -378,6 +378,12 @@ export interface Dictionary {
     lexisResultLine: string;
     uploadDowJonesVisual: string;
     uploadWorldCheckVisual: string;
+    uploadLexisVisual: string;
+    visualDescriptionHint: string;
+    visualReportDate: string;
+    visualWhatItShows: string;
+    visualWhyItMatters: string;
+    visualWhatToDo: string;
     visualUploadHint: string;
     visualUploadSuccess: string;
     visualInvalidFileType: string;

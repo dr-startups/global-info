@@ -89,7 +89,22 @@ export function ComplianceTab({
   const [showForm, setShowForm] = useState(false);
   const [lexisBusy, setLexisBusy] = useState(false);
   const [lexisStatus, setLexisStatus] = useState<string | null>(null);
-  const [visualBusy, setVisualBusy] = useState<"DOW_JONES" | "WORLD_CHECK" | null>(null);
+  const [visualBusy, setVisualBusy] = useState<
+    "DOW_JONES" | "WORLD_CHECK" | "LEXISNEXIS" | null
+  >(null);
+  /*
+   * Описание снимка и дата отчёта живут рядом с кнопкой загрузки.
+   *
+   * Их печатает сама страница отчёта: три поля сайдбара и происхождение под
+   * снимком. Загрузить снимок без слов можно — пустое состояние честнее
+   * выдуманного, — но спросить о них надо до загрузки, а не после.
+   */
+  const [visualDesc, setVisualDesc] = useState({
+    reportDate: "",
+    whatItShows: "",
+    whyItMatters: "",
+    whatToDo: "",
+  });
 
   const [form, setForm] = useState({
     provider: "DOW_JONES" as (typeof DB_PROVIDERS)[number],
@@ -227,7 +242,10 @@ export function ComplianceTab({
     }
   }
 
-  async function handleVisualUpload(provider: "DOW_JONES" | "WORLD_CHECK", fileList: FileList | null) {
+  async function handleVisualUpload(
+    provider: "DOW_JONES" | "WORLD_CHECK" | "LEXISNEXIS",
+    fileList: FileList | null
+  ) {
     if (visualBusy || !fileList?.length) return;
     const files = Array.from(fileList).slice(0, 4);
     if (files.some((f) => !isVisualImageFile(f))) {
@@ -238,7 +256,16 @@ export function ComplianceTab({
     setError(null);
     setInfo(null);
     try {
-      const result = await importComplianceVisualPages(caseId, { provider, files });
+      const result = await importComplianceVisualPages(caseId, {
+        provider,
+        files,
+        reportDate: visualDesc.reportDate,
+        description: {
+          whatItShows: visualDesc.whatItShows,
+          whyItMatters: visualDesc.whyItMatters,
+          whatToDo: visualDesc.whatToDo,
+        },
+      });
       setInfo(
         t("compliance.visualUploadSuccess", {
           provider: provider.replace(/_/g, " "),
@@ -252,6 +279,12 @@ export function ComplianceTab({
       setVisualBusy(null);
     }
   }
+
+  const descFields = [
+    { key: "whatItShows" as const, labelKey: "compliance.visualWhatItShows" },
+    { key: "whyItMatters" as const, labelKey: "compliance.visualWhyItMatters" },
+    { key: "whatToDo" as const, labelKey: "compliance.visualWhatToDo" },
+  ];
 
   const hits = evidence.databaseProfiles;
   const lexisImports = hits.filter((h) => {
@@ -344,6 +377,48 @@ export function ComplianceTab({
               disabled={visualBusy !== null}
               onChange={(e) => {
                 void handleVisualUpload("WORLD_CHECK", e.currentTarget.files);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <div style={{ marginTop: "0.6rem" }}>
+            <div className="dp-muted">{t("compliance.visualDescriptionHint")}</div>
+            <label style={{ display: "block", marginTop: "0.3rem" }}>
+              <span className="dp-muted">{t("compliance.visualReportDate")}</span>{" "}
+              <input
+                className="dp-input"
+                type="date"
+                value={visualDesc.reportDate}
+                onChange={(e) =>
+                  setVisualDesc((v) => ({ ...v, reportDate: e.currentTarget.value }))
+                }
+              />
+            </label>
+            {descFields.map((f) => (
+              <label key={f.key} style={{ display: "block", marginTop: "0.3rem" }}>
+                <span className="dp-muted">{t(f.labelKey)}</span>
+                <textarea
+                  className="dp-textarea"
+                  rows={2}
+                  maxLength={320}
+                  value={visualDesc[f.key]}
+                  onChange={(e) =>
+                    setVisualDesc((v) => ({ ...v, [f.key]: e.currentTarget.value }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <label className="dp-btn" style={{ marginLeft: 8, cursor: visualBusy ? "wait" : "pointer" }}>
+            {visualBusy === "LEXISNEXIS" ? "…" : t("compliance.uploadLexisVisual")}
+            <input
+              type="file"
+              accept={VISUAL_IMAGE_ACCEPT}
+              multiple
+              style={{ display: "none" }}
+              disabled={visualBusy !== null}
+              onChange={(e) => {
+                void handleVisualUpload("LEXISNEXIS", e.currentTarget.files);
                 e.currentTarget.value = "";
               }}
             />
