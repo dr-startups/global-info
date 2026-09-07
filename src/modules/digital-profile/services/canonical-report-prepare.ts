@@ -1436,7 +1436,13 @@ export async function runCanonicalReportPrepare(
     try {
       const visuals = await buildCanonicalVisualAssets({
         subjectName: subjectDisplayName,
-        items,
+        // Снятый аналитиком материал не рисуется: «не печатать нигде» значит и
+        // «не быть плиткой сетки и строкой снимка». Признак ставит загрузчик
+        // правок, читают его здесь и в загрузчике входов деки — второго ответа
+        // на «снят ли материал» нет.
+        items: items.filter(
+          (it) => (it.rawMetadata as { analystExcluded?: boolean } | undefined)?.analystExcluded !== true
+        ),
         // Рамку на снимке выдачи ставит прочитанная страница, а не словарь слов
         // в заголовке; легенда говорит теми же кластерными ярлыками, что резюме.
         verdictByRef: observationVerdictsForVisuals(analytics.linkVerdicts),

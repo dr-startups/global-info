@@ -470,6 +470,17 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
     if (!resolutionByRef.has(row.evidenceRef)) resolutionByRef.set(row.evidenceRef, row);
   }
 
+  /*
+   * Поля материала по его ключу — по всем наблюдениям набора, а не только по
+   * напечатанным. Снятый материал в деке не встречается, а назвать его адресом
+   * и заголовком лист обязан.
+   */
+  const fieldsByKey = new Map<string, MaterialFields>();
+  for (const [ref, fields] of fieldsByRef) {
+    const key = serpMaterialKey(fields, ref);
+    if (!fieldsByKey.has(key)) fieldsByKey.set(key, fields);
+  }
+
   const drafts = new Map<string, Draft>();
   const touch = (ref: string, fields: MaterialFields, place: ReviewPlace): Draft => {
     const known = fieldsByRef.get(ref) ?? fields;
@@ -573,6 +584,36 @@ export function buildReviewSheet(input: ReviewSheetInput): ReviewSheet {
       places,
       refs,
       ...(decisions ? { decisions } : {}),
+    });
+  }
+
+  /*
+   * Снятые материалы — из решений, а не из напечатанного.
+   *
+   * Лист строится по деке, а снятого в деке нет по построению: без этого
+   * прохода решение исчезло бы вместе со своей кнопкой, и аналитик не смог бы
+   * ни увидеть его, ни вернуть материал. Решение, которое нельзя отменить, —
+   * ловушка.
+   */
+  for (const [slot, row] of activeBySlot) {
+    if (row.decisionKind !== "presence" || row.status !== "EXCLUDED") continue;
+    if (row.itemKind !== "evidence") continue;
+    void slot;
+    if (items.some((i) => i.key === row.itemKey)) continue;
+    const fields = fieldsByKey.get(row.itemKey) ?? {};
+    items.push({
+      kind: "evidence",
+      key: row.itemKey,
+      // Решение принято — решать нечего.
+      open: false,
+      title: fields.title ?? fields.url ?? row.itemKey,
+      ...(fields.url ? { url: fields.url } : {}),
+      ...(fields.domain ? { domain: fields.domain } : {}),
+      state: "снят из отчёта решением проверки",
+      // Страниц у него нет: он нигде не напечатан, и обещать страницу нельзя.
+      pages: [],
+      places: [],
+      ...(decisionsOf(row.itemKey) ? { decisions: decisionsOf(row.itemKey) } : {}),
     });
   }
 

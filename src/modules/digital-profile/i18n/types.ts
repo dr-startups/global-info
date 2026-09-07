@@ -434,6 +434,7 @@ export interface Dictionary {
     actOtherSubject: string;
     actNotAdverse: string;
     actAdverse: string;
+    actExclude: string;
     actClear: string;
     kind: Record<string, string>;
     status: Record<string, string>;

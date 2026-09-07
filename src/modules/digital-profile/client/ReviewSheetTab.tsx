@@ -26,6 +26,7 @@ const EVIDENCE_ACTIONS: Array<{ kind: string; status: string; labelKey: string }
   { kind: "belonging", status: "OTHER_SUBJECT", labelKey: "reviewSheet.actOtherSubject" },
   { kind: "adverse", status: "NEUTRAL", labelKey: "reviewSheet.actNotAdverse" },
   { kind: "adverse", status: "ADVERSE", labelKey: "reviewSheet.actAdverse" },
+  { kind: "presence", status: "EXCLUDED", labelKey: "reviewSheet.actExclude" },
 ];
 
 const GROUPS = [

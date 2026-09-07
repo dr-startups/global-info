@@ -23,6 +23,13 @@ export const ObservationDispositionKindSchema = z.enum([
    * разные утверждения, и клиенту они говорят разное.
    */
   "EXCLUDE_OUT_OF_SCOPE",
+  /**
+   * Материал снят из отчёта решением проверки: он собран, годен и, возможно, о
+   * субъекте, но печататься не должен. Отдельная причина, а не `EXCLUDE_INVALID`
+   * и не `EXCLUDE_OTHER_SUBJECT`: «негоден», «о другом лице» и «мы решили не
+   * показывать» — три разных утверждения, и реестр обязан их различать.
+   */
+  "EXCLUDE_ANALYST",
 ]);
 export type ObservationDispositionKind = z.infer<typeof ObservationDispositionKindSchema>;
 

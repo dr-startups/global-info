@@ -95,6 +95,7 @@ export type AppliedOverrideRecord = {
     | "review_other_subject"
     | "review_adverse"
     | "review_neutral"
+    | "review_excluded"
     | "approved_finding";
   matchKey: string;
   inventoryId?: string;
@@ -380,6 +381,19 @@ function markAdverse(item: RawInventoryItem, riskTheme?: string | null): void {
   item.rawMetadata = meta;
 }
 
+/**
+ * Снять материал из отчёта.
+ *
+ * Отдельно от «не негатив»: тот оставляет строку в отчёте и снимает с неё
+ * обвинение, а снятие убирает её отовсюду. Признак читает загрузчик входов
+ * деки — он и есть то единственное место, где материал перестаёт печататься.
+ */
+function markExcluded(item: RawInventoryItem): void {
+  const meta = { ...(item.rawMetadata ?? {}) };
+  meta.analystExcluded = true;
+  item.rawMetadata = meta;
+}
+
 function markNeutral(item: RawInventoryItem): void {
   item.classification = "neutral";
   const meta = { ...(item.rawMetadata ?? {}) };
@@ -528,6 +542,14 @@ export function applyAnalystOverrides(input: {
           matchKey: ov.itemKey,
           inventoryId: item.inventoryId,
           effect: "classification:=adverse_media",
+        });
+      } else if (ov.decisionKind === "presence" && ov.status === "EXCLUDED") {
+        markExcluded(item);
+        applied.push({
+          kind: "review_excluded",
+          matchKey: ov.itemKey,
+          inventoryId: item.inventoryId,
+          effect: "не печатается в отчёте",
         });
       } else if (ov.decisionKind === "adverse" && ov.status === "NEUTRAL") {
         markNeutral(item);

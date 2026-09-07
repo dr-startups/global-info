@@ -23,7 +23,7 @@
 import { createHash } from "node:crypto";
 
 /** Вопросы, на которые аналитик отвечает по пункту листа. */
-export const REVIEW_DECISION_KINDS = ["belonging", "adverse"] as const;
+export const REVIEW_DECISION_KINDS = ["belonging", "adverse", "presence"] as const;
 export type ReviewDecisionKind = (typeof REVIEW_DECISION_KINDS)[number];
 
 /**
@@ -38,6 +38,14 @@ export const REVIEW_DECISION_CLEARED = "CLEARED" as const;
 const STATUSES: Readonly<Record<ReviewDecisionKind, readonly string[]>> = {
   belonging: ["CONFIRMED_SUBJECT", "OTHER_SUBJECT", REVIEW_DECISION_CLEARED],
   adverse: ["ADVERSE", "NEUTRAL", REVIEW_DECISION_CLEARED],
+  /**
+   * Печатается ли материал вовсе.
+   *
+   * Отдельный вопрос от негатива: «не негатив» оставляет строку в отчёте и
+   * снимает с неё обвинение, «снять» убирает её из отчёта целиком. Одно поле
+   * заставляло бы выбирать между двумя разными действиями.
+   */
+  presence: ["EXCLUDED", REVIEW_DECISION_CLEARED],
 };
 
 export type ReviewDecisionRow = {

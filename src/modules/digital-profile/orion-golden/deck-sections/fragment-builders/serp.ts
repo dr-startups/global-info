@@ -505,6 +505,14 @@ export function serpRankGapSentences(input: {
   queryNamed: boolean;
   positional: boolean;
   topN?: number;
+  /**
+   * Позиции, снятые из отчёта решением проверки.
+   *
+   * Названы своей фразой и раньше остальных: прежняя фраза «не вернул ни один
+   * источник выдачи» о такой позиции — ложь, источник её вернул. Кто снял и
+   * почему, страница не говорит: пометок о правках аналитика в отчёте нет.
+   */
+  removed?: readonly number[];
 }): string[] {
   const topN = input.topN ?? SERP_TABLE_TOP_N;
   // Область утверждений этой функции — одна на все её ветки: они выведены из
@@ -512,9 +520,23 @@ export function serpRankGapSentences(input: {
   const scope = input.queryNamed ? " по этому запросу" : "";
   if (!input.positional || input.printed.length === 0) return [];
   const printed = new Set(input.printed);
+  const removed = [...new Set((input.removed ?? []).filter((r) => r >= 1 && r <= topN))].sort(
+    (a, b) => a - b
+  );
+  const removedSet = new Set(removed);
+  const removedSentence =
+    removed.length === 0
+      ? []
+      : [
+          removed.length === 1
+            ? `Позиция ${removed[0]} в таблице не показана.`
+            : `Позиции ${compactRanges(removed)} в таблице не показаны.`,
+        ];
   const gaps: number[] = [];
-  for (let rank = 1; rank <= topN; rank += 1) if (!printed.has(rank)) gaps.push(rank);
-  if (gaps.length === 0) return [];
+  for (let rank = 1; rank <= topN; rank += 1) {
+    if (!printed.has(rank) && !removedSet.has(rank)) gaps.push(rank);
+  }
+  if (gaps.length === 0) return removedSentence;
   if (!input.datasetKnowsSecondReading) {
     // Набор о втором чтении не знает: причину назвать нечем, и остаётся
     // измеренное — сколько позиций этой пары есть в собранных данных.
@@ -524,13 +546,14 @@ export function serpRankGapSentences(input: {
     // набора без запроса читался подряд как «запрос в наборе не записан» и
     // «вернул по этому запросу N позиций» — две фразы, спорящие друг с другом.
     return [
+      ...removedSentence,
       `Поисковик вернул${scope} ${depth} ${pluralRu(depth, "позицию", "позиции", "позиций")} ` +
         `из ${topN}; остальных в выдаче на дату сбора не было.`,
     ];
   }
   const occupied = gaps.filter((rank) => input.occupied.includes(rank));
   const unreturned = gaps.filter((rank) => !input.occupied.includes(rank));
-  const out: string[] = [];
+  const out: string[] = [...removedSentence];
   if (occupied.length > 0) {
     // Две формы целиком, а не согласование по частям: «под другими номером»
     // получалось ровно из попытки собрать предложение из склоняемых кусков.
@@ -764,6 +787,8 @@ export function serpTablePageProse(input: {
   positional: boolean;
   /** Даты съёмки материалов; единственный источник — `report-material-freshness`. */
   freshness?: MaterialFreshness | null;
+  /** Позиции, снятые из отчёта решением проверки. */
+  removed?: readonly number[];
 }): { head: string } {
   const parts: string[] = [];
   if (input.query) {
@@ -799,6 +824,7 @@ export function serpTablePageProse(input: {
       datasetKnowsSecondReading: input.datasetKnowsSecondReading ?? false,
       queryNamed: Boolean(input.query),
       positional: input.positional,
+      removed: input.removed ?? [],
     })
   );
   parts.push(input.positional ? SERP_RANKS_ARE_POSITIONS : SERP_RANKS_ARE_COLLECTION_ORDER);
@@ -1453,6 +1479,11 @@ export function buildSerpFragment(
       datasetKnowsSecondReading,
       positional: table.positional,
       freshness: extras?.materialFreshness ?? null,
+      // Снятые позиции этого контура: страница называет их своей фразой.
+      removed:
+        scoped.metricSnapshot.removedRanksByRegion?.[
+          key.startsWith("RU_") ? "RU" : "UAE"
+        ] ?? [],
     });
     for (let i = 0; i < rowChunks.length; i += 1) {
       // Пара «номер листа / всего листов» считается один раз и отсюда идёт и в

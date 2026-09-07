@@ -14,7 +14,7 @@ import type { SubjectContextAnchors } from "../../config/subject-context-words";
 import { join } from "node:path";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { Finding } from "../contracts/finding";
-import type { SurfaceAnalysis } from "../contracts/surface-analysis";
+import type { SurfaceAnalysis, SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type {
   ScopedEvidenceIndex,
   LinkReadRegionCounts,
@@ -312,6 +312,68 @@ export function applyAnalystDecisionsToEvidence(
       evidenceIndex[sibling]!.analystDecision = decision;
     }
   }
+}
+
+/**
+ * Убрать снятые аналитиком материалы из входов деки — одним местом.
+ *
+ * «Снять» значит «не печатать нигде»: ни строкой таблицы, ни плиткой сетки, ни
+ * цитатой темы. Поэтому ссылки уходят сразу из трёх мест, между которыми
+ * материал и путешествует по деке: индекс улик (из него берутся адрес и
+ * заголовок), опоры поверхностей (из них строятся строки и панели) и улики
+ * находок (из них берутся цитаты и счёт темы). Оставить хоть одно — значит
+ * напечатать снятое.
+ *
+ * Живёт снятие **здесь, а не в наборе наблюдений**: аналитика обязана
+ * продолжать видеть материал — по нему считается охват и реестр расположения.
+ * Убрать его из набора значило бы объявить, что его не собирали, — это другое
+ * утверждение и другая ложь.
+ *
+ * Номера снятых строк возвращаются наверх: таблица выдачи печатает настоящие
+ * места в выдаче, снятая строка оставляет свой номер незанятым, и страница
+ * обязана назвать пропуск, а не молчать о нём.
+ */
+export function dropAnalystExcludedFromDeckInputs(input: {
+  evidenceIndex: ScopedEvidenceIndex;
+  surfaceUnits: SurfaceAnalysisUnit[];
+  findings: Finding[];
+  excludedRefs: ReadonlySet<string>;
+}): { count: number; ranksByRegion: Record<string, number[]> } {
+  const { excludedRefs } = input;
+  if (excludedRefs.size === 0) return { count: 0, ranksByRegion: {} };
+
+  const ranksByRegion: Record<string, number[]> = {};
+  let count = 0;
+  for (const ref of excludedRefs) {
+    const entry = input.evidenceIndex[ref];
+    if (!entry) continue;
+    count += 1;
+    const rank = Number(entry.rank ?? 0);
+    if (rank >= 1) {
+      const region = mapRegionBucket(String(entry.region ?? "")) === "UAE" ? "UAE" : "RU";
+      const list = ranksByRegion[region] ?? [];
+      if (!list.includes(rank)) list.push(rank);
+      ranksByRegion[region] = list;
+    }
+    delete input.evidenceIndex[ref];
+  }
+  for (const list of Object.values(ranksByRegion)) list.sort((a, b) => a - b);
+
+  const keep = (refs: readonly string[] | undefined): string[] =>
+    (refs ?? []).filter((r) => !excludedRefs.has(r));
+  for (const unit of input.surfaceUnits) {
+    unit.evidenceRefs = keep(unit.evidenceRefs);
+    if (unit.emptyMarkerRefs) unit.emptyMarkerRefs = keep(unit.emptyMarkerRefs);
+    // Утверждение, у которого не осталось ни одной улики, исчезает целиком:
+    // подтвердить его больше нечем, а печатать неподтверждённое нельзя.
+    unit.claims = unit.claims
+      .map((c) => ({ ...c, evidenceRefs: keep(c.evidenceRefs) }))
+      .filter((c) => c.evidenceRefs.length > 0);
+  }
+  for (const finding of input.findings) {
+    finding.evidenceRefs = keep(finding.evidenceRefs);
+  }
+  return { count, ranksByRegion };
 }
 
 /**
@@ -956,9 +1018,36 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
    * раньше.
    */
   const analystAppliedPath = join(analyticsDir, "analyst-overrides-applied.json");
+  let removedByAnalyst: { count: number; ranksByRegion: Record<string, number[]> } = {
+    count: 0,
+    ranksByRegion: {},
+  };
   if (existsSync(analystAppliedPath)) {
     const artifact = readJson<{ applied?: AppliedOverrideRecord[] }>(analystAppliedPath);
-    applyAnalystDecisionsToEvidence(evidenceIndex, artifact?.applied ?? []);
+    const applied = artifact?.applied ?? [];
+    applyAnalystDecisionsToEvidence(evidenceIndex, applied);
+    /*
+     * Снятые материалы уходят из деки здесь — после раскладки решений и до
+     * того, как входы уедут построителям. Ссылки снимаются по материалу: одна
+     * страница лежит в наборе несколькими наблюдениями, и снять надо все.
+     */
+    const excludedRefs = new Set<string>();
+    const byMaterial = refsByMaterial(evidenceIndex);
+    for (const record of applied) {
+      if (String(record?.kind ?? "") !== "review_excluded") continue;
+      const ref = `inventory:${String(record?.inventoryId ?? "").trim()}`;
+      const entry = evidenceIndex[ref];
+      if (!entry) continue;
+      for (const sibling of byMaterial.get(evidenceMaterialKey(entry, ref)) ?? [ref]) {
+        excludedRefs.add(sibling);
+      }
+    }
+    removedByAnalyst = dropAnalystExcludedFromDeckInputs({
+      evidenceIndex,
+      surfaceUnits,
+      findings: mergedBundle.findings,
+      excludedRefs,
+    });
   }
 
   // Enrich compliance_hit entries with typed match metadata (provider /
@@ -1282,6 +1371,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
     linkThemesByRegion,
+    ...(Object.keys(removedByAnalyst.ranksByRegion).length > 0
+      ? { removedRanksByRegion: removedByAnalyst.ranksByRegion }
+      : {}),
     // Поля нет вовсе, когда чтения в прогоне не было: отсутствие метрики и
     // измеренный ноль — разные утверждения перед клиентом.
     linkReadByRegion: linkVerdicts

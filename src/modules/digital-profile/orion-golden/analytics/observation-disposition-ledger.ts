@@ -190,6 +190,8 @@ function decideDisposition(input: {
   invalid: boolean;
   /** Причина, по которой материал не вошёл в предмет аудита (ТОП-20). */
   outOfScope: string | null;
+  /** Материал снят из отчёта решением проверки. */
+  excludedByAnalyst: boolean;
 }): {
   disposition: ObservationDispositionKind;
   reasonCode: string;
@@ -198,6 +200,24 @@ function decideDisposition(input: {
   stage: string;
   functionName: string;
 } {
+  /*
+   * Решение проверки называется первым.
+   *
+   * Оно сильнее машинных причин: материал мог быть и негодным, и дублем, но
+   * если его сняли решением, реестр обязан сказать именно это — иначе на
+   * вопрос «почему его нет в отчёте» ответ будет машинный и неверный.
+   */
+  if (input.excludedByAnalyst) {
+    return {
+      disposition: "EXCLUDE_ANALYST",
+      reasonCode: "analyst_excluded",
+      duplicateOf: null,
+      duplicateGroupId: null,
+      stage: "analyst-overrides",
+      functionName: "applyAnalystOverrides",
+    };
+  }
+
   if (input.invalid) {
     return {
       disposition: "EXCLUDE_INVALID",
@@ -403,6 +423,8 @@ export function buildObservationDispositionLedger(
       material,
       invalid,
       outOfScope: input.outOfScopeByRef?.get(ref) ?? null,
+      excludedByAnalyst:
+        (item.rawMetadata as { analystExcluded?: boolean } | undefined)?.analystExcluded === true,
     });
 
     if (!decided.reasonCode?.trim()) unreasoned += 1;
