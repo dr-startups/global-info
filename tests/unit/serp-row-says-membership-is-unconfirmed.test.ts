@@ -21,37 +21,46 @@ import {
 describe("оценка строки выдачи", () => {
   it("совпало только имя — принадлежность не подтверждена", () => {
     expect(
-      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: false, unconfirmed: true })
+      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: false, unconfirmed: true, confirmed: false })
     ).toBe(UNCONFIRMED_SUBJECT_LABEL);
   });
 
   it("чужой негатив не красится красным", () => {
     expect(
-      serpVerdictLabel({ other: false, adverse: true, likely: false, verified: true, unconfirmed: true })
+      serpVerdictLabel({ other: false, adverse: true, likely: false, verified: true, unconfirmed: true, confirmed: false })
     ).toBe(UNCONFIRMED_SUBJECT_LABEL);
   });
 
   it("материал другого лица называется прямо и стоит выше всех", () => {
     expect(
-      serpVerdictLabel({ other: true, adverse: true, likely: false, verified: true, unconfirmed: true })
+      serpVerdictLabel({ other: true, adverse: true, likely: false, verified: true, unconfirmed: true, confirmed: false })
     ).toBe(OTHER_SUBJECT_LABEL);
   });
 
   it("подтверждённый негатив остаётся нежелательным", () => {
+    // Шаг 0063: «подтверждённый» стало полем, а не подразумеваемым состоянием —
+    // обвинение требует решения `SUBJECT_MATCH`, и здесь оно названо прямо.
     expect(
-      serpVerdictLabel({ other: false, adverse: true, likely: false, verified: true, unconfirmed: false })
+      serpVerdictLabel({
+        other: false,
+        adverse: true,
+        likely: false,
+        verified: true,
+        unconfirmed: false,
+        confirmed: true,
+      })
     ).toBe(RED_MARKER_LABEL);
   });
 
   it("прежние оценки не двигаются", () => {
     expect(
-      serpVerdictLabel({ other: false, adverse: false, likely: true, verified: false, unconfirmed: false })
+      serpVerdictLabel({ other: false, adverse: false, likely: true, verified: false, unconfirmed: false, confirmed: false })
     ).toBe("Вероятно");
     expect(
-      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: true, unconfirmed: false })
+      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: true, unconfirmed: false, confirmed: false })
     ).toBe("Нейтральный");
     expect(
-      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: false, unconfirmed: false })
+      serpVerdictLabel({ other: false, adverse: false, likely: false, verified: false, unconfirmed: false, confirmed: false })
     ).toBe(UNVERIFIED_LABEL);
   });
 });

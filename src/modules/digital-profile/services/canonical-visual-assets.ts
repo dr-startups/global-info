@@ -41,6 +41,7 @@ import {
 import type { SubjectAnchors } from "../orion-golden/analytics/subject-anchors";
 import { transliterateRuToEn } from "../search-surfaces/orion-query-plan";
 import {
+  claimAgainstSubject,
   classifyObservationHighlight,
   type ObservationVerdictByRef,
 } from "../serp-observation/resolve-observation-highlights";
@@ -191,7 +192,16 @@ function toVisibleItem(
   item: RawInventoryItem,
   verdictByRef?: ObservationVerdictByRef,
   /** Слова признаков субъекта: должность на его же странице — не негатив. */
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  /**
+   * Решения о принадлежности целиком — картой, а не значением.
+   *
+   * Карта отличает «о принадлежности не спрашивали» от «спросили и не
+   * подтвердили»: без неё (фикстура, набор без аналитики) рамки ставятся как
+   * раньше, а внутри неё строка без решения подтверждённой не считается —
+   * молчание подтверждением не является.
+   */
+  subjectDecisionByRef?: Record<string, string> | null
 ): VisibleAssetItem {
   const hl = classifyObservationHighlight(
     {
@@ -204,6 +214,13 @@ function toVisibleItem(
     analystDecisionOf(item),
     subjectContext
   );
+  // Рамку ставит негатив, но обвиняет она человека: без подтверждённой
+  // принадлежности она снимается, а признак негативной формулировки остаётся
+  // записью — страница называет такие строки словами.
+  const subjectDecision = subjectDecisionByRef?.[refOf(item)];
+  const claim = subjectDecisionByRef
+    ? claimAgainstSubject({ adverse: hl.isHighlighted, subjectDecision })
+    : { adverse: hl.isHighlighted, adverseWording: false };
   return {
     ref: refOf(item),
     url: item.sourceUrl,
@@ -211,13 +228,18 @@ function toVisibleItem(
     title: item.title,
     engine: engineOf(item) ?? undefined,
     region: regionOf(item.region),
-    adverse: hl.isHighlighted,
+    adverse: claim.adverse,
+    ...(claim.adverseWording ? { adverseWording: true } : {}),
+    ...(subjectDecision ? { subjectDecision } : {}),
     themeTitle: hl.themeTitle ?? undefined,
   };
 }
 
 /** Тег в правой колонке панели — согласован с ярлыком таблицы выдачи. */
 export const OTHER_SUBJECT_PANEL_TAG = "о другом лице";
+
+/** Тег строки, у которой рамку сняла неподтверждённая принадлежность. */
+export const UNCONFIRMED_PANEL_TAG = "принадлежность не подтверждена";
 
 /**
  * Строка панели и её запись в артефакте — из одного решения.
@@ -234,17 +256,37 @@ export function panelRowWithOwnership(input: {
   decision?: string;
   meta?: string;
 }): { visible: VisibleAssetItem; svg: { label: string; meta?: string; adverse: boolean } } {
-  const other = input.decision === "OTHER_SUBJECT";
+  /*
+   * Правило обвинения применяется и здесь — оно того же вида, что у строки,
+   * и повторный вызов её не портит: снятая рамка уже записана
+   * `adverseWording`, и запись сохраняется. Решения нет — поведение прежнее.
+   */
+  const claim = input.decision
+    ? claimAgainstSubject({ adverse: input.item.adverse === true, subjectDecision: input.decision })
+    : { adverse: input.item.adverse === true, adverseWording: false };
+  const wording = claim.adverseWording || input.item.adverseWording === true;
   const visible: VisibleAssetItem = {
     ...input.item,
-    ...(other ? { adverse: false, adverseWording: input.item.adverse === true } : {}),
+    adverse: claim.adverse,
+    ...(wording ? { adverseWording: true } : {}),
     ...(input.decision ? { subjectDecision: input.decision } : {}),
   };
+  /*
+   * Остаётся вопрос, каким тегом это названо: строка о другом лице и строка с
+   * неподтверждённой принадлежностью говорят о разном, и общий тег стёр бы
+   * разницу, которую отчёт печатает в таблице выдачи.
+   */
+  const tag =
+    input.decision === "OTHER_SUBJECT"
+      ? OTHER_SUBJECT_PANEL_TAG
+      : visible.adverseWording === true
+        ? UNCONFIRMED_PANEL_TAG
+        : undefined;
   return {
     visible,
     svg: {
       label: String(input.item.title ?? "").trim(),
-      meta: other ? OTHER_SUBJECT_PANEL_TAG : input.meta,
+      meta: tag ?? input.meta,
       adverse: visible.adverse === true,
     },
   };
@@ -334,6 +376,8 @@ async function buildSerpSnapshotAsset(input: {
   verdictByRef?: ObservationVerdictByRef;
   /** Слова признаков субъекта: рамку по ним не ставят. */
   subjectContext?: SubjectContextMask | null;
+  /** Решения о принадлежности: обвиняющую рамку получает только подтверждённый. */
+  subjectDecisionByRef?: Record<string, string>;
 }): Promise<boolean> {
   // Only engine-attributable rows can appear in a Yandex/Google column.
   const attributable = input.items.filter((it) => engineOf(it) !== null && it.sourceUrl);
@@ -379,12 +423,20 @@ async function buildSerpSnapshotAsset(input: {
     language: input.region === "UAE" ? "en" : "ru",
     verdictByRef: input.verdictByRef,
     subjectContext: input.subjectContext,
+    subjectDecisionByRef: input.subjectDecisionByRef,
   });
   const png = await renderSerpSnapshotPng(vm);
 
   const visibleItems = observations
     .filter((o) => visibleIds.has(o.obs.id))
-    .map((o) => toVisibleItem(o.item, input.verdictByRef, input.subjectContext));
+    .map((o) =>
+      toVisibleItem(
+        o.item,
+        input.verdictByRef,
+        input.subjectContext,
+        input.subjectDecisionByRef
+      )
+    );
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: "serp_screenshot",
@@ -439,7 +491,12 @@ async function buildListPanelAsset(input: {
   // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
   const decided = titled.map((r) =>
     panelRowWithOwnership({
-      item: toVisibleItem(r, input.verdictByRef, input.subjectContext),
+      item: toVisibleItem(
+        r,
+        input.verdictByRef,
+        input.subjectContext,
+        input.subjectDecisionByRef
+      ),
       decision: input.subjectDecisionByRef?.[refOf(r)],
       meta: input.rowMeta?.(r),
     })
@@ -635,7 +692,14 @@ export async function buildCanonicalVisualAssets(input: {
          */
         const visibleItems = firstPerMaterial(organic)
           .slice(0, 10)
-          .map((it) => toVisibleItem(it, input.verdictByRef, subjectContext));
+          .map((it) =>
+            toVisibleItem(
+              it,
+              input.verdictByRef,
+              subjectContext,
+              input.subjectDecisionByRef
+            )
+          );
         const asset: RendererAssetEntry = {
           assetRef: `${assetRef}_real_${real.id}`,
           kind: "live_serp",
@@ -668,6 +732,7 @@ export async function buildCanonicalVisualAssets(input: {
         bind,
         push,
         verdictByRef: input.verdictByRef,
+        subjectDecisionByRef: input.subjectDecisionByRef,
       });
     });
     if (ok) counts.serpSnapshots += 1;
@@ -897,7 +962,9 @@ export async function buildCanonicalVisualAssets(input: {
       })
     );
     const used = [answer, ...sourceRows.slice(0, 8)].filter((r): r is RawInventoryItem => Boolean(r));
-    const visibleItems = used.map((it) => toVisibleItem(it, input.verdictByRef, subjectContext));
+    const visibleItems = used.map((it) =>
+      toVisibleItem(it, input.verdictByRef, subjectContext, input.subjectDecisionByRef)
+    );
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "knowledge_panel",
@@ -1031,7 +1098,12 @@ export async function buildCanonicalVisualAssets(input: {
        * действует и на сетке: без него плитка краснела по словарю там, где
        * страницу открыли и признали благоприятной.
        */
-      const visible = toVisibleItem(r, input.verdictByRef, subjectContext);
+      const visible = toVisibleItem(
+        r,
+        input.verdictByRef,
+        subjectContext,
+        input.subjectDecisionByRef
+      );
       const url = urlOf(r);
       const previewBase64 = url ? previews.get(url) : undefined;
       if (!previewBase64) {

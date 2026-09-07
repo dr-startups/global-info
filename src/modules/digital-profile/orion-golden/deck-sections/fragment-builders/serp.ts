@@ -21,6 +21,7 @@ import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
 import { UNCONFIRMED_SUBJECT_REASONS } from "../../analytics/subject-anchors";
+import { subjectConfirmedForClaim } from "../../../serp-observation/resolve-observation-highlights";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import { clientAddress } from "../../client/client-address";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -360,9 +361,20 @@ export function serpVerdictLabel(input: {
   likely: boolean;
   verified: boolean;
   unconfirmed: boolean;
+  /**
+   * Принадлежность материала подтверждена решением `SUBJECT_MATCH`.
+   *
+   * Спрашивается только у обвинения: «Нежелательный» — утверждение о человеке,
+   * и ставить его без подтверждения нельзя. На отчёте 86 так были помечены
+   * запись санкционного списка без имени субъекта в тексте и статья о
+   * юридической фирме-однофамильце. Ярлыки нейтральных и непроверенных строк
+   * это поле не двигает: утверждения в них нет.
+   */
+  confirmed: boolean;
 }): string {
   if (input.other) return OTHER_SUBJECT_LABEL;
   if (input.unconfirmed) return UNCONFIRMED_SUBJECT_LABEL;
+  if (input.adverse && !input.confirmed) return UNCONFIRMED_SUBJECT_LABEL;
   if (input.adverse) return RED_MARKER_LABEL;
   if (input.likely) return "Вероятно";
   return input.verified ? "Нейтральный" : UNVERIFIED_LABEL;
@@ -1287,7 +1299,17 @@ export function buildSerpFragment(
     const unconfirmed = refs.some((ref) =>
       UNCONFIRMED_SUBJECT_REASONS.has(String(scoped.evidenceIndex[ref]?.subjectReason ?? ""))
     );
-    return serpVerdictLabel({ other, adverse, likely, verified, unconfirmed });
+    /*
+     * Обвинение требует подтверждённой принадлежности.
+     *
+     * У материала решение одно и берётся сильнейшее — тем же порядком, каким
+     * берётся его оценка: одно наблюдение с `SUBJECT_MATCH` подтверждает
+     * материал целиком, потому что подтверждает его адрес.
+     */
+    const confirmed = refs.some((ref) =>
+      subjectConfirmedForClaim(scoped.evidenceIndex[ref]?.subjectDecision)
+    );
+    return serpVerdictLabel({ other, adverse, likely, verified, unconfirmed, confirmed });
   };
 
   /** Тип источника материала — тем же разрешителем, что и у второй таблицы. */
@@ -1931,17 +1953,34 @@ export function buildSerpScreenshotFragment(
   const headlineDomains = explainedDomains.slice(0, 4);
   // Ветка и число — из одного списка: у каждой выделенной строки ровно одно
   // объяснение, и «выделено N» обязано считать то же, чем страница объясняет.
+  /*
+   * Строки, у которых рамку сняла принадлежность, называются числом.
+   *
+   * Без них фраза «остальные результаты — нейтральные или деловые» становится
+   * неправдой: у части строк формулировка негативная, и не выделены они не
+   * потому, что безобидны, а потому, что неизвестно, о ком они.
+   */
+  const wordingOnly = sidebar.wordingOnlyRows.length;
+  const wordingTail = wordingOnly
+    ? `; ещё ${wordingOnly} ${pluralRu(wordingOnly, "результат", "результата", "результатов")} с негативной формулировкой не выделены: принадлежность материала не подтверждена`
+    : "";
   const whatWasFound = explanations.length
     ? clampClientText(
         `На снимке выделено результатов повышенного внимания: ${explanations.length}` +
           (headlineDomains.length
             ? ` (${headlineDomains.join(", ")}${explainedDomains.length > headlineDomains.length ? " и др." : ""})`
             : "") +
+          wordingTail +
           "; остальные результаты — нейтральные или деловые.",
         400
       )
     : visibleRows.length > 0
-      ? "Выделенных результатов повышенного внимания на этом снимке нет; зафиксированы деловые и справочные материалы."
+      ? wordingOnly
+        ? clampClientText(
+            `Выделенных результатов повышенного внимания на этом снимке нет: ${wordingOnly} ${pluralRu(wordingOnly, "результат", "результата", "результатов")} с негативной формулировкой не выделены, потому что принадлежность материала не подтверждена; остальные — деловые и справочные материалы.`,
+            400
+          )
+        : "Выделенных результатов повышенного внимания на этом снимке нет; зафиксированы деловые и справочные материалы."
       : "На снимке нет сохранённых строк выдачи для описания состава страницы.";
 
   // Тот же закон, что и у выделенных строк: источник называется по улике

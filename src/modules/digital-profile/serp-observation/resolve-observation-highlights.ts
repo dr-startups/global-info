@@ -136,6 +136,14 @@ export type ObservationVerdict = {
 export type ObservationVerdictByRef = Record<string, ObservationVerdict>;
 
 /**
+ * Решения о принадлежности по ссылке — `subject-resolution.json`, как есть.
+ *
+ * Слой снимка читает их, но не выводит: ответ на «чей это материал» рождается
+ * в аналитике, и второго ответа здесь быть не должно.
+ */
+export type SubjectDecisionByRef = Record<string, string>;
+
+/**
  * Насколько сильно решение: у материала оно одно, и это сильнейшее.
  *
  * Одну и ту же страницу могли запросить дважды, и площадка отдала её только со
@@ -366,12 +374,69 @@ export function classifyObservationHighlight(
   return { isHighlighted: true, riskTheme: theme.key, themeTitle: theme.title };
 }
 
+/**
+ * Подтверждена ли принадлежность материала настолько, чтобы о нём обвинять.
+ *
+ * Красная рамка и оценка «Нежелательный» — утверждения о человеке, а отчёт
+ * читает он сам. На отчёте 86 девять рамок из тринадцати стояли на материале,
+ * чья принадлежность не подтверждена, и две — на материале, который таблица
+ * страницей раньше называла чужим: субъекту предъявляли санкционный профиль
+ * однофамильца и криминальный сюжет юридической фирмы.
+ *
+ * Подтверждение — только `SUBJECT_MATCH`. «Требует подтверждения»
+ * (`LIKELY_SUBJECT`), «принадлежность не подтверждена» (`AMBIGUOUS`),
+ * «признаков нет» (`INSUFFICIENT_IDENTIFIERS`) и молчание подтверждением не
+ * являются — иначе слово «подтверждено» перестаёт значить проверку.
+ *
+ * Ответ на «негативен ли материал» это не меняет: им считаются темы, счётчики
+ * охвата и доля негатива, и материал негативным быть не перестаёт. Меняется
+ * только то, **о ком** отчёт это утверждает.
+ */
+export function subjectConfirmedForClaim(decision: string | null | undefined): boolean {
+  return String(decision ?? "") === "SUBJECT_MATCH";
+}
+
+/**
+ * Обвинение по строке: рисуется ли рамка и остаётся ли след снятой.
+ *
+ * Строка не исчезает и не молчит: снятая рамка записывается признаком
+ * `adverseWording`, по которому страница называет её словами. Молча потерять
+ * негативную строку нельзя — это та же потеря содержимого, ради которой заведён
+ * весь контур учёта.
+ */
+export function claimAgainstSubject(input: {
+  adverse: boolean;
+  subjectDecision?: string | null;
+}): { adverse: boolean; adverseWording: boolean } {
+  if (!input.adverse) return { adverse: false, adverseWording: false };
+  const confirmed = subjectConfirmedForClaim(input.subjectDecision);
+  return { adverse: confirmed, adverseWording: !confirmed };
+}
+
 function toLoadedResult(
   obs: PersistedSerpObservation,
   verdictByRef?: ObservationVerdictByRef,
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  /** Решения о принадлежности: рамку рисует только подтверждённый материал. */
+  subjectDecisionByRef?: SubjectDecisionByRef | null
 ): LoadedResult {
-  const hl = classifyObservationHighlight(obs, verdictByRef?.[obs.id], undefined, subjectContext);
+  const raw = classifyObservationHighlight(obs, verdictByRef?.[obs.id], undefined, subjectContext);
+  /*
+   * Правило обвинения применяется там, где решения о принадлежности собраны.
+   *
+   * Карта отличает «не спрашивали» от «спросили и не подтвердили»: без карты
+   * (фикстура, старый прогон, набор без аналитики) рамки ставятся как раньше,
+   * а внутри неё строка без решения подтверждённой не считается — молчание
+   * подтверждением не является.
+   */
+  const hl =
+    subjectDecisionByRef &&
+    !claimAgainstSubject({
+      adverse: raw.isHighlighted,
+      subjectDecision: subjectDecisionByRef[obs.id],
+    }).adverse
+      ? { isHighlighted: false, riskTheme: null, themeTitle: null }
+      : raw;
   const engine: SerpEngine = obs.engine === "YANDEX" ? "YANDEX" : "GOOGLE";
   return {
     id: obs.id,
@@ -397,9 +462,13 @@ export function buildObservationThemeGrouping(
   language: SerpLanguage = "ru",
   verdictByRef?: ObservationVerdictByRef,
   /** Слова признаков субъекта: рамка снимка и счёт страницы — один ответ. */
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  /** Решения о принадлежности: легенда называет только обведённые сюжеты. */
+  subjectDecisionByRef?: SubjectDecisionByRef | null
 ): { loaded: LoadedResult[]; grouping: ThemeGrouping } {
-  const loaded = observations.map((o) => toLoadedResult(o, verdictByRef, subjectContext));
+  const loaded = observations.map((o) =>
+    toLoadedResult(o, verdictByRef, subjectContext, subjectDecisionByRef)
+  );
   const grouping = buildConsistentThemeGrouping(loaded, language);
   return { loaded, grouping };
 }
@@ -408,9 +477,11 @@ export function observationToResultView(
   obs: PersistedSerpObservation,
   grouping: ThemeGrouping,
   verdictByRef?: ObservationVerdictByRef,
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  /** Решения о принадлежности: рамку рисует только подтверждённый материал. */
+  subjectDecisionByRef?: SubjectDecisionByRef | null
 ): ResultView {
-  const loaded = toLoadedResult(obs, verdictByRef, subjectContext);
+  const loaded = toLoadedResult(obs, verdictByRef, subjectContext, subjectDecisionByRef);
   const mark = grouping.highlights.get(obs.id);
   return {
     rank: obs.rank,

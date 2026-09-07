@@ -9,6 +9,7 @@ import {
   classifyObservationHighlight,
   observationToResultView,
   type ObservationVerdictByRef,
+  type SubjectDecisionByRef,
 } from "./resolve-observation-highlights";
 import { serpMaterialKey } from "./material-key";
 import type { SubjectContextMask } from "../config/subject-context-words";
@@ -95,6 +96,11 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
   verdictByRef?: ObservationVerdictByRef;
   /** Слова признаков субъекта: рамки и легенда следуют им наравне со счётом. */
   subjectContext?: SubjectContextMask | null;
+  /**
+   * Решения о принадлежности: обвиняющую рамку получает только подтверждённый
+   * материал (`subjectConfirmedForClaim`). Карты нет — поведение прежнее.
+   */
+  subjectDecisionByRef?: SubjectDecisionByRef | null;
 }): SerpSnapshotViewModel {
   const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
@@ -122,13 +128,20 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
   const visible = [...yandexObs, ...googleObs];
 
   // Themes/legend only from rows that appear in the PNG columns.
-  const { grouping } = buildObservationThemeGrouping(visible, language, verdictByRef, subjectContext);
+  const subjectDecisionByRef = input.subjectDecisionByRef;
+  const { grouping } = buildObservationThemeGrouping(
+    visible,
+    language,
+    verdictByRef,
+    subjectContext,
+    subjectDecisionByRef
+  );
 
   const yandexResults = yandexObs.map((o) =>
-    observationToResultView(o, grouping, verdictByRef, subjectContext)
+    observationToResultView(o, grouping, verdictByRef, subjectContext, subjectDecisionByRef)
   );
   const googleResults = googleObs.map((o) =>
-    observationToResultView(o, grouping, verdictByRef, subjectContext)
+    observationToResultView(o, grouping, verdictByRef, subjectContext, subjectDecisionByRef)
   );
 
   const dateLabel = new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ru-RU", {

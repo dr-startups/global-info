@@ -1935,14 +1935,14 @@
             "x.com/rucriminalinfo/status/2008361452998914141?lang=ru",
             "Связанный с Россией бизнесмен Сергей Глинка ...",
             "Соцсеть",
-            "Нежелательный"
+            "Принадлежность не подтверждена"
           ],
           [
             "14",
             "rupep.org/ru/person/8095",
             "Заголовок не отдан поисковой системой",
             "База данных / реестр",
-            "Нежелательный"
+            "Принадлежность не подтверждена"
           ]
         ]
       },
@@ -1960,7 +1960,7 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "adverseDisplayed": 2,
+        "adverseDisplayed": 0,
         "datasetCount": 20,
         "displayedCount": 5,
         "likelyDisplayed": 0,

@@ -4071,6 +4071,16 @@ export function highlightPhrase(input: {
 export type AdverseVisualSidebar = {
   visibleRows: VisibleAssetItem[];
   adverseRows: VisibleAssetItem[];
+  /**
+   * Строки, у которых рамку сняла принадлежность: формулировка негативная, а
+   * материал не подтверждён как материал о субъекте.
+   *
+   * Молча терять их нельзя — читатель увидел бы чистую страницу там, где
+   * половина строк ведёт на негатив об однофамильцах. Объяснения им не
+   * положены (объясняется нарисованная рамка), поэтому они считаются отдельно
+   * и называются страницей числом.
+   */
+  wordingOnlyRows: VisibleAssetItem[];
   gridRefs: string[];
   explanations: NonNullable<SlideBody["highlightExplanations"]>;
   /** Фразы целиком, в порядке объяснений, — материал слайда-продолжения. */
@@ -4125,6 +4135,12 @@ export function adverseVisualSidebar(
     seen.add(v.ref);
     return true;
   });
+  const seenWording = new Set<string>();
+  const wordingOnlyRows = visibleRows.filter((v) => {
+    if (v.adverse || v.adverseWording !== true || seenWording.has(v.ref)) return false;
+    seenWording.add(v.ref);
+    return true;
+  });
   const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
   const phrases: HighlightPhrase[] = [];
   const explainedFindings: Finding[] = [];
@@ -4151,6 +4167,7 @@ export function adverseVisualSidebar(
   return {
     visibleRows,
     adverseRows,
+    wordingOnlyRows,
     gridRefs,
     explanations,
     phrases,
