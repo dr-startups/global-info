@@ -1,48 +1,33 @@
 /**
- * GET /api/digital-profile/cases/[id]/orion-golden/manual-review/[evidenceId]
- * POST — submit admin review decision (artifact-backed)
- * R10.10a — fail-closed auth; missing evidence → 404; validation → 400.
+ * GET  /api/digital-profile/cases/[id]/orion-golden/manual-review/[evidenceId]
+ *   — карточка материала классической очереди; читать её можно по-прежнему.
+ * POST — отказывает: решения принимаются во вкладке «Проверка перед выпуском».
+ *
+ * Классическая очередь писала решения в файл на томе, вкладка — в таблицу
+ * решений. Пока писали оба, у продукта было два ответа на «что решил аналитик»,
+ * и разойтись им предстояло в первый же день: у файла нет ни истории, ни
+ * автора, ни отпечатка набора, по которому видно, что документ собран раньше
+ * решения.
+ *
+ * Прежние решения из файла при этом не теряются: канонический конвейер их
+ * читает и применяет — они слабее решений таблицы, потому что применяются
+ * раньше.
  */
 
 import type { NextRequest } from "next/server";
-import { z } from "zod";
-import { jsonOk, withModule, ValidationError } from "@/modules/digital-profile/http/errors";
-import { readJsonBody } from "@/modules/digital-profile/http/request";
+import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
 import {
-  actorOf,
   assertCanReviewEvidence,
   requireOrionAdminApiAccess,
 } from "@/modules/digital-profile/orion-golden/auth/orion-admin-auth";
 import {
+  classicQueueDecisionRefusal,
   getManualReviewItem,
-  submitAdminReviewDecision,
 } from "@/modules/digital-profile/orion-golden/services/admin-review-workflow-service";
-import {
-  isHighImpactManualReviewItem,
-  validateAdminReviewDecisionInput,
-} from "@/modules/digital-profile/orion-golden/evidence/admin-review-decision-validation";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string; evidenceId: string }> };
-
-const SubmitDecisionSchema = z.object({
-  status: z.enum([
-    "PENDING",
-    "APPROVED",
-    "APPROVED_WITH_CAVEAT",
-    "APPENDIX_ONLY",
-    "EXCLUDED",
-    "NEEDS_MORE_SOURCES",
-    "WRONG_SUBJECT",
-  ]),
-  reviewerNote: z.string().optional(),
-  approvedClientSummary: z.string().optional(),
-  caveatText: z.string().optional(),
-  requestedSources: z.array(z.string()).optional(),
-  highImpactAcknowledged: z.boolean().optional(),
-  overwriteConfirmed: z.boolean().optional(),
-});
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id, evidenceId } = await ctx.params;
@@ -52,46 +37,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
 });
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
-  const { id, evidenceId } = await ctx.params;
+  const { id } = await ctx.params;
   const user = await requireOrionAdminApiAccess(req, id, "review");
+  // Права проверяются до отказа намеренно: посторонний не должен узнавать из
+  // ответа даже того, что такое дело существует.
   assertCanReviewEvidence(user);
-  const input = SubmitDecisionSchema.parse(await readJsonBody(req));
-  const current = getManualReviewItem(id, evidenceId);
-  const existingStatus =
-    current.adminDecision && "status" in current.adminDecision
-      ? current.adminDecision.status
-      : "PENDING";
-  const highImpact = isHighImpactManualReviewItem({
-    riskSignal: current.proposedClassification.riskSignal,
-    flags: current.flags,
-    title: current.title,
-    sourceDomain: current.sourceDomain,
-  });
-  const validation = validateAdminReviewDecisionInput({
-    status: input.status,
-    reviewerNote: input.reviewerNote,
-    caveatText: input.caveatText,
-    requestedSources: input.requestedSources,
-    highImpactAcknowledged: input.highImpactAcknowledged,
-    isHighImpact: highImpact,
-    existingStatus,
-    overwriteConfirmed: input.overwriteConfirmed,
-  });
-  if (!validation.ok) {
-    throw new ValidationError(validation.errors.join("; "), {
-      errors: validation.errors,
-      warnings: validation.warnings,
-    });
-  }
-  const actor = actorOf(user);
-  const data = await submitAdminReviewDecision(id, evidenceId, {
-    status: input.status,
-    reviewerNote: input.reviewerNote,
-    approvedClientSummary: input.approvedClientSummary,
-    caveatText: input.caveatText,
-    requestedSources: input.requestedSources,
-    reviewedBy: actor.actorId ?? user.id,
-    reviewedAt: new Date().toISOString(),
-  });
-  return jsonOk(data);
+  throw classicQueueDecisionRefusal();
 });

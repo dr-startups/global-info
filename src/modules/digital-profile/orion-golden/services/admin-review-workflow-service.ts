@@ -3,6 +3,7 @@
  * Persistence via AdminReviewDecisionRepository (artifact default; DB deferred).
  */
 
+import { ConflictError } from "../../http/errors";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -93,6 +94,29 @@ function loadBundlesArtifact(caseId: string): EvidenceBundlesArtifact {
   const data = readJson<EvidenceBundlesArtifact>(path);
   if (data.caseId !== caseId) throw new Error("evidence-bundles-case-mismatch");
   return data;
+}
+
+/**
+ * Почему классическая очередь больше не принимает решений.
+ *
+ * Она писала их в файл на томе, а вкладка «Проверка перед выпуском» — в
+ * таблицу решений. Пока писали оба, у продукта было два ответа на «что решил
+ * аналитик», и разойтись им предстояло в первый же день: у файла нет ни
+ * истории, ни автора, ни отпечатка набора, по которому видно, что документ
+ * собран раньше решения.
+ *
+ * Очередь при этом читается: прежние решения остаются записью того, что
+ * действительно решали, и канонический конвейер продолжает их применять — они
+ * слабее решений таблицы, потому что применяются раньше.
+ */
+export const CLASSIC_QUEUE_DECISIONS_CLOSED =
+  "Решения принимаются во вкладке «Проверка перед выпуском»: там же видно, " +
+  "на каких страницах стоит материал и что о нём решила машина. " +
+  "Старая очередь оставлена только для чтения.";
+
+/** Отказ на попытку решить через старую очередь — громкий и с причиной. */
+export function classicQueueDecisionRefusal(): ConflictError {
+  return new ConflictError(CLASSIC_QUEUE_DECISIONS_CLOSED);
 }
 
 export function getManualReviewQueue(caseId: string): ManualReviewQueue & {

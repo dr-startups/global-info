@@ -789,10 +789,16 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
         <Link href={`/admin/digital-profile/${caseId}`} className="dp-muted">
           ← К карточке кейса
         </Link>
-        <h1 style={{ margin: 0 }}>Очередь ручной проверки</h1>
+        <h1 style={{ margin: 0 }}>Очередь ручной проверки (только чтение)</h1>
         <p className="dp-muted" style={{ margin: 0 }}>
           Субъект: <strong>{subjectName}</strong> · CASE_ID: <code>{caseId}</code>
         </p>
+        <WarningBox>
+          Решения здесь больше не принимаются: их принимают во вкладке «Проверка перед выпуском»
+          в карточке кейса — там видно, на каких страницах стоит материал и что о нём решила
+          машина. Эта страница оставлена для чтения очереди и для инструментов сбора ниже; прежние
+          решения из неё канонический отчёт по-прежнему учитывает.
+        </WarningBox>
         <WarningBox>
           {gptAutoAnalyst
             ? "Режим GPT auto-analyst: решения по очереди принимает GPT (мусор отбрасывается автоматически). Ручной gate временно отключён."
