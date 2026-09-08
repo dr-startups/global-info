@@ -16,6 +16,7 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysis, SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type {
+  RemovedSerpRow,
   ScopedEvidenceIndex,
   LinkReadRegionCounts,
   MetricSnapshot,
@@ -330,35 +331,38 @@ export function applyAnalystDecisionsToEvidence(
  * Убрать его из набора значило бы объявить, что его не собирали, — это другое
  * утверждение и другая ложь.
  *
- * Номера снятых строк возвращаются наверх: таблица выдачи печатает настоящие
- * места в выдаче, снятая строка оставляет свой номер незанятым, и страница
- * обязана назвать пропуск, а не молчать о нём.
+ * Снятые строки возвращаются наверх: таблица выдачи печатает настоящие места в
+ * выдаче, снятая строка оставляет свой номер незанятым, и страница обязана
+ * назвать пропуск, а не молчать о нём. Строка помнит регион, систему и запрос:
+ * какой таблице принадлежит номер, решает сама таблица тем же правилом, каким
+ * она нумерует напечатанные строки (`removedRanksForTable`).
  */
 export function dropAnalystExcludedFromDeckInputs(input: {
   evidenceIndex: ScopedEvidenceIndex;
   surfaceUnits: SurfaceAnalysisUnit[];
   findings: Finding[];
   excludedRefs: ReadonlySet<string>;
-}): { count: number; ranksByRegion: Record<string, number[]> } {
+}): { count: number; removedSerpRows: RemovedSerpRow[] } {
   const { excludedRefs } = input;
-  if (excludedRefs.size === 0) return { count: 0, ranksByRegion: {} };
+  if (excludedRefs.size === 0) return { count: 0, removedSerpRows: [] };
 
-  const ranksByRegion: Record<string, number[]> = {};
+  const removedSerpRows: RemovedSerpRow[] = [];
   let count = 0;
-  for (const ref of excludedRefs) {
+  for (const ref of [...excludedRefs].sort()) {
     const entry = input.evidenceIndex[ref];
     if (!entry) continue;
     count += 1;
     const rank = Number(entry.rank ?? 0);
     if (rank >= 1) {
-      const region = mapRegionBucket(String(entry.region ?? "")) === "UAE" ? "UAE" : "RU";
-      const list = ranksByRegion[region] ?? [];
-      if (!list.includes(rank)) list.push(rank);
-      ranksByRegion[region] = list;
+      removedSerpRows.push({
+        region: mapRegionBucket(String(entry.region ?? "")) === "UAE" ? "UAE" : "RU",
+        engine: entry.engine ? String(entry.engine) : null,
+        query: entry.query ? String(entry.query) : null,
+        rank,
+      });
     }
     delete input.evidenceIndex[ref];
   }
-  for (const list of Object.values(ranksByRegion)) list.sort((a, b) => a - b);
 
   const keep = (refs: readonly string[] | undefined): string[] =>
     (refs ?? []).filter((r) => !excludedRefs.has(r));
@@ -374,7 +378,7 @@ export function dropAnalystExcludedFromDeckInputs(input: {
   for (const finding of input.findings) {
     finding.evidenceRefs = keep(finding.evidenceRefs);
   }
-  return { count, ranksByRegion };
+  return { count, removedSerpRows };
 }
 
 /**
@@ -1044,9 +1048,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
    * раньше.
    */
   const analystAppliedPath = join(analyticsDir, "analyst-overrides-applied.json");
-  let removedByAnalyst: { count: number; ranksByRegion: Record<string, number[]> } = {
+  let removedByAnalyst: { count: number; removedSerpRows: RemovedSerpRow[] } = {
     count: 0,
-    ranksByRegion: {},
+    removedSerpRows: [],
   };
   if (existsSync(analystAppliedPath)) {
     const artifact = readJson<{ applied?: AppliedOverrideRecord[] }>(analystAppliedPath);
@@ -1406,8 +1410,8 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
     linkThemesByRegion,
-    ...(Object.keys(removedByAnalyst.ranksByRegion).length > 0
-      ? { removedRanksByRegion: removedByAnalyst.ranksByRegion }
+    ...(removedByAnalyst.removedSerpRows.length > 0
+      ? { removedSerpRows: removedByAnalyst.removedSerpRows }
       : {}),
     // Поля нет вовсе, когда чтения в прогоне не было: отсутствие метрики и
     // измеренный ноль — разные утверждения перед клиентом.

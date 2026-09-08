@@ -88,13 +88,16 @@ export type MetricSnapshot = {
    */
   linkThemesByRegion?: Record<string, Array<{ theme: string; count: number; adverseCount: number }>>;
   /**
-   * Номера позиций выдачи, снятых из отчёта решением проверки, — по регионам.
+   * Строки выдачи, снятые из отчёта решением проверки: регион, система, запрос
+   * и номер — снимок улики до того, как она ушла из индекса.
    *
    * Нужны прозе таблицы: снятая строка оставляет свой номер незанятым, и
    * страница обязана назвать пропуск. Прежняя фраза о непришедших позициях о
-   * такой строке — ложь, поэтому у снятых своя.
+   * такой строке — ложь, поэтому у снятых своя. Номера не сводятся по региону:
+   * таблица — одна система и один запрос, и назвать чужой номер значит
+   * объявить дыру там, где её нет (шаг 0070).
    */
-  removedRanksByRegion?: Record<string, number[]>;
+  removedSerpRows?: RemovedSerpRow[];
   /**
    * Прочитанное и негативное по региональным контурам — основание доли
    * негатива на странице региона и в резюме.
@@ -159,6 +162,14 @@ export type FragmentScope = {
   unitSurfaces?: SurfaceKind[] | null;
   subjectMatch: Array<Finding["subjectMatch"]> | null;
   findingIds: string[] | null;
+};
+
+/** Снятая решением проверки строка выдачи — то, что о ней помнит подпись таблицы. */
+export type RemovedSerpRow = {
+  region: string;
+  engine: string | null;
+  query: string | null;
+  rank: number;
 };
 
 /** Point lookup for scoped evidence refs only — never the raw dataset. */

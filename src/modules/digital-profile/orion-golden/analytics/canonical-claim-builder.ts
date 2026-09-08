@@ -50,6 +50,14 @@ export type CanonicalClaimBuildInput = {
   items: RawInventoryItem[];
   synthesis: FindingSynthesisResult;
   dispositionLedger: ObservationDispositionLedger;
+  /**
+   * Темы, снятые решением проверки, — в каноническом словаре.
+   *
+   * Находки снятой темы синтез уже покинули, но утверждения добираются и по
+   * непокрытым материалам, и темы им даются заново по тексту: без этого
+   * списка снятая тема возвращалась в резюме через сирот (шаг 0070).
+   */
+  excludedThemeIds?: ReadonlySet<string>;
 };
 
 /** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
@@ -491,6 +499,8 @@ export function buildCanonicalClaimsBundle(
   orphans.sort((a, b) => a.claimId.localeCompare(b.claimId));
   claims.push(...orphans);
 
+  dropExcludedThemesFromClaims(claims, input.excludedThemeIds);
+
   // Multi-theme: one evidence may appear in multiple claims; do NOT collapse.
   // Gate checks:
   let materialWithoutTheme = 0;
@@ -544,6 +554,36 @@ export function buildCanonicalClaimsBundle(
     },
   };
   return CanonicalClaimsBundleSchema.parse(bundle);
+}
+
+/**
+ * Снять исключённые темы с утверждений — одним местом, после сирот.
+ *
+ * Тема снята — значит отчёт не делает этого утверждения нигде, а резюме клиента
+ * печатает именно утверждения. У утверждения с несколькими темами уходит только
+ * снятая; утверждение, у которого тем **из-за снятия** не осталось, уходит
+ * целиком — печатать его нечем. Утверждения, у которых тем не было и раньше,
+ * не трогаются: их судьбу решает ворота `MATERIAL_ADVERSE_WITHOUT_THEME`, а не
+ * решение аналитика.
+ */
+function dropExcludedThemesFromClaims(
+  claims: CanonicalClaim[],
+  excluded: ReadonlySet<string> | undefined
+): void {
+  if (!excluded || excluded.size === 0) return;
+  const kept: CanonicalClaim[] = [];
+  for (const claim of claims) {
+    if (claim.themeIds.length === 0) {
+      kept.push(claim);
+      continue;
+    }
+    const themeIds = claim.themeIds.filter((id) => !excluded.has(id));
+    if (themeIds.length === 0) continue;
+    claim.themeIds = themeIds;
+    kept.push(claim);
+  }
+  claims.length = 0;
+  claims.push(...kept);
 }
 
 /** Fingerprint of theme keyword sources — must not include case subject names. */

@@ -13,7 +13,7 @@ import {
   UNCONFIRMED_SUBJECT_LABEL,
   UNVERIFIED_LABEL,
 } from "../template-registry";
-import type { ScopedFragmentInput } from "../scoped-input";
+import type { RemovedSerpRow, ScopedFragmentInput } from "../scoped-input";
 import { clientNamedSearchEngine, evidenceMaterialKey } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
@@ -442,6 +442,33 @@ export function mainSerpTableQuery(
  * Тем же правилом ворота сборки сверяют напечатанное с наблюдениями: два
  * ответа на вопрос «чей это ранг» разошлись бы в первую же неделю.
  */
+/**
+ * Номера снятых строк, принадлежащие этой таблице.
+ *
+ * Таблица выдачи — одна система и один запрос. Пока номера снятых складывались
+ * по региону, подпись Яндекса на прогоне DPA-2026-0002 объявляла «Позиции 1, 6 в
+ * таблице не показаны» о материале, которого в Яндексе не было, а подпись Google
+ * называла позицию 1 запроса, таблицы которого в отчёте нет.
+ *
+ * Правило то же, что у `rankInQuery` для напечатанных строк: при названном
+ * запросе считается только чтение по этому запросу, без запроса — любое чтение
+ * своей системы. Второй линейки для снятых строк не заводится.
+ */
+export function removedRanksForTable(
+  rows: ReadonlyArray<RemovedSerpRow>,
+  table: { region: string; engine: string; query: string | null }
+): number[] {
+  const engine = normalizeSerpEngine(table.engine) ?? "";
+  const ranks = new Set<number>();
+  for (const row of rows) {
+    if (row.region !== table.region) continue;
+    if ((normalizeSerpEngine(row.engine ?? undefined) ?? "") !== engine) continue;
+    if (table.query && !sameSerpQuery(row.query, table.query)) continue;
+    if (row.rank >= 1) ranks.add(row.rank);
+  }
+  return [...ranks].sort((a, b) => a - b);
+}
+
 export function rankSourceBelongsToEngine(
   rankSource: string | undefined,
   engine: string
@@ -1479,11 +1506,12 @@ export function buildSerpFragment(
       datasetKnowsSecondReading,
       positional: table.positional,
       freshness: extras?.materialFreshness ?? null,
-      // Снятые позиции этого контура: страница называет их своей фразой.
-      removed:
-        scoped.metricSnapshot.removedRanksByRegion?.[
-          key.startsWith("RU_") ? "RU" : "UAE"
-        ] ?? [],
+      // Снятые позиции этой таблицы: страница называет их своей фразой.
+      removed: removedRanksForTable(scoped.metricSnapshot.removedSerpRows ?? [], {
+        region: key.startsWith("RU_") ? "RU" : "UAE",
+        engine: table.engine,
+        query: table.query,
+      }),
     });
     for (let i = 0; i < rowChunks.length; i += 1) {
       // Пара «номер листа / всего листов» считается один раз и отсюда идёт и в

@@ -22,7 +22,14 @@ const KEPT = "inventory:kept";
 
 function inputs() {
   const evidenceIndex = {
-    [GONE]: { url: "https://gone.example/1", title: "Снятый материал", rank: 14, region: "RU" },
+    [GONE]: {
+      url: "https://gone.example/1",
+      title: "Снятый материал",
+      rank: 14,
+      region: "RU",
+      engine: "GOOGLE",
+      query: "Тестов Сергей Михайлович",
+    },
     [KEPT]: { url: "https://kept.example/1", title: "Оставленный материал", rank: 3, region: "RU" },
   } as unknown as ScopedEvidenceIndex;
   const surfaceUnits = [
@@ -69,7 +76,7 @@ describe("снятый материал уходит из входов деки"
     expect(removed.count).toBe(1);
   });
 
-  it("снятые номера позиций собираются по регионам — страница о них скажет", () => {
+  it("снятая строка помнит регион, систему и запрос — по ним её назовёт своя таблица", () => {
     const { evidenceIndex, surfaceUnits, findings } = inputs();
     const removed = dropAnalystExcludedFromDeckInputs({
       evidenceIndex,
@@ -77,7 +84,11 @@ describe("снятый материал уходит из входов деки"
       findings,
       excludedRefs: new Set([GONE]),
     });
-    expect(removed.ranksByRegion).toEqual({ RU: [14] });
+    // Не «номера по региону»: таблица — одна система и один запрос, и номер
+    // снятой строки принадлежит только ей (шаг 0070).
+    expect(removed.removedSerpRows).toEqual([
+      { region: "RU", engine: "GOOGLE", query: "Тестов Сергей Михайлович", rank: 14 },
+    ]);
   });
 
   it("без снятых ничего не двигается", () => {

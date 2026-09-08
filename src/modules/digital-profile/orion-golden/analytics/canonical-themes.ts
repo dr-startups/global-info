@@ -281,6 +281,27 @@ export function mapLegacyThemeId(legacyThemeId: string): CanonicalThemeId | null
   return LEGACY_TO_CANONICAL.get(legacyThemeId) ?? null;
 }
 
+/**
+ * Канонический идентификатор темы по ключу пункта листа проверки.
+ *
+ * Ключ темы в решении аналитика — `theme:<id>`, где `<id>` взят из
+ * идентификатора находки (`reviewThemeKeyOf`), то есть из словаря синтеза:
+ * `offshore_structures`, а не `offshore_financial_transparency`. Утверждения и
+ * резюме живут в каноническом словаре, и снятие темы должно доехать до них тем
+ * же переводом, каким туда попадают темы находок (`mapLegacyThemeId`).
+ * Незнакомый ключ — `null`: молча считать его «ничем» нельзя, вызывающий сам
+ * решает, что с этим делать.
+ */
+export function canonicalThemeIdOfReviewKey(key: string): CanonicalThemeId | null {
+  // Без регэкспа: словари этого файла сверяются тестом по литералам, и чужой
+  // литерал он считает неучтённым словарём.
+  const raw = String(key ?? "");
+  const id = (raw.startsWith("theme:") ? raw.slice("theme:".length) : raw).trim();
+  if (!id) return null;
+  if (isCanonicalThemeId(id)) return id;
+  return mapLegacyThemeId(id);
+}
+
 /** Classify evidence text into zero or more canonical themes (multi-label). */
 export function classifyCanonicalThemes(text: string): CanonicalThemeId[] {
   const blob = String(text ?? "");

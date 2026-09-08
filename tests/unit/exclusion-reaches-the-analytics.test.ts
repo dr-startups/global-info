@@ -22,6 +22,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCanonicalReportPrepare } from "@/modules/digital-profile/services/canonical-report-prepare";
 import { resolvePreparePrismaBundle } from "@/modules/digital-profile/services/prepare-prisma-bundle";
+import {
+  canonicalThemeIdOfReviewKey,
+  themeLabelRu,
+} from "@/modules/digital-profile/orion-golden/analytics/canonical-themes";
 import { reviewThemeKeyOf } from "@/modules/digital-profile/services/review-sheet";
 import { TINY_ADVERSE_URL, tinyPrepareInput } from "../fixtures/tiny-canonical-prepare";
 
@@ -177,6 +181,18 @@ describe("снятое решением проверки не доезжает �
     );
     expect(afterBundle.findings.map((f) => reviewThemeKeyOf(f.findingId))).not.toContain(themeKey);
     expect(after.text("executive-summary-input.json")).not.toContain(target.theme);
+    /*
+     * Резюме клиента строится из утверждений, а не из находок, и снятая тема
+     * возвращалась через утверждения по непокрытым материалам (шаг 0070).
+     * Поэтому сверяются и утверждения, и то, что печатает резюме.
+     */
+    const canonicalId = canonicalThemeIdOfReviewKey(themeKey);
+    expect(canonicalId).not.toBeNull();
+    const claims = readJson<{ claims: Array<{ themeIds: string[] }> }>(
+      join(after.root, "analytics", "canonical-claims.json")
+    );
+    expect(claims.claims.filter((c) => c.themeIds.includes(String(canonicalId)))).toEqual([]);
+    expect(after.text("composed-client-summary.json")).not.toContain(themeLabelRu(canonicalId!));
     // Материалы темы никуда не делись: реестр не считает их снятыми.
     const ledger = readJson<{ entries: Array<{ disposition: string }> }>(
       join(after.root, "analytics", "observation-disposition-ledger.json")

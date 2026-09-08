@@ -125,6 +125,7 @@ import {
   buildFilterLossMatrix,
 } from "./filter-loss-audit";
 import type { FilterLossMatrix } from "../contracts/filter-loss-matrix";
+import { canonicalThemeIdOfReviewKey } from "./canonical-themes";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
@@ -1006,6 +1007,13 @@ export async function runOrionAnalyticsPipeline(
     items: analysisItems,
     synthesis,
     dispositionLedger,
+    // Снятые темы — до утверждений, а не только до находок: резюме клиента
+    // печатает утверждения, и через сирот снятая тема в него возвращалась.
+    excludedThemeIds: new Set(
+      withoutExcludedThemes.removedThemeKeys
+        .map(canonicalThemeIdOfReviewKey)
+        .filter((id): id is NonNullable<typeof id> => id !== null)
+    ),
   });
   assertCanonicalClaimGatesPass(canonicalClaims);
   const canonicalClaimsSummary = buildCanonicalClaimsSummary(canonicalClaims);
