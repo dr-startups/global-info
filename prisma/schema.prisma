@@ -250,7 +250,7 @@ model Case {
   unifiedCollectionJobs UnifiedCollectionJobRecord[]
   workflowSteps      WorkflowStep[]
   personaChecks      SubjectPersonaCheck[]
-  reviewDecisions    DpReviewDecision[]
+  reviewDecisions    ReviewDecision[]
 
   @@index([status])
   @@index([deletedAt])
@@ -726,6 +726,11 @@ model SubjectPersonaCheck {
 
 /// Решение аналитика по пункту листа проверки перед выпуском отчёта.
 ///
+/// Имя модели без префикса `Dp`, как у остальных таблиц модуля: делегат клиента
+/// зовётся `prisma.reviewDecision`, и ровно его ждут загрузчик правок и бандл
+/// подготовки. С префиксом делегат назывался бы `dpReviewDecision`, и сторож
+/// бандла отказывал бы на каждом живом прогоне — так и случилось 08.09.2026.
+///
 /// История, а не перезапись: новое решение гасит прежнее (`isActive=false`) и
 /// ссылается на него. Выпуск отчёта юридически значим, и на вопрос «почему в
 /// отчёте нет X» надо отвечать данными — кто решил, когда и что решал раньше.
@@ -733,7 +738,7 @@ model SubjectPersonaCheck {
 /// Ключ пункта — ключ материала (`serpMaterialKey`), тот же, которым лист
 /// проверки считает пункты, а таблица выдачи сводит строки: одна страница,
 /// найденная четырьмя запросами, — четыре наблюдения и один пункт.
-model DpReviewDecision {
+model ReviewDecision {
   id                 String   @id @default(cuid())
   caseId             String
   /// evidence | finding | compliance
