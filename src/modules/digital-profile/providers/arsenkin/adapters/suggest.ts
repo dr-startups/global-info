@@ -7,6 +7,8 @@
  * one element in `queries` ("Не более 1 элементов").
  */
 
+import { queryBlocksOf } from "../query-blocks";
+
 import { createHash } from "node:crypto";
 import { buildSerpQueryId } from "../../../serp-observation/query-id";
 import type { SerpObservationDraft } from "../../../serp-observation/types";
@@ -321,14 +323,15 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
   for (const phrase of Object.keys(types)) {
     if (phrase.trim()) candidates.push(phrase);
   }
-  const byBucket = asObj(result.result ?? inner.result);
-  for (const v of Object.values(byBucket)) {
-    if (Array.isArray(v)) candidates.push(...v);
-  }
-  if (Array.isArray(result.result)) candidates.push(...result.result);
-  if (Array.isArray(inner.result)) candidates.push(...(inner.result as unknown[]));
+  // Контейнер по запросу разбирается одним местом с конвертом единого прогона
+  // (`queryBlocksOf`, шаг 0071): словарь списков и список списков — одна форма.
+  const container = result.result ?? inner.result;
+  candidates.push(...queryBlocksOf(container).items);
+  const byBucket = asObj(container);
 
-  for (const key of ["suggests", "suggestions", "words", "phrases", "items"]) {
+  // `words` — эхо запроса, а не подсказка; сам запрос среди подсказок приходит
+  // из `types` или из контейнера.
+  for (const key of ["suggests", "suggestions", "phrases", "items"]) {
     const v = inner[key] ?? result[key] ?? root[key];
     if (Array.isArray(v)) {
       if (v.every((x) => typeof x === "string" && OPTION_CODES.has(String(x).toLowerCase()))) {

@@ -4,6 +4,8 @@
  * tool adapters consume a normalized payload (items/results/…), never the raw envelope alone.
  */
 
+import { queryBlocksOf } from "../providers/arsenkin/query-blocks";
+
 export type ArsenkinEnvelopeMeta = {
   code: string | null;
   taskId: string | null;
@@ -172,15 +174,16 @@ function promoteSuggestions(payload: Record<string, unknown>): Record<string, un
   for (const phrase of Object.keys(types)) {
     if (phrase.trim()) candidates.push(phrase.trim());
   }
-  const byBucket = isPlainObject(payload.result) ? payload.result : {};
-  for (const v of Object.values(byBucket)) {
-    if (Array.isArray(v)) {
-      for (const x of v) {
-        if (typeof x === "string" && x.trim()) candidates.push(x.trim());
-      }
-    }
+  // Словарь списков и список списков — один контейнер по запросу (шаг 0071):
+  // пока читался только словарь, ответ google.ae списком списков сводился к
+  // одной строке — запросу из `words`.
+  const blocks = queryBlocksOf(payload.result);
+  for (const x of blocks.items) {
+    if (typeof x === "string" && x.trim()) candidates.push(x.trim());
   }
-  for (const key of ["suggestions", "items", "results", "words", "phrases"]) {
+  // `words` здесь нет: это эхо запроса, а не подсказка. Сам запрос среди
+  // подсказок бывает, но приходит он из `types` или из контейнера.
+  for (const key of ["suggestions", "items", "results", "phrases"]) {
     const v = payload[key];
     if (!Array.isArray(v)) continue;
     if (v.every((x) => typeof x === "string" && OPTION_CODES.has(String(x).toLowerCase()))) {
@@ -199,7 +202,9 @@ function promoteSuggestions(payload: Record<string, unknown>): Record<string, un
     seen.add(k);
     items.push(c);
   }
-  if (items.length === 0 && !isPlainObject(payload.types) && !isPlainObject(payload.result)) {
+  // Контейнер есть, подсказок нет — ответ «подсказок нет» (EMPTY_VALID), а
+  // не неизвестная форма; неизвестная форма — когда контейнера нет вовсе.
+  if (items.length === 0 && !isPlainObject(payload.types) && !blocks.present) {
     return promoteArsenkinToolPayload(payload);
   }
   const words = Array.isArray(payload.words) ? payload.words : [];
@@ -214,28 +219,21 @@ function promotePaa(payload: Record<string, unknown>): Record<string, unknown> {
     return payload;
   }
   const inner = payload.result ?? payload;
-  const bags: unknown[] = [];
-  if (Array.isArray(inner)) {
-    for (const block of inner) {
-      if (Array.isArray(block)) bags.push(...block);
-      else bags.push(block);
-    }
-  } else if (isPlainObject(inner)) {
-    const nested = inner.result ?? inner.paa ?? inner.questions ?? inner.items;
-    if (Array.isArray(nested)) {
-      for (const block of nested) {
-        if (Array.isArray(block)) bags.push(...block);
-        else bags.push(block);
-      }
-    }
-  }
+  // Контейнер по запросу — один разбор (шаг 0071). `present` отличает «ответил
+  // пустым» от «формы нет»: на прогоне 0054 `result: [[]]` читался как
+  // сломанная схема, и конвейер вставал на детерминированной ошибке.
+  const blocks = Array.isArray(inner)
+    ? queryBlocksOf(inner)
+    : isPlainObject(inner)
+      ? queryBlocksOf(inner.result ?? inner.paa ?? inner.questions ?? inner.items)
+      : { present: false, items: [] as unknown[] };
+  const bags: unknown[] = [...blocks.items];
+  let present = blocks.present;
   if (Array.isArray(existing) && isNestedBlockArray(existing)) {
-    for (const block of existing) {
-      if (Array.isArray(block)) bags.push(...block);
-      else bags.push(block);
-    }
+    bags.push(...queryBlocksOf(existing).items);
+    present = true;
   }
-  if (bags.length === 0) return promoteArsenkinToolPayload(payload);
+  if (!present) return promoteArsenkinToolPayload(payload);
   const questions: Record<string, unknown>[] = [];
   for (const raw of bags) {
     if (typeof raw === "string") {
