@@ -188,6 +188,37 @@ export function stageForRetryAttempt(
   return def ? def.stage : null;
 }
 
+/**
+ * Патч джобы перед новой попыткой шага — одной функцией.
+ *
+ * Вердикт прошлой попытки снимается вместе со счётчиком простоя. Пока
+ * обнулялся только вердикт, `pollAttempt: 40` оставался на джобе, и первый же
+ * опрос новой попытки давал «41 опросов подряд» — исчерпано, попытка
+ * потрачена, через полминуты то же самое: прогон DPA-2026-0054 сжёг шесть
+ * попыток за две минуты, локальный прогон 08.09 — десять за шесть секунд.
+ * «Ожидание — не попытка»: попытка, которой не дали подождать, отказом не
+ * является.
+ *
+ * Общий бюджет ожидания (`enrichmentWaitStartedAt`) здесь не трогается: он
+ * ограничивает ожидание в целом и останавливает повторы честно — терминально.
+ *
+ * `null` — патча нет (терминальный отказ, отмена, обычная стадия).
+ */
+export function retryAttemptPatch(
+  stepName: string,
+  jobStage: string | null | undefined
+): {
+  stage: string;
+  lastError: null;
+  lastErrorCode: null;
+  pollAttempt: 0;
+  nextPollAt: null;
+} | null {
+  const stage = stageForRetryAttempt(stepName, jobStage);
+  if (!stage) return null;
+  return { stage, lastError: null, lastErrorCode: null, pollAttempt: 0, nextPollAt: null };
+}
+
 function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
   return async (step: WorkflowStepRow): Promise<StepOutcome> => {
     const before = await loadUnifiedCollectionJob(step.caseId);
@@ -239,16 +270,12 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
 
     // Вердикт прошлой попытки снимается до начала новой: иначе тик отработает,
     // а исход всё равно возьмётся из памяти джобы об отказе.
-    const retryStage = stageForRetryAttempt(step.name, before.stage);
-    if (retryStage) {
+    const retryPatch = retryAttemptPatch(step.name, before.stage);
+    if (retryPatch) {
       const { patchUnifiedCollectionJob } = await import(
         "../services/unified-collection-job-store"
       );
-      await patchUnifiedCollectionJob(step.caseId, {
-        stage: retryStage as UnifiedCollectionJob["stage"],
-        lastError: null,
-        lastErrorCode: null,
-      } as Partial<UnifiedCollectionJob>);
+      await patchUnifiedCollectionJob(step.caseId, retryPatch as Partial<UnifiedCollectionJob>);
     }
 
     /*
