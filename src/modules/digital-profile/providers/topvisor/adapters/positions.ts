@@ -222,6 +222,40 @@ export function snapshotToObservations(input: {
   return { observations, matchedKeywords, unmatchedKeywords, warnings };
 }
 
+/**
+ * Код состояния проверки из ответа `get/projects_2/projects`: `0` — проект не
+ * в проверке (на пилоте: `2` — идёт, `3` — завершается, `0` — закончена).
+ * Приходит и числом, и строкой (`"0"`), поэтому читается через `Number`.
+ */
+export function readCheckStatus(body: unknown): number | null {
+  const rows = (body as { result?: unknown } | null)?.result;
+  const row = Array.isArray(rows) ? (rows[0] as Record<string, unknown> | undefined) : undefined;
+  if (!row || row.status_positions == null) return null;
+  const status = Number(row.status_positions);
+  return Number.isFinite(status) ? status : null;
+}
+
+/**
+ * Есть ли в ответе `get/snapshots_2/history` снимок за дату — по данным, а не
+ * по статусу проекта: `existsDates` называет даты со снимками, а ключи
+ * `snapshotsData` начинаются с даты. Завершение проверки — это снимок за её
+ * дату (шаг 0072); процент проверки после завершения обнуляется.
+ */
+export function snapshotHasDate(body: unknown, date: string): boolean {
+  const result = (body as { result?: unknown } | null)?.result;
+  if (!result || typeof result !== "object") return false;
+  const r = result as { existsDates?: unknown; keywords?: unknown };
+  if (Array.isArray(r.existsDates) && r.existsDates.some((d) => String(d) === date)) return true;
+  const keywords = Array.isArray(r.keywords) ? r.keywords : [];
+  for (const kw of keywords) {
+    const data = (kw as { snapshotsData?: Record<string, unknown> } | null)?.snapshotsData ?? {};
+    for (const key of Object.keys(data)) {
+      if (parseSnapshotKey(key)?.date === date) return true;
+    }
+  }
+  return false;
+}
+
 /** Процент выполнения проверки из ответа `get/projects_2/projects`. */
 export function readCheckPercent(body: unknown): number | null {
   const rows = (body as { result?: unknown } | null)?.result;

@@ -24,6 +24,8 @@ import {
   positionsCheckPayload,
   positionsHistoryPayload,
   readCheckPercent,
+  readCheckStatus,
+  snapshotHasDate,
   snapshotHistoryPayload,
   snapshotToObservations,
   type TopvisorObservation,
@@ -417,6 +419,28 @@ function readCheckDate(body: unknown): string | null {
   return date || null;
 }
 
+/** Снимки выдачи за дату проверки по всем регионам аудита — одно чтение на обе ветки. */
+async function readSnapshotsForDate(input: {
+  call: TopvisorCallFn;
+  projectId: number;
+  checkDate: string;
+}): Promise<{ ok: true; snapshots: Record<string, unknown> } | { ok: false; message: string }> {
+  const snapshots: Record<string, unknown> = {};
+  for (const region of TOPVISOR_AUDIT_REGIONS) {
+    const res = await input.call({
+      action: "get",
+      service: "snapshots_2",
+      method: "history",
+      payload: snapshotHistoryPayload(input.projectId, region, input.checkDate, SERP_AUDIT_DEPTH),
+    });
+    if (!res.ok) {
+      return { ok: false, message: `Topvisor: снимок ${region.key} не прочитан — ${res.errors.join("; ")}` };
+    }
+    snapshots[region.key] = res.body;
+  }
+  return { ok: true, snapshots };
+}
+
 /** Платный запуск проверки; строка задачи уже заведена и ждёт внешнего идентификатора. */
 async function startCheck(input: {
   call: TopvisorCallFn;
@@ -642,6 +666,8 @@ export async function runTopvisorPositionsTick(input: {
   if (projectId == null || !checking.checkDate) {
     return fail(checking, "TOPVISOR_TASK_INCOMPLETE", "Topvisor: у строки задачи нет проекта или даты проверки.");
   }
+  // Дата проверки одной константой: после `await` сужение поля до строки теряется.
+  const checkDate = checking.checkDate;
   const status = await call({
     action: "get",
     service: "projects_2",
@@ -677,27 +703,42 @@ export async function runTopvisorPositionsTick(input: {
 
   const percent = readCheckPercent(status.body);
   const advanced = percent != null && percent > (checking.lastPercent ?? -1);
+  let snapshots: Record<string, unknown> | null = null;
   if (percent == null || percent < 100) {
-    return finish(
-      { ...checking, lastPercent: percent ?? checking.lastPercent },
-      { waiting: true, advanced, nextPollAt: new Date(now.getTime() + CHECK_POLL_MS).toISOString() }
-    );
-  }
-
-  const snapshots: Record<string, unknown> = {};
-  for (const region of TOPVISOR_AUDIT_REGIONS) {
-    const res = await call({
-      action: "get",
-      service: "snapshots_2",
-      method: "history",
-      payload: snapshotHistoryPayload(projectId, region, checking.checkDate, SERP_AUDIT_DEPTH),
-    });
-    if (!res.ok) {
-      return fail(checking, "TOPVISOR_SNAPSHOT_READ_FAILED", `Topvisor: снимок ${region.key} не прочитан — ${res.errors.join("; ")}`);
+    /*
+     * Проверка могла закончиться, пока никто не смотрел (шаг 0072).
+     *
+     * Процент проверки после завершения обнуляется: прогон 0054 лежал на
+     * ошибке обогащения, проверка за это время прошла, и вернувшийся тик видел
+     * «не в проверке, 0 %, дата — наша» и ждал 100 % до исчерпания бюджета.
+     * Завершение — это снимок за дату проверки, а не процент: если проект не в
+     * проверке и дата его проверки наша, снимки читаются, и есть они у всех
+     * регионов — проверка принята. Снимков нет — проверка в очереди, ждём как
+     * прежде и второй раз её не заказываем.
+     */
+    const finishedUnseen =
+      readCheckStatus(status.body) === 0 && readCheckDate(status.body) === checkDate;
+    const peek = finishedUnseen
+      ? await readSnapshotsForDate({ call, projectId, checkDate: checkDate })
+      : null;
+    if (
+      peek?.ok &&
+      TOPVISOR_AUDIT_REGIONS.every((region) => snapshotHasDate(peek.snapshots[region.key], checkDate))
+    ) {
+      snapshots = peek.snapshots;
+      warnings.push("topvisor-check-finished-while-away");
+    } else {
+      return finish(
+        { ...checking, lastPercent: percent ?? checking.lastPercent },
+        { waiting: true, advanced, nextPollAt: new Date(now.getTime() + CHECK_POLL_MS).toISOString() }
+      );
     }
-    snapshots[region.key] = res.body;
   }
-
+  if (!snapshots) {
+    const read = await readSnapshotsForDate({ call, projectId, checkDate: checkDate });
+    if (!read.ok) return fail(checking, "TOPVISOR_SNAPSHOT_READ_FAILED", read.message);
+    snapshots = read.snapshots;
+  }
   /*
    * Второе чтение того же прогона: выдача лежит в снимках, AI-ответ — в
    * признаках выдачи истории позиций. Одним вызовом не обойтись, и оба чтения
