@@ -35,6 +35,13 @@ export type ArsenkinAgentTerminalKind =
    * записывали её в «спрошено, пусто».
    */
   | "DISABLED"
+  /**
+   * Провайдер отказал в доступе: тариф или ключ (HTTP 401/403 на подаче,
+   * `TO_LOW_SUBSRIPTION`). Вопрос задан, ответа не будет, и повтор его не
+   * добудет — исход завершённый, а не упавший: прогон идёт дальше, а страницы
+   * поверхностей агента называют причину (шаг 0075).
+   */
+  | "REFUSED"
   | "REUSED"
   | "FAILED"
   | "SUBMIT_UNKNOWN_UNRECONCILED";
@@ -415,16 +422,19 @@ export function disabledSurfaceCoverageCells(rawState: unknown): CoverageCellSta
       String(agent.agentName ?? "")
     ];
     if (!tools) continue;
-    if (!agentWasDisabled(agent, { agents })) continue;
+    // Отказ провайдера в доступе — тем же каналом: страница обязана назвать
+    // причину, а не молчать пустотой (шаг 0075).
+    const refused = agent.terminalKind === "REFUSED";
+    if (!refused && !agentWasDisabled(agent, { agents })) continue;
     for (const slot of FIRST36_FULL_SURFACE_SLOTS) {
       if (!tools.includes(slot.tool)) continue;
       cells.push({
         region: slot.region,
         engine: slot.engine,
         surface: normalizeCoverageSurface(slot.surface),
-        status: "NOT_COLLECTED",
+        status: refused ? "ERROR" : "NOT_COLLECTED",
         provider: "arsenkin",
-        errorCode: "DISABLED_BY_TOOLS",
+        errorCode: refused ? "PROVIDER_REFUSED" : "DISABLED_BY_TOOLS",
       });
     }
   }
@@ -451,6 +461,8 @@ export function surfaceCoverageFromEnrichmentState(
       (a) => a.terminalKind === "EMPTY_VALID" || a.terminalKind === "NO_RESULTS"
     ).length,
     notSupported: state.agents.filter((a) => a.terminalKind === "DISABLED").length,
+    // Отказ провайдера в доступе окончателен: повтор его не добудет.
+    failedFinal: state.agents.filter((a) => a.terminalKind === "REFUSED").length,
     failedRetryable: state.failedAgents.length,
     progressRatio: state.completedAgents.length / ARSENKIN_REAL_AGENT_NAMES.length,
   };

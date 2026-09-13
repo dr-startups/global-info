@@ -747,6 +747,11 @@ export function clientCollectionFailureLabel(
 ): string {
   const code = String(errorCode ?? "").toUpperCase();
   const st = String(status ?? "").toUpperCase();
+  // Вопрос задан, провайдер отказал в доступе (тариф или ключ): это не сбой
+  // сбора и не выключенный инструмент — причина называется своими словами.
+  if (/REFUSED|SUBSCRIPTION|UNAUTHORIZED|FORBIDDEN/i.test(code)) {
+    return "провайдер отказал в доступе: тариф или ключ";
+  }
   if (/DISABLED|SKIPPED|UNAVAILABLE|NOT_ENABLED/i.test(code) || /DISABLED|SKIPPED|UNAVAILABLE/i.test(st)) {
     return "агент отключён в этом прогоне";
   }

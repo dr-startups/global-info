@@ -90,6 +90,36 @@ function observationsFromTask(
   };
 }
 
+/**
+ * Отказ провайдера в доступе по строкам задач агента.
+ *
+ * Признак — данные подачи: HTTP 401/403 либо код `TO_LOW_SUBSRIPTION` / текст
+ * «не имеет доступа к API» в `_submitDiagnostics`. Отказ агента целиком —
+ * когда **все** его отказавшие задачи отказаны так: одна отказанная по тарифу
+ * при других сбоях остаётся обычным `FAILED`.
+ */
+function providerRefusalOf(tasks: ProviderTaskSnap[]): { code: string; message: string } | null {
+  const failed = tasks.filter((t) => /FAIL|ERROR/i.test(String(t.state)));
+  if (failed.length === 0) return null;
+  let found: { code: string; message: string } | null = null;
+  for (const t of failed) {
+    const diag = isPlainObject(t.responseJson) && isPlainObject(t.responseJson._submitDiagnostics)
+      ? t.responseJson._submitDiagnostics
+      : null;
+    const code = String(diag?.code ?? "").toUpperCase();
+    const message = String(diag?.message ?? "");
+    const http = Number(diag?.httpStatus ?? 0);
+    const refused =
+      http === 401 ||
+      http === 403 ||
+      /SUBSCRIPTION|SUBSRIPTION|UNAUTHORIZED|FORBIDDEN/.test(code) ||
+      /не имеет доступа к API/i.test(message);
+    if (!refused) return null;
+    found = found ?? { code: code || `http_${http}`, message };
+  }
+  return found;
+}
+
 function progressFromTasks(input: {
   agentName: string;
   enrichmentRunId: string;
@@ -140,6 +170,21 @@ function progressFromTasks(input: {
     if (String(rejected.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
       warnings.push("SUBMIT_REJECTED_RETRYABLE:no-externalTaskId");
     }
+  } else if (cls.failedCount > 0 && cls.doneCount === 0 && providerRefusalOf(tasks)) {
+    /*
+     * Провайдер отказал в доступе — тариф или ключ (шаг 0075).
+     *
+     * Вопрос задан, ответа не будет, и повтор его не добудет: на QA-прогонах
+     * 14.09 Arsenkin отвечал `TO_LOW_SUBSRIPTION`, а конвейер бился об это
+     * «повторяемым» отказом до последней попытки и оставлял прогон без
+     * отчёта при оплаченном базовом сборе. Исход завершённый: страницы
+     * поверхностей агента называют причину, прогон идёт дальше.
+     */
+    const refusal = providerRefusalOf(tasks)!;
+    terminal = true;
+    terminalKind = "REFUSED";
+    ingested = true;
+    warnings.push(`arsenkin-provider-refused:${input.agentName}:${refusal.code}`);
   } else if (cls.failedCount > 0 && cls.doneCount === 0) {
     terminal = true;
     terminalKind = "FAILED";
@@ -204,8 +249,10 @@ function progressFromTasks(input: {
       errorCode:
         schemaError
           ? "ARSENKIN_SCHEMA_INVALID"
-          : terminalKind === "FAILED"
-            ? "ARSENKIN_AGENT_FAILED"
+          : terminalKind === "REFUSED"
+            ? "ARSENKIN_PROVIDER_REFUSED"
+            : terminalKind === "FAILED"
+              ? "ARSENKIN_AGENT_FAILED"
             : terminalKind === "SUBMIT_UNKNOWN_UNRECONCILED"
               ? "ARSENKIN_SUBMIT_UNKNOWN"
               : null,

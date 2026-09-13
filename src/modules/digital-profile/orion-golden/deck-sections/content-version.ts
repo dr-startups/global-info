@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v182" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v183" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,11 @@ export const DECK_CONTENT_VERSION = "deck-sections-v182" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 14.09 номер двинут до v183: страница поверхности, по которой провайдер
+ * отказал в доступе (тариф или ключ), печатает причину своими словами —
+ * «провайдер отказал в доступе: тариф или ключ» — вместо «ошибка при сборе
+ * данных». Правка меняет каждую собранную деку, где такой отказ есть.
  *
  * 08.09 номер двинут до v182: подпись таблицы выдачи называет снятые номера
  * только своей системы и запроса (`removedRanksForTable`), а не все снятые
@@ -596,7 +601,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v182" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "953012eb36b895f4" as const;
+export const DECK_BUILDER_FINGERPRINT = "be5e628054bd1776" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -619,7 +624,7 @@ export const DECK_BUILDER_FINGERPRINT = "953012eb36b895f4" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v182" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v183" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
