@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v184" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v185" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,11 @@ export const DECK_CONTENT_VERSION = "deck-sections-v184" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 14.09 номер двинут до v185: перекладка буллетов верит мере рендерера, а не
+ * сумме высот — страница с названной потерей отдаёт потерянные блоки дальше
+ * (QA MVP «Абрамович», шаг 0080). Правка меняет раскладку любой деки, где
+ * измеренные высоты «влезали», а рендерер терял блок.
  *
  * 14.09 номер двинут до v184: предложения текста считает один токенизатор, и
  * он не режет внутри кавычек — цитата из двух предложений больше не рвётся
@@ -606,7 +611,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v184" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "7bfafdade8627825" as const;
+export const DECK_BUILDER_FINGERPRINT = "d83dbce8afbcd8d9" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -629,7 +634,7 @@ export const DECK_BUILDER_FINGERPRINT = "7bfafdade8627825" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v184" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v185" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
