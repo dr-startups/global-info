@@ -7,6 +7,7 @@
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
 import { getClientTextFieldBudgets } from "../client/load-client-text-contract";
 import { themeBlockText } from "../analytics/client-summary-composer";
+import { splitOutsideQuotes, splitSentences } from "./sentence-split";
 
 export type SemanticBlockKind =
   | "overall"
@@ -54,13 +55,6 @@ export type SummaryPagePlan = {
   };
 };
 
-function splitSentences(text: string): string[] {
-  return String(text ?? "")
-    .split(/(?<=[.!?…])\s+/u)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 /**
  * Границы внутри предложения, по которым его можно разложить на два абзаца, не
  * потеряв ни слова. Порядок — от самой «крупной» паузы к самой мелкой.
@@ -81,7 +75,8 @@ export function splitOverlongSentence(sentence: string, maxChars: number): strin
 
   for (const boundary of CLAUSE_BOUNDARIES) {
     if (!text.includes(boundary)) continue;
-    const parts = text.split(boundary);
+    // Граница внутри кавычек не годится: рез по «, » рвал бы цитату так же, как рез по точке.
+    const parts = splitOutsideQuotes(text, boundary);
     const chunks: string[] = [];
     let buf = "";
     for (let i = 0; i < parts.length; i += 1) {

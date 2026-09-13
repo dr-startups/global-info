@@ -3,6 +3,8 @@
  * Removes internal pipeline jargon from client-facing text.
  */
 
+import { splitSentences } from "../deck-sections/sentence-split";
+
 const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bсверить\s+identity\b/gi, "сверить личность"],
   [/\bidentity\b/gi, "сверка личности"],
@@ -68,10 +70,7 @@ export function hasDanglingSentenceTail(text: string): boolean {
 /** Keep complete sentences only; drop dangling incomplete last clause. */
 export function enforceCompleteSentences(text: string, fallback: string): string {
   const cleaned = sanitizeClientLanguage(text);
-  const sentences = cleaned
-    .split(/(?<=[.!?…])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const sentences = splitSentences(cleaned);
   const complete = sentences.filter((s) => /[.!?…]$/.test(s) && !hasDanglingSentenceTail(s));
   if (complete.length > 0) return complete.join(" ");
   if (sentences[0] && !hasDanglingSentenceTail(sentences[0])) return sentences[0];

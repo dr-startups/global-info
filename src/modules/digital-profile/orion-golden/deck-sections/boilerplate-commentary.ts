@@ -28,6 +28,7 @@ import {
   CLIENT_SUMMARY_THEME_WHY_FALLBACK,
 } from "../analytics/client-summary-pack-builder";
 import { normalizeForCompare } from "./text-compare";
+import { splitSentences } from "./sentence-split";
 
 /**
  * Полный список присказок, которые вычистка имеет право снять.
@@ -101,9 +102,7 @@ export function withoutRepeatedBoilerplate(
 
     const kept: string[] = [];
     const droppedHere: string[] = [];
-    for (const sentence of body.split(/(?<=[.!?…])\s+/u)) {
-      const piece = sentence.trim();
-      if (!piece) continue;
+    for (const piece of splitSentences(body)) {
       if (!isBoilerplateCommentary(piece)) {
         kept.push(piece);
         continue;

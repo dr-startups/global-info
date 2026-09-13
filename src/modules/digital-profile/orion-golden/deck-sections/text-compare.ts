@@ -8,6 +8,8 @@
  * импортирует сборщик. Кольцо работало по случайности порядка загрузки.
  */
 
+import { splitSentences } from "./sentence-split";
+
 /**
  * Регистр, пунктуация и тире отбрасываются, пробелы схлопываются.
  *
@@ -38,9 +40,7 @@ export function withoutRepeatedSentences(
   const src = (text ?? "").trim();
   if (!src) return undefined;
   const kept: string[] = [];
-  for (const sentence of src.split(/(?<=[.!?…])\s+/u)) {
-    const piece = sentence.trim();
-    if (!piece) continue;
+  for (const piece of splitSentences(src)) {
     const key = normalizeForCompare(piece);
     if (!key) continue;
     if (said.has(key)) continue;

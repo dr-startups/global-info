@@ -52,6 +52,7 @@ import {
 import type { SubjectAnchors } from "./subject-anchors";
 import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
 import { pluralRu } from "../../report/i18n/plural-ru";
+import { splitSentences } from "../deck-sections/sentence-split";
 
 export type { ThemeDef };
 
@@ -566,7 +567,7 @@ function signalSentenceOf(
 ): string {
   const flat = String(snippet ?? "").replace(/\s+/gu, " ").trim();
   if (!flat) return "";
-  const sentences = flat.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  const sentences = splitSentences(flat);
   const signal = sentences.find((x) => carriesThemeSignal(x, theme, subjectContext));
   if (!signal) return "";
   if (signal.length <= budget) return signal;

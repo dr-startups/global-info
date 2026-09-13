@@ -67,6 +67,7 @@ import {
   type SlotChain,
 } from "./measured-bullet-fit";
 import { collectTableCutPlan } from "./measured-table-fit";
+import { splitSentences } from "./sentence-split";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -1365,7 +1366,7 @@ export function sidebarSafe(text: string | undefined, budget = 240): string | un
   const out = text.replace(/\s*(\.\.\.|…)\s*/gu, ". ").replace(/\.\s*\./gu, ".").trim();
   if (out.length <= budget) return out || undefined;
   // Keep whole sentences that fit the budget.
-  const sentences = out.split(/(?<=[.!?…])\s+/u);
+  const sentences = splitSentences(out);
   const kept: string[] = [];
   let used = 0;
   for (const s of sentences) {

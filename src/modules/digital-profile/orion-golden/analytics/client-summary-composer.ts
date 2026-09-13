@@ -29,6 +29,7 @@ import { quoteForClaim } from "./finding-synthesizer";
 import { pluralRu } from "../../report/i18n/plural-ru";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 import { sourceAttribution } from "../client/client-address";
+import { splitSentences } from "../deck-sections/sentence-split";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
 const LEAD_THEME_COUNT = 3;
@@ -63,13 +64,6 @@ function finishSentence(text: string): string {
   if (!t) return "";
   if (!/[.!?…»)]$/u.test(t)) t = `${t}.`;
   return t;
-}
-
-function splitSentences(text: string): string[] {
-  return String(text ?? "")
-    .split(/(?<=[.!?…])\s+/u)
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 export function countIncompleteSentences(text: string): number {

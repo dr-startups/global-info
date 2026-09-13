@@ -9,6 +9,7 @@ import type {
   SlideContentContract,
 } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
+import { splitSentences } from "../sentence-split";
 import {
   DECK_TEMPLATE_REGISTRY,
   SIDEBAR_HIGHLIGHT_BUDGET,
@@ -443,7 +444,7 @@ function splitNarrativeEvenly(
   if (!text) return [undefined];
   if (text.length <= firstRoom) return [text];
 
-  const sentences = text.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  const sentences = splitSentences(text);
   const roomFor = (page: number): number => (page === 0 ? firstRoom : continuationRoom);
   const widest = Math.max(firstRoom, continuationRoom);
   if (sentences.some((x) => x.length > widest)) {
@@ -646,10 +647,7 @@ export function domainOfUrl(url: string | undefined): string {
  * sentences while they fit the budget — never a mid-sentence cut.
  */
 export function fitClientSentences(parts: string[], max: number): string {
-  const sentences = parts
-    .flatMap((p) => p.split(/(?<=[.!?…])\s+/u))
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const sentences = parts.flatMap((p) => splitSentences(p));
   let out = "";
   for (const s of sentences) {
     const trial = out ? `${out} ${s}` : s;
@@ -665,7 +663,7 @@ export function fitClientSentences(parts: string[], max: number): string {
  * characters (for renderer layouts that draw one card per paragraph).
  */
 export function splitClientParagraphs(text: string, maxPerPara: number, maxParas: number): string[] {
-  const sentences = text.split(/(?<=[.!?…])\s+/u).map((s) => s.trim()).filter(Boolean);
+  const sentences = splitSentences(text);
   const paras: string[] = [];
   let buf = "";
   for (const s of sentences) {
@@ -1868,7 +1866,7 @@ export function reflowNarrativeParagraphs(text: string, maxParas = 3): string {
    * обе стороны резака (`narrativeReflowLoss`) роняет сборку. Возвращаем как
    * есть: читаемость от разбивки не выиграет, а знаки останутся на месте.
    */
-  const sentences = raw.split(/(?<=[.!?…])\s+/u).map((x) => x.trim()).filter(Boolean);
+  const sentences = splitSentences(raw);
   if (sentences.length <= 1) return raw;
   /*
    * Последний абзац забирает остаток — поэтому знаков не теряется.
@@ -3814,14 +3812,6 @@ export type HighlightPhrase = {
   read: boolean;
 };
 
-/** Предложения текста — по границе, а не по знакам. */
-function sentencesOf(text: string): string[] {
-  return text
-    .split(/(?<=[.!?…])\s+/u)
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
-
 /**
  * «Почему выделено» — словами прочитанной страницы.
  *
@@ -4008,7 +3998,7 @@ export function highlightPhrase(input: {
     e?.verdictSubjectMatch === "likely"
       ? "Принадлежность материала проверяемому лицу требует подтверждения."
       : undefined;
-  const quoteSentences = sentencesOf(String(e?.pageQuote ?? "").trim());
+  const quoteSentences = splitSentences(String(e?.pageQuote ?? "").trim());
   /*
    * Цитата с многоточием в боковую панель не идёт.
    *
