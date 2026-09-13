@@ -124,7 +124,11 @@ export function SurfacesTab({
               <input
                 className="dp-input"
                 value={values[f] ?? ""}
-                onChange={(e) => setValues((v) => ({ ...v, [f]: e.target.value }))}
+                onChange={(e) => {
+                  // Событие читается в обработчике, а не в обновителе (см. ComplianceTab).
+                  const value = e.target.value;
+                  setValues((v) => ({ ...v, [f]: value }));
+                }}
               />
             </div>
           ))}

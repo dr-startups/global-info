@@ -389,9 +389,13 @@ export function ComplianceTab({
                 className="dp-input"
                 type="date"
                 value={visualDesc.reportDate}
-                onChange={(e) =>
-                  setVisualDesc((v) => ({ ...v, reportDate: e.currentTarget.value }))
-                }
+                onChange={(e) => {
+                  // Значение читается здесь, а не в обновителе: React обнуляет
+                  // currentTarget после раздачи события, а обновитель выполняется
+                  // при рендере — одна буква в поле роняла страницу дела целиком.
+                  const value = e.currentTarget.value;
+                  setVisualDesc((v) => ({ ...v, reportDate: value }));
+                }}
               />
             </label>
             {descFields.map((f) => (
@@ -402,9 +406,10 @@ export function ComplianceTab({
                   rows={2}
                   maxLength={320}
                   value={visualDesc[f.key]}
-                  onChange={(e) =>
-                    setVisualDesc((v) => ({ ...v, [f.key]: e.currentTarget.value }))
-                  }
+                  onChange={(e) => {
+                    const value = e.currentTarget.value;
+                    setVisualDesc((v) => ({ ...v, [f.key]: value }));
+                  }}
                 />
               </label>
             ))}
