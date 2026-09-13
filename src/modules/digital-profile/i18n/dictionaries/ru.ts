@@ -509,6 +509,7 @@ export const ru: Dictionary = {
     sourceWikipedia: "Википедия",
     sourceKnowledgeGraph: "Панель знаний Google",
     sourceOpenSanctions: "Санкционные и PEP-списки",
+    sourceYandex: "Выдача Яндекса",
     statusSuccess: "ответил",
     statusNotConfigured: "не настроен",
     statusFailed: "отказал",

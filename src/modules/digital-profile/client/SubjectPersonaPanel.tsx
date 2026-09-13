@@ -39,6 +39,7 @@ import {
   personaPanelView,
   personaSourceReason,
   personaWikipediaTail,
+  personaSourceLabelKey,
 } from "./persona-panel-text";
 import {
   ANCHOR_KINDS,
@@ -168,7 +169,8 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
         // обязана показать их сразу, иначе оператор не узнает, чем размечается
         // его прогон, и не сможет их снять.
         await reloadProfile();
-        setMessage({ kind: "ok", text: t(DECIDED_KEYS[decision]) });
+        // Слова решения печатает блок по `check.decision` ниже; второе
+        // сообщение с тем же текстом было вторым ответом на один вопрос.
       } catch (err) {
         setMessage(failure(err));
       } finally {
@@ -221,11 +223,7 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
     })[status];
 
   const sourceName = (source: PersonaSourceStateDTO["source"]): string =>
-    ({
-      wikipedia: t("persona.sourceWikipedia"),
-      knowledge_graph: t("persona.sourceKnowledgeGraph"),
-      opensanctions: t("persona.sourceOpenSanctions"),
-    })[source];
+    t(personaSourceLabelKey(source));
 
   return (
     <div
@@ -237,9 +235,11 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
       <div className="dp-row" style={{ alignItems: "center" }}>
         <div>
           <h3 style={{ margin: 0 }}>{t("persona.title")}</h3>
-          <div className="dp-muted" style={{ marginTop: 4, fontSize: 13 }}>
-            {t("persona.hint")}
-          </div>
+          {!decided ? (
+            <div className="dp-muted" style={{ marginTop: 4, fontSize: 13 }}>
+              {t("persona.hint")}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"

@@ -99,3 +99,20 @@ export function personaBlockKey(err: unknown): string | null {
   const reason = (err.details as { reason?: string } | undefined)?.reason;
   return (reason ? GATE_BLOCK_KEYS[reason] : null) ?? null;
 }
+
+/**
+ * Ключ подписи источника панели — по имени источника, одной картой.
+ *
+ * QA 14.09.2026: карта в разметке знала три источника из четырёх, и строка
+ * Яндекса печаталась как «: ответил». Незнакомое имя отдаёт ключ, которого в
+ * словаре нет, — `t` вернёт его как есть, и пропуск будет виден, а не пуст.
+ */
+export function personaSourceLabelKey(source: PersonaSourceStateDTO["source"]): string {
+  const keys: Record<PersonaSourceStateDTO["source"], string> = {
+    wikipedia: "persona.sourceWikipedia",
+    knowledge_graph: "persona.sourceKnowledgeGraph",
+    opensanctions: "persona.sourceOpenSanctions",
+    yandex: "persona.sourceYandex",
+  };
+  return keys[source] ?? `persona.source:${String(source)}`;
+}

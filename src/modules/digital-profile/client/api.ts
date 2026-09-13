@@ -1492,7 +1492,7 @@ export function recoverUnifiedOrionCollection(
 // ---------------------------------------------------------------------------
 
 export type PersonaSourceStateDTO = {
-  source: "wikipedia" | "knowledge_graph" | "opensanctions";
+  source: "wikipedia" | "knowledge_graph" | "opensanctions" | "yandex";
   status: "SUCCESS" | "NOT_CONFIGURED" | "FAILED" | "TIMEOUT" | "OFFLINE";
   /** Причина машинным кодом: слова к ней подбирает словарь кабинета. */
   code:

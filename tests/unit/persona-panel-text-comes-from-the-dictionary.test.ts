@@ -229,3 +229,23 @@ describe("на вопрос «может ли этот пользователь 
     expect(panel).not.toMatch(/catch\(\(\) => null\)/u);
   });
 });
+
+/**
+ * Подпись есть у каждого источника панели.
+ *
+ * QA 14.09.2026: строка Яндекса печаталась как «: ответил» — карта подписей в
+ * панели знала три источника из четырёх. Подпись берётся одной функцией по
+ * имени источника, и у каждого имени есть ключ в обоих словарях.
+ */
+describe("подпись источника панели персоны", () => {
+  it("есть у каждого источника, в обоих словарях", async () => {
+    const { personaSourceLabelKey } = await import("@/modules/digital-profile/client/persona-panel-text");
+    const sources = ["wikipedia", "knowledge_graph", "opensanctions", "yandex"] as const;
+    for (const source of sources) {
+      const key = personaSourceLabelKey(source);
+      expect(key, source).toMatch(/^persona\.source/);
+      phrase(ru, key);
+      phrase(en, key);
+    }
+  });
+});

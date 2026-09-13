@@ -547,6 +547,7 @@ export interface Dictionary {
     sourceWikipedia: string;
     sourceKnowledgeGraph: string;
     sourceOpenSanctions: string;
+    sourceYandex: string;
     statusSuccess: string;
     statusNotConfigured: string;
     statusFailed: string;

@@ -509,6 +509,7 @@ export const en: Dictionary = {
     sourceWikipedia: "Wikipedia",
     sourceKnowledgeGraph: "Google knowledge panel",
     sourceOpenSanctions: "Sanctions and PEP lists",
+    sourceYandex: "Yandex search",
     statusSuccess: "answered",
     statusNotConfigured: "not configured",
     statusFailed: "failed",

@@ -14,6 +14,7 @@ import {
   shouldShowGeneralRecoveryCta,
 } from "./unified-suggestions-retry-ui";
 import { arsenkinProgressLine } from "./arsenkin-progress-line";
+import { autoResumeBannerVisible } from "./auto-resume-banner";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
   const plannedAgents = job?.arsenkinPlannedAgents;
@@ -245,7 +246,11 @@ export function CaseHeader({
               </span>
             ) : null}
           </div>
-          {autoResumePending ? (
+          {autoResumeBannerVisible({
+            autoResumePending,
+            stage: unifiedJob?.stage ?? null,
+            lastErrorCode: unifiedJob?.lastErrorCode ?? null,
+          }) ? (
             /*
              * Прогон, который продолжится сам, — это ожидание, а не отказ.
              * Раньше здесь стоял код ошибки и кнопка, и пользователь нажимал её
