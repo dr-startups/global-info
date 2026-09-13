@@ -94,6 +94,12 @@ export type TopvisorTickResult = {
   waiting: boolean;
   /** Проверка продвинулась с прошлого оборота — для бюджета ожидания. */
   advanced: boolean;
+  /**
+   * Провайдер сообщает, что проверка идёт или стоит в очереди. Для бюджета
+   * ожидания это не простой: проверка в очереди стоит с нулём процентов и без
+   * признака была бы неотличима от молчания (шаг 0074).
+   */
+  checkInProgress: boolean;
   blockPipeline: boolean;
   blockCode?: string;
   blockMessage?: string;
@@ -488,6 +494,7 @@ export async function runTopvisorPositionsTick(input: {
     observations: rest.observations ?? [],
     waiting: rest.waiting ?? false,
     advanced: rest.advanced ?? false,
+    checkInProgress: rest.checkInProgress ?? false,
     blockPipeline: rest.blockPipeline ?? false,
     blockCode: rest.blockCode,
     blockMessage: rest.blockMessage,
@@ -728,9 +735,19 @@ export async function runTopvisorPositionsTick(input: {
       snapshots = peek.snapshots;
       warnings.push("topvisor-check-finished-while-away");
     } else {
+      const checkStatus = readCheckStatus(status.body);
       return finish(
         { ...checking, lastPercent: percent ?? checking.lastPercent },
-        { waiting: true, advanced, nextPollAt: new Date(now.getTime() + CHECK_POLL_MS).toISOString() }
+        {
+          waiting: true,
+          advanced,
+          // Не `0` — проект в проверке или в очереди; процент между 0 и 100 —
+          // проверка идёт. Что именно значат коды, документация не говорит.
+          checkInProgress:
+            (checkStatus != null && checkStatus !== 0) ||
+            (percent != null && percent > 0 && percent < 100),
+          nextPollAt: new Date(now.getTime() + CHECK_POLL_MS).toISOString(),
+        }
       );
     }
   }

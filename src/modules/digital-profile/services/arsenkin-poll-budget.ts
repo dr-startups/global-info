@@ -55,6 +55,13 @@ export type EnrichmentProgressMark = {
    * без этого счёта её ожидание выглядело бы застоем Arsenkin.
    */
   topvisorPercent?: number;
+  /**
+   * Провайдер сообщает, что проверка идёт или стоит в очереди
+   * (`status_positions` не `0`, либо процент между 0 и 100). Проверка в очереди
+   * стоит с нулём процентов, и без этого признака она была бы неотличима от
+   * молчания провайдера (шаг 0074).
+   */
+  topvisorCheckInProgress?: boolean;
 };
 
 export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
@@ -69,7 +76,12 @@ export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
 export function markEnrichmentProgress(
   state: ArsenkinEnrichmentState | null | undefined,
   /** Счёты из базы: они двигаются внутри агента, а сводка — только на границах. */
-  live: { doneProviderTasks?: number; persistedObservations?: number; topvisorPercent?: number | null } = {}
+  live: {
+    doneProviderTasks?: number;
+    persistedObservations?: number;
+    topvisorPercent?: number | null;
+    topvisorCheckInProgress?: boolean | null;
+  } = {}
 ): EnrichmentProgressMark {
   const agents = state?.agents ?? [];
   return {
@@ -82,6 +94,9 @@ export function markEnrichmentProgress(
     // Поле есть только у прогона с Topvisor: отсутствие — сам по себе признак,
     // и метки прежних прогонов не меняют формы.
     ...(live.topvisorPercent != null ? { topvisorPercent: Math.max(0, Number(live.topvisorPercent)) } : {}),
+    ...(live.topvisorCheckInProgress != null
+      ? { topvisorCheckInProgress: Boolean(live.topvisorCheckInProgress) }
+      : {}),
   };
 }
 
@@ -163,7 +178,10 @@ export function decideEnrichmentPoll(input: {
   const maxIdle = input.maxIdlePolls ?? MAX_IDLE_POLLS;
   const maxWait = input.maxWaitMs ?? MAX_ENRICHMENT_WAIT_MS;
   const advanced = progressAdvanced(input.previous, input.current);
-  const idlePolls = advanced ? 0 : Math.max(0, Number(input.idlePolls ?? 0)) + 1;
+  // Идущая проверка Topvisor — не простой: провайдер сообщает, что работает, и
+  // счётчик простоя не растёт. Предел кладёт общий бюджет ожидания ниже.
+  const providerBusy = input.current.topvisorCheckInProgress === true;
+  const idlePolls = advanced || providerBusy ? 0 : Math.max(0, Number(input.idlePolls ?? 0)) + 1;
 
   const startedMs = input.waitStartedAt ? Date.parse(input.waitStartedAt) : Number.NaN;
   const waitedMs = Number.isFinite(startedMs) ? input.now.getTime() - startedMs : 0;
@@ -203,4 +221,25 @@ export function pollBackoffMs(idlePolls: number): number {
   const idle = Math.max(0, Number(idlePolls ?? 0));
   if (idle === 0) return 5_000;
   return Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(idle - 1, 4)));
+}
+
+/**
+ * Бюджет ожидания после принятого восстановления — одной функцией на обе ветки
+ * `recoverUnifiedOrionCollectionJob`.
+ *
+ * Общий срок ожидания и счётчик простоя отсчитываются заново: это осознанное
+ * решение человека, который видит очередь провайдера. Автоматическому пути
+ * такого права нет — иначе ограничения не существовало бы (шаг 14): повтор
+ * попытки обнуляет только счётчик простоя (шаг 0073). Пока сброс жил в полной
+ * ветке восстановления и только при возобновлении ингеста, идемпотентная ветка
+ * оставляла на джобе `pollAttempt: 40` и ожидание двухчасовой давности, и
+ * первый же опрос после кнопки исчерпывал бюджет (прогон DPA-2026-0054, шаг
+ * 0074).
+ */
+export function recoveryWaitBudgetReset(nowIso: string): {
+  pollAttempt: 0;
+  enrichmentWaitStartedAt: null;
+  nextPollAt: string;
+} {
+  return { pollAttempt: 0, enrichmentWaitStartedAt: null, nextPollAt: nowIso };
 }

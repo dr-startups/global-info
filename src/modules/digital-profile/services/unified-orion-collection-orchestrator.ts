@@ -1347,6 +1347,7 @@ async function stepArsenkin(
     const currentMark = markEnrichmentProgress(state, {
       ...liveCounts,
       topvisorPercent: topvisorState?.lastPercent ?? null,
+      topvisorCheckInProgress: topvisor ? Boolean(topvisor.checkInProgress) : null,
     });
     const budget = decideEnrichmentPoll({
       previous: job.enrichmentProgressMark ?? null,
@@ -1495,6 +1496,7 @@ async function runTopvisorSubTick(
     observations: [],
     waiting: false,
     advanced: false,
+    checkInProgress: false,
     blockPipeline: true,
     blockCode: "TOPVISOR_KEYWORDS_UNAVAILABLE",
     blockMessage: message,

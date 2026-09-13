@@ -4,6 +4,7 @@
  * resumes at ARSENKIN_ENRICHMENT — never re-runs Yandex/Google/Serper/Wikipedia.
  */
 
+import { recoveryWaitBudgetReset } from "./arsenkin-poll-budget";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors";
@@ -373,7 +374,10 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       (job0.enrichmentRunIds?.length ?? 0) >= 5 &&
       ACTIVE_STAGES.has(job0.stage))
   ) {
-    await requeueResumeStep(job0, nowFn());
+    const idempotentNow = nowFn();
+    // Восстановление принято — ожидание отсчитывается заново и здесь.
+    await patchUnifiedCollectionJob(input.caseId, recoveryWaitBudgetReset(idempotentNow.toISOString()));
+    await requeueResumeStep(job0, idempotentNow);
     await scheduleRecoverTick(input.caseId, input.deps);
     return {
       accepted: true,
@@ -617,13 +621,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
          * потерялась бы целиком. `createdAt` остаётся историей прогона.
          */
         startedAt: nowIso,
-        // Ceiling reset so durable poll can resume the same paid externalTaskIds.
-        pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
-        // Общий срок ожидания отсчитывается заново: это осознанное решение
-        // человека, который видит очередь провайдера. Автоматическому пути
-        // такого права нет — иначе ограничения не существовало бы (шаг 14).
-        enrichmentWaitStartedAt: ingestResume ? null : job.enrichmentWaitStartedAt ?? null,
-        nextPollAt: ingestResume ? nowIso : job.nextPollAt ?? null,
+        ...recoveryWaitBudgetReset(nowIso),
         // Keep enrichment lineage; do not wipe progress artifact binding.
         arsenkinEnrichmentState,
         enrichmentRunIds,
