@@ -256,6 +256,23 @@ export function snapshotHasDate(body: unknown, date: string): boolean {
   return false;
 }
 
+/**
+ * Календарный день Topvisor для момента `now`.
+ *
+ * Провайдер ведёт календарь по Москве: проверка, заказанная в 22:30 UTC, у него
+ * датирована следующим днём, и снимки лежат под этой датой. Пока дата
+ * считалась днём UTC, вечерние прогоны ждали проверку «за вчера», которой
+ * не будет (QA 14.09.2026, шаг 0077). Одно место на весь разбор.
+ */
+export function topvisorCalendarDate(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
 /** Процент выполнения проверки из ответа `get/projects_2/projects`. */
 export function readCheckPercent(body: unknown): number | null {
   const rows = (body as { result?: unknown } | null)?.result;

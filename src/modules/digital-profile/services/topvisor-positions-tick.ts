@@ -28,6 +28,7 @@ import {
   snapshotHasDate,
   snapshotHistoryPayload,
   snapshotToObservations,
+  topvisorCalendarDate,
   type TopvisorObservation,
   normalizeKeyword,
   topvisorPlanKey,
@@ -623,7 +624,8 @@ export async function runTopvisorPositionsTick(input: {
     }
     warnings.push(...project.warnings, `topvisor-project:${project.projectId}:${project.created ? "created" : "found"}`);
 
-    const checkDate = now.toISOString().slice(0, 10);
+    // День проверки — в календаре провайдера, а не UTC (шаг 0077).
+    const checkDate = topvisorCalendarDate(now);
     const regions = TOPVISOR_AUDIT_REGIONS.map((region) => ({
       key: region.key,
       index: project.regions.find((r) => r.key === region.key)!.index,
@@ -673,8 +675,8 @@ export async function runTopvisorPositionsTick(input: {
   if (projectId == null || !checking.checkDate) {
     return fail(checking, "TOPVISOR_TASK_INCOMPLETE", "Topvisor: у строки задачи нет проекта или даты проверки.");
   }
-  // Дата проверки одной константой: после `await` сужение поля до строки теряется.
-  const checkDate = checking.checkDate;
+  // Дата проверки одной переменной: после `await` сужение поля до строки теряется.
+  let checkDate: string = checking.checkDate;
   const status = await call({
     action: "get",
     service: "projects_2",
@@ -684,6 +686,26 @@ export async function runTopvisorPositionsTick(input: {
   if (!status.ok) {
     warnings.push(`topvisor-status-error:${status.errors.join("; ")}`);
     return finish(checking, { waiting: true, nextPollAt: new Date(now.getTime() + CHECK_POLL_MS).toISOString() });
+  }
+  /*
+   * Календарь провайдера — факт, наш расчёт — догадка (шаг 0077).
+   *
+   * Если запуск подтверждён (у задачи есть внешний идентификатор) и Topvisor
+   * отчитывается о проверке более поздней датой, чем ждём мы, это наша же
+   * проверка в его календаре: принимаем дату, и дальше работает прежняя логика
+   * завершения — процент или снимок за дату. Более ранняя дата — прошлая
+   * проверка, она не принимается. При неподтверждённом запуске дата не
+   * принимается: там сверка ниже решает, была ли проверка за нашу дату.
+   */
+  const providerDate = readCheckDate(status.body);
+  if (liveTask.externalTaskId && providerDate && providerDate > checkDate) {
+    warnings.push(`topvisor-check-date-adopted:${checkDate}→${providerDate}`);
+    checkDate = providerDate;
+    checking.checkDate = providerDate;
+    const externalTaskId = `${projectId}:${providerDate}`;
+    await taskStore.update(liveTask.id, { externalTaskId });
+    checking.externalTaskId = externalTaskId;
+    liveTask.externalTaskId = externalTaskId;
   }
 
   if (!liveTask.externalTaskId) {
