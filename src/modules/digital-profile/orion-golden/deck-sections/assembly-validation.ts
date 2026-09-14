@@ -29,6 +29,7 @@ import { SERP_TABLE_TOP_N } from "./fragment-builders/serp";
 import { sameSerpQuery } from "./fragment-builders/shared";
 import { serpMaterialKey } from "../../serp-observation/material-key";
 import { clientAddress } from "../client/client-address";
+import type { RemovedSerpRow } from "./scoped-input";
 import {
   normalizeDomainForCompare,
   undeclaredClientTextDomainHits,
@@ -370,6 +371,13 @@ function printedAddressMatches(printed: PrintedAddress, expected: string): boole
 export function serpPrintMatchesObservations(input: {
   rendererSlides: ReadonlyArray<RendererSlide>;
   observations: ReadonlyArray<SerpObservationForGate>;
+  /**
+   * Позиции, снятые из отчёта решением аналитика («Убрать из отчёта»), — те же
+   * строки, которыми построитель нумерует пропуски в подписи таблицы. Ворота
+   * обязаны их знать: ждать материал, который аналитик снял, значит ронять
+   * пересборку после каждого решения (QA 14.09.2026, «Усманов», шаг 0081).
+   */
+  removedSerpRows?: ReadonlyArray<RemovedSerpRow>;
 }): {
   issues: string[];
   skipped: string[];
@@ -451,9 +459,14 @@ export function serpPrintMatchesObservations(input: {
     slide.table.rows.forEach((row) => {
       const rank = Number(row[rankColumn]);
       if (!Number.isFinite(rank) || rank <= 0) return;
+      const cell = addressColumn >= 0 ? String(row[addressColumn] ?? "") : "";
+      // Прочерк вместо ссылки — позиция без адреса, а не утверждение о
+      // материале: сверять нечего. Отсутствие самой колонки прочерком не
+      // считается и по-прежнему даёт пустой домен.
+      if (addressColumn >= 0 && cell.trim() === "—") return;
       table.rows.push({
         rank,
-        domain: printedDomain(addressColumn >= 0 ? String(row[addressColumn] ?? "") : ""),
+        domain: printedDomain(cell),
         slideKey: slide.slideKey,
       });
     });
@@ -487,7 +500,18 @@ export function serpPrintMatchesObservations(input: {
         o.rank >= 1 &&
         o.rank <= SERP_TABLE_TOP_N &&
         (table.region === null || regionMatches(table.region, String(o.region ?? table.region))) &&
-        !NOT_FOUND_PATTERNS.test(`${o.title ?? ""} ${o.domain ?? ""}`)
+        !NOT_FOUND_PATTERNS.test(`${o.title ?? ""} ${o.domain ?? ""}`) &&
+        // Наблюдение без печатаемого адреса (провайдер отдал редирект
+        // `/goto?url=…` без хоста) — позиция, а не материал: печатать нечего,
+        // и ждать его в таблице не с чем.
+        Boolean(clientAddress(o.url) ?? bareDomain(o.domain)) &&
+        !(input.removedSerpRows ?? []).some(
+          (r) =>
+            String(r.engine ?? "").toUpperCase() === table.engine.toUpperCase() &&
+            sameSerpQuery(r.query ?? "", table.query) &&
+            r.rank === o.rank &&
+            (table.region === null || regionMatches(table.region, r.region))
+        )
     );
     // Наблюдения одного материала сводятся в одну строку с лучшей позицией —
     // тем же ключом, что и в построителе.
@@ -619,6 +643,8 @@ export function validateAssembly(input: {
    * без входа выглядят точно так же, как пройденные.
    */
   serpObservations?: ReadonlyArray<SerpObservationForGate>;
+  /** Позиции, снятые решением аналитика, — см. `serpPrintMatchesObservations`. */
+  removedSerpRows?: ReadonlyArray<RemovedSerpRow>;
 }): AssemblyValidationReport {
   const issues: string[] = [];
   /** Замеченное, что сборку не останавливает и `passed` не роняет. */
@@ -1346,6 +1372,7 @@ export function validateAssembly(input: {
     const serp = serpPrintMatchesObservations({
       rendererSlides,
       observations: input.serpObservations,
+      removedSerpRows: input.removedSerpRows,
     });
     /*
      * Пропуск — не проход, и решают это данные, а не название.

@@ -267,6 +267,7 @@ export function runDeckBuild(input: {
       evidenceIndex: ctx.evidenceIndex,
       visualAssets: ctx.extras.visualAssets,
       serpObservations: input.serpObservations,
+      removedSerpRows: ctx.metricSnapshot.removedSerpRows,
     });
   }
   const assemblyReportPath = join(input.outputRoot, "assembly-validation-report.json");

@@ -611,7 +611,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v185" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "d83dbce8afbcd8d9" as const;
+export const DECK_BUILDER_FINGERPRINT = "fcd8818b9089d51e" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -666,4 +666,9 @@ export type FingerprintVersionException = {
  * Объявляется на один шаг и снимается следующим: значение поля `fingerprint`
  * привязывает его к конкретной правке.
  */
-export const FINGERPRINT_VERSION_EXCEPTION: FingerprintVersionException | null = null;
+export const FINGERPRINT_VERSION_EXCEPTION: FingerprintVersionException | null = {
+  fingerprint: "fcd8818b9089d51e",
+  reason:
+    "шаг 0081: ворота таблицы выдачи (assembly-validation) и проброс снятых позиций в них " +
+    "(run-deck-build) — приёмка деки, а не её содержимое; ни один пак от правки не меняется",
+};
