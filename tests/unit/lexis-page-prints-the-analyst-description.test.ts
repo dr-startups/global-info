@@ -62,12 +62,63 @@ function lexisSlide(extras: FragmentExtras) {
   )!;
 }
 
+const DOW_SLOT = "p34_dow_jones";
+
+function extrasWithDowJones(description = true): FragmentExtras {
+  return {
+    visualAssets: {
+      [DOW_SLOT]: [
+        {
+          assetRef: "dow_jones_report_1",
+          kind: "compliance_visual_page",
+          title: "Dow Jones — страница профиля",
+          hasImage: true,
+          visibleItems: [],
+          ...(description ? { analystDescription: DESCRIPTION } : {}),
+          sourceLine: "Отчёт Dow Jones от 01.09.2026",
+        },
+      ],
+    },
+  } as unknown as FragmentExtras;
+}
+
+function slideOf(extras: FragmentExtras, slotId: string) {
+  return buildComplianceFragment("COMPLIANCE", scoped(), extras).slides.find((s) => s.slideId === slotId)!;
+}
+
 describe("страница LexisNexis со снимком", () => {
-  it("печатает описание аналитика тремя полями сайдбара", () => {
+  /*
+   * Правка теста (шаг 0089): прежде описание «что показывает экран»
+   * закреплялось в `whatWasFound` — заголовке панели, — а блок «Что показывает
+   * экран» (`narrative`) печатал дежурный абзац «экспорт недоступен» рядом с
+   * самим экспортом. Три поля аналитика — три одноимённых блока панели.
+   */
+  it("печатает описание аналитика тремя полями сайдбара — в одноимённых блоках", () => {
     const slide = lexisSlide(extrasWithVisual());
-    expect(slide.content.whatWasFound).toBe(DESCRIPTION.whatItShows);
+    expect(slide.content.narrative).toBe(DESCRIPTION.whatItShows);
     expect(slide.content.whyItMatters).toBe(DESCRIPTION.whyItMatters);
     expect(slide.content.whatToCheck).toBe(DESCRIPTION.whatToDo);
+    expect(slide.content.whatWasFound).not.toBe(DESCRIPTION.whatItShows);
+    expect(String(slide.content.whatWasFound ?? "")).toMatch(/снимок/iu);
+    expect(String(slide.content.whatWasFound ?? "")).not.toMatch(/недоступен/iu);
+    expect(slide.templateId).toBe("serp-screenshot-analysis");
+  });
+
+  it("снимок без описания не печатает «экспорт недоступен»", () => {
+    const extras = extrasWithVisual();
+    delete (extras.visualAssets![SLOT]![0] as { analystDescription?: unknown }).analystDescription;
+    const slide = lexisSlide(extras);
+    expect(String(slide.content.narrative ?? "")).not.toMatch(/недоступен/iu);
+    expect(String(slide.content.narrative ?? "")).toMatch(/снимок/iu);
+  });
+
+  it("снимок Dow Jones печатается тем же шаблоном снимка с панелью, а не пустой карточкой", () => {
+    const slide = slideOf(extrasWithDowJones(), DOW_SLOT);
+    expect(slide.templateId).toBe("serp-screenshot-analysis");
+    expect(slide.visualAssetRefs).toContain("dow_jones_report_1");
+    expect(slide.content.narrative).toBe(DESCRIPTION.whatItShows);
+    expect(slide.content.whatToCheck).toBe(DESCRIPTION.whatToDo);
+    expect(slide.content.sourceNote).toContain("Отчёт Dow Jones от 01.09.2026");
   });
 
   it("под снимком стоит происхождение документом, а не сотрудником", () => {

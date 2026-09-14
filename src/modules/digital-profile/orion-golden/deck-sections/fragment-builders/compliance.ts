@@ -446,6 +446,11 @@ export function buildComplianceFragment(
    * причине фраза описывает состав листа, а не первую строку: при двух записях
    * разного статуса вердикт по первой противоречил бы строке второй.
    */
+  /** Заголовок панели страницы со снимком: факт о документе, а не описание экрана. */
+  const snapshotHeadline = (provider: string, sourceLine: string | undefined): string => {
+    const date = String(sourceLine ?? "").match(/\bот\s+(\d{2}\.\d{2}\.\d{4})/u)?.[1];
+    return `Приложен снимок отчёта ${provider}${date ? ` от ${date}` : ""}.`;
+  };
   const whatWasFoundFor = (pageHits: ComplianceHitEntry[]): string => {
     if (pageHits.length > 1) {
       return clampClientText(
@@ -670,15 +675,28 @@ export function buildComplianceFragment(
      * продолжениями за снимком.
      */
     const visual = (extras.visualAssets?.[input.slot.slotId] ?? []).find((a) => a.hasImage);
+    /*
+     * Три поля описания — три одноимённых блока панели: «что показывает
+     * экран» — `narrative`, «почему важно» — `whyItMatters`, «что сделать» —
+     * `whatToCheck`. Заголовок панели — факт от построителя. Прежде описание
+     * экрана уходило в заголовок, а блок «Что показывает экран» печатал
+     * дежурное «экспорт недоступен» рядом с самим экспортом (0089).
+     */
     const shot = visual
       ? visualSlide({
           slot: input.slot,
           sectionId,
           extras,
           scoped,
+          templateId: "serp-screenshot-analysis",
           content: {
-            narrative: input.narrative,
-            whatWasFound: visual.analystDescription?.whatItShows ?? whatWasFoundFor(input.hits),
+            narrative:
+              visual.analystDescription?.whatItShows ??
+              `Снимок страницы профиля ${input.provider}.`,
+            whatWasFound:
+              input.hits.length > 0
+                ? whatWasFoundFor(input.hits)
+                : snapshotHeadline(input.provider, visual.sourceLine),
             whyItMatters: visual.analystDescription?.whyItMatters ?? input.whyWithRecords,
             whatToCheck: visual.analystDescription?.whatToDo ?? input.whatToCheckWithRecords,
             sourceNote: visual.sourceLine ?? input.sourceNote,
@@ -1065,9 +1083,12 @@ export function buildComplianceFragment(
         sectionId,
         extras,
         scoped,
+        templateId: "serp-screenshot-analysis",
         content: {
-          narrative: "Страница профиля LexisNexis — продолжение снимка отчёта.",
-          whatWasFound: secondShot.analystDescription?.whatItShows ?? "Вторая страница снимка отчёта.",
+          narrative:
+            secondShot.analystDescription?.whatItShows ??
+            "Страница профиля LexisNexis — продолжение снимка отчёта.",
+          whatWasFound: "Вторая страница снимка отчёта LexisNexis.",
           ...(secondShot.analystDescription?.whyItMatters
             ? { whyItMatters: secondShot.analystDescription.whyItMatters }
             : {}),

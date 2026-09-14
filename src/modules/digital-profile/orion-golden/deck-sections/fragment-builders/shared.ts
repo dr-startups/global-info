@@ -3309,6 +3309,13 @@ export function visualSlide(input: {
   evidenceRefs: string[];
   findingIds: string[];
   metrics?: Record<string, number | string>;
+  /**
+   * Шаблон страницы со снимком, когда шаблон слота — не снимок. Слот Dow Jones
+   * объявлен карточным (`finding-cards`); со снимком карточный рендерер рисовал
+   * пустую белую карточку и снимок не рисовал (QA 14.09.2026, шаг 0089).
+   * Применяется только к ветке с привязанным снимком.
+   */
+  templateId?: DeckTemplateId;
   /** True when the underlying surface genuinely has no data (not just no image). */
   noUnderlyingData?: boolean;
   noDataReason?: string;
@@ -3330,6 +3337,7 @@ export function visualSlide(input: {
     return makeSlotSlide({
       slot: input.slot,
       sectionId: input.sectionId,
+      ...(input.templateId ? { templateId: input.templateId } : {}),
       ...(input.title ? { title: input.title } : {}),
       content: input.content,
       evidenceRefs: input.evidenceRefs,
