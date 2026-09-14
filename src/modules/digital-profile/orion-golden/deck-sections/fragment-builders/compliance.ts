@@ -448,7 +448,9 @@ export function buildComplianceFragment(
    */
   /** Заголовок панели страницы со снимком: факт о документе, а не описание экрана. */
   const snapshotHeadline = (provider: string, sourceLine: string | undefined): string => {
-    const date = String(sourceLine ?? "").match(/\bот\s+(\d{2}\.\d{2}\.\d{4})/u)?.[1];
+    // Без `\b`: в JavaScript граница слова знает только латиницу, и перед
+    // кириллическим «от» её нет — дата не печаталась никогда (шаг 0090).
+    const date = String(sourceLine ?? "").match(/(?:^|\s)от\s+(\d{2}\.\d{2}\.\d{4})/u)?.[1];
     return `Приложен снимок отчёта ${provider}${date ? ` от ${date}` : ""}.`;
   };
   const whatWasFoundFor = (pageHits: ComplianceHitEntry[]): string => {

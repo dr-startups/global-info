@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v189" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v190" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,10 @@ export const DECK_CONTENT_VERSION = "deck-sections-v189" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 14.09 номер двинут до v190: заголовок панели страницы снимка называет дату
+ * отчёта — регулярное выражение с `\b` перед кириллицей не совпадало
+ * никогда (шаг 0090). Правка меняет заголовок страниц p34–p36 со снимком.
  *
  * 14.09 номер двинут до v189: страница снимка базы печатает снимок шаблоном
  * снимка с панелью для любого слота (Dow Jones рисовался пустой карточкой) и
@@ -635,7 +639,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v189" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "bf3d0fc5e89faf09" as const;
+export const DECK_BUILDER_FINGERPRINT = "69af4caba60e8a01" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -658,7 +662,7 @@ export const DECK_BUILDER_FINGERPRINT = "bf3d0fc5e89faf09" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v189" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v190" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

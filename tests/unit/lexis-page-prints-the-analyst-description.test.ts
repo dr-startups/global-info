@@ -101,6 +101,9 @@ describe("страница LexisNexis со снимком", () => {
     expect(slide.content.whatWasFound).not.toBe(DESCRIPTION.whatItShows);
     expect(String(slide.content.whatWasFound ?? "")).toMatch(/снимок/iu);
     expect(String(slide.content.whatWasFound ?? "")).not.toMatch(/недоступен/iu);
+    // Дата отчёта — та же, что в подписи внизу (шаг 0090: `\b` перед
+    // кириллицей в JavaScript не работает, дата не печаталась никогда).
+    expect(String(slide.content.whatWasFound ?? "")).toContain("от 14.08.2026");
     expect(slide.templateId).toBe("serp-screenshot-analysis");
   });
 
@@ -119,6 +122,7 @@ describe("страница LexisNexis со снимком", () => {
     expect(slide.content.narrative).toBe(DESCRIPTION.whatItShows);
     expect(slide.content.whatToCheck).toBe(DESCRIPTION.whatToDo);
     expect(slide.content.sourceNote).toContain("Отчёт Dow Jones от 01.09.2026");
+    expect(String(slide.content.whatWasFound ?? "")).toContain("от 01.09.2026");
   });
 
   it("под снимком стоит происхождение документом, а не сотрудником", () => {
