@@ -194,6 +194,31 @@ const REVIEWED_WITH_NEGATIVE: ScopedInput = {
   review: { fragments: [NEGATIVE_FRAGMENT] },
 };
 
+describe("фрагмент не кончается знаком, по которому рендерер его выбросит", () => {
+  /*
+   * QA 14.09.2026, «Абрамович»: фрагмент `«In 2004, … as personal slush fund;»`
+   * кончался на «;» перед кавычкой — правило рендерера PDF-48 считает такую
+   * цитату обрубком и молча опустошает буллет, мера отдаёт высоту 0, и цикл
+   * перекладки не сходится никогда (шаг 0087). То, что рендерер выбросит,
+   * построитель не печатает: хвост цитаты чистится от `,;:`.
+   */
+  it("хвост цитаты фрагмента чистится от запятой, точки с запятой и двоеточия", () => {
+    const bullets = allBullets({
+      review: {
+        fragments: [
+          { quote: "In 2004, Abramovich was accused of using a loan as personal slush fund;", category: "negative" as const, gloss: "обвинение в использовании займа", section: "Allegations" },
+          { quote: "Сделка оспаривалась, ", category: "negative" as const, gloss: "спор", section: "Санкции" },
+          { quote: "Формулировка требует уточнения:", category: "needs_update" as const, gloss: "устарело", section: "Биография" },
+        ],
+      },
+    });
+    const fragments = bullets.filter((b) => /^(Негативный фрагмент|Требует проверки):/u.test(b));
+    expect(fragments).toHaveLength(3);
+    expect(fragments[0]).toContain("«In 2004, Abramovich was accused of using a loan as personal slush fund» — обвинение");
+    for (const b of fragments) expect(b).not.toMatch(/[,;:]\s*»/u);
+  });
+});
+
 describe("основное описание статьи печатается дословно", () => {
   it("лид идёт буллетами целыми предложениями, с подписью «дословно»", () => {
     const bullets = allBullets(REVIEWED_WITH_NEGATIVE);

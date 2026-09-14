@@ -488,7 +488,15 @@ export function buildIdentityFragment(
               ? ""
               : ` ${WIKIPEDIA_FRAGMENT_RECOMMENDATIONS[f.category]}`;
             adviceGiven.add(f.category);
-            return `${WIKIPEDIA_FRAGMENT_CATEGORY_LABELS[f.category]}: «${f.quote}» — ${
+            /*
+             * Хвост цитаты чистится от «,;:» и пробелов: рендерер считает цитату,
+             * кончающуюся таким знаком перед кавычкой, обрубком модели и молча
+             * опустошает буллет (правило PDF-48), а мера отдаёт ему высоту 0 —
+             * цикл перекладки на «Абрамовиче» (14.09.2026) не сходился никогда.
+             * Метка «фрагмент» уже говорит, что это не целое предложение (0087).
+             */
+            const quote = f.quote.trim().replace(/[\s,;:]+$/u, "");
+            return `${WIKIPEDIA_FRAGMENT_CATEGORY_LABELS[f.category]}: «${quote}» — ${
               f.gloss
             }${section}.${advice}`;
           })
