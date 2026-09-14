@@ -292,6 +292,38 @@ describe("сборка деки по мере рендерера", () => {
     expect(res.bulletFit.iterations).toHaveLength(1);
   });
 
+  it("потеря по одному блоку шесть итераций подряд сходится на седьмой", async () => {
+    /*
+     * QA 14.09.2026, «Абрамович»: рендерер терял на цепочке Википедии по
+     * одному блоку за итерацию — `[1,10] → [1,5,5] → [1,5,4,1] → [1,5,3,2] →
+     * [1,5,3,1,1]` — и четырёх итераций не хватило. После 0080 каждая
+     * итерация с потерей двигает хотя бы один блок, то есть цикл конечен;
+     * предел обязан быть мерой длины цепочки, а не сидом «четыре».
+     */
+    const LOSSY_MEASURES = 6;
+    let calls = 0;
+    const res = await tinyDeckBuild({
+      measure: async (payload) => {
+        calls += 1;
+        const clean = cleanMeasure(payload);
+        const lossy = calls > DRAFT_TABLE_MEASURE && calls <= DRAFT_TABLE_MEASURE + LOSSY_MEASURES;
+        if (!lossy) return clean;
+        const page = clean.pages.find((p) => p.itemHeights.length > 1);
+        if (!page) return clean;
+        return {
+          ...clean,
+          pages: clean.pages.map((p) =>
+            p.slideKey === page.slideKey
+              ? { ...p, keptItems: p.itemHeights.length - 1, droppedBullets: 1 }
+              : p
+          ),
+        };
+      },
+    });
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
+    expect(res.bulletFit.iterations).toHaveLength(LOSSY_MEASURES + 1);
+  });
+
   it("страница с потерей развозится и цикл сходится", async () => {
     // Первый вердикт объявляет первую страницу со списком переполненной:
     // блоков влезает вдвое меньше, чем подано. Дальше мера чистая — цикл
@@ -370,7 +402,7 @@ describe("сборка деки по мере рендерера", () => {
         })),
       };
     };
-    const failure = await tinyDeckBuild({ measure: stubborn }).catch((err: unknown) => err);
+    const failure = await tinyDeckBuild({ maxIterations: 4, /* предел задан явно: тест проверяет поведение на пределе, а не его значение (0082) */ measure: stubborn }).catch((err: unknown) => err);
     expect(failure).toBeInstanceOf(BulletFitNotConvergedError);
     expect(calls).toBe(
       (failure as BulletFitNotConvergedError).bulletFit.iterations.length + DRAFT_TABLE_MEASURE
@@ -433,7 +465,7 @@ describe("сборка деки по мере рендерера", () => {
         })),
       };
     };
-    await expect(tinyDeckBuild({ measure: stubborn })).rejects.toThrow(
+    await expect(tinyDeckBuild({ maxIterations: 4, /* предел задан явно: тест проверяет поведение на пределе, а не его значение (0082) */ measure: stubborn })).rejects.toThrow(
       BulletFitNotConvergedError
     );
     expect(calls).toBe(4 + DRAFT_TABLE_MEASURE);
