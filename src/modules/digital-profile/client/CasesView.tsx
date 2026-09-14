@@ -25,17 +25,32 @@ type LoadState =
   | { kind: "disabled" }
   | { kind: "error"; message: string };
 
+/*
+ * Уведомлений о заявках с сайта нет, поэтому новые заявки менеджер находит
+ * здесь — фильтром «С сайта».
+ */
+type Origin = "all" | "site";
+
+const ORIGINS: Array<{ value: Origin; label: string }> = [
+  { value: "all", label: "cases.originAll" },
+  { value: "site", label: "cases.originSite" },
+];
+
 export function CasesView() {
   const router = useRouter();
   const { t, tError } = useDigitalProfileI18n();
   const { can } = useDpAuth();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [creating, setCreating] = useState(false);
+  const [origin, setOrigin] = useState<Origin>("all");
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const result = await listCases({ pageSize: 100 });
+      const result = await listCases({
+        pageSize: 100,
+        origin: origin === "site" ? "site" : undefined,
+      });
       setState({ kind: "ready", cases: result.items });
     } catch (err) {
       if (err instanceof DigitalProfileApiError && err.code === "MODULE_DISABLED") {
@@ -46,7 +61,7 @@ export function CasesView() {
       const msg = err instanceof Error ? err.message : undefined;
       setState({ kind: "error", message: tError(code, msg) });
     }
-  }, [tError]);
+  }, [tError, origin]);
 
   useEffect(() => {
     void load();
@@ -76,6 +91,26 @@ export function CasesView() {
       ) : null}
 
       {!creating ? (
+        <div
+          role="group"
+          aria-label={t("cases.origin")}
+          style={{ display: "flex", gap: 8, marginBottom: 12 }}
+        >
+          {ORIGINS.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              className={`dp-btn dp-btn-sm${origin === o.value ? " dp-btn-primary" : ""}`}
+              aria-pressed={origin === o.value}
+              onClick={() => setOrigin(o.value)}
+            >
+              {t(o.label)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {!creating ? (
         <Card>
           {state.kind === "loading" ? <Loading label={t("cases.loadingCases")} /> : null}
 
@@ -93,10 +128,14 @@ export function CasesView() {
           ) : null}
 
           {state.kind === "ready" && state.cases.length === 0 ? (
-            <EmptyState
-              title={t("cases.emptyTitle")}
-              hint={t("cases.emptyDescription")}
-            />
+            origin === "site" ? (
+              <EmptyState title={t("cases.emptySite")} />
+            ) : (
+              <EmptyState
+                title={t("cases.emptyTitle")}
+                hint={t("cases.emptyDescription")}
+              />
+            )
           ) : null}
 
           {state.kind === "ready" && state.cases.length > 0 ? (

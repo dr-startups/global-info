@@ -14,7 +14,12 @@
  *   DIGITAL_PROFILE_DEMO_ADMIN_PASSWORD=...      (seed only, demo-only)
  */
 
-const DEFAULT_SECRET = "change-me-in-production";
+/**
+ * Секрет по умолчанию лежит в открытом коде: подписанный им токен подделывается,
+ * поэтому площадка его не принимает — ни для сессии, ни для токена посетителя сайта.
+ */
+export const DEFAULT_SESSION_SECRET = "change-me-in-production";
+const DEFAULT_SECRET = DEFAULT_SESSION_SECRET;
 
 import { boolSetting } from "../config/defaults";
 

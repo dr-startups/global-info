@@ -66,6 +66,15 @@ export type AuditAction =
   // Шаг 0032 — выбор персоны субъекта до первой траты
   | "PERSONA_PANEL_BUILT"
   | "PERSONA_DECIDED"
+  // Сайт самопроверки — действия посетителя, автор `self-check:<id>`
+  | "SELF_CHECK_CREATED"
+  | "SELF_CHECK_PERSONA_BUILT"
+  | "SELF_CHECK_PERSONA_DECIDED"
+  | "SELF_CHECK_RUN_STARTED"
+  | "SELF_CHECK_VERDICT"
+  | "SELF_CHECK_LEAD"
+  | "SELF_CHECK_BLOCKED"
+  | "SELF_CHECK_EXPIRED"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"
@@ -78,6 +87,11 @@ export interface RecordAuditInput {
   /** Nullable until auth exists; stored as "system" when absent. */
   actorId?: string | null;
   metadata?: Prisma.InputJsonValue;
+  /**
+   * Адрес того, кто действовал. Нужен там, где действует посетитель сайта без
+   * учётной записи: у него нет идентификатора, кроме адреса.
+   */
+  ipAddress?: string | null;
 }
 
 const SYSTEM_ACTOR = "system";
@@ -96,6 +110,7 @@ export async function recordAudit(
       action: input.action,
       actorId: input.actorId ?? SYSTEM_ACTOR,
       metadata: input.metadata ?? undefined,
+      ipAddress: input.ipAddress ?? undefined,
     },
   });
 }

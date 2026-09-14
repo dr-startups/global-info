@@ -11,6 +11,7 @@
  */
 
 import { ForbiddenError, UnauthorizedError } from "../http/errors";
+import { readCookie } from "../http/request";
 import type { ActorContext } from "../services/case-service";
 import {
   assertAuthConfigSafe,
@@ -26,19 +27,6 @@ import { can, type DpAccessLevel, type DpAction } from "./roles";
 export interface DpAuthUser extends AuthUser {
   /** True when produced by disabled-auth mode (not a real DB user). */
   synthetic?: boolean;
-}
-
-function readCookie(req: Request, name: string): string | null {
-  const header = req.headers.get("cookie");
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === name) {
-      return decodeURIComponent(part.slice(eq + 1).trim());
-    }
-  }
-  return null;
 }
 
 function syntheticActor(req: Request): DpAuthUser {

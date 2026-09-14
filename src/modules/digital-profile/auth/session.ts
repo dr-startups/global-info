@@ -3,12 +3,15 @@
  *
  * Token = base64url(JSON payload) + "." + base64url(HMAC-SHA256). The payload
  * carries the user id and expiry; the signature is verified with the session
- * secret. Implemented with Web Crypto (SubtleCrypto) so the SAME code runs in
- * Node route handlers AND in edge middleware.
+ * secret. Signing lives in `signed-token.ts`, shared with the self-check visitor
+ * token, so both are Web Crypto and the SAME code runs in Node route handlers
+ * AND in edge middleware.
  *
  * This module is edge-safe: it must NOT import Node-only modules (node:crypto,
  * Prisma, scrypt). Role/active-state are re-checked against the DB in the guard.
  */
+
+import { readSignedToken, signToken } from "./signed-token";
 
 export const DP_SESSION_COOKIE = "dp_session";
 export const DP_SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 hours
@@ -21,43 +24,6 @@ export interface SessionPayload {
   exp: number;
 }
 
-function b64urlEncode(bytes: Uint8Array): string {
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function b64urlDecode(s: string): Uint8Array {
-  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
-  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function importKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"]
-  );
-}
-
-async function hmac(secret: string, data: string): Promise<Uint8Array> {
-  const key = await importKey(secret);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
-  return new Uint8Array(sig);
-}
-
-function timingSafeEqualStr(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
 /** Creates a signed session token for a user id. */
 export async function createSessionToken(
   uid: string,
@@ -65,10 +31,10 @@ export async function createSessionToken(
   ttlSeconds = DP_SESSION_TTL_SECONDS
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
+  // Field order is part of the token bytes: sessions issued before the shared
+  // signer must keep verifying after it.
   const payload: SessionPayload = { uid, iat: now, exp: now + ttlSeconds };
-  const body = b64urlEncode(new TextEncoder().encode(JSON.stringify(payload)));
-  const sig = b64urlEncode(await hmac(secret, body));
-  return `${body}.${sig}`;
+  return signToken(payload, secret);
 }
 
 /** Verifies signature + expiry. Returns the payload or null. */
@@ -76,26 +42,15 @@ export async function verifySessionToken(
   token: string | undefined | null,
   secret: string
 ): Promise<SessionPayload | null> {
-  if (!token) return null;
-  const dot = token.indexOf(".");
-  if (dot <= 0) return null;
-  const body = token.slice(0, dot);
-  const sig = token.slice(dot + 1);
-  let expectedSig: string;
-  try {
-    expectedSig = b64urlEncode(await hmac(secret, body));
-  } catch {
+  const payload = await readSignedToken(token, secret);
+  if (!payload) return null;
+  // The visitor token of the public site is signed with the same secret and
+  // carries `kind`. A session never does, so a body with `kind` is not a
+  // session — even if it happens to contain a `uid`.
+  if ("kind" in payload) return null;
+  if (typeof payload.uid !== "string" || !payload.uid || typeof payload.exp !== "number") {
     return null;
   }
-  if (!timingSafeEqualStr(sig, expectedSig)) return null;
-  try {
-    const payload = JSON.parse(
-      new TextDecoder().decode(b64urlDecode(body))
-    ) as SessionPayload;
-    if (!payload?.uid || typeof payload.exp !== "number") return null;
-    if (payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  if (payload.exp < Math.floor(Date.now() / 1000)) return null;
+  return payload as unknown as SessionPayload;
 }

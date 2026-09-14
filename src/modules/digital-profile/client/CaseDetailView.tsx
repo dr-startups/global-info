@@ -42,6 +42,7 @@ import { CaseTabs } from "./CaseTabs";
 import { SubjectPersonaPanel } from "./SubjectPersonaPanel";
 import { PERSONA_PANEL_ANCHOR, personaBlockKey } from "./persona-panel-text";
 import { SubjectProfilePanel } from "./SubjectProfilePanel";
+import { SelfCheckPanel } from "./SelfCheckPanel";
 import { ReportQualityPanel } from "./ReportQualityPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
@@ -724,6 +725,10 @@ export function CaseDetailView({
           )}
         </div>
       ) : null}
+
+      {/* Проверка с сайта — выше панели персоны: заявка посетителя — первое,
+          что менеджер ищет в деле с сайта. Дело не с сайта панель скрывает. */}
+      {can("case.view") ? <SelfCheckPanel caseId={state.caseDetail.id} /> : null}
 
       {/* Панель выбора персоны стоит выше редактора тёзок намеренно: она
           работает до первой траты, а профиль размечает уже собранное. */}

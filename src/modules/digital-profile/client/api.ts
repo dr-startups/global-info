@@ -636,14 +636,70 @@ export function listCases(params?: {
   pageSize?: number;
   q?: string;
   status?: string;
+  /** `site` — только дела, заведённые проверкой с сайта. */
+  origin?: "site";
 }): Promise<Paginated<CaseListItem>> {
   const sp = new URLSearchParams();
   if (params?.page) sp.set("page", String(params.page));
   if (params?.pageSize) sp.set("pageSize", String(params.pageSize));
   if (params?.q) sp.set("q", params.q);
   if (params?.status) sp.set("status", params.status);
+  if (params?.origin) sp.set("origin", params.origin);
   const qs = sp.toString();
   return request<Paginated<CaseListItem>>(`/cases${qs ? `?${qs}` : ""}`);
+}
+
+/** Запись проверки с сайта для карточки дела (без хешей адреса и субъекта). */
+export interface SelfCheckRecord {
+  id: string;
+  publicId: string;
+  caseId: string | null;
+  status: string;
+  inputJson: {
+    fullName?: string;
+    birthDate?: string;
+    aliases?: string[];
+    city?: string | null;
+    inn?: string | null;
+    employer?: string | null;
+    position?: string | null;
+    website?: string | null;
+  } | null;
+  consentVersion: string;
+  consentAt: string;
+  ip: string | null;
+  userAgent: string | null;
+  captchaVerifiedAt: string | null;
+  honeypotTripped: boolean;
+  blockedReason: string | null;
+  jobId: string | null;
+  runStartedAt: string | null;
+  runFinishedAt: string | null;
+  verdict: string | null;
+  riskLevel: string | null;
+  materialsFound: number | null;
+  findingsTotal: number | null;
+  themesJson: unknown;
+  partial: boolean;
+  verdictAt: string | null;
+  verdictSource: string | null;
+  leadName: string | null;
+  leadPhone: string | null;
+  leadEmail: string | null;
+  leadTelegram: string | null;
+  leadMessage: string | null;
+  leadPreferredTime: string | null;
+  leadAt: string | null;
+  leadStatus: string;
+  expiresAt: string;
+  anonymizedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `null` — дело заведено не с сайта. */
+export function getCaseSelfCheck(caseId: string): Promise<SelfCheckRecord | null> {
+  return request<SelfCheckRecord | null>(`/cases/${caseId}/self-check`);
 }
 
 export function createCase(input: CreateCaseInput): Promise<CaseDetail> {

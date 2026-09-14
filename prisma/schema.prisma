@@ -250,6 +250,7 @@ model Case {
   unifiedCollectionJobs UnifiedCollectionJobRecord[]
   workflowSteps      WorkflowStep[]
   personaChecks      SubjectPersonaCheck[]
+  selfCheck          SelfCheck?
 
   @@index([status])
   @@index([deletedAt])
@@ -721,6 +722,70 @@ model SubjectPersonaCheck {
 
   @@index([caseId, searchedAt])
   @@map("dp_subject_persona_checks")
+}
+
+/// Проверка с сайта самопроверки: одна попытка посетителя, один кейс, один
+/// лёгкий прогон. Посетитель — не пользователь приложения: доступ к записи даёт
+/// подписанная cookie, и ни роли, ни доступа к делам у него нет.
+///
+/// Персональные данные посетителя (снимок формы, адрес, браузер, контакты
+/// заявки) обезличиваются по сроку `expiresAt`, поэтому эти колонки допускают
+/// null. Хеши остаются: по ним работают лимиты, а подобрать по ним ничего нельзя —
+/// это HMAC с секретом.
+model SelfCheck {
+  id                String    @id @default(cuid())
+  /// Идентификатор в адресе /check/<publicId>: 144 случайных бита
+  publicId          String    @unique
+  /// null — только у записи, пойманной ловушкой: кейс для бота не заводится
+  caseId            String?   @unique
+  /// CREATED | PERSONA_PENDING | PERSONA_DECIDED | RUNNING | DONE | FAILED | BLOCKED | EXPIRED
+  status            String
+  /// Снимок формы: ФИО, дата рождения, город, другие написания, ИНН, работа, должность, сайт
+  inputJson         Json?
+  /// Версия текста согласия, под которым стояла галочка
+  consentVersion    String
+  consentAt         DateTime
+  ip                String?
+  userAgent         String?
+  /// HMAC адреса — лимиты по адресу
+  ipHash            String
+  /// HMAC нормализованных ФИО и даты рождения — возврат к своей проверке
+  subjectHash       String
+  captchaVerifiedAt DateTime?
+  honeypotTripped   Boolean   @default(false)
+  /// Причина BLOCKED / FAILED машинным кодом; текст для посетителя — в коде сайта
+  blockedReason     String?
+  jobId             String?
+  runStartedAt      DateTime?
+  runFinishedAt     DateTime?
+  /// NEGATIVE_FOUND | CLEAN | INSUFFICIENT_DATA
+  verdict           String?
+  riskLevel         String?
+  materialsFound    Int?
+  findingsTotal     Int?
+  themesJson        Json?
+  partial           Boolean   @default(false)
+  verdictAt         DateTime?
+  verdictSource     String?
+  leadName          String?
+  leadPhone         String?
+  leadEmail         String?
+  leadTelegram      String?
+  leadMessage       String?
+  leadPreferredTime String?
+  leadAt            DateTime?
+  /// NONE | NEW | CONTACTED | CLOSED; меняет менеджер
+  leadStatus        String    @default("NONE")
+  expiresAt         DateTime
+  anonymizedAt      DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  case Case? @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([ipHash, createdAt])
+  @@index([expiresAt])
+  @@map("dp_self_checks")
 }
 
 /// Единица долговечной работы (шаг 12). Строка этой таблицы — и запись о

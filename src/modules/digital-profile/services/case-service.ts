@@ -8,6 +8,7 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
+import { SELF_CHECK_ACTOR_PREFIX } from "@/modules/self-check/actor";
 import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import type {
@@ -177,49 +178,18 @@ async function findActiveCaseOrThrow(caseId: string): Promise<{ id: string }> {
   return found;
 }
 
-export async function createCase(
-  input: CreateDigitalProfileCaseInput,
-  ctx: ActorContext = {}
-): Promise<CaseDTO> {
-  const createdBy = ctx.actorId ?? "system";
-
-  // Retry once on the rare caseNumber race (unique constraint).
-  for (let attempt = 0; attempt < 2; attempt++) {
+/**
+ * Повтор при гонке номера дела.
+ *
+ * Номер — `count() + 1`, и две параллельные транзакции получают один номер;
+ * уникальный индекс отвергает вторую, и повтор берёт следующий. Работа
+ * повторяется целиком — вместе со всем, что вызывающий пишет в той же
+ * транзакции.
+ */
+export async function retryOnCaseNumberRace<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
     try {
-      const row = await prisma.$transaction(async (tx) => {
-        const caseNumber = await generateCaseNumber(tx);
-        const created = await tx.case.create({
-          data: {
-            caseNumber,
-            title: `Digital Profile Audit — ${input.fullName}`,
-            status: "DRAFT",
-            lawfulBasis: input.lawfulBasis,
-            consentStatus: input.consentStatus,
-            targetRegions: input.targetRegions ?? [],
-            notes: input.notes,
-            createdBy,
-            subjects: {
-              create: {
-                fullName: input.fullName,
-                aliases: input.aliases ?? [],
-                dateOfBirth: input.birthDate ?? null,
-              },
-            },
-          },
-          select: caseSelect,
-        });
-        await recordAudit(
-          {
-            caseId: created.id,
-            action: "CASE_CREATED",
-            actorId: ctx.actorId,
-            metadata: { caseNumber },
-          },
-          tx
-        );
-        return created;
-      });
-      return toCaseDTO(row);
+      return await work();
     } catch (err) {
       const isUnique =
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -228,8 +198,58 @@ export async function createCase(
       throw err;
     }
   }
-  // Unreachable, but keeps TypeScript happy.
-  throw new Error("Failed to create case");
+}
+
+/**
+ * Завести кейс с субъектом внутри транзакции вызывающего: её откат убирает и
+ * кейс. Проверка с сайта пишет рядом свою запись и профиль субъекта, и кейс
+ * без них остаться не должен.
+ */
+export async function createCaseInTx(
+  tx: Prisma.TransactionClient,
+  input: CreateDigitalProfileCaseInput,
+  ctx: ActorContext = {}
+): Promise<CaseDTO> {
+  const caseNumber = await generateCaseNumber(tx);
+  const created = await tx.case.create({
+    data: {
+      caseNumber,
+      title: `Digital Profile Audit — ${input.fullName}`,
+      status: "DRAFT",
+      lawfulBasis: input.lawfulBasis,
+      consentStatus: input.consentStatus,
+      targetRegions: input.targetRegions ?? [],
+      notes: input.notes,
+      createdBy: ctx.actorId ?? "system",
+      subjects: {
+        create: {
+          fullName: input.fullName,
+          aliases: input.aliases ?? [],
+          dateOfBirth: input.birthDate ?? null,
+        },
+      },
+    },
+    select: caseSelect,
+  });
+  await recordAudit(
+    {
+      caseId: created.id,
+      action: "CASE_CREATED",
+      actorId: ctx.actorId,
+      metadata: { caseNumber },
+    },
+    tx
+  );
+  return toCaseDTO(created);
+}
+
+export async function createCase(
+  input: CreateDigitalProfileCaseInput,
+  ctx: ActorContext = {}
+): Promise<CaseDTO> {
+  return retryOnCaseNumberRace(() =>
+    prisma.$transaction((tx) => createCaseInTx(tx, input, ctx))
+  );
 }
 
 export interface ListCasesOptions {
@@ -248,15 +268,20 @@ export interface ListCasesOptions {
  * и это решение проверяется тестом, а не живой базой.
  */
 export function caseListWhere(
-  params: Partial<Pick<ListDigitalProfileCasesQuery, "status" | "q" | "includeDeleted">>,
+  params: Partial<
+    Pick<ListDigitalProfileCasesQuery, "status" | "q" | "includeDeleted" | "origin">
+  >,
   opts: ListCasesOptions = {}
 ): Prisma.CaseWhereInput {
-  const { status, q, includeDeleted } = params;
+  const { status, q, includeDeleted, origin } = params;
   return {
     ...(includeDeleted ? {} : { deletedAt: null }),
     ...(opts.includeFixtures ? {} : { isFixture: false }),
     ...(opts.restrictToCaseIds ? { id: { in: opts.restrictToCaseIds } } : {}),
     ...(status ? { status } : {}),
+    // Происхождение дела — его автор: проверка с сайта заводит дело от своего
+    // имени, и колонки происхождения у дела нет.
+    ...(origin === "site" ? { createdBy: { startsWith: SELF_CHECK_ACTOR_PREFIX } } : {}),
     ...(q
       ? {
           OR: [

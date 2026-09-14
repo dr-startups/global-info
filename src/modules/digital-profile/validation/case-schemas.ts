@@ -103,6 +103,8 @@ export const ListDigitalProfileCasesQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   status: z.enum(CASE_STATUS_VALUES).optional(),
   q: z.string().trim().max(200).optional(),
+  /** Происхождение дела; `site` — заведено проверкой с сайта. */
+  origin: z.enum(["site"]).optional(),
   includeDeleted: z
     .union([z.boolean(), z.string()])
     .optional()

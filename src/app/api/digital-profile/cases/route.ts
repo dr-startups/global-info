@@ -37,6 +37,7 @@ export const GET = withModule(async (req: NextRequest) => {
     pageSize: sp.get("pageSize") ?? undefined,
     status: sp.get("status") ?? undefined,
     q: sp.get("q") ?? undefined,
+    origin: sp.get("origin") ?? undefined,
     // Only privileged roles may list soft-deleted cases.
     includeDeleted: canSeeDeletedCases(user.role)
       ? sp.get("includeDeleted") ?? undefined
