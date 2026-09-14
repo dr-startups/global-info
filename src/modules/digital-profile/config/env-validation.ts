@@ -12,7 +12,13 @@
 
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
 import { isLinkReadingEnabled } from "../services/link-page-reader";
-import { boolSetting, stringSetting } from "./defaults";
+import {
+  boolSetting,
+  numberSetting,
+  stringSetting,
+  textSetting,
+  type NumberSettingName,
+} from "./defaults";
 
 type Env = Record<string, string | undefined>;
 
@@ -363,6 +369,44 @@ export function validateDigitalProfileEnv(
 }
 
 /**
+ * Сводка настроек сайта самопроверки.
+ *
+ * Сайт — не сборщик, а капча — не источник, поэтому это отдельная сводка, а не
+ * строки `describeCapabilityReadiness`. Печатается на старте, чтобы вопросы
+ * «открыта ли проверка», «какие лимиты» и «настроена ли капча» закрывались
+ * логом запуска, а не перепиской. Значения секретов сюда не попадают — только
+ * имена недостающих переменных.
+ */
+export function describeSelfCheckSettings(env: Env = process.env): string[] {
+  const missingCaptcha = ["SMARTCAPTCHA_SERVER_KEY", "SMARTCAPTCHA_CLIENT_KEY"].filter(
+    (name) => !(env[name] ?? "").trim()
+  );
+  const captcha =
+    missingCaptcha.length === 0
+      ? "капча настроена"
+      : `капча не настроена: нет ${missingCaptcha.join(", ")}`;
+  const switchState = boolSetting("SELF_CHECK_ENABLED", env)
+    ? "включена"
+    : "выключена (SELF_CHECK_ENABLED не равен true)";
+  const origin = textSetting("SITE_PUBLIC_ORIGIN", env);
+  const n = (name: NumberSettingName) => numberSetting(name, env);
+
+  return [
+    `проверка с сайта — ${switchState}; ${captcha}`,
+    `лимиты — ${n("SELF_CHECK_IP_HOURLY_LIMIT")} в час и ${n("SELF_CHECK_IP_DAILY_LIMIT")} в сутки на один IP, ` +
+      `${n("SELF_CHECK_DAILY_RUN_LIMIT")} прогонов в сутки, тот же человек повторно — через ${n("SELF_CHECK_DEDUPE_DAYS")} дн.`,
+    `данные — обезличивание через ${n("SELF_CHECK_RETENTION_DAYS")} дн., доступ посетителя ${n("SELF_CHECK_TOKEN_TTL_DAYS")} дн., ` +
+      `опрос статуса не чаще раза в ${n("SELF_CHECK_POLL_INTERVAL_MS")} мс`,
+    boolSetting("SITE_INDEXING_ENABLED", env)
+      ? `индексация — открыта, адрес ${origin}`
+      : `индексация — закрыта (SITE_INDEXING_ENABLED не равен true), адрес ${origin}`,
+    textSetting("YANDEX_METRIKA_ID", env)
+      ? "Метрика — счётчик задан"
+      : "Метрика — не подключена (YANDEX_METRIKA_ID пуст)",
+  ];
+}
+
+/**
  * Validates and reports. In production a critical error throws (fail-fast). In
  * development problems are logged as warnings so local work is never blocked.
  * Never logs secret values.
@@ -378,6 +422,9 @@ export function runEnvValidation(env: Env = process.env): void {
     console.warn(
       `[digital-profile][env] ${c.ready ? "ГОТОВ  " : "ВЫКЛ   "} ${c.capability} — ${c.detail}`
     );
+  }
+  for (const line of describeSelfCheckSettings(env)) {
+    console.warn(`[digital-profile][env] САЙТ    ${line}`);
   }
 
   for (const w of warnings) {

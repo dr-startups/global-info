@@ -35,12 +35,33 @@ export const CASE_STATUS_VALUES = [
 
 const trimmedString = (max = 500) => z.string().trim().min(1).max(max);
 
-/** Accepts an ISO date or date-time string; coerces to a Date. */
-const optionalDate = z
+/**
+ * Дата рождения субъекта — обязательное поле дела; ISO-дата или дата-время.
+ *
+ * Дата уже работает как признак субъекта: уходит в запрос санкционного
+ * скрининга и отличает санкционную карточку проверяемого лица от карточки
+ * полного тёзки на панели персоны. Дело, заведённое без неё, теряет этот
+ * признак молча. Сайт самопроверки спрашивает дату обязательно, и админка
+ * отвечает на тот же вопрос так же.
+ *
+ * Отказ говорит, зачем дата нужна, а не «поле обязательно»; непонятная дата
+ * остаётся непонятной датой.
+ */
+const requiredBirthDate = z
   .union([z.string(), z.date()])
-  .optional()
+  // `.nullish()` здесь не «поле необязательно», а «пустое значение доходит до
+  // разбора»: иначе union отвергает его своей фразой про типы, и оператор
+  // читает `invalid_union` вместо причины.
+  .nullish()
   .transform((v, ctx) => {
-    if (v == null || v === "") return undefined;
+    if (v == null || v === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Укажите дату рождения субъекта: без неё санкционную карточку полного тёзки не отличить от карточки проверяемого лица",
+      });
+      return z.NEVER;
+    }
     const d = v instanceof Date ? v : new Date(v);
     if (Number.isNaN(d.getTime())) {
       ctx.addIssue({
@@ -56,7 +77,7 @@ export const CreateDigitalProfileCaseSchema = z.object({
   // Subject
   fullName: trimmedString(200),
   aliases: z.array(trimmedString(200)).max(50).optional(),
-  birthDate: optionalDate,
+  birthDate: requiredBirthDate,
   // Case scope / compliance
   targetRegions: z.array(trimmedString(120)).max(50).optional(),
   lawfulBasis: z.enum(LAWFUL_BASIS_VALUES),

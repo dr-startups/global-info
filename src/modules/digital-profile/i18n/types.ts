@@ -416,6 +416,8 @@ export interface Dictionary {
     aliases: string;
     aliasesPlaceholder: string;
     birthDate: string;
+    birthDateHint: string;
+    birthDateRequired: string;
     targetRegions: string;
     targetRegionsPlaceholder: string;
     lawfulBasis: string;

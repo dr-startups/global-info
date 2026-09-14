@@ -48,13 +48,19 @@ export function CreateCaseForm({
       setError(t("createCase.fullNameRequired"));
       return;
     }
+    // Правило живёт в схеме дела, и сервер откажет им же; здесь оно только
+    // показывает причину до запроса, а не код ошибки после.
+    if (!birthDate) {
+      setError(t("createCase.birthDateRequired"));
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const created = await createCase({
         fullName: fullName.trim(),
         aliases: splitList(aliases),
-        birthDate: birthDate || undefined,
+        birthDate,
         targetRegions: splitList(targetRegions),
         lawfulBasis,
         consentStatus,
@@ -102,13 +108,19 @@ export function CreateCaseForm({
         </div>
 
         <div className="dp-field">
-          <label>{t("createCase.birthDate")}</label>
+          <label>
+            {t("createCase.birthDate")} <span className="dp-req">*</span>
+          </label>
           <input
             className="dp-input"
             type="date"
             value={birthDate}
             onChange={(e) => setBirthDate(e.target.value)}
+            required
           />
+          <div className="dp-muted" style={{ fontSize: 12, marginTop: 4 }}>
+            {t("createCase.birthDateHint")}
+          </div>
         </div>
 
         <div className="dp-field">

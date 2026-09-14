@@ -423,6 +423,10 @@ export const en: Dictionary = {
     aliases: "Aliases (comma or newline separated)",
     aliasesPlaceholder: "J. Sample, Johnny Sample",
     birthDate: "Birth date",
+    birthDateHint:
+      "Required: it tells the subject's sanctions record apart from a full namesake's.",
+    birthDateRequired:
+      "Enter the date of birth: without it a full namesake's sanctions record cannot be told apart from the subject's.",
     targetRegions: "Target regions (comma separated)",
     targetRegionsPlaceholder: "RU, UAE",
     lawfulBasis: "Lawful basis",
