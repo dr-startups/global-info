@@ -59,6 +59,28 @@ describe("отбор комплаенс-строк для деки", () => {
     expect(adapt({ ...BASE_ROW, rawMetadataSafe: { demo: true } })).toBeNull();
   });
 
+  it("мастер-строка снимка LexisNexis — не совпадение, как и Dow Jones (шаг 0086)", () => {
+    /*
+     * QA 14.09.2026, «Собчак»: после починки хранилища снимки LexisNexis дошли
+     * до отчёта — и вместе с ними в сводке баз появилось «подтверждено
+     * аналитиком — 1», строка «LexisNexis approved screenshots · Подтверждено
+     * аналитиком» и карточка записи с английскими заглушками. Инвентарь знал
+     * два вида мастер-строк из трёх: `lexisnexis_report` добавлен шагом 0060
+     * в `COMPLIANCE_VISUAL_KINDS`, а список инвентаря не двинулся.
+     */
+    for (const kind of ["lexisnexis_report", "LEXISNEXIS", "dow_jones_report", "DOW_JONES", "world_check_report"]) {
+      const row: DatabaseProfileHitInput = {
+        ...BASE_ROW,
+        matchedName: "LexisNexis approved screenshots",
+        summary: "Approved LexisNexis visual pages (2) for report inclusion.",
+        reviewStatus: "APPROVED",
+        rawMetadataSafe: { complianceVisual: { kind, approved: true, renderedPages: [{ pageNumber: 1, storageKey: "x.png" }] } },
+      };
+      expect(adapt(row), kind).toBeNull();
+      expect(isComplianceReportMaterial(row), kind).toBe(false);
+    }
+  });
+
   it("мастер-документы импорта не превращаются в совпадения", () => {
     expect(
       adapt({

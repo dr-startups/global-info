@@ -10,6 +10,7 @@
 import type { RawInventoryItem } from "../orion-golden/types";
 import type { CoverageCellStatusRow } from "../orion-golden/analytics/composite-dataset-builder";
 import type { ComplianceScreeningRecord } from "../orion-golden/deck-sections/scoped-input";
+import { parseComplianceVisualMeta } from "./compliance-visual-pages";
 
 /** Subset of DatabaseProfile columns needed for inventory adaptation. */
 export type DatabaseProfileHitInput = {
@@ -70,10 +71,18 @@ function isLexisHybridMaster(row: DatabaseProfileHitInput): boolean {
   return String(hybrid.kind ?? "") === "lexisnexis_report";
 }
 
-/** Мастер-строка загруженных снимков страниц Dow Jones / World-Check. */
+/**
+ * Мастер-строка загруженных снимков страниц базы — носитель снимка, а не
+ * совпадение.
+ *
+ * Вид снимка разбирает тот же код, что кладёт снимки на страницы
+ * (`parseComplianceVisualMeta`): свой список видов здесь знал два из трёх, и
+ * мастер-строка LexisNexis (вид добавлен шагом 0060) печаталась совпадением
+ * «подтверждено аналитиком» с английскими заглушками в полях — на отчёте
+ * реального человека (QA 14.09.2026, «Собчак», шаг 0086).
+ */
 function isComplianceVisualMaster(row: DatabaseProfileHitInput): boolean {
-  const kind = String(asObj(asObj(row.rawMetadataSafe).complianceVisual).kind ?? "");
-  return kind === "dow_jones_report" || kind === "world_check_report";
+  return parseComplianceVisualMeta(row.rawMetadataSafe)?.kind != null;
 }
 
 /** Демонстрационная строка: посеяна для показа продукта, а не собрана по делу. */
