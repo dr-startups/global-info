@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v187" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v188" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,12 @@ export const DECK_CONTENT_VERSION = "deck-sections-v187" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 14.09 номер двинут до v188: карточка персоны, выбранная оператором,
+ * подтверждает статью Википедии (`persona-confirms-article.ts`, шаг 0088) —
+ * страница «Википедия» печатает статью как «о субъекте», а не «принадлежность
+ * не подтверждена» рядом с листом «Кого проверяли». Правка меняет страницу
+ * Википедии любой деки, где персона выбрана по статье.
  *
  * 14.09 номер двинут до v187: хвост цитаты фрагмента Википедии чистится от
  * «,;:» — рендерер выбрасывал такую цитату как обрубок, а мера отдавала ей
@@ -623,7 +629,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v187" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "b3aa17b86322ea01" as const;
+export const DECK_BUILDER_FINGERPRINT = "8b8a911fec9de511" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -646,7 +652,7 @@ export const DECK_BUILDER_FINGERPRINT = "b3aa17b86322ea01" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v187" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v188" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

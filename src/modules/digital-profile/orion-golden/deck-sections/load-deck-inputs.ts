@@ -49,6 +49,7 @@ import {
 import { wikipediaCheckInventoryId } from "../../services/evidence-supplement-adapter";
 import { WIKIPEDIA_ARTICLE_REVIEW_ARTIFACT } from "../analytics/run-wikipedia-article-review";
 import { WikipediaArticleReviewSetSchema } from "../contracts/wikipedia-article-review";
+import { personaConfirmsArticles } from "./persona-confirms-article";
 
 export type CompositeObservationRow = {
   observationKey?: string;
@@ -1396,6 +1397,13 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       personaDecision = null;
     }
   }
+  /*
+   * Карточка персоны подтверждает статью Википедии (шаг 0088): запись
+   * проверки той же статьи, что выбрал оператор, — «о субъекте», с
+   * наследованием по межъязыковой ссылке. Решение оператора сильнее понижения
+   * разбором статьи выше: модель не источник правды.
+   */
+  personaConfirmsArticles(Object.values(evidenceIndex), personaDecision);
 
   const metricSnapshot: MetricSnapshot = {
     metricSnapshotId: `${binding.datasetId}-metrics`,
