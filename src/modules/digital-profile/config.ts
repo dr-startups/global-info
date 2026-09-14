@@ -119,17 +119,33 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
 }
 
 /**
- * Где лежат артефакты.
+ * Где лежат файлы — один ответ на весь модуль.
  *
  * Путь зависит от площадки, а не от секрета, поэтому переменная не нужна: на
- * Railway том монтируется в `/data`, локально артефакты лежат в рабочей копии.
- * Переопределение оставлено на случай другой раскладки тома.
+ * Railway том называет сама площадка (`RAILWAY_VOLUME_MOUNT_PATH`), локально
+ * файлы лежат в рабочей копии. Переопределение оставлено на случай другой
+ * раскладки тома.
+ *
+ * Здесь стояло «на Railway том монтируется в `/data`», и это было неправдой:
+ * том смонтирован в `/app/storage/digital-profile`, куда артефакты прогонов
+ * пишут от `process.cwd()`. Приватные файлы — снимки комплаенса, скриншоты
+ * выдачи, превью — уходили в `/data/digital-profile` на эфемерной файловой
+ * системе контейнера, и каждый деплой их стирал: QA 14.09.2026 загрузил снимки
+ * LexisNexis и Dow Jones, записи одобрены, а файлов к пересборке уже не было,
+ * и страница молча печатала «снимок недоступен» (шаг 0084). Без переменной
+ * тома ответ тот же, что у артефактов, — не `/data`.
  */
-const STORAGE_ROOT =
-  firstNonEmpty(
-    process.env.DIGITAL_PROFILE_STORAGE_ROOT,
-    process.env.DIGITAL_PROFILE_STORAGE_DIR
-  ) ?? (ON_RAILWAY ? "/data/digital-profile" : "./storage/digital-profile");
+export function resolveStorageRoot(env: Record<string, string | undefined>): string {
+  return (
+    firstNonEmpty(
+      env.DIGITAL_PROFILE_STORAGE_ROOT,
+      env.DIGITAL_PROFILE_STORAGE_DIR,
+      env.RAILWAY_VOLUME_MOUNT_PATH
+    ) ?? "./storage/digital-profile"
+  );
+}
+
+const STORAGE_ROOT = resolveStorageRoot(process.env);
 
 // One canonical signed-URL TTL governs all private download links.
 const SIGNED_URL_TTL_SECONDS = Number(
