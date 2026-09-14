@@ -475,6 +475,8 @@ export interface Dictionary {
     downloadPdf: string;
     autoResumeWaiting: string;
     autoResumeAt: string;
+    /** Пересборка упала, показан прежний отчёт (шаг 0083). Подстановки: {code}, {detail}. */
+    rebuildFailed: string;
     downloadPptx: string;
     downloadContactSheet: string;
     suggestionsGap: string;

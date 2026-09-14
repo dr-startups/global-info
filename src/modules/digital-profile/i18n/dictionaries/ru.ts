@@ -648,6 +648,8 @@ export const ru: Dictionary = {
   unified: {
     autoResumeWaiting: "Сбор продолжается: система сама вернётся к работе, вмешательство не требуется.",
     autoResumeAt: "Следующая попытка в {time}",
+    rebuildFailed:
+      "Пересборка не удалась ({code}): {detail} Показан прежний отчёт; запрос выпуска снят.",
     downloadPdf: "Скачать PDF",
     downloadPptx: "Скачать PPTX",
     downloadContactSheet: "Скачать contact sheet",

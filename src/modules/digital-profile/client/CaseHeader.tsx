@@ -6,7 +6,7 @@ import {
   type CaseDetail,
   type UnifiedCollectionJobStatus,
 } from "./api";
-import { Notice, StatusBadge } from "./components";
+import { Notice, StatusBadge, WarningBox } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 import {
@@ -15,6 +15,7 @@ import {
 } from "./unified-suggestions-retry-ui";
 import { arsenkinProgressLine } from "./arsenkin-progress-line";
 import { autoResumeBannerVisible } from "./auto-resume-banner";
+import { rebuildFailureOf } from "./rebuild-failure-notice";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
   const plannedAgents = job?.arsenkinPlannedAgents;
@@ -263,6 +264,21 @@ export function CaseHeader({
                   ? ` ${t("unified.autoResumeAt", { time: fmtDate(unifiedJob.autoResumeAt) })}`
                   : ""}
               </Notice>
+            </div>
+          ) : null}
+          {rebuildFailureOf(unifiedJob?.warnings) ? (
+            /*
+             * Пересборка упала, джоба вернулась к прежнему отчёту — об этом
+             * надо сказать словами: без плашки «Выпустить» выглядел как
+             * молчаливое ничего (шаг 0083).
+             */
+            <div style={{ marginTop: 8 }} data-testid="unified-rebuild-failed">
+              <WarningBox>
+                {t("unified.rebuildFailed", {
+                  code: rebuildFailureOf(unifiedJob?.warnings)!.code,
+                  detail: rebuildFailureOf(unifiedJob?.warnings)!.detail,
+                })}
+              </WarningBox>
             </div>
           ) : null}
           {unifiedJob ? (

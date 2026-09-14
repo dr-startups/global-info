@@ -648,6 +648,8 @@ export const en: Dictionary = {
   unified: {
     autoResumeWaiting: "Collection continues: the system will resume on its own, no action needed.",
     autoResumeAt: "Next attempt at {time}",
+    rebuildFailed:
+      "Report rebuild failed ({code}): {detail} The previous report is shown; the release request was withdrawn.",
     downloadPdf: "Download PDF",
     downloadPptx: "Download PPTX",
     downloadContactSheet: "Download contact sheet",

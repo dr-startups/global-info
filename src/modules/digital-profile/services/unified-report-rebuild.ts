@@ -320,6 +320,27 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
 export const REBUILD_FAILED_MARKER_PREFIX = "report-rebuild-failed:";
 
 /**
+ * Предупреждения джобы на момент приёма новой пересборки.
+ *
+ * Отметки прежней неудачи снимаются: свою работу — запрет повторять тот же
+ * отказ (`rebuildAlreadyFailedTheSameWay`) — они уже сделали при проверке
+ * права на пересборку, а пережив успешную сборку, держали бы в шапке дела
+ * плашку о провале, которого больше нет (шаг 0083). Новый провал поставит их
+ * заново.
+ */
+export function warningsForNewRebuild(warnings: readonly string[]): string[] {
+  return [
+    ...warnings.filter(
+      (w) =>
+        w !== REBUILD_MARKER &&
+        !w.startsWith(REBUILD_FAILED_MARKER_PREFIX) &&
+        !w.startsWith("report-rebuild-failed-detail:")
+    ),
+    REBUILD_MARKER,
+  ];
+}
+
+/**
  * Провалилась ли пересборка ровно тем же кодом, что несёт прогон сейчас, —
  * **и с тех пор ничего не изменилось**.
  *
@@ -515,7 +536,7 @@ export async function rebuildUnifiedReport(input: {
         reportLinks: {},
         pollAttempt: 0,
         nextPollAt: null,
-        warnings: [...job.warnings.filter((w) => w !== REBUILD_MARKER), REBUILD_MARKER],
+        warnings: warningsForNewRebuild(job.warnings),
         ...(input.requestRelease
           ? {
               release: withReleaseRequest({
