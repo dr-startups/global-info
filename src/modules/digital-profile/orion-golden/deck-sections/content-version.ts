@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v185" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v186" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,13 @@ export const DECK_CONTENT_VERSION = "deck-sections-v185" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 14.09 номер двинут до v186: шаги 0081–0082 (ворота таблицы выдачи знают о
+ * снятой позиции, цикл меры получает восемь итераций) шли под объявленным
+ * исключением — паков они не меняют. Но номер версии ещё и ключ разблокировки:
+ * прогон, вставший с `CONTENT_DROPPED_BY_RENDERER`, пересобирать отказывались
+ * («тот же отказ, ничего не изменилось»), пока номер стоял на месте. Цикл
+ * изменился — номер двигается, исключение снято (шаг 0085).
  *
  * 14.09 номер двинут до v185: перекладка буллетов верит мере рендерера, а не
  * сумме высот — страница с названной потерей отдаёт потерянные блоки дальше
@@ -611,7 +618,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v185" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "8bc0b4beedaf109c" as const;
+export const DECK_BUILDER_FINGERPRINT = "e9612d5ca6bd8fd0" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -634,7 +641,7 @@ export const DECK_BUILDER_FINGERPRINT = "8bc0b4beedaf109c" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v185" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v186" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
@@ -666,10 +673,4 @@ export type FingerprintVersionException = {
  * Объявляется на один шаг и снимается следующим: значение поля `fingerprint`
  * привязывает его к конкретной правке.
  */
-export const FINGERPRINT_VERSION_EXCEPTION: FingerprintVersionException | null = {
-  fingerprint: "8bc0b4beedaf109c",
-  reason:
-    "шаги 0081 и 0082: ворота таблицы выдачи (assembly-validation), проброс снятых позиций в них и " +
-    "предел итераций цикла меры (run-deck-build) — приёмка и цикл сборки, а не содержимое паков; " +
-    "ни один пак от правок не меняется",
-};
+export const FINGERPRINT_VERSION_EXCEPTION: FingerprintVersionException | null = null;
