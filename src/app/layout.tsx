@@ -1,24 +1,15 @@
-import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import Link from "next/link";
-import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Global Info — Digital Profile Audit",
-  description: "Evidence-based digital profile and compliance audit admin.",
-};
-
+/**
+ * Корневой layout общий для публичного сайта и админки, поэтому в нём только
+ * документ. Шапка и глобальные стили админки — в `admin/layout.tsx`: они ставят
+ * `html { font-size: 14px }`, и здесь все `rem` сайта считались бы от 14 px.
+ * Шапка, подвал и стили сайта — в `(site)/layout.tsx`.
+ */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body>
-        <div className="dp-topbar">
-          <Link href="/admin/digital-profile" className="dp-brand">
-            Global Info · Digital Profile Audit
-          </Link>
-        </div>
-        <main className="dp-container">{children}</main>
-      </body>
+    <html lang="ru">
+      <body>{children}</body>
     </html>
   );
 }

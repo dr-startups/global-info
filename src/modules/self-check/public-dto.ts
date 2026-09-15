@@ -15,6 +15,7 @@ import {
   type ClientRiskStep,
 } from "@/modules/digital-profile/orion-golden/client/risk-scale";
 import type { LightRunView } from "./light-run";
+import { RUN_STAGE_LABELS, type RunStage } from "./run-stages";
 import type {
   PersonaCard,
   PersonaCheckRow,
@@ -147,23 +148,13 @@ const BLOCKED_MESSAGES: Record<string, string> = {
 const BLOCKED_FALLBACK = "Проверку не удалось запустить. Попробуйте позже.";
 const FAILED_MESSAGE = "Не удалось завершить проверку. Оставьте контакты — проверим вручную.";
 
-/**
- * Стадии прогона словами. Их две — столько, сколько различают данные джобы
- * (решение владельца 15.09.2026); тексты ожидания правятся после замера
- * длительности на первом живом прогоне.
- */
-const RUN_STAGE_LABELS = {
-  collecting: "Ищем упоминания и сверяем с открытыми источниками и санкционными списками",
-  verdict: "Размечаем находки и готовим результат",
-} as const;
-
 /** Интервал опроса статуса страницей проверки — настройка с нижней границей. */
 export function selfCheckPollMs(env: Record<string, string | undefined> = process.env): number {
   return numberSetting("SELF_CHECK_POLL_INTERVAL_MS", env);
 }
 
 export interface PublicRunStatus {
-  stage: keyof typeof RUN_STAGE_LABELS;
+  stage: RunStage;
   stageLabel: string;
   progress: number;
   nextPollMs: number;

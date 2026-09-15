@@ -1,0 +1,5886 @@
+/* site.css — стили публичного сайта Global Info из утверждённого макета (14.09.2026); все классы
+   с префиксом site-. Вид, тексты и движение экранов — из макета; правки переноса отмечены на месте.
+
+   Тема одна — светлая (решение заказчика 12.09). Тёмных поверхностей на сайте нет вовсе.
+
+   Версия 5 меняет одно: фон перестал быть одним тоном. Вместо заливки — материал.
+   1. Зерно бумаги поверх фона (--site-grain): плоская заливка читается как экран, зерно —
+      как лист. Стоит на body, поэтому едет вместе со страницей, а не «прилипает» к окну.
+   2. «Листы» (.site-sheet) — секции лежат стопкой и наезжают друг на друга: у каждого листа
+      скруглён верх, есть отбивка тенью и отрицательный отступ. С версии 12 материал у листов
+      один — белая бумага на тёплом столе (правило — в разделе «Листы»). При прокрутке лист
+      доезжает scroll-driven анимацией, поэтому наползание видно движением, а не только тенью.
+   3. --site-surface — поверхность, на которой лежит объект. Кольцо фокуса и «узлы» рельса
+      берут цвет отсюда, иначе на листе они обведены цветом чужого фона.
+
+   Фирменных приёма два:
+   1. «Плашка» — закрашенная строка вместо заголовка найденного материала (ТЗ: ссылки и
+      заголовки посетителю не показываются).
+   2. «Уголки» — метки по углам панели, как на приводке печатного листа. Отбивают объект от
+      фона там, где раньше это делала тёмная заливка. */
+
+:root {
+  color-scheme: light;
+
+  /* ---------- Поверхности ---------- */
+  --site-ground: #F5F5F2;      /* тёплая бумага: фон страницы и «листов» по умолчанию */
+  --site-paper: #FFFFFF;       /* панели, карточки, поля */
+  --site-paper-2: #FAFAF7;     /* вложенная поверхность внутри бумаги */
+
+  /* Поверхность, на которой лежит объект. Переопределяется на листах: от неё берут цвет
+     кольцо фокуса и обводка узлов рельса, иначе они обведены цветом чужого фона. */
+  --site-surface: var(--site-ground);
+
+  /* Чернила без синевы: синий оттенок чернил вместе с синим акцентом давал «шаблонный» SaaS
+     (замечание заказчика 13.09). Холодный тон на сайте теперь несёт только свет. */
+  --site-ink: #16181D;
+  --site-ink-2: #494D56;
+  --site-ink-3: #60646D;
+  --site-placeholder: #8A8E97;
+
+  --site-line: #E3E5E8;
+  --site-line-strong: #C8CCD3;
+  --site-line-hover: #AEB3BD;
+
+  /* Палитра «Сирень» (версия 12: заказчик выбрал её 13.09 из «Маркера», «Сирени» и «Персика»).
+     Два инструмента того, кто проверяет документ: чёрный маркер, которым закрашены заголовки
+     находок (плашка), и текстовыделитель, которым отмечено важное. В версиях 10–11 выделитель был
+     салатовым. Чернила — у ссылок, фокуса, выбранного и решающей кнопки. Сирень — только фоном под
+     чернилами (чип, метка на кнопке, выделение, находка в логе): бледная на белом, текстом и линией
+     она не читается. Решающая кнопка остаётся чернильной, а не сиреневой: фиолетовая заливка
+     кнопки — примета шаблона. Шкала риска (зелёный, янтарный, красный) — единственный сигнальный
+     цвет, и с сиренью её не спутать. */
+  --site-accent: #16181D;
+  --site-accent-hover: #000000;
+  --site-accent-tint: var(--site-marker-soft);   /* выбранное, текущий шаг */
+  --site-accent-soft: #F1F2EE;                   /* блок «что дальше», подсказки, наведение */
+  --site-accent-glow: var(--site-marker);
+
+  --site-marker: #D8CCFA;
+  --site-marker-soft: #EFEAFD;
+  --site-marker-strong: #A58FE8;                 /* мелкая графика на белом: знак логотипа */
+  --site-focus-halo: color-mix(in srgb, var(--site-marker) 70%, transparent);
+
+  /* Решающая кнопка — чернила с блеском по кромке и меткой маркера под стрелкой. Синий
+     градиент версий 6–9 читался как кнопка любого SaaS; чернила — как та же плашка, что в
+     результате, а метка маркера отличает решающее действие от кнопок второго ряда. */
+  --site-cta-from: #2C2F36;
+  --site-cta-to: #131418;
+  --site-cta-from-hover: #3A3E46;
+  --site-cta-to-hover: #1C1E23;
+
+  /* Поля: нейтральная заливка вместо белого. Белое поле на белой панели держится одной рамкой,
+     а с заливкой видно, куда писать, ещё до наведения. */
+  --site-field: #F5F6F7;
+  --site-field-line: #DEE1E5;
+  --site-field-line-hover: #C4C8CF;
+
+  --site-ok: #067647;
+  --site-ok-bg: #ECFDF3;
+  --site-warn: #B54708;
+  --site-warn-bg: #FFFAEB;
+  --site-danger: #B42318;
+  --site-danger-bg: #FEF3F2;
+  --site-critical: #7A1C16;
+  --site-critical-bg: #FBE9E7;
+  --site-on-critical: #FFFFFF;
+
+  /* Primary-кнопка — те же чернила, но без метки маркера: действие второго ряда */
+  --site-btn-bg: #16181D;
+  --site-btn-bg-hover: #2A2D34;
+  --site-btn-fg: #FFFFFF;
+
+  /* Атмосфера первого экрана: свет из того же окна, что на снимке в закрывающем листе, —
+     холодная тень рамы, светлое пятно и слабый отблеск маркера — плюс сетка поверх фона */
+  --site-glow-1: rgba(120, 134, 170, 0.16);
+  --site-glow-2: rgba(216, 204, 250, 0.22);
+  --site-shade: rgba(112, 126, 162, 0.15);
+  --site-grid: rgba(22, 24, 29, 0.05);
+  --site-tick: rgba(22, 24, 29, 0.32); /* уголки приводки: как метки на печатном листе, чёрные */
+
+  --site-mark: #16181D;        /* плашка: закрашенный заголовок скрытого материала */
+
+  --site-shadow-pop: 0 1px 2px rgba(22, 27, 38, 0.06), 0 8px 24px rgba(22, 27, 38, 0.12);
+  --site-shadow-panel: 0 1px 2px rgba(22, 27, 38, 0.04), 0 24px 56px rgba(22, 27, 38, 0.10);
+  --site-shadow-card: 0 1px 2px rgba(22, 27, 38, 0.05), 0 10px 30px rgba(22, 27, 38, 0.07);
+
+  /* Форма проверки — главный объект первого экрана, поэтому тень у неё своя: ближний контакт
+     с бумагой, дальний рассеянный и холодный, как тень от окна. */
+  --site-shadow-case:
+    0 1px 2px rgba(22, 27, 38, 0.05),
+    0 28px 56px -28px rgba(22, 27, 38, 0.28),
+    0 64px 120px -64px rgba(92, 104, 136, 0.28);
+
+  /* ---------- Листы: белая бумага на тёплом столе ---------- */
+  --site-sheet-r: 32px;                       /* скруглённый верх листа */
+  /* Верхняя кромка листа: светлый блик по срезу и мягкая тень на лежащее ниже */
+  --site-shadow-sheet: 0 -1px 0 rgba(255, 255, 255, 0.9), 0 -16px 34px -18px rgba(22, 27, 38, 0.26);
+
+  /* Зерно бумаги: тонкий шум поверх заливки. Инлайн-SVG, потому что внешние картинки
+     запрещены политикой публикации артефактом. */
+  --site-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+
+  interpolate-size: allow-keywords; /* анимация высоты details (FAQ) в Chrome 131+ */
+
+  /* Шрифты: Golos Text — заголовки, текст и интерфейс; Literata — только словоблок логотипа;
+     системный моноширинный — технические подписи (шаг, источник, статус). Здесь — запасные
+     наборы: сами шрифты подключает next/font, и токены с ними объявлены на .site-body. */
+  --site-font-text: "Segoe UI", Arial, sans-serif;
+  --site-font-heading: var(--site-font-text);
+  --site-font-display: Georgia, "Times New Roman", serif;
+  --site-font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+
+  /* Размеры текста */
+  --site-text-xs: 0.8125rem;                                /* 13 */
+  --site-text-sm: 0.9375rem;                                /* 15 */
+  --site-text-md: 1rem;                                     /* 16 */
+  --site-text-lg: 1.25rem;                                  /* 20 */
+  --site-text-xl: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem); /* 22–28 */
+  --site-text-2xl: clamp(1.75rem, 1.35rem + 1.5vw, 2.5rem); /* 28–40 */
+  --site-text-display: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem); /* 36–56 */
+
+  /* Отступы, шаг 4 px */
+  --site-s-1: 4px;
+  --site-s-2: 8px;
+  --site-s-3: 12px;
+  --site-s-4: 16px;
+  --site-s-5: 24px;
+  --site-s-6: 32px;
+  --site-s-7: 48px;
+  --site-s-8: 64px;
+  --site-s-9: 96px;
+
+  /* Радиусы по роли */
+  --site-r-1: 4px;   /* бейджи */
+  --site-r-2: 10px;  /* поля, кнопки */
+  --site-r-3: 12px;  /* карточки, уведомления */
+  --site-r-4: 16px;  /* панели */
+  --site-r-pill: 999px;
+
+  /* Движение */
+  --site-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --site-dur-fast: 120ms;
+  --site-dur-base: 200ms;
+  --site-dur-slow: 280ms;
+  --site-scroll: 0px; /* сдвиг фоновой сетки героя; пишется скриптом при прокрутке */
+
+  /* Сетка и размеры контролов */
+  --site-container: 1120px;
+  --site-narrow: 720px;
+  --site-gutter: 16px;
+  --site-control-h: 48px;
+  --site-focus: 0 0 0 2px var(--site-surface), 0 0 0 4px var(--site-accent);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --site-gutter: 24px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --site-control-h: 44px;
+  }
+}
+
+/* ---------- База ---------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--site-ground);
+}
+
+/* Зерно лежит на body, а не на html: так оно едет вместе со страницей, как фактура листа,
+   а не стоит на месте, как плёнка на экране. Цвет продублирован на html — при коротком
+   документе низ окна иначе остаётся без фона. */
+body {
+  margin: 0;
+  background-color: var(--site-ground);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
+  color: var(--site-ink);
+  font-family: var(--site-font-text);
+  font-size: var(--site-text-md);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Обёртка страницы сайта. В макете класс стоял на <body>, но <body> рисует корневой layout,
+   общий с админкой, и вложенный layout класса ему не поставит. next/font генерирует имя
+   семейства сам и объявляет переменные --site-font-golos и --site-font-literata на этой же
+   обёртке, поэтому токены шрифтов переопределены здесь: объявленные на :root, они этих
+   переменных не видят. */
+.site-body {
+  --site-font-text: var(--site-font-golos), "Segoe UI", Arial, sans-serif;
+  --site-font-heading: var(--site-font-text);
+  --site-font-display: var(--site-font-literata), Georgia, "Times New Roman", serif;
+  min-height: 100vh;
+  font-family: var(--site-font-text);
+}
+
+/* ---------- Листы ----------
+   Секция, лежащая на предыдущей: скруглённый верх, светлый блик по срезу, тень вниз и
+   отрицательный отступ, из-за которого лист заходит на соседа. Порядок в DOM и решает,
+   кто сверху, поэтому z-index не нужен — достаточно position: relative.
+
+   Правило фона одно: стол и лист. Стол — тёплая бумага страницы, на нём лежат только первый
+   экран и подвал. Всё между ними — листы одного материала: белая бумага с тем же зерном, что у
+   стола. До версии 12 листы чередовали холодный смыв, белую бумагу с фактурой и тёплую бумагу:
+   фон менялся пять раз, часть листов читалась подложкой, часть сливалась со столом (замечание
+   заказчика 13.09). Теперь новый лист виден кромкой и наездом, а не сменой цвета. Лист другого
+   тона — это уже второе правило, и оно ломает первое. */
+
+.site-sheet {
+  position: relative;
+  border-radius: var(--site-sheet-r) var(--site-sheet-r) 0 0;
+  margin-top: calc(var(--site-sheet-r) * -1);
+  padding-top: var(--site-sheet-r);
+  padding-bottom: var(--site-s-9);
+  background-color: var(--site-paper);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
+  box-shadow: var(--site-shadow-sheet);
+  --site-surface: var(--site-paper);
+}
+
+/* Продолжение листа вниз, под следующий лист. Следующий лист доезжает снизу (translateY 88 → 0),
+   и без продолжения между двумя белыми листами на миг открывался стол — полоса тёплой бумаги, та
+   самая лишняя смена фона, только на ходу. В покое продолжение целиком лежит под следующим листом.
+   У закрывающего листа его нет: под ним подвал. */
+.site-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto;
+  height: 88px;
+  background-color: var(--site-paper);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
+  pointer-events: none;
+}
+
+.site-sheet.site-final::before {
+  content: none;
+}
+
+/* Первая секция листа уже отбита его собственным полем — свой отступ ей не нужен */
+.site-sheet > .site-section:first-child,
+.site-sheet > .site-container > .site-section:first-child {
+  padding-block-start: var(--site-s-7);
+}
+
+/* Ссылки в шапке ведут к секциям: якорь не должен уезжать под плавающую шапку */
+[data-anchor] {
+  scroll-margin-top: 88px;
+}
+
+img,
+svg {
+  max-width: 100%;
+  display: block;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+a {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+  transition: color var(--site-dur-fast) var(--site-ease-out);
+}
+
+a:hover {
+  color: var(--site-accent-hover);
+}
+
+/* Ссылка в тексте того же цвета, что текст, поэтому отклик на наведение — полоса маркера под
+   словами, как выделение в документе, а не смена цвета */
+:where(p, li, dd) > a:not([class]):hover {
+  background: var(--site-marker-soft);
+}
+
+::selection {
+  background: var(--site-marker);
+  color: var(--site-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 2px;
+}
+
+/* Заголовки получают фокус программно при смене экрана — кольцо им не нужно */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+p {
+  margin: 0;
+}
+
+/* ---------- Типографика ---------- */
+
+.site-display,
+.site-h1,
+.site-h2 {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.site-display {
+  font-size: var(--site-text-display);
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+}
+
+.site-h1,
+.site-h2 {
+  font-size: var(--site-text-2xl);
+  line-height: 1.1;
+}
+
+.site-h3 {
+  font-family: var(--site-font-text);
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+  line-height: 1.35;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.site-lead {
+  font-size: var(--site-text-lg);
+  line-height: 1.45;
+  color: var(--site-ink-2);
+  max-width: 34em;
+}
+
+.site-text {
+  max-width: 70ch;
+  color: var(--site-ink-2);
+}
+
+.site-small {
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+}
+
+.site-caption {
+  font-size: var(--site-text-xs);
+  line-height: 1.45;
+  color: var(--site-ink-3);
+}
+
+.site-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.site-muted {
+  color: var(--site-ink-3);
+}
+
+/* Техническая подпись: номер шага, номер источника, статус. Моноширинный набор отделяет
+   служебную разметку от читаемого текста — как отметки на полях документа. */
+.site-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--site-ink-3);
+  white-space: nowrap;
+}
+
+.site-tag--pill {
+  padding: 4px 10px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: var(--site-r-pill);
+  background: var(--site-paper);
+}
+
+.site-tag--accent {
+  color: var(--site-accent);
+  border-color: color-mix(in srgb, var(--site-accent) 32%, transparent);
+  background: var(--site-accent-soft);
+}
+
+/* ---------- Уголки приводки ----------
+   Метки по углам объекта. Заменили тёмную заливку: панель отделяется от фона рамкой и
+   уголками, а не другим цветом. */
+.site-ticks {
+  position: relative;
+}
+
+.site-ticks::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--site-tick) 0 0) 0 0 / 12px 1px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 0 0 / 1px 12px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 100% 0 / 12px 1px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 100% 0 / 1px 12px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 0 100% / 12px 1px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 0 100% / 1px 12px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 100% 100% / 12px 1px no-repeat,
+    linear-gradient(var(--site-tick) 0 0) 100% 100% / 1px 12px no-repeat;
+}
+
+/* ---------- Раскладка ---------- */
+
+.site-container {
+  max-width: calc(var(--site-container) + 2 * var(--site-gutter));
+  margin-inline: auto;
+  padding-inline: var(--site-gutter);
+}
+
+.site-narrow {
+  max-width: calc(var(--site-narrow) + 2 * var(--site-gutter));
+  margin-inline: auto;
+  padding-inline: var(--site-gutter);
+}
+
+.site-section {
+  padding-block-start: var(--site-s-8);
+}
+
+.site-section__head {
+  display: grid;
+  gap: var(--site-s-3);
+  margin-block-end: var(--site-s-6);
+  max-width: 40em;
+}
+
+@media (min-width: 768px) {
+  .site-section {
+    padding-block-start: var(--site-s-9);
+  }
+}
+
+.site-stack {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-3);
+  align-items: center;
+}
+
+.site-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Ловушка формы для ботов: поле, которого человек не видит и до которого не доходит Tab.
+   В макете его прятал класс хрома прототипа. */
+.site-hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Значение, которого заказчик ещё не дал ({{PHONE}}, {{LEGAL_ENTITY}}): видно на странице, пока
+   не заменено. Уходит вместе с последним плейсхолдером. */
+.site-placeholder {
+  background: #FFF1B8;
+  color: #5C4300;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.site-skip {
+  position: absolute;
+  left: -999px;
+  top: 8px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  background: var(--site-paper);
+  color: var(--site-ink);
+  padding: 8px 14px;
+  border-radius: var(--site-r-2);
+  box-shadow: var(--site-shadow-pop);
+}
+
+.site-skip:focus {
+  left: 16px;
+}
+
+/* ---------- Шапка ----------
+   Плавающая плита поверх страницы. В версии 4 логотип и меню были отдельными «пилюлями»
+   без фона, и на светлом фоне шапка исчезала. Теперь это одна плита с бумагой, размытием
+   и тенью — она видна с первого кадра, а прокрутка только уплотняет её.
+
+   Скруглены плита и пункты концентрично: 14 = 8 + 6 (поле плиты). Кнопки действия в шапке
+   по-прежнему нет: призыв живёт в первом экране и не дублируется. */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding-block: 10px;
+  transition: padding-block var(--site-dur-slow) var(--site-ease-out);
+}
+
+.site-header__inner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--site-s-4);
+  min-height: 52px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid rgba(22, 27, 38, 0.08);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--site-paper) 76%, transparent);
+  box-shadow:
+    0 1px 2px rgba(22, 27, 38, 0.04),
+    0 12px 28px -20px rgba(22, 27, 38, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: var(--site-dur-slow);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-header.is-scrolled .site-header__inner {
+  background: color-mix(in srgb, var(--site-paper) 93%, transparent);
+  border-color: var(--site-line);
+  box-shadow:
+    0 1px 2px rgba(22, 27, 38, 0.05),
+    0 18px 36px -22px rgba(22, 27, 38, 0.38),
+    inset 0 1px 0 #FFFFFF;
+}
+
+/* Полоса прочитанного. Отступы по 16 px от краёв — чтобы она не доезжала до скруглений
+   плиты, не обрезая саму плиту через overflow. */
+.site-header__progress {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--site-ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--site-dur-slow) var(--site-ease-out);
+}
+
+.site-header.is-scrolled .site-header__progress {
+  opacity: 1;
+}
+
+.site-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--site-font-display);
+  font-weight: 600;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  color: var(--site-ink);
+  text-decoration: none;
+  min-height: 44px;
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: var(--site-dur-slow);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-logo:hover {
+  color: var(--site-ink);
+}
+
+/* В знаке оба инструмента: верхняя плашка — маркер, нижняя — чернила */
+.site-logo__mark {
+  width: 22px;
+  height: 16px;
+  flex: none;
+  color: var(--site-marker-strong);
+}
+
+.site-nav {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding-inline: 14px;
+  border-radius: 8px;
+  color: var(--site-ink-2);
+  text-decoration: none;
+  font-size: var(--site-text-sm);
+  transition: background-color var(--site-dur-fast) var(--site-ease-out), color var(--site-dur-fast) var(--site-ease-out);
+}
+
+/* Подложки пунктов нейтральные, не синие: синий на сайте означает действие и ссылку,
+   а не «здесь мышь» и «вы тут». Текущий раздел отбит бумагой и тонкой рамкой — он выглядит
+   вдавленным в плиту, а не подсвеченным цветом. */
+.site-nav a:hover {
+  color: var(--site-ink);
+  background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+}
+
+.site-nav a[aria-current] {
+  color: var(--site-ink);
+  font-weight: 500;
+  background: var(--site-paper);
+  box-shadow:
+    inset 0 0 0 1px rgba(22, 27, 38, 0.07),
+    0 1px 2px rgba(22, 27, 38, 0.06);
+}
+
+/* ---------- Меню узкого экрана: бургер и выдвижная панель ----------
+   До версии 16 здесь была кнопка «Меню» с выпадающим списком; заказчик 13.09: на телефоне — бургер, и
+   меню выдвигается. Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). Выезжает
+   справа, с той стороны, где бургер, и крестик панели стоит ровно на его месте: плита шапки — 10 px от
+   верха и 27 px от правого края окна. */
+.site-burger,
+.site-drawer__close {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-paper);
+  color: var(--site-ink);
+  cursor: pointer;
+  transition: border-color var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-burger:hover,
+.site-drawer__close:hover {
+  border-color: var(--site-line-hover);
+}
+
+.site-burger svg,
+.site-drawer__close svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* Нижняя черта бургера короче — как нижняя плашка в знаке логотипа */
+.site-burger svg {
+  width: 20px;
+  height: 14px;
+}
+
+.site-drawer__close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.site-drawer {
+  --site-surface: var(--site-paper);
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(360px, 88vw);
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 10px 16px var(--site-s-5);
+  border: 0;
+  border-radius: 24px 0 0 24px;
+  background-color: var(--site-paper);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
+  box-shadow: -1px 0 0 var(--site-line), -28px 0 56px -28px rgba(22, 27, 38, 0.3);
+  color: var(--site-ink);
+  overscroll-behavior: contain;
+  translate: 100% 0;
+  transition:
+    translate var(--site-dur-slow) var(--site-ease-out),
+    overlay var(--site-dur-slow) allow-discrete,
+    display var(--site-dur-slow) allow-discrete;
+}
+
+.site-drawer[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--site-s-4);
+  translate: 0 0;
+}
+
+@starting-style {
+  .site-drawer[open] {
+    translate: 100% 0;
+  }
+}
+
+/* Подложка задана числом, а не токеном: ::backdrop не наследует переменные от документа */
+.site-drawer::backdrop {
+  background-color: rgba(22, 27, 38, 0);
+  transition:
+    background-color var(--site-dur-slow) var(--site-ease-out),
+    overlay var(--site-dur-slow) allow-discrete,
+    display var(--site-dur-slow) allow-discrete;
+}
+
+.site-drawer[open]::backdrop {
+  background-color: rgba(22, 27, 38, 0.28);
+}
+
+@starting-style {
+  .site-drawer[open]::backdrop {
+    background-color: rgba(22, 27, 38, 0);
+  }
+}
+
+/* Страница под открытой панелью не прокручивается */
+html:has(.site-drawer[open]) {
+  overflow: hidden;
+}
+
+.site-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px; /* высота плиты шапки с бордюром: крестик встаёт ровно на место бургера */
+  padding: 0 11px 0 var(--site-s-3);
+}
+
+.site-drawer__nav {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-drawer__nav a {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding-inline: var(--site-s-3);
+  border-radius: var(--site-r-3);
+  color: var(--site-ink);
+  text-decoration: none;
+  font-family: var(--site-font-heading);
+  font-size: var(--site-text-xl);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  transition: background-color var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-drawer__nav a:hover {
+  background: var(--site-accent-soft);
+}
+
+/* Текущий раздел отмечен выделителем, как текущий шаг мастера */
+.site-drawer__nav a[aria-current] {
+  background: var(--site-marker-soft);
+  font-weight: 600;
+}
+
+/* Пункты входят следом за панелью по одному: список читается сверху вниз */
+.site-drawer__nav li {
+  transition:
+    opacity var(--site-dur-slow) var(--site-ease-out),
+    translate var(--site-dur-slow) var(--site-ease-out);
+}
+
+.site-drawer__nav li:nth-child(2) { transition-delay: 30ms; }
+.site-drawer__nav li:nth-child(3) { transition-delay: 60ms; }
+.site-drawer__nav li:nth-child(4) { transition-delay: 90ms; }
+.site-drawer__nav li:nth-child(5) { transition-delay: 120ms; }
+
+@starting-style {
+  .site-drawer[open] .site-drawer__nav li {
+    opacity: 0;
+    translate: 16px 0;
+  }
+}
+
+.site-drawer__foot {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+  padding: var(--site-s-4) var(--site-s-3) 0;
+  border-top: 1px solid var(--site-line);
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+@media (min-width: 900px) {
+  .site-nav {
+    display: flex;
+  }
+
+  .site-burger {
+    display: none;
+  }
+}
+
+/* Шапка мастера проверки: только логотип, чтобы ничто не уводило со сценария */
+.site-header.is-minimal .site-nav,
+.site-header.is-minimal .site-burger {
+  display: none;
+}
+
+/* ---------- Кнопки ---------- */
+
+.site-btn {
+  --h: var(--site-control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--h);
+  padding: 9px 20px;
+  border: 1px solid transparent;
+  border-radius: var(--site-r-2);
+  font: inherit;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: normal; /* длинные русские подписи переносятся, а не ломают ширину экрана */
+  user-select: none;
+  transition-property: background-color, border-color, color, transform, box-shadow;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-btn__arrow {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  transition: transform var(--site-dur-base) var(--site-ease-out);
+}
+
+.site-btn:hover .site-btn__arrow {
+  transform: translateX(3px);
+}
+
+/* Заливка не плоская: блик по верхней кромке и тень под кнопкой дают материал, а не
+   прямоугольник цвета. Тень мягкая и в цвете самой кнопки, чтобы она не читалась серой. */
+.site-btn--primary {
+  background-color: var(--site-btn-bg);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 58%);
+  border-color: var(--site-btn-bg);
+  color: var(--site-btn-fg);
+  box-shadow:
+    0 1px 1px rgba(22, 27, 38, 0.10),
+    0 8px 18px -10px rgba(22, 27, 38, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.site-btn--primary:hover,
+.site-btn--primary.is-hover {
+  background-color: var(--site-btn-bg-hover);
+  border-color: var(--site-btn-bg-hover);
+  color: var(--site-btn-fg);
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 1px rgba(22, 27, 38, 0.10),
+    0 14px 26px -12px rgba(22, 27, 38, 0.60),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* Решающее действие: запуск проверки, выбор карточки, заявка. Чернила с блеском по верхней
+   кромке и метка маркера под стрелкой — остальные кнопки её не несут, поэтому главное
+   действие узнаётся по ней на любой странице. Синий градиент версий 6–9 заказчик счёл
+   шаблонным (13.09). */
+.site-btn--accent {
+  background-color: var(--site-cta-to);
+  background-image: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  border-color: #0B0C0E;
+  color: #FFFFFF;
+  box-shadow:
+    0 1px 1px rgba(22, 24, 29, 0.12),
+    0 10px 22px -12px rgba(22, 24, 29, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.site-btn--accent:hover,
+.site-btn--accent.is-hover {
+  background-image: linear-gradient(180deg, var(--site-cta-from-hover), var(--site-cta-to-hover));
+  color: #FFFFFF;
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 1px rgba(22, 24, 29, 0.12),
+    0 16px 30px -14px rgba(22, 24, 29, 0.60),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* Метка под стрелкой — круг маркера. Отрицательный отступ съедает часть поля кнопки: от круга
+   до правого края столько же, сколько сверху и снизу, и он не висит посреди поля. */
+.site-btn--accent .site-btn__arrow {
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  margin-right: -11px;
+  border-radius: 50%;
+  background: var(--site-marker);
+  color: var(--site-ink);
+}
+
+.site-btn--secondary {
+  background: var(--site-paper);
+  border-color: var(--site-line-strong);
+  color: var(--site-ink);
+}
+
+.site-btn--secondary:hover,
+.site-btn--secondary.is-hover {
+  background: var(--site-paper-2);
+  border-color: var(--site-line-hover);
+  color: var(--site-ink);
+}
+
+.site-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--site-accent);
+  padding-inline: 12px;
+}
+
+.site-btn--ghost:hover,
+.site-btn--ghost.is-hover {
+  background: var(--site-accent-soft);
+  color: var(--site-accent-hover);
+}
+
+.site-btn:focus-visible,
+.site-btn.is-focus {
+  outline: none;
+  box-shadow: var(--site-focus);
+}
+
+.site-btn:active:not(:disabled):not([aria-busy="true"]),
+.site-btn.is-active {
+  transform: scale(0.96);
+}
+
+/* Кнопка во всю ширину: 0.96 на 400 px читается как рывок, поэтому нажатие показывается
+   вдавливанием — кнопка садится на бумагу и теряет дальнюю тень. */
+.site-btn--block:active:not(:disabled):not([aria-busy="true"]),
+.site-btn--block.is-active {
+  transform: translateY(1px);
+  box-shadow:
+    0 1px 1px rgba(22, 27, 38, 0.10),
+    0 4px 10px -8px rgba(22, 27, 38, 0.50),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+.site-btn:disabled,
+.site-btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.site-btn[aria-busy="true"] {
+  cursor: progress;
+  pointer-events: none;
+}
+
+.site-btn .site-spinner {
+  display: none;
+}
+
+.site-btn[aria-busy="true"] .site-spinner {
+  display: inline-block;
+}
+
+.site-btn--lg {
+  --h: 52px;
+  padding: 11px 24px;
+  font-size: var(--site-text-md);
+}
+
+.site-btn--block {
+  width: 100%;
+}
+
+.site-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: site-spin 0.9s linear infinite;
+}
+
+.site-spinner--lg {
+  width: 28px;
+  height: 28px;
+  border-width: 2.5px;
+  color: var(--site-accent);
+}
+
+@keyframes site-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ---------- Поля ---------- */
+
+.site-form {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.site-label {
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink);
+  line-height: 1.4;
+}
+
+.site-label__opt {
+  font-weight: 400;
+  color: var(--site-ink-3);
+}
+
+.site-hint {
+  font-size: var(--site-text-xs);
+  line-height: 1.45;
+  color: var(--site-ink-3);
+}
+
+.site-error {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: var(--site-text-xs);
+  line-height: 1.45;
+  color: var(--site-danger);
+}
+
+.site-error svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+/* Поле — заливка, а не рамка на белом: холодная подложка показывает границы ввода до
+   наведения, а белым поле становится в фокусе. Вдавленность даёт внутренняя тень. */
+.site-input,
+.site-select,
+.site-textarea {
+  width: 100%;
+  min-height: var(--site-control-h);
+  padding: 12px 14px;
+  border: 1px solid var(--site-field-line);
+  border-radius: var(--site-r-2);
+  background-color: var(--site-field);
+  color: var(--site-ink);
+  font: inherit;
+  font-size: var(--site-text-md);
+  line-height: 1.4;
+  box-shadow: inset 0 1px 2px rgba(22, 27, 38, 0.04);
+  transition-property: border-color, box-shadow, background-color;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+::placeholder {
+  color: var(--site-placeholder);
+  opacity: 1;
+}
+
+.site-input:hover,
+.site-select:hover,
+.site-textarea:hover {
+  border-color: var(--site-field-line-hover);
+  background-color: var(--site-paper);
+}
+
+/* :focus-within обязателен рядом с :focus: у input[type="date"] Chrome уводит фокус внутрь
+   теневого дерева, и сам input под :focus не попадает — поле остаётся без кольца фокуса. */
+.site-input:focus,
+.site-input:focus-within,
+.site-select:focus,
+.site-textarea:focus,
+.site-input.is-focus {
+  outline: none;
+  border-color: var(--site-cta-from);
+  background-color: var(--site-paper);
+  box-shadow: 0 0 0 3px var(--site-focus-halo);
+}
+
+/* Обязательное поле помечено точкой у подписи. Слово «необязательно» у остальных не пишем:
+   отсутствие метки и есть ответ, а лишняя подпись удлиняет форму вдвое. */
+.site-label--req::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  vertical-align: 0.32em;
+  border-radius: 50%;
+  background: var(--site-cta-from);
+}
+
+.site-input[aria-invalid="true"],
+.site-select[aria-invalid="true"],
+.site-textarea[aria-invalid="true"] {
+  border-color: var(--site-danger);
+}
+
+.site-input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px var(--site-danger-bg);
+}
+
+.site-input:disabled,
+.site-select:disabled,
+.site-textarea:disabled {
+  background: var(--site-paper-2);
+  color: var(--site-ink-3);
+  cursor: not-allowed;
+}
+
+.site-textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.site-select {
+  appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23494D56' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+.site-input-group {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+@media (min-width: 640px) {
+  .site-input-group--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Флажок */
+
+.site-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-height: 44px;
+  padding-block: 4px;
+  cursor: pointer;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+}
+
+.site-check input {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  border: 1.5px solid var(--site-field-line-hover);
+  border-radius: 6px;
+  background: var(--site-field);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+  transition-property: border-color, background-color;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-check input::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: var(--site-paper);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transition: transform var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-check input:checked {
+  background: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  border-color: var(--site-cta-to);
+}
+
+.site-check input:checked::before {
+  transform: scale(1);
+}
+
+.site-check input:hover {
+  border-color: var(--site-cta-from);
+}
+
+.site-check.is-invalid input {
+  border-color: var(--site-danger);
+}
+
+.site-check.is-invalid {
+  color: var(--site-ink);
+}
+
+/* Раскрывающийся блок формы */
+
+.site-details > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--site-cta-to);
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+}
+
+.site-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.site-details > summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-details[open] > summary::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.site-details__body {
+  display: grid;
+  gap: var(--site-s-4);
+  padding-top: var(--site-s-3);
+}
+
+/* Сводка ошибок формы */
+
+.site-form-summary {
+  padding: 12px 16px;
+  border-radius: var(--site-r-3);
+  background: var(--site-danger-bg);
+  border: 1px solid color-mix(in srgb, var(--site-danger) 30%, transparent);
+  color: var(--site-ink);
+  font-size: var(--site-text-sm);
+}
+
+/* ---------- Панель ----------
+   Общая поверхность для формы проверки, формы заявки и экрана ожидания: бумага, мягкая тень,
+   уголки приводки. Отличается от фона материалом, а не цветом. */
+
+/* overflow:hidden тут был бы естественным (скруглить подложку подвала), но он обрезает
+   ::after с уголками приводки — поэтому скругляет себя сам подвал. */
+.site-panel {
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  box-shadow: var(--site-shadow-panel);
+  display: grid;
+  align-content: start;
+}
+
+.site-panel__head {
+  display: grid;
+  gap: 6px;
+  padding: var(--site-s-5) var(--site-s-5) 0;
+}
+
+.site-panel__title {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  font-size: var(--site-text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.site-panel__body {
+  display: grid;
+  gap: var(--site-s-4);
+  padding: var(--site-s-5);
+}
+
+.site-panel__foot {
+  display: grid;
+  gap: 10px;
+  padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
+  border-top: 1px solid var(--site-line);
+  background: var(--site-paper-2);
+  border-radius: 0 0 calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px);
+}
+
+@media (min-width: 640px) {
+  .site-panel__head {
+    padding: var(--site-s-6) var(--site-s-6) 0;
+  }
+
+  .site-panel__body {
+    padding: var(--site-s-5) var(--site-s-6) var(--site-s-6);
+  }
+
+  .site-panel__foot {
+    padding: var(--site-s-5) var(--site-s-6);
+  }
+}
+
+/* ---------- Форма проверки ----------
+   Главный объект первого экрана, поэтому он единственный на сайте оформлен как вещь, а не
+   как поверхность: паспарту вокруг панели, шкала заполнения по верхнему срезу и отрывной
+   корешок со списком источников внизу.
+
+   Радиусы концентричны: 24 = 17 + 7 (поле паспарту). Разъедутся — паспарту сразу читается
+   как вторая рамка, а не как оправа. */
+
+.site-formcase {
+  position: relative;
+  padding: 7px;
+  border-radius: 24px;
+  border: 1px solid rgba(22, 27, 38, 0.09);
+  /* Паспарту темнее бумаги: иначе белая панель в белой рамке не читается как вставленная, и
+     вся конструкция выглядит просто широкой границей. С версии 10 без синевы — нейтральный серый. */
+  background: linear-gradient(180deg, #E4E6EA 0%, #EFF0F1 100%);
+  box-shadow: var(--site-shadow-case);
+}
+
+.site-formcase > .site-panel {
+  border-radius: 17px;
+  box-shadow: 0 1px 2px rgba(22, 27, 38, 0.06);
+  overflow: hidden; /* шкала и корешок обрезаются по скруглению панели */
+}
+
+.site-panel--form {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FDFDFC 100%);
+}
+
+/* Шапка формы отбита как графа бланка — своей подложкой и линией: заголовок относится ко
+   всей форме, а не к первому полю */
+.site-panel--form .site-panel__head {
+  padding-bottom: var(--site-s-4);
+  border-bottom: 1px solid var(--site-field-line);
+  background: linear-gradient(180deg, #F5F6F3, #FFFFFF);
+}
+
+/* Шкала заполнения по верхнему срезу панели: два обязательных поля — две трети хода,
+   согласие — остаток. Ширину пишет скрипт в --p. */
+.site-panel__meter {
+  height: 3px;
+  background: var(--site-line);
+}
+
+.site-panel__meter i {
+  display: block;
+  height: 100%;
+  width: var(--p, 0%);
+  background: linear-gradient(90deg, var(--site-cta-from), var(--site-cta-to));
+  transition: width var(--site-dur-slow) var(--site-ease-out);
+}
+
+.site-panel__headrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--site-s-4);
+}
+
+.site-panel__count {
+  flex: none;
+  font-family: var(--site-font-mono);
+  font-size: var(--site-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--site-ink-3);
+}
+
+.site-panel__count b {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+/* Поля формы проверки крупнее обычных: это первое, к чему тянется рука на странице */
+.site-panel--form .site-input {
+  min-height: 52px;
+  border-radius: 12px;
+}
+
+/* Заполненное поле помечено галочкой справа: видно, что осталось, без чтения подписей.
+   Галочка нарисована фоном, чтобы не заводить обёртку вокруг каждого поля. */
+.site-input.is-filled {
+  padding-right: 42px;
+  border-color: color-mix(in srgb, var(--site-cta-from) 38%, var(--site-field-line));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%2316181D' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+
+/* input[type=date] показывает свой значок календаря справа — галочке там не место */
+.site-input[type="date"].is-filled {
+  padding-right: 14px;
+  background-image: none;
+}
+
+/* Отрывной корешок: линия отрыва перфорирована, ниже — что именно уйдёт в проверку */
+.site-panel--form .site-panel__foot {
+  border-top: 1px dashed var(--site-field-line-hover);
+  background: #F7F7F5;
+  border-radius: 0;
+}
+
+/* Источники в корешке стоят колонками, а не «резиновой» строкой: пять разных по длине
+   подписей во flex-wrap выстраивались рвано и читались как обрывки */
+@media (min-width: 380px) {
+  .site-panel--form .site-panel__foot .site-scan {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px var(--site-s-4);
+  }
+
+  .site-panel--form .site-panel__foot .site-scan li:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Прогресс и стадии ---------- */
+
+.site-progress {
+  height: 6px;
+  background: var(--site-line);
+  border-radius: var(--site-r-pill);
+  overflow: hidden;
+}
+
+.site-progress__bar {
+  height: 100%;
+  background: var(--site-accent);
+  border-radius: inherit;
+  transition: width 600ms var(--site-ease-out);
+}
+
+/* ---------- Бейджи ---------- */
+
+.site-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: var(--site-r-1);
+  font-size: var(--site-text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.site-badge--low { color: var(--site-ok); background: var(--site-ok-bg); }
+.site-badge--medium { color: var(--site-warn); background: var(--site-warn-bg); }
+.site-badge--high { color: var(--site-danger); background: var(--site-danger-bg); }
+.site-badge--critical { color: var(--site-on-critical); background: var(--site-critical); }
+
+.site-badge--neutral {
+  color: var(--site-ink-2);
+  background: var(--site-paper);
+  border: 1px solid var(--site-line-strong);
+}
+
+/* ---------- Плашка (фирменный приём) ---------- */
+
+.site-mark {
+  display: inline-block;
+  width: var(--w, 10ch);
+  max-width: 100%;
+  height: 0.85em;
+  vertical-align: -0.08em;
+  background: var(--site-mark);
+  border-radius: 2px;
+}
+
+/* Строка «будет проверено»: плашки перебираются, как будто источники опрашиваются по очереди */
+.site-scan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-scan li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-scan .site-mark {
+  height: 8px;
+  opacity: 0.25;
+  animation: site-scan 2.6s var(--site-ease-out) infinite;
+}
+
+.site-scan li:nth-child(2) .site-mark { animation-delay: 0.22s; }
+.site-scan li:nth-child(3) .site-mark { animation-delay: 0.44s; }
+.site-scan li:nth-child(4) .site-mark { animation-delay: 0.66s; }
+.site-scan li:nth-child(5) .site-mark { animation-delay: 0.88s; }
+
+@keyframes site-scan {
+  0%, 70%, 100% { opacity: 0.22; }
+  20%, 40% { opacity: 0.85; }
+}
+
+/* ---------- Шкала риска ----------
+   Уровень — величина на шкале из трёх делений (ступени отчёта, risk-scale.ts), а не подпись. Форма читается раньше слова:
+   видно и сколько делений закрашено, и каким цветом. */
+
+.site-meter {
+  display: flex;
+  gap: 4px;
+  --m-color: var(--site-line-strong);
+}
+
+.site-meter__seg {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--site-line);
+  overflow: hidden;
+}
+
+/* Закраска деления — отдельный слой: на результате деления наливаются по очереди (scaleX), а цвет
+   фона так не анимировать — это перерисовка, а не transform */
+.site-meter__seg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--m-color);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.site-meter__seg.is-on::after { transform: scaleX(1); }
+
+.site-meter--low { --m-color: var(--site-ok); }
+.site-meter--medium { --m-color: var(--site-warn); }
+.site-meter--high { --m-color: var(--site-danger); }
+.site-meter--none { --m-color: var(--site-line-strong); }
+
+/* ---------- Вердикт ----------
+   Строка вердикта в примере результата на главной и на листе токенов. Уровень — значение, цветом
+   шкалы; --v-color берут и слово уровня на результате мастера, и подпись деления под шкалой. */
+
+.site-verdict {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-verdict__scale {
+  display: grid;
+  gap: 10px;
+  max-width: 260px;
+}
+
+.site-verdict__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--site-s-3) var(--site-s-5);
+}
+
+.site-verdict__level {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  font-size: var(--site-text-2xl);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--v-color, var(--site-ink));
+}
+
+.site-verdict--low { --v-color: var(--site-ok); }
+.site-verdict--medium { --v-color: var(--site-warn); }
+.site-verdict--high { --v-color: var(--site-danger); }
+.site-verdict--none { --v-color: var(--site-ink-2); }
+
+.site-verdict__count {
+  font-size: var(--site-text-md);
+  color: var(--site-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.site-verdict__count b {
+  color: var(--site-ink);
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+}
+
+.site-verdict__title {
+  font-weight: 600;
+  font-size: var(--site-text-xl);
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.site-disclaimer {
+  font-size: var(--site-text-xs);
+  line-height: 1.5;
+  color: var(--site-ink-3);
+  border-top: 1px solid var(--site-line);
+  padding-top: var(--site-s-4);
+}
+
+/* ---------- Мастер проверки ----------
+   Версия 15. Мастер лежит в том же материале, что главная, по правилу «стол и лист»: на столе —
+   шапка проверки (кто проверяется и на каком шаге), под ней белый лист, на котором меняется только
+   содержимое. До версии 15 каждый экран был отдельной панелью в узкой колонке 720 px, и на
+   широком окне мастер выглядел формой посреди пустого стола, а не документом, который обещает
+   главная.
+
+   Контейнер называется site-wizard, а не site-check: имя site-check занято флажком, и правило
+   «.site-check input» для квадрата флажка иначе накрывает все поля мастера. */
+
+.site-wizard {
+  display: block;
+}
+
+/* Шапка проверки — заголовок документа, а не ещё один объект: своей панели у неё нет */
+.site-wizard__band {
+  display: grid;
+  gap: var(--site-s-3);
+  padding-block: var(--site-s-4) var(--site-s-6);
+}
+
+@media (min-width: 1024px) {
+  .site-wizard__band {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 460px);
+    align-items: end;
+    gap: var(--site-s-6);
+    padding-block: var(--site-s-5) var(--site-s-6);
+  }
+}
+
+.site-wizard__band[hidden] + .site-wizard__sheet {
+  margin-top: var(--site-s-5);
+}
+
+.site-wizard__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--site-s-4);
+  min-height: 44px;
+}
+
+.site-wizard__name {
+  font-size: var(--site-text-md);
+  color: var(--site-ink-2);
+}
+
+.site-wizard__name strong {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+/* «Изменить данные» — навигационное действие, а не ссылка внутри текста: 44 px по высоте */
+.site-wizard__edit {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+.site-wizard__edit:hover {
+  color: var(--site-ink);
+}
+
+/* Лист мастера — материал листов главной, но без доезда по прокрутке: на странице мастера он лежит
+   с первого кадра. Минимальная высота держит подвал внизу окна на коротких экранах — иначе стол
+   открывался бы посреди экрана полосой, той самой лишней сменой фона. */
+.site-wizard__sheet {
+  position: relative;
+  min-height: calc(100vh - 180px);
+  padding-block: var(--site-s-6) var(--site-s-9);
+  border-radius: var(--site-sheet-r) var(--site-sheet-r) 0 0;
+  background-color: var(--site-paper);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
+  box-shadow: var(--site-shadow-sheet);
+  --site-surface: var(--site-paper);
+}
+
+@media (min-width: 768px) {
+  .site-wizard__sheet {
+    padding-block: var(--site-s-7) var(--site-s-9);
+  }
+}
+
+/* ---------- Шаги мастера ----------
+   Рельс из четырёх отрезков: пройденный — чернила, текущий — выделитель, впереди — пусто. Кружки
+   с номерами версий 3–14 убраны: порядок и так читается слева направо, а ряд кружков с цифрами —
+   примета шаблонного мастера. Когда шаг сменяется, новый отрезок наливается слева направо (280 мс):
+   видно, что проверка продвинулась. Состояние продублировано начертанием подписи. */
+
+.site-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-stepper li {
+  position: relative;
+  min-width: 0;
+  padding-top: 14px;
+  font-size: var(--site-text-xs);
+  line-height: 1.3;
+  color: var(--site-ink-3);
+}
+
+.site-stepper li::before,
+.site-stepper li::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.site-stepper li::before {
+  background: color-mix(in srgb, var(--site-ink) 10%, transparent);
+}
+
+.site-stepper li::after {
+  background: var(--site-ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition-property: transform, background-color;
+  transition-duration: var(--site-dur-slow), var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-stepper li.is-done {
+  color: var(--site-ink-2);
+}
+
+.site-stepper li.is-done::after {
+  transform: scaleX(1);
+}
+
+.site-stepper li.is-current {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+.site-stepper li.is-current::after {
+  transform: scaleX(1);
+  background: var(--site-marker-strong);
+}
+
+.site-stepper__label {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Экраны мастера ---------- */
+
+/* Сетка экрана: в макете её давал хром прототипа, переключая экраны; в коде экран на
+   странице один. */
+.site-screen {
+  display: grid;
+  gap: var(--site-s-6);
+  align-content: start;
+}
+
+.site-screen__head {
+  display: grid;
+  gap: var(--site-s-4);
+  align-content: start;
+  max-width: 40em;
+}
+
+.site-screen__head > .site-actions {
+  margin-top: var(--site-s-2);
+}
+
+/* На узком экране кнопки встают друг под другом, и кнопка без заливки выравнивается по тексту */
+@media (max-width: 639px) {
+  .site-wizard .site-actions > .site-btn--ghost {
+    margin-inline-start: -12px;
+  }
+}
+
+.site-screen__title {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  font-size: var(--site-text-2xl);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.site-screen__lead {
+  font-size: var(--site-text-lg);
+  line-height: 1.45;
+  color: var(--site-ink-2);
+  max-width: 36em;
+  text-wrap: pretty;
+}
+
+.site-screen__subtitle {
+  font-size: var(--site-text-md);
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.site-screen__main,
+.site-screen__aside {
+  display: grid;
+  gap: var(--site-s-5);
+  align-content: start;
+  min-width: 0;
+}
+
+.site-screen__foot {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+/* Две колонки: слева то, что читают, справа то, что делают. 7/5 — как у первого экрана главной */
+@media (min-width: 1024px) {
+  .site-screen--split {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    column-gap: var(--site-s-8);
+    align-items: start;
+  }
+
+  /* Ожидание: смотрят на журнал проверки, а не читают текст — ему и шире колонка */
+  .site-screen--aside-wide {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+/* Смена экрана: 200 мс и 6 px — показать, что экран сменился, и не больше. fill-mode backwards:
+   после входа анимация отпускает transform, иначе подъём карточки при наведении не работал бы */
+.site-enter {
+  animation: site-enter var(--site-dur-base) var(--site-ease-out) backwards;
+}
+
+.site-cards > .site-card {
+  animation: site-enter var(--site-dur-base) var(--site-ease-out) backwards;
+}
+
+.site-cards > .site-card:nth-child(2) { animation-delay: 60ms; }
+.site-cards > .site-card:nth-child(3) { animation-delay: 120ms; }
+
+@keyframes site-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---------- Уточнение: карточки совпадений ----------
+   Карточка — лист на листе: кольцо в 1 px и короткая тень вместо рамки и уголков приводки (уголки
+   у двух карточек рядом давали восемь меток и спорили с текстом). «Меня здесь нет» — третий
+   вариант того же ряда, пустое место с пунктиром, а не третья кнопка во всю ширину.
+
+   Выбор отмечает выделитель: он проходит по карточке слева направо за 240 мс, как отмечают
+   строку в распечатке, остальные варианты гаснут. Нажатие сразу запускает проверку, поэтому
+   отметка показывает, по какому выбору она пошла; статично то же говорят рамка чернилами и
+   подпись кнопки со спиннером. */
+
+.site-cards--persona {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+@media (min-width: 640px) {
+  .site-cards--persona {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--site-s-5);
+  }
+
+  .site-cards--persona > .site-card--none {
+    grid-column: 1 / -1;
+  }
+
+  .site-cards--persona > .site-card--none .site-card__foot {
+    justify-items: start;
+  }
+
+  .site-cards--persona > .site-card--none .site-btn--block {
+    width: auto;
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-cards--persona {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .site-cards--persona > .site-card--none {
+    grid-column: auto;
+  }
+
+  .site-cards--persona > .site-card--none .site-card__foot {
+    justify-items: stretch;
+  }
+
+  .site-cards--persona > .site-card--none .site-btn--block {
+    width: 100%;
+  }
+}
+
+.site-card {
+  position: relative;
+  isolation: isolate;
+  /* flex, а не grid: подвал с кнопкой прижимается к низу через margin-top:auto, и в ряду
+     карточек разной высоты кнопки встают на одну линию */
+  display: flex;
+  flex-direction: column;
+  gap: var(--site-s-3);
+  padding: var(--site-s-5);
+  border-radius: var(--site-r-4);
+  background: var(--site-paper);
+  box-shadow:
+    0 0 0 1px var(--site-line),
+    0 1px 2px rgba(22, 27, 38, 0.05),
+    0 12px 28px -20px rgba(22, 27, 38, 0.28);
+  transition-property: transform, box-shadow, opacity;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--site-marker-soft);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 240ms var(--site-ease-out);
+}
+
+/* Подъём при наведении — только там, где есть указатель: на тач-экране касание оставляет
+   «залипшее» наведение */
+@media (hover: hover) and (pointer: fine) {
+  .site-cards:not(.is-deciding) > .site-card:not(.site-card--none):hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 0 0 1px var(--site-line-hover),
+      0 1px 2px rgba(22, 27, 38, 0.06),
+      0 18px 36px -22px rgba(22, 27, 38, 0.34);
+  }
+}
+
+.site-card.is-picked::before {
+  transform: scaleX(1);
+}
+
+.site-card.is-picked {
+  box-shadow:
+    0 0 0 1.5px var(--site-ink),
+    0 1px 2px rgba(22, 27, 38, 0.06),
+    0 18px 36px -22px rgba(22, 27, 38, 0.34);
+}
+
+.site-cards.is-deciding > .site-card:not(.is-picked) {
+  opacity: 0.45;
+}
+
+/* Погасшую карточку гасит её собственная прозрачность; кнопке внутри второй слой не нужен */
+.site-cards.is-deciding .site-btn:disabled {
+  opacity: 1;
+}
+
+.site-card--none {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--site-line-strong);
+}
+
+.site-card--none.is-picked {
+  border: 1.5px solid var(--site-ink);
+  box-shadow: none;
+}
+
+/* Ноль карточек: то же пустое место, что «меня здесь нет», а внутри — ответы источников */
+.site-card--empty {
+  gap: var(--site-s-4);
+}
+
+.site-card__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+.site-card__source svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--site-ink-3);
+}
+
+.site-card__title {
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.site-card__text {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+  margin: 0;
+}
+
+.site-card__match {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ok);
+}
+
+.site-card__match svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.site-card__link {
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 44px;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+}
+
+.site-card__link svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.site-card__foot {
+  display: grid;
+  margin-top: auto;
+  padding-top: var(--site-s-2);
+}
+
+/* ---------- Ответы источников ----------
+   Одна запись на все места, где сайт говорит, какой источник ответил: уточнение, «что проверено»,
+   «данных недостаточно». Состояние видно знаком и словами, не только цветом. */
+
+.site-ledger {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-ledger li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  row-gap: 2px;
+  padding-block: 12px;
+  border-top: 1px solid var(--site-line);
+  font-size: var(--site-text-sm);
+  line-height: 1.45;
+}
+
+.site-ledger li:last-child {
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-ledger li::before {
+  content: "";
+  grid-row: 1 / span 2;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--site-paper) center / 12px 12px no-repeat;
+  box-shadow: inset 0 0 0 1.5px var(--site-line-strong);
+}
+
+.site-ledger__name {
+  grid-column: 2;
+  color: var(--site-ink);
+  font-weight: 500;
+}
+
+.site-ledger__value {
+  grid-column: 2;
+  color: var(--site-ink-2);
+}
+
+.site-ledger li.is-ok::before {
+  background-color: var(--site-ok-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23067647' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6.5l2.6 2.5L10 3.5'/%3E%3C/svg%3E");
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--site-ok) 28%, transparent);
+}
+
+.site-ledger li.is-warn::before {
+  background-color: var(--site-warn-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23B54708' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M6 2.5v4.2M6 9.3h.01'/%3E%3C/svg%3E");
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--site-warn) 32%, transparent);
+}
+
+.site-ledger li.is-off .site-ledger__name {
+  color: var(--site-ink-2);
+}
+
+/* В строку — под карточками совпадений, где ответы источников вторичны */
+.site-ledger--inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--site-s-5);
+}
+
+.site-ledger--inline li,
+.site-ledger--inline li:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 0;
+  border: 0;
+  font-size: var(--site-text-xs);
+}
+
+.site-ledger--inline li::before {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background-size: 10px 10px;
+}
+
+.site-ledger--inline .site-ledger__name {
+  color: var(--site-ink-2);
+}
+
+.site-ledger--inline .site-ledger__value {
+  color: var(--site-ink-3);
+}
+
+.site-ledger--inline .site-ledger__value::before {
+  content: "— ";
+}
+
+/* ---------- Ожидание: журнал проверки ----------
+   Панель — единственный объект экрана ожидания, поэтому с уголками приводки, как продуктовая
+   панель главной. Внутри только то, что отдаёт статус: прошедшее время, прогресс и стадия. По
+   текущей строке идёт выделитель — работа видна и в те семь секунд, пока опрос статуса молчит;
+   то же продублировано словом «идёт», движение — не единственный признак. */
+
+.site-run {
+  background: var(--site-paper);
+  border-radius: var(--site-r-4);
+  box-shadow: 0 0 0 1px var(--site-line), var(--site-shadow-panel);
+}
+
+.site-run__top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--site-s-4);
+  padding: var(--site-s-4) var(--site-s-5);
+  border-bottom: 1px solid var(--site-line);
+  border-radius: var(--site-r-4) var(--site-r-4) 0 0;
+  background: var(--site-paper-2);
+}
+
+.site-run__time {
+  display: grid;
+  line-height: 1.15;
+}
+
+.site-run__time [role="timer"],
+.site-run__clock {
+  min-width: 3.2ch;
+  font-size: var(--site-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.site-run__unit {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-run__meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--site-line);
+  overflow: hidden;
+}
+
+.site-run__meter i {
+  display: block;
+  height: 100%;
+  background: var(--site-ink);
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+  transition: transform 300ms var(--site-ease-out);
+}
+
+.site-run__pct {
+  min-width: 4ch;
+  text-align: right;
+  font-size: var(--site-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--site-ink-2);
+}
+
+.site-run__stages {
+  margin: 0;
+  padding: var(--site-s-2) 0;
+  list-style: none;
+}
+
+.site-run__stages li {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 14px;
+  row-gap: 2px;
+  padding: 14px var(--site-s-5);
+}
+
+.site-run__mark {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--site-line-strong);
+  color: #FFFFFF;
+  transition-property: background-color, box-shadow;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+/* Галочка стадии появляется из четверти размера — стадия закрылась, а не значок моргнул */
+.site-run__mark svg {
+  grid-area: 1 / 1;
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  transform: scale(0.25);
+  transition-property: opacity, transform;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-run__stage {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink-3);
+}
+
+.site-run__state {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+  white-space: nowrap;
+}
+
+.site-run__what {
+  grid-column: 2 / -1;
+  grid-row: 2;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-run__stages li.is-done .site-run__mark {
+  background: var(--site-ink);
+  box-shadow: none;
+}
+
+.site-run__stages li.is-done .site-run__mark svg {
+  opacity: 1;
+  transform: none;
+}
+
+.site-run__stages li.is-done .site-run__stage {
+  color: var(--site-ink-2);
+}
+
+.site-run__stages li.is-current .site-run__stage,
+.site-run__stages li.is-current .site-run__state {
+  color: var(--site-ink);
+}
+
+.site-run__stages li.is-current .site-run__what {
+  color: var(--site-ink-2);
+}
+
+.site-run__stages li.is-current .site-run__mark {
+  box-shadow: inset 0 0 0 1.5px var(--site-ink);
+}
+
+.site-run__stages li.is-current .site-run__mark::after {
+  content: "";
+  grid-area: 1 / 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--site-ink);
+}
+
+/* Без движения (reduced motion) текущая строка просто подсвечена выделителем */
+.site-run__stages li.is-current::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--site-marker-soft);
+}
+
+.site-run__ghost {
+  display: grid;
+  gap: var(--site-s-3);
+  padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
+  border-top: 1px dashed var(--site-field-line-hover);
+}
+
+@media (max-width: 479px) {
+  .site-run__top,
+  .site-run__stages li,
+  .site-run__ghost {
+    padding-inline: var(--site-s-4);
+  }
+}
+
+/* ---------- Шкала риска с подписями ----------
+   Та же шкала из трёх делений (site-meter), крупнее и с подписью под каждым делением: на
+   результате видно не только сколько закрашено, но и весь диапазон — «средний» из каких. */
+
+.site-scale {
+  display: grid;
+  gap: 10px;
+}
+
+.site-meter--lg .site-meter__seg {
+  height: 10px;
+  border-radius: 3px;
+}
+
+.site-scale__labels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-scale__labels li {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Последней подписи есть куда выйти — справа поле панели, а не соседняя подпись */
+.site-scale__labels li:last-child {
+  overflow: visible;
+}
+
+.site-scale__labels .is-level {
+  color: var(--v-color, var(--site-ink));
+  font-weight: 600;
+}
+
+@media (max-width: 479px) {
+  .site-scale__labels {
+    font-size: 0.75rem;
+  }
+}
+
+/* ---------- Результат ----------
+   Порядок чтения — уровень, действие, подробности. На широком окне лист действия справа и держится
+   под шапкой, пока читаются темы; на телефоне стоит сразу под вердиктом (порядок в разметке). */
+
+.site-result {
+  row-gap: var(--site-s-6);
+}
+
+@media (min-width: 1024px) {
+  .site-result {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    grid-template-areas:
+      "verdict aside"
+      "details aside";
+    column-gap: var(--site-s-8);
+    align-items: start;
+  }
+
+  .site-result__verdict { grid-area: verdict; }
+  .site-result__details { grid-area: details; }
+
+  .site-result__aside {
+    grid-area: aside;
+    align-self: start;
+    position: sticky;
+    top: 96px;
+  }
+}
+
+.site-result__verdict {
+  display: grid;
+  gap: var(--site-s-4);
+  align-content: start;
+}
+
+.site-result__date {
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.site-result__level {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  font-size: clamp(2rem, 1.45rem + 2vw, 2.875rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+/* Слово уровня — цветом шкалы: это значение, а не украшение, и оно совпадает с делениями под ним */
+.site-result__word {
+  color: var(--v-color, var(--site-ink));
+}
+
+.site-result__summary {
+  font-size: var(--site-text-lg);
+  line-height: 1.45;
+  color: var(--site-ink-2);
+  max-width: 34em;
+  text-wrap: pretty;
+}
+
+.site-result__summary b {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+.site-result__details {
+  display: grid;
+  gap: var(--site-s-5);
+  align-content: start;
+  min-width: 0;
+}
+
+/* ---------- Материалы по темам ----------
+   Материалы сгруппированы по темам, и число материалов видно числом закрашенных строк. Название
+   темы подчёркнуто выделителем тем же приёмом, что в блоке «Что обычно находят» на главной
+   (site-topics__name): до проверки и после человек видит одни и те же слова одним и тем же знаком.
+   Обёртка site-finding__label нужна строчному выделителю: во flex-строке название стало бы блоком,
+   и у темы в две строки выделитель лёг бы плитой. */
+
+.site-findings {
+  display: grid;
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-finding {
+  display: grid;
+  gap: var(--site-s-3);
+  padding-block: var(--site-s-4) var(--site-s-5);
+  border-top: 1px solid var(--site-line);
+}
+
+.site-finding__theme {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--site-s-4);
+  margin: 0;
+  font-size: var(--site-text-md);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.site-finding__count {
+  flex: none;
+  font-size: var(--site-text-sm);
+  font-weight: 400;
+  color: var(--site-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.site-finding__list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-finding__list li {
+  display: flex;
+  align-items: center;
+  min-height: 16px;
+}
+
+.site-finding__list .site-mark {
+  height: 12px;
+  transform-origin: left center;
+}
+
+/* Компактно — в примере результата на главной */
+.site-findings--compact .site-finding {
+  gap: 8px;
+  padding-block: 10px 12px;
+}
+
+.site-findings--compact .site-finding__theme {
+  font-size: var(--site-text-sm);
+}
+
+.site-findings--compact .site-finding__count {
+  font-size: var(--site-text-xs);
+}
+
+.site-findings--compact .site-finding__list {
+  gap: 7px;
+}
+
+.site-findings--compact .site-finding__list li {
+  min-height: 12px;
+}
+
+.site-findings--compact .site-finding__list .site-mark {
+  height: 9px;
+}
+
+/* Заметка на полях: частичный сбор и другие оговорки при готовом результате. Не цветная плашка —
+   результат есть, и тревога ему не нужна; смысл несут значок и первое предложение. */
+.site-note {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+}
+
+.site-note svg {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  color: var(--site-warn);
+}
+
+.site-note b {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+/* ---------- Лист действия ----------
+   Объект, с которым человек что-то делает: заявка, повтор, ссылка на результат. Уголки приводки —
+   как у формы в первом экране; внизу отрывной корешок с пунктиром — тот же приём, что «будет
+   проверено» у формы (заказчику он понравился, версия 4). */
+
+.site-slip {
+  background: var(--site-paper);
+  border-radius: var(--site-r-4);
+  box-shadow: 0 0 0 1px var(--site-line), var(--site-shadow-panel);
+}
+
+.site-slip__body {
+  display: grid;
+  gap: var(--site-s-4);
+  padding: var(--site-s-5);
+}
+
+@media (min-width: 640px) {
+  .site-slip__body {
+    padding: var(--site-s-6);
+  }
+}
+
+.site-slip__title {
+  font-size: var(--site-text-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.site-slip__subtitle {
+  font-size: var(--site-text-md);
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.site-slip__body > p:not([class]) {
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+.site-slip__body > .site-btn,
+.site-slip__actions {
+  margin-top: var(--site-s-2);
+}
+
+.site-slip__actions {
+  display: grid;
+  gap: var(--site-s-3);
+}
+
+.site-slip__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--site-s-4);
+  padding: var(--site-s-2) var(--site-s-4) var(--site-s-2) var(--site-s-5);
+  border-top: 1px dashed var(--site-field-line-hover);
+  border-radius: 0 0 var(--site-r-4) var(--site-r-4);
+  background: var(--site-paper-2);
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+@media (min-width: 640px) {
+  .site-slip__foot {
+    padding-left: var(--site-s-6);
+  }
+}
+
+.site-slip__foot .site-copy__status {
+  flex-basis: 100%;
+  padding-bottom: var(--site-s-2);
+}
+
+/* Кнопка без заливки в корешке: текст кнопки встаёт по одной линии с текстом над ней, а не
+   на ширину её внутреннего поля */
+.site-slip__foot .site-btn--ghost {
+  margin-inline-start: -12px;
+}
+
+/* Корешок со списком — «что будет дальше» на заявке */
+.site-slip__foot:has(.site-timeline) {
+  display: grid;
+  gap: var(--site-s-4);
+  padding: var(--site-s-5);
+}
+
+@media (min-width: 640px) {
+  .site-slip__foot:has(.site-timeline) {
+    padding: var(--site-s-5) var(--site-s-6) var(--site-s-6);
+  }
+}
+
+/* ---------- Копирование ссылки ----------
+   Частое действие — отклик 150 мс: значок копирования сменяется галочкой. Обе иконки в разметке,
+   поэтому смена прерывается без рывка. Подписи лежат в одной ячейке сетки, и ширина кнопки не
+   прыгает, когда «Скопировать ссылку» становится «Ссылка скопирована». */
+
+.site-copy__icons {
+  display: grid;
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.site-copy__icons svg {
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  transition-property: opacity, transform;
+  transition-duration: 150ms;
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-copy__done {
+  opacity: 0;
+  transform: scale(0.25);
+  color: var(--site-ok);
+}
+
+.site-copy.is-copied .site-copy__idle {
+  opacity: 0;
+  transform: scale(0.25);
+}
+
+.site-copy.is-copied .site-copy__done {
+  opacity: 1;
+  transform: none;
+}
+
+.site-copy__label {
+  display: grid;
+}
+
+.site-copy__text {
+  grid-area: 1 / 1;
+}
+
+.site-copy__text--done,
+.site-copy.is-copied .site-copy__text:not(.site-copy__text--done) {
+  visibility: hidden;
+}
+
+.site-copy.is-copied .site-copy__text--done {
+  visibility: visible;
+}
+
+.site-copy__status:empty {
+  display: none;
+}
+
+/* ---------- Контакты: заявка и «временно недоступно» ---------- */
+
+.site-contact {
+  display: grid;
+  gap: var(--site-s-5);
+  max-width: 560px;
+}
+
+.site-fieldset {
+  display: grid;
+  gap: var(--site-s-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.site-fieldset > legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+
+/* Переключатель способа связи. Радиокнопки, а не вкладки: стрелки с клавиатуры переключают их без
+   скрипта, выбор уходит с формой. Смена мгновенная, только цвет за 120 мс — действие частое и
+   клавиатурное. Скругления концентричны: 14 = 10 + 4. */
+.site-segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--site-field);
+  box-shadow: inset 0 0 0 1px var(--site-field-line);
+}
+
+.site-segmented label,
+.site-choice label {
+  position: relative;
+  display: grid;
+}
+
+.site-segmented input,
+.site-choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.site-segmented span {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding-inline: 10px;
+  border-radius: var(--site-r-2);
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  text-align: center;
+  color: var(--site-ink-2);
+  transition-property: background-color, color, box-shadow;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-segmented label:hover span {
+  color: var(--site-ink);
+  background: color-mix(in srgb, var(--site-ink) 5%, transparent);
+}
+
+.site-segmented input:checked + span {
+  background: var(--site-paper);
+  color: var(--site-ink);
+  box-shadow:
+    0 0 0 1px rgba(22, 27, 38, 0.08),
+    0 1px 3px rgba(22, 27, 38, 0.10);
+}
+
+/* Выбор из нескольких равных вариантов — пилюли; выбранная закрашена выделителем */
+.site-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.site-choice span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 16px;
+  border-radius: var(--site-r-pill);
+  background: var(--site-paper);
+  box-shadow: inset 0 0 0 1px var(--site-line-strong);
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+  transition-property: background-color, color, box-shadow;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-choice label:hover span {
+  color: var(--site-ink);
+  box-shadow: inset 0 0 0 1px var(--site-line-hover);
+}
+
+.site-choice input:checked + span {
+  background: var(--site-marker-soft);
+  color: var(--site-ink);
+  box-shadow: inset 0 0 0 1.5px var(--site-ink);
+}
+
+.site-segmented input:focus-visible + span,
+.site-choice input:focus-visible + span {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 2px;
+}
+
+.site-segmented input:disabled + span,
+.site-choice input:disabled + span {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Сводка результата, приложенного к заявке */
+.site-attached__level {
+  font-size: var(--site-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.site-attached__themes {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--site-text-sm);
+}
+
+.site-attached__themes li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--site-s-4);
+  padding-block: 8px;
+  border-top: 1px solid var(--site-line);
+  color: var(--site-ink-2);
+}
+
+.site-attached__themes li:last-child {
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-attached__themes li span:last-child {
+  color: var(--site-ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Что будет дальше ----------
+   Настоящая последовательность, поэтому номера. На «спасибо» первый шаг отмечен принятым — тот же
+   список, что на заявке, только на шаг дальше. */
+
+.site-timeline {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: site-timeline;
+}
+
+.site-timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 14px;
+  padding-bottom: var(--site-s-4);
+  counter-increment: site-timeline;
+  font-size: var(--site-text-sm);
+  line-height: 1.45;
+  color: var(--site-ink-2);
+}
+
+.site-timeline li:last-child {
+  padding-bottom: 0;
+}
+
+.site-timeline li::before {
+  content: counter(site-timeline);
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--site-paper);
+  box-shadow: inset 0 0 0 1.5px var(--site-line-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--site-ink-2);
+}
+
+.site-timeline li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 11.5px;
+  top: 28px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--site-line-strong);
+}
+
+.site-timeline b {
+  grid-column: 2;
+  color: var(--site-ink);
+  font-weight: 500;
+}
+
+.site-timeline li > span {
+  grid-column: 2;
+}
+
+.site-timeline li.is-done::before {
+  content: "";
+  background: var(--site-ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6.5l2.6 2.5L10 3.5'/%3E%3C/svg%3E") center / 12px no-repeat;
+  box-shadow: none;
+}
+
+/* ---------- Отметка «принято» ---------- */
+
+.site-stamp {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  color: #FFFFFF;
+  box-shadow:
+    0 0 0 6px var(--site-marker-soft),
+    0 12px 24px -12px rgba(22, 24, 29, 0.55);
+}
+
+.site-stamp svg {
+  width: 24px;
+  height: 24px;
+}
+
+.site-stamp--sm {
+  width: 32px;
+  height: 32px;
+  box-shadow: 0 0 0 4px var(--site-marker-soft);
+}
+
+.site-stamp--sm svg {
+  width: 16px;
+  height: 16px;
+}
+
+.site-thanks {
+  justify-items: start;
+}
+
+.site-thanks > .site-screen__head,
+.site-thanks > .site-timeline {
+  justify-self: stretch;
+}
+
+.site-done {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--site-s-4);
+  font-size: var(--site-text-md);
+  color: var(--site-ink-2);
+}
+
+.site-done b {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+/* ---------- Служебные экраны ----------
+   Отметка состояния — точка и слова, без цветной плашки: тревогу несёт текст, а не фон. Справа —
+   что стало с данными, строками документа. */
+
+.site-status {
+  --s-color: var(--site-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink-2);
+}
+
+.site-status::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--s-color);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--s-color) 16%, transparent);
+}
+
+.site-status--warn { --s-color: var(--site-warn); }
+.site-status--danger { --s-color: var(--site-danger); }
+
+.site-facts {
+  display: grid;
+  margin: 0;
+}
+
+.site-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--site-s-4);
+  padding-block: 12px;
+  border-top: 1px solid var(--site-line);
+  font-size: var(--site-text-sm);
+}
+
+.site-facts > div:last-child {
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-facts dt {
+  color: var(--site-ink-3);
+}
+
+.site-facts dd {
+  margin: 0;
+  color: var(--site-ink);
+  font-weight: 500;
+}
+
+/* ---------- Движение мастера ----------
+   Появление результата — единственная срежиссированная последовательность мастера: ради этого
+   момента человек ждал. Сначала уровень (строки вердикта, деления шкалы по очереди через 90 мс),
+   потом действие (лист справа), потом подробности (закрашенные строки прокрашиваются слева
+   направо через 60 мс, как маркер по бумаге). Каждый шаг ≤ 260 мс, всё целиком ≈ 0,9 с. Один раз
+   за визит: вернувшийся с заявки видит результат сразу (класс is-revealing ставит скрипт).
+   Keyframes, а не transitions: последовательность разовая, прерывать в ней нечего.
+
+   Выделитель в журнале ожидания — постоянное движение, поэтому линейное. При reduced motion его
+   нет: строка просто подсвечена (правило выше). */
+@media (prefers-reduced-motion: no-preference) {
+  .site-run__stages li.is-current::before {
+    background: linear-gradient(90deg, transparent, var(--site-marker-soft) 35%, var(--site-marker-soft) 65%, transparent);
+    transform: translateX(-100%);
+    animation: site-run-sweep 1800ms linear infinite;
+  }
+
+  .site-result.is-revealing .site-result__verdict > * {
+    animation: site-wz-rise 240ms var(--site-ease-out) backwards;
+  }
+
+  .site-result.is-revealing .site-result__verdict > :nth-child(2) { animation-delay: 60ms; }
+  .site-result.is-revealing .site-result__verdict > :nth-child(3) { animation-delay: 120ms; }
+  .site-result.is-revealing .site-result__verdict > :nth-child(4) { animation-delay: 320ms; }
+
+  .site-result.is-revealing .site-meter__seg.is-on::after {
+    animation: site-wz-scale-x 200ms var(--site-ease-out) backwards;
+    animation-delay: calc(200ms + var(--i, 0) * 90ms);
+  }
+
+  .site-result.is-revealing .site-result__aside {
+    animation: site-wz-rise 260ms var(--site-ease-out) 380ms backwards;
+  }
+
+  .site-result.is-revealing .site-result__details {
+    animation: site-wz-fade 240ms var(--site-ease-out) 460ms backwards;
+  }
+
+  .site-result.is-revealing .site-finding__list .site-mark {
+    animation: site-wz-scale-x 240ms var(--site-ease-out) backwards;
+    animation-delay: calc(520ms + var(--i, 0) * 60ms);
+  }
+
+  /* «Заявка принята»: отметка появляется, галочка следом — подтверждение действия, а не праздник */
+  .site-screen.site-enter .site-stamp,
+  .site-done:not([hidden]) .site-stamp {
+    animation: site-wz-stamp 220ms var(--site-ease-out) 80ms backwards;
+  }
+
+  .site-screen.site-enter .site-stamp svg,
+  .site-done:not([hidden]) .site-stamp svg {
+    animation: site-wz-icon 200ms var(--site-ease-out) 200ms backwards;
+  }
+}
+
+@keyframes site-run-sweep {
+  to { transform: translateX(100%); }
+}
+
+@keyframes site-wz-rise {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+@keyframes site-wz-fade {
+  from { opacity: 0; }
+}
+
+@keyframes site-wz-scale-x {
+  from { transform: scaleX(0); }
+}
+
+@keyframes site-wz-stamp {
+  from { opacity: 0; transform: scale(0.6); }
+}
+
+@keyframes site-wz-icon {
+  from { opacity: 0; transform: scale(0.25); }
+}
+
+/* ---------- Герой ----------
+   Фона у героя нет: он лежит на общем --site-ground. Атмосфера — свечение и сетка поверх
+   того же фона, поэтому граница секции не читается. */
+
+.site-hero {
+  position: relative;
+  /* clip, а не hidden: hidden делает герой прокручиваемым контейнером, и view()-таймлайн
+     внутри него привязывается к нему же — то есть не идёт никогда. clip обрезает так же,
+     но контейнером прокрутки не становится. */
+  overflow: clip;
+  margin-top: -72px;                                    /* шапка лежит поверх свечения */
+  padding-block: calc(72px + var(--site-s-6)) var(--site-s-7);
+}
+
+/* Свет из окна: светлое пятно, размытая холодная тень рамы крест-накрест и слабый отблеск
+   маркера внизу. Тот же свет, что на снимке в закрывающем листе, — первый и последний экраны
+   освещены одним окном. Резкие полосы градиента размывает фильтр при растеризации слоя; слой
+   движется только transform, поэтому размытие не пересчитывается на каждом кадре. Свет
+   медленно ползёт: экран не «замирает», пока человек читает заголовок. */
+.site-hero::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10% 0;
+  background:
+    linear-gradient(112deg, transparent 0 57%, var(--site-shade) 57% 60.5%, transparent 60.5%),
+    linear-gradient(22deg, transparent 0 33%, var(--site-shade) 33% 36%, transparent 36%),
+    radial-gradient(48% 58% at 78% 16%, rgba(255, 255, 255, 0.9), transparent 72%),
+    radial-gradient(52% 62% at 84% 10%, var(--site-glow-1), transparent 70%),
+    radial-gradient(42% 52% at 2% 92%, var(--site-glow-2), transparent 72%);
+  filter: blur(18px);
+  pointer-events: none;
+  animation: site-hero-glow 34s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes site-hero-glow {
+  to {
+    transform: translate3d(-2.5%, 1.5%, 0) scale(1.08);
+  }
+}
+
+.site-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--site-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--site-grid) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: center calc(var(--site-scroll) * -0.12);  /* лёгкий параллакс сетки */
+  -webkit-mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
+  mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Проход разбора по сетке: полоса маркера медленно идёт сверху вниз, как выделение по строкам
+   листа. Это единственная непрерывная анимация на странице, и она говорит ровно то, чем
+   занят продукт, — поэтому она здесь, а не «оживляж» ради движения. */
+.site-hero__scan {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
+  mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
+}
+
+.site-hero__scan::before {
+  content: "";
+  position: absolute;
+  inset-inline: -10%;
+  top: -30%;
+  height: 30%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--site-marker) 18%, transparent) 62%,
+    color-mix(in srgb, var(--site-marker) 34%, transparent) 88%,
+    transparent
+  );
+  animation: site-hero-scan 11s linear infinite;
+  will-change: transform;
+}
+
+@keyframes site-hero-scan {
+  0% { transform: translateY(0); opacity: 0; }
+  14% { opacity: 1; }
+  76% { opacity: 1; }
+  100% { transform: translateY(440%); opacity: 0; }
+}
+
+.site-hero__grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--site-s-7);
+}
+
+.site-hero__copy {
+  display: grid;
+  gap: var(--site-s-5);
+  align-content: start;
+}
+
+@media (min-width: 1024px) {
+  .site-hero {
+    padding-block: calc(72px + var(--site-s-7)) var(--site-s-8);
+  }
+
+  /* Поисковая строка встаёт под текст, в ту же колонку: на узком экране она идёт после формы
+     (в разметке тоже после неё), чтобы не отодвигать главное действие вниз экрана. */
+  .site-hero__grid {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    /* Вторая строка тянется (1fr), первая — по тексту: иначе форма, занимающая обе строки,
+       раздаёт свою высоту поровну и строка поиска уезжает от текста на пол-экрана. */
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "copy form"
+      "seek form";
+    column-gap: var(--site-s-8);
+    row-gap: var(--site-s-6);
+    align-items: start;
+  }
+
+  .site-hero__copy { grid-area: copy; }
+  .site-formcase { grid-area: form; }
+  .site-hero .site-seek { grid-area: seek; }
+
+  /* Заголовок встаёт на одну линию с заголовком формы: 7 px паспарту + 24 px поля панели */
+  .site-hero__copy {
+    padding-top: 31px;
+  }
+}
+
+/* ---------- Поисковая строка в герое ----------
+   Единственная «картинка» первого экрана и одновременно объяснение задачи: имя набирается
+   плашкой — той же, которой в результате закрашены заголовки находок, — а поиск дописывает
+   к нему слова, которые человек не выбирал.
+
+   Сделано разметкой и CSS, а не файлом: гифка ради шести секунд движения весит больше всей
+   страницы, а внешние картинки в артефакте запрещены политикой. Плюс так рисунок остаётся
+   чётким на любом экране и слушается prefers-reduced-motion. */
+
+.site-seek {
+  display: grid;
+  gap: 10px;
+  max-width: 430px;
+}
+
+.site-seek__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: var(--site-r-pill);
+  border: 1px solid var(--site-field-line);
+  background: var(--site-paper);
+  box-shadow:
+    0 1px 2px rgba(22, 27, 38, 0.05),
+    0 12px 26px -18px rgba(22, 27, 38, 0.40);
+}
+
+.site-seek__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--site-ink-3);
+}
+
+.site-seek__query {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* Имя закрашено плашкой всегда, а слово рядом с ним набирается по буквам: показывает,
+   с чем именно человек приходит в поиск, и при этом никого не называет. Буквы печатает
+   скрипт — ширина глифов в пропорциональной гарнитуре разная, и «печать» шириной блока
+   резала бы буквы пополам. */
+.site-seek__name {
+  width: 9ch;
+  height: 11px;
+  flex: none;
+}
+
+.site-seek__word {
+  font-size: var(--site-text-md);
+  color: var(--site-ink);
+  white-space: pre;
+}
+
+.site-seek__caret {
+  width: 1.5px;
+  height: 18px;
+  flex: none;
+  background: var(--site-ink);
+  animation: site-seek-caret 1.06s steps(1) infinite;
+}
+
+@keyframes site-seek-caret {
+  50% { opacity: 0; }
+}
+
+/* Чипы преимуществ */
+.site-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--site-r-pill);
+  border: 1px solid var(--site-line-strong);
+  background: var(--site-paper);
+  color: var(--site-ink-2);
+  font-size: var(--site-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Чип «AI-анализ» выделен маркером, а не цветом текста: сиреневый выделитель под чернилами */
+.site-chip--accent {
+  background: var(--site-marker);
+  border-color: color-mix(in srgb, var(--site-ink) 12%, transparent);
+  color: var(--site-ink);
+}
+
+.site-chip--accent::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--site-ink);
+}
+
+/* Точка мягко гаснет и загорается: анализ — то, чем продукт занят прямо сейчас. Единственный живой
+   элемент среди чипов, поэтому пульс медленный и без масштаба; при reduced motion точка стоит */
+@media (prefers-reduced-motion: no-preference) {
+  .site-chip--accent::before {
+    animation: site-chip-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes site-chip-pulse {
+  50% { opacity: 0.25; }
+}
+
+/* Появление героя при загрузке: одна оркестрованная последовательность */
+.site-stagger > * {
+  animation: site-rise 520ms var(--site-ease-out) both;
+}
+
+.site-stagger > :nth-child(1) { animation-delay: 40ms; }
+.site-stagger > :nth-child(2) { animation-delay: 120ms; }
+.site-stagger > :nth-child(3) { animation-delay: 200ms; }
+.site-stagger > :nth-child(4) { animation-delay: 280ms; }
+.site-stagger > :nth-child(5) { animation-delay: 360ms; }
+
+.site-hero .site-formcase {
+  animation: site-rise 600ms var(--site-ease-out) 240ms both;
+}
+
+.site-hero .site-seek {
+  animation: site-rise 600ms var(--site-ease-out) 400ms both;
+}
+
+@keyframes site-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+/* ---------- Появление при прокрутке ----------
+   Включается только скриптом: без JS всё видно сразу и страница читается целиком. */
+
+.js .site-reveal,
+.js .site-reveal--stagger > * {
+  opacity: 0;
+  transform: translateY(18px);
+  transition-property: opacity, transform;
+  transition-duration: 560ms;
+  transition-timing-function: var(--site-ease-out);
+}
+
+.js .site-reveal.is-in,
+.js .site-reveal--stagger.is-in > * {
+  opacity: 1;
+  transform: none;
+}
+
+.js .site-reveal--stagger.is-in > :nth-child(2) { transition-delay: 110ms; }
+.js .site-reveal--stagger.is-in > :nth-child(3) { transition-delay: 220ms; }
+.js .site-reveal--stagger.is-in > :nth-child(4) { transition-delay: 330ms; }
+.js .site-reveal--stagger.is-in > :nth-child(5) { transition-delay: 440ms; }
+.js .site-reveal--stagger.is-in > :nth-child(6) { transition-delay: 550ms; }
+
+/* Заголовок выезжает из-под маски построчно: строки режет скрипт, без него — обычный текст. */
+.js .site-lines {
+  --line-delay: 0ms;
+}
+
+.js .site-lines .site-lines__line {
+  display: block;
+  overflow: hidden;
+  /* маска режет по строке, а не по глифу: без запаса обрезает выносные элементы у «р», «у», «й» */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.js .site-lines .site-lines__inner {
+  display: block;
+  transform: translateY(105%);
+  transition: transform 700ms var(--site-ease-out);
+  transition-delay: var(--line-delay);
+}
+
+.js .site-lines.is-in .site-lines__inner {
+  transform: none;
+}
+
+/* ---------- Наезд листа при прокрутке ----------
+   Лист доезжает до места, пока входит в окно: видно, что он ложится сверху, а не просто
+   меняется цвет фона. Привязка к прокрутке, а не к таймеру, — движение идёт ровно на
+   столько, на сколько человек прокрутил, и останавливается вместе с ним.
+
+   Отдельная ветка под @supports: где scroll-driven анимаций нет (Safari до 26, Firefox без
+   флага), лист остаётся на месте, а наползание держат скруглённый верх и тень. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .site-header__progress {
+      animation: site-progress linear both;
+      animation-timeline: scroll(root block);
+    }
+
+    @keyframes site-progress {
+      to { transform: scaleX(1); }
+    }
+  }
+
+  .site-sheet {
+    animation: site-sheet-rise linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 62%;
+    will-change: transform;
+  }
+
+  @keyframes site-sheet-rise {
+    from { transform: translateY(88px); }
+    to { transform: none; }
+  }
+
+  /* Первый экран уезжает медленнее страницы, пока на него наползает лист: без этого наезд
+     виден только по кромке, а с ним читается как два слоя на разной глубине. */
+  .site-hero__grid {
+    animation: site-hero-out linear both;
+    animation-timeline: view();
+    animation-range: exit 0% exit 100%;
+    will-change: transform;
+  }
+
+  @keyframes site-hero-out {
+    to { transform: translateY(-72px); }
+  }
+
+  /* ---------- Шаги: карточка поднимается со стола ----------
+     Приём со stax.ai: там карточка сценария выходит из стопки листов развёрнутой в 3D и
+     ложится ровно. Здесь лист лежит на столе — наклонён на 64° от нижней кромки и чуть
+     повёрнут — и встаёт лицом к читателю. Причина — порядок: карточки встают по одной, и
+     последовательность видна движением, а не только номерами.
+
+     Узкий или низкий экран: у каждой карточки свой view-таймлайн (--step), и она встаёт, когда
+     входит в окно. Широкий: блок закреплён под шапкой на 100vh хода, и все три карточки идут по
+     общему таймлайну дорожки (--how) по очереди. Диапазоны лежат в переменных, поэтому две ветки
+     отличаются значениями, а не правилами. Прозрачность здесь безопасна, в отличие от стека
+     версии 8: карточки не лежат друг на друге и просвечивать нечему. */
+  @media (prefers-reduced-motion: no-preference) {
+    .site-steps__item:nth-child(1) { --rz: -3deg; }
+    .site-steps__item:nth-child(2) { --rz: 1.5deg; }
+    .site-steps__item:nth-child(3) { --rz: 3deg; }
+
+    .site-steps__card {
+      view-timeline-name: --step;
+      animation: site-step-rise ease-out both;
+      animation-timeline: var(--steps-tl, --step);
+      animation-range: var(--rise, entry 20% cover 42%);
+    }
+
+    /* Макет шага доделывается сразу после того, как карточка встала: поля заполняются,
+       появляется «Это я», наливается шкала. Это то, что человек сделает и увидит на шаге. */
+    .site-steps__fill {
+      transform-origin: 0 50%;
+      animation: site-step-fill ease-out both;
+      animation-timeline: var(--steps-tl, --step);
+      animation-range: var(--fill, cover 40% cover 56%);
+    }
+
+    .site-steps__pop {
+      animation: site-step-pop ease-out both;
+      animation-timeline: var(--steps-tl, --step);
+      animation-range: var(--fill, cover 40% cover 56%);
+    }
+
+    @keyframes site-step-rise {
+      0% {
+        opacity: 0;
+        transform: perspective(1100px) translateY(72px) rotateX(64deg) rotateZ(var(--rz, 0deg)) scale(0.92);
+      }
+      40% { opacity: 1; }
+      100% { opacity: 1; transform: none; }
+    }
+
+    @keyframes site-step-fill {
+      from { transform: scaleX(0); }
+    }
+
+    @keyframes site-step-pop {
+      from { opacity: 0; transform: scale(0.86); }
+    }
+
+    @keyframes site-step-slot {
+      to { opacity: 0; }
+    }
+
+    @media (min-width: 1024px) and (min-height: 700px) {
+      /* Ход под закреплённым блоком. Прокрутку не перехватывает: страница едет как обычно,
+         просто ряд стоит, пока дорожка не кончится. Ход — распоркой внутри дорожки, а не
+         padding-bottom: липкий элемент держится в области содержимого родителя, поле в неё
+         не входит, и с padding ряд не прилипал вовсе (замер 13.09). */
+      .site-how__track {
+        view-timeline-name: --how;
+      }
+
+      .site-how__track::after {
+        content: "";
+        display: block;
+        height: 100vh;
+      }
+
+      .site-how__pin {
+        position: sticky;
+        top: 88px; /* шапка 72 px + 16 px воздуха */
+      }
+
+      .site-steps {
+        --steps-tl: --how;
+      }
+
+      /* Диапазоны — в пикселях прокрутки от входа дорожки в окно: cover 0 — верх дорожки у
+         нижней кромки окна, закрепление начинается на cover (100vh − 88px) и держится 100vh.
+         Первая карточка встаёт, пока блок доезжает до шапки, вторая и третья — пока он стоит.
+         После третьей остаётся 10vh: ряд успевают увидеть целиком до того, как он уедет. */
+      .site-steps__item:nth-child(1) {
+        --rise: cover 50vh cover calc(118vh - 88px);
+        --fill: cover calc(106vh - 88px) cover calc(124vh - 88px);
+      }
+
+      .site-steps__item:nth-child(2) {
+        --rise: cover calc(118vh - 88px) cover calc(150vh - 88px);
+        --fill: cover calc(142vh - 88px) cover calc(158vh - 88px);
+      }
+
+      .site-steps__item:nth-child(3) {
+        --rise: cover calc(150vh - 88px) cover calc(182vh - 88px);
+        --fill: cover calc(174vh - 88px) cover calc(190vh - 88px);
+      }
+
+      /* Место под карточку видно, пока она не встала: иначе закреплённый ряд выглядит пустым
+         и непонятно, сколько шагов впереди. Только здесь — таймлайн дорожки общий, а у
+         карточки на узком экране он свой и до этого места не дотягивается. */
+      .site-steps__item::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px dashed var(--site-line-strong);
+        border-radius: 20px;
+        animation: site-step-slot linear both;
+        animation-timeline: --how;
+        animation-range: var(--rise);
+      }
+    }
+
+    /* Карточки источников — то же движение, но без рельса: это не последовательность */
+    .site-sources-grid {
+      view-timeline-name: --sources;
+    }
+
+    .js .site-sources-grid.site-reveal--stagger > * {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+
+    .site-sources-grid li {
+      animation-name: site-step-in;
+      animation-timing-function: var(--site-ease-out);
+      animation-timeline: --sources;
+      animation-fill-mode: both;
+    }
+
+    .site-sources-grid li:nth-child(1) { animation-range: cover 20% cover 42%; }
+    .site-sources-grid li:nth-child(2) { animation-range: cover 26% cover 48%; }
+    .site-sources-grid li:nth-child(3) { animation-range: cover 32% cover 54%; }
+    .site-sources-grid li:nth-child(4) { animation-range: cover 38% cover 60%; }
+
+    /* Продуктовая панель выходит из расфокуса и подрастает: таймлайн снят с обёртки, а не
+       с самой панели, — панель липкая, и её собственный отсчёт замер бы вместе с ней. */
+    .site-example {
+      view-timeline-name: --example;
+    }
+
+    .site-demo {
+      animation: site-demo-in var(--site-ease-out) both;
+      animation-timeline: --example;
+      animation-range: cover 14% cover 42%;
+    }
+
+    @keyframes site-demo-in {
+      from { opacity: 0; scale: 0.97; filter: blur(6px); }
+      to { opacity: 1; scale: 1; filter: blur(0); }
+    }
+
+    /* Вопросы выходят по одному: список из шести строк, появляющийся целиком, читается
+       как таблица, а по одному — как разговор. */
+    .site-faq {
+      view-timeline-name: --faq;
+    }
+
+    .site-faq details {
+      animation: site-step-in var(--site-ease-out) both;
+      animation-timeline: --faq;
+    }
+
+    .site-faq details:nth-child(1) { animation-range: cover 16% cover 34%; }
+    .site-faq details:nth-child(2) { animation-range: cover 20% cover 38%; }
+    .site-faq details:nth-child(3) { animation-range: cover 24% cover 42%; }
+    .site-faq details:nth-child(4) { animation-range: cover 28% cover 46%; }
+    .site-faq details:nth-child(5) { animation-range: cover 32% cover 50%; }
+    .site-faq details:nth-child(6) { animation-range: cover 36% cover 54%; }
+
+    /* Снимок закрывающего листа оседает из крупного плана, пока лист входит в окно, — как камера,
+       которая останавливается. Снимок там от края до края, и его вход совпадает с входом листа. */
+    .site-final {
+      view-timeline-name: --final;
+    }
+
+    .site-final__media img {
+      animation: site-photo-settle linear both;
+      animation-timeline: --final;
+      animation-range: entry 0% entry 100%;
+    }
+
+    @keyframes site-photo-settle {
+      from { transform: scale(1.06); }
+      to { transform: none; }
+    }
+
+    /* Срок записи: шкала наливается, пока лента идёт от нижней трети окна к середине; графы записи
+       дня 30 закрываются по одной, когда шкала дошла до конца. У шкалы и записи свои таймлайны: на
+       телефоне запись стоит ниже шкалы и закрывается, когда до неё долистали, а не заранее. */
+    .site-term__scale {
+      animation: site-term-run linear both;
+      animation-timeline: view();
+      animation-range: cover 28% cover 52%;
+    }
+
+    @keyframes site-term-run {
+      from { --site-term-p: 0; --site-term-day: 0; }
+      to { --site-term-p: 1; --site-term-day: 30; }
+    }
+
+    .site-term__record--closed {
+      view-timeline-name: --site-term-closed;
+    }
+
+    .site-term__record--closed i::after {
+      animation: site-term-redact var(--site-ease-out) both;
+      animation-timeline: --site-term-closed;
+    }
+
+    .site-term__record--closed div:nth-child(1) i::after { animation-range: cover 50% cover 56%; }
+    .site-term__record--closed div:nth-child(2) i::after { animation-range: cover 53% cover 59%; }
+    .site-term__record--closed div:nth-child(3) i::after { animation-range: cover 56% cover 62%; }
+
+    .site-term__status {
+      animation: site-term-status var(--site-ease-out) both;
+      animation-timeline: --site-term-closed;
+      animation-range: cover 60% cover 64%;
+    }
+
+    @keyframes site-term-redact {
+      from { transform: scaleX(0); }
+    }
+
+    @keyframes site-term-status {
+      from { opacity: 0; scale: 0.9; }
+    }
+  }
+
+  @keyframes site-rail-fill {
+    to { transform: scaleX(1); }
+  }
+
+  @keyframes site-node-pop {
+    to { transform: scale(1); }
+  }
+
+  @keyframes site-step-in {
+    from { opacity: 0; translate: 0 26px; filter: blur(7px); }
+    to { opacity: 1; translate: 0 0; filter: blur(0); }
+  }
+}
+
+/* ---------- Шаги: три карточки в ряд ----------
+   Версия 8 держала шаги липким стеком: карточка наезжала на карточку. Порядок читался, но три
+   шага нельзя было окинуть взглядом разом, а стек добавлял странице больше тысячи пикселей хода.
+   Теперь шаги лежат рядом, как три листа на столе, а порядок показывает движение — карточки
+   встают по очереди (ветка animation-timeline, «Шаги: карточка поднимается со стола»). Без
+   scroll-driven анимаций и при reduced-motion ряд просто стоит.
+
+   Класс не .site-stack: так называется утилита вертикального ритма на экранах мастера и
+   #tokens, и правила стека (нижнее поле 12vh) в версии 8 молча уходили туда же. */
+
+.site-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-steps__item {
+  position: relative;
+  display: grid;
+}
+
+/* Текст в разметке первым — его читают; макет экрана стоит над текстом. Поле 8 px при радиусе
+   20 даёт колодцу макета концентричный радиус 12. position: relative — чтобы карточка лежала
+   над пунктирным местом под неё, а не под ним. */
+.site-steps__card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  padding: var(--site-s-2);
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 2px rgba(22, 27, 38, 0.05),
+    0 28px 56px -32px rgba(22, 27, 38, 0.28);
+  transform-origin: 50% 100%;
+}
+
+.site-steps__visual {
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  min-height: 216px;
+  padding: var(--site-s-3);
+  background: var(--site-paper-2);
+  border: 1px solid var(--site-line);
+  border-radius: 12px;
+}
+
+/* Макет лежит прямо в колодце: своя рамка и заливка дали бы рамку в рамке */
+.site-steps__visual .site-mini {
+  width: 100%;
+  max-width: 320px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.site-steps__text {
+  grid-row: 2;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: var(--site-s-4) var(--site-s-4) var(--site-s-3);
+}
+
+.site-steps__text p {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+  max-width: 44ch;
+}
+
+.site-step__num {
+  font-family: var(--site-font-mono);
+  font-size: var(--site-text-sm);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--site-ink-3);
+}
+
+/* Планшет: ряд из трёх не помещается — одна колонка, но карточка широкая, текст и макет рядом */
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .site-steps__card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: none;
+    align-items: center;
+    gap: var(--site-s-2);
+  }
+
+  .site-steps__visual {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .site-steps__text {
+    grid-row: 1;
+    grid-column: 1;
+    padding: var(--site-s-4);
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--site-s-5);
+  }
+
+  /* Одна высота колодца у всех трёх: макет шага 3 выше остальных, и без неё номер и
+     заголовок третьей карточки вставали ниже соседних */
+  .site-steps__visual {
+    height: 228px;
+  }
+}
+
+/* ---------- Мини-макеты в карточках шагов ----------
+   Не значок, а то, что человек увидит на этом шаге: поля формы, карточки совпадений, шкала
+   риска. Собраны из тех же токенов, что и настоящие экраны, поэтому не расходятся с ними. */
+
+.site-mini {
+  display: grid;
+  gap: 10px;
+  padding: var(--site-s-4);
+  background: var(--site-paper-2);
+  border: 1px solid var(--site-line);
+  border-radius: 14px;
+}
+
+.site-mini__field {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding-inline: 12px;
+  border: 1px solid var(--site-field-line);
+  border-radius: 10px;
+  background: var(--site-paper);
+}
+
+.site-mini__field i {
+  display: block;
+  width: var(--w, 50%);
+  height: 7px;
+  border-radius: 3px;
+  background: var(--site-line-strong);
+}
+
+.site-mini__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.site-mini__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  color: #FFFFFF;
+  font-size: var(--site-text-xs);
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.site-mini--cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.site-mini__card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  background: var(--site-paper);
+}
+
+.site-mini__card.is-on {
+  border-color: color-mix(in srgb, var(--site-cta-from) 45%, transparent);
+  box-shadow: 0 0 0 3px var(--site-marker-soft);
+}
+
+.site-mini__bar {
+  display: block;
+  width: var(--w, 60%);
+  height: 8px;
+  border-radius: 3px;
+  background: var(--site-ink);
+}
+
+.site-mini__bar--thin {
+  height: 6px;
+  background: var(--site-line-strong);
+}
+
+.site-mini__pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  margin-top: 2px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  color: #FFFFFF;
+  font-size: var(--site-text-xs);
+  font-weight: 500;
+}
+
+.site-mini--result .site-meter {
+  margin-block: 2px;
+}
+
+.site-mini__level {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.site-mini__level b {
+  font-size: var(--site-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--site-warn);
+}
+
+.site-mini__level span {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-2);
+}
+
+.site-mini__lines {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0 0; /* padding-top оставлял списку отступ по умолчанию: плашки съезжали на 40 px */
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid var(--site-line);
+}
+
+/* ---------- Источники: четыре карточки ---------- */
+
+.site-sources-grid {
+  display: grid;
+  gap: var(--site-s-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-sources-grid li {
+  display: grid;
+  gap: var(--site-s-3);
+  align-content: start;
+  padding: var(--site-s-5);
+  background: var(--site-paper-2); /* лист белый: карточку держит вложенная поверхность и рамка */
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  transition-property: border-color, box-shadow;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-sources-grid li:hover {
+  border-color: var(--site-line-hover);
+  box-shadow: var(--site-shadow-card);
+}
+
+.site-sources-grid strong {
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+  letter-spacing: -0.01em;
+}
+
+.site-sources-grid span {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+}
+
+.site-sources-grid svg {
+  width: 30px;
+  height: 30px;
+  color: var(--site-accent);
+}
+
+@media (min-width: 640px) {
+  .site-sources-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .site-sources-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* ---------- Продуктовая панель: проигрывание проверки ----------
+   Панель на бумаге, как и вся страница; от фона её отделяют рамка, тень и уголки приводки.
+   Внутри — не просто полоса загрузки: видно, сколько запросов ушло, какие источники ответили
+   и что именно сейчас разбирается. */
+
+.site-demo {
+  position: relative;
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  box-shadow: var(--site-shadow-panel);
+}
+
+.site-demo__bar {
+  display: grid;
+  gap: 10px;
+  padding: var(--site-s-4) var(--site-s-5);
+  border-bottom: 1px solid var(--site-line);
+  background: var(--site-paper-2);
+  border-radius: calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px) 0 0;
+}
+
+.site-demo__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--site-s-4);
+  flex-wrap: wrap;
+}
+
+.site-demo__stage {
+  color: var(--site-ink);
+  font-weight: 500;
+  font-size: var(--site-text-sm);
+}
+
+/* Кого проверяют — закрашено той же плашкой, что и заголовки находок: в примере на сайте
+   нет ни живого, ни выдуманного человека. */
+.site-demo__subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.site-demo__subject .site-tag {
+  margin-right: 2px;
+}
+
+.site-demo__subject .site-mark {
+  height: 9px;
+  opacity: 0.55;
+}
+
+.site-demo__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--site-s-3);
+  padding: var(--site-s-4) var(--site-s-5);
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-demo__stat {
+  display: grid;
+  gap: 2px;
+}
+
+.site-demo__stat b {
+  font-size: var(--site-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Поток запросов: строки уезжают вверх, как лог разбора */
+.site-demo__feed {
+  height: 118px;
+  overflow: hidden;
+  padding: var(--site-s-3) var(--site-s-5);
+  border-bottom: 1px solid var(--site-line);
+  position: relative;
+}
+
+.site-demo__feed::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 34px;
+  background: linear-gradient(transparent, var(--site-paper));
+  pointer-events: none;
+}
+
+.site-demo__feed ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  transition: transform 420ms var(--site-ease-out);
+}
+
+.site-demo__feed li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  color: var(--site-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.site-demo__feed li b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--site-ink-2);
+  font-weight: 500;
+}
+
+.site-demo__feed li .site-mark {
+  height: 7px;
+  opacity: 0.45;
+}
+
+.site-demo__feed li::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--site-accent);
+  opacity: 0.5;
+}
+
+.site-demo__feed li.is-hit::before {
+  background: var(--site-warn);
+  opacity: 1;
+}
+
+/* Находка в логе выделена маркером — как строка, которую отметили в распечатке */
+.site-demo__feed li.is-hit b {
+  padding-inline: 4px;
+  margin-inline: -4px;
+  border-radius: 2px;
+  background: var(--site-marker-soft);
+  color: var(--site-ink);
+}
+
+.site-demo__result {
+  padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-demo__reveal > * {
+  opacity: 0;
+  transform: translateY(8px);
+  transition-property: opacity, transform;
+  transition-duration: 360ms;
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-demo.is-done .site-demo__reveal > * {
+  opacity: 1;
+  transform: none;
+}
+
+.site-demo.is-done .site-demo__reveal > :nth-child(2) { transition-delay: 110ms; }
+.site-demo.is-done .site-demo__reveal > :nth-child(3) { transition-delay: 220ms; }
+.site-demo.is-done .site-demo__reveal > :nth-child(4) { transition-delay: 330ms; }
+
+.site-demo__replay {
+  padding-inline: 10px;
+  font-size: var(--site-text-xs);
+}
+
+/* Кнопку можно ужать только там, где указатель мышь: на тач-экране ей нужны 44 px */
+@media (min-width: 1024px) {
+  .site-demo__replay { --h: 36px; }
+}
+
+/* ---------- Иллюстрации ----------
+   Рисунки свои, линейные, в акценте и чернилах: закрашенная выдача, карта источников, лист
+   вердикта. Стоковых фотографий на сайте нет — лицо на фотографии обещало бы конкретного
+   человека, а продукт работает с любым. */
+
+.site-figure {
+  position: relative;
+  border-radius: var(--site-r-4);
+  overflow: hidden;
+}
+
+.site-figure svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.site-figure--tint {
+  background: linear-gradient(155deg, var(--site-accent-soft), var(--site-ground));
+  border: 1px solid var(--site-line);
+}
+
+.site-figure__caption {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+  padding: var(--site-s-3) var(--site-s-4);
+  border-top: 1px solid var(--site-line);
+  background: var(--site-paper);
+}
+
+/* ---------- Прочие блоки лендинга ---------- */
+
+.site-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-width: 34em;
+}
+
+.site-facts li {
+  position: relative;
+  padding-left: 28px;
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+}
+
+.site-facts li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--site-ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6.5l2.6 2.5L10 3.5'/%3E%3C/svg%3E") center / 10px no-repeat;
+}
+
+.site-example {
+  display: grid;
+  gap: var(--site-s-6);
+}
+
+@media (min-width: 1024px) {
+  .site-example {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: var(--site-s-8);
+    align-items: start;
+  }
+
+  /* Панель остаётся на экране, пока читается текст слева */
+  .site-example__panel {
+    position: sticky;
+    top: calc(72px + var(--site-s-4));
+  }
+}
+
+/* ---------- «Проверка остаётся вашим делом»: срок записи проверки (версия 16) ----------
+   Обещания блока — про время: запись живёт 30 дней и обезличивается. Слева запись в день запуска,
+   справа та же запись в день 30 с закрытыми графами, между ними шкала дней. Кадр с человеком
+   (версии 13–15) заказчик отклонил: блок оставался скучным с любой картинкой (13.09).
+
+   Шкала — мерный инструмент, поэтому деления на ней настоящие: 31, по одному на день, крупные на
+   0, 10, 20 и 30. Заполнение и отметка «день N» читают одно регистрируемое свойство --site-term-p
+   (0…1), счёт дней — второе, целое, --site-term-day: у <integer> интерполяция идёт целыми, и счётчик
+   в content не показывает дробей. По умолчанию оба в конечном значении: где scroll-driven анимаций
+   нет или движение выключено, шкала стоит заполненной, а графы закрыты — блок говорит то же без
+   движения. */
+@property --site-term-p {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+@property --site-term-day {
+  syntax: "<integer>";
+  inherits: true;
+  initial-value: 30;
+}
+
+.site-term {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--site-s-7);
+}
+
+.site-term__stage {
+  display: grid;
+  gap: var(--site-s-5);
+  align-content: start;
+}
+
+.site-term__text {
+  display: grid;
+  gap: var(--site-s-2);
+  align-content: start;
+  max-width: 34em;
+}
+
+.site-term__text p {
+  color: var(--site-ink-2);
+}
+
+/* Запись — бланк на вложенной поверхности листа, как карточки источников: рамка и уголки приводки,
+   без тени. Графы — линии, а не текст: имени на главной нет нигде */
+.site-term__record {
+  display: grid;
+  gap: var(--site-s-2);
+  max-width: 420px;
+  padding: var(--site-s-4) var(--site-s-5) var(--site-s-2);
+  background: var(--site-paper-2);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+}
+
+.site-term__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--site-s-3);
+  min-height: 24px;
+  margin: 0;
+}
+
+/* Состояние записи — чернила на выделителе: выделитель только фоном под чернилами */
+.site-term__status {
+  padding: 3px 8px;
+  border-radius: var(--site-r-1);
+  background: var(--site-marker);
+  color: var(--site-ink);
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.site-term__record dl {
+  display: grid;
+  margin: 0;
+}
+
+.site-term__record dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--site-s-3);
+  min-height: 40px;
+  border-top: 1px solid var(--site-line);
+}
+
+.site-term__record dt {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-term__record dd {
+  margin: 0;
+}
+
+.site-term__record i {
+  position: relative;
+  display: block;
+  width: var(--w, 60%);
+  height: 8px;
+  border-radius: 3px;
+  background: var(--site-line-strong);
+}
+
+/* Закрытая графа — плашка, тот же знак, что у скрытого заголовка в результате: здесь было, и этого
+   больше нет. Прокрашивается слева направо, как выделитель */
+.site-term__record--closed i::after {
+  content: "";
+  position: absolute;
+  inset: -4px -3px;
+  border-radius: 2px;
+  background: var(--site-mark);
+  transform-origin: 0 50%;
+}
+
+/* Шкала. container-type даёт отметке ход в cqi: сдвиг в процентах считался бы от ширины самой
+   отметки, а растянутая на всю шкалу отметка, уехав вправо, раздувала бы прокрутку страницы */
+.site-term__scale {
+  position: relative;
+  height: 80px;
+  container-type: inline-size;
+}
+
+.site-term__scale::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 24px;
+  height: 1px;
+  background: var(--site-line-strong);
+}
+
+.site-term__fill {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 25px;
+  height: 12px;
+  background: var(--site-marker);
+  transform: scaleX(var(--site-term-p));
+  transform-origin: 0 50%;
+}
+
+.site-term__ticks {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 25px;
+  height: 12px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.site-term__ticks i {
+  width: 1px;
+  height: 5px;
+  background: var(--site-tick);
+}
+
+.site-term__ticks i:nth-child(10n + 1) {
+  height: 12px;
+  background: var(--site-ink-3);
+}
+
+.site-term__cursor {
+  position: absolute;
+  left: 0;
+  bottom: 25px;
+  width: 1px;
+  height: 30px;
+  background: var(--site-ink);
+  translate: calc(var(--site-term-p) * (100cqi - 1px)) 0;
+}
+
+/* Подпись отметки: у начала шкалы стоит справа от черты, у конца — слева, в середине — по центру.
+   Так она не выходит за шкалу ни в одном положении и не раздувает прокрутку на телефоне */
+.site-term__cursor::after {
+  content: "день " counter(site-term-day);
+  counter-reset: site-term-day var(--site-term-day);
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  translate: calc(var(--site-term-p) * -100%) 0;
+  padding: 3px 7px;
+  border-radius: var(--site-r-1);
+  background: var(--site-ink);
+  color: var(--site-paper);
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.site-term__end {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--site-ink-3);
+}
+
+.site-term__end--stop {
+  left: auto;
+  right: 0;
+}
+
+/* Планшет: запись и текст рядом, моменты срока друг под другом */
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .site-term__stage {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--site-s-6);
+  }
+}
+
+/* Три момента срока — три колонки одной сетки: записи и шкала в первой строке, тексты во второй.
+   Строки у колонок общие (subgrid), поэтому тексты начинаются на одной линии при любой длине */
+@media (min-width: 1024px) {
+  .site-term {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 4fr);
+    grid-template-rows: auto auto;
+    gap: var(--site-s-6);
+  }
+
+  .site-term__stage {
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+    gap: var(--site-s-6);
+  }
+
+  .site-term__scale {
+    align-self: center;
+  }
+
+  .site-term__record {
+    max-width: none;
+  }
+}
+
+/* Заголовок слева, содержимое справа: вопросы и темы находок. Колонка содержимого уже узкой
+   строки, и лист не выглядит полупустым. Одна раскладка на оба блока — чтобы они не разошлись в
+   полях и пропорциях (до версии 14 у вопросов был свой класс раскладки) */
+.site-split {
+  display: grid;
+  gap: var(--site-s-6);
+}
+
+@media (min-width: 1024px) {
+  .site-split {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+    gap: var(--site-s-8);
+    align-items: start;
+  }
+}
+
+/* ---------- «Что мы обычно находим»: темы находок ----------
+   Подписи — те же, что у тем в результате проверки (каталог тем продукта, ТЗ приложение A):
+   человек до проверки узнаёт слова, которые увидит после. Не карточки: соседний блок «Где мы
+   ищем» — карточки, а темы — справочный список, как графы документа: название слева, пояснение
+   справа, строка под строкой. С версии 16 одна колонка: тем пять, и в сетке 2×3 оставалась пустая
+   клетка (заказчик 12.09: нечётное число в сетке выглядит кривым). Названия тем без выделителя
+   (заказчик 13.09: сиреневая подложка под словами смотрится некрасиво) — иерархию держат начертание и
+   кегль, пояснение мельче и серее. Выделитель под названием остался у тем в результате проверки
+   (.site-topics__name ниже): там тема — заголовок группы закрашенных материалов. */
+.site-topics {
+  display: grid;
+  margin: 0;
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-topics > div {
+  display: grid;
+  gap: 6px var(--site-s-6);
+  padding-block: var(--site-s-4);
+  border-top: 1px solid var(--site-line);
+}
+
+@media (min-width: 640px) {
+  .site-topics > div {
+    grid-template-columns: minmax(0, 17em) minmax(0, 1fr);
+    align-items: baseline;
+    padding-block: var(--site-s-5);
+  }
+}
+
+.site-topics dt {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: var(--site-ink);
+}
+
+/* Выделитель по нижней половине строки, а не заливкой целиком: так ложится текстовыделитель.
+   Название — строчный элемент с clone: у темы в две строки выделена каждая строка, а не общий
+   прямоугольник (в flex-строке название становилось блоком, и выделитель ложился плитой). */
+.site-topics__name {
+  padding-inline: 3px;
+  margin-inline: -3px;
+  background: linear-gradient(transparent 52%, var(--site-marker) 52%);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.site-topics dd {
+  margin: 0;
+  max-width: 48ch;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+}
+
+/* FAQ: раскрытие анимируется высотой (Chrome 131+), в других браузерах — мгновенно */
+.site-faq {
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-faq details {
+  border-top: 1px solid var(--site-line);
+}
+
+.site-faq details::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition: block-size var(--site-dur-base) var(--site-ease-out), content-visibility var(--site-dur-base) allow-discrete;
+}
+
+.site-faq details[open]::details-content {
+  block-size: auto;
+}
+
+.site-faq summary {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--site-s-4);
+  min-height: 56px;
+  padding: 12px 0;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.site-faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.site-faq summary::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-right: 1.5px solid var(--site-ink-3);
+  border-bottom: 1.5px solid var(--site-ink-3);
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-faq details[open] summary::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.site-faq p {
+  margin: 0 0 var(--site-s-4);
+  color: var(--site-ink-2);
+  max-width: 70ch;
+}
+
+/* ---------- Подвал ---------- */
+
+/* Подвал на лендинге и в мастере стоит сразу под листом: поле и линия над ним давали полосу
+   стола между листом и подвалом — лишнюю смену фона. В макете правило жило в хроме прототипа. */
+:is(main:has(> .site-hero), .site-wizard) + .site-footer {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.site-footer {
+  margin-top: var(--site-s-8);
+  border-top: 1px solid var(--site-line);
+  padding-block: var(--site-s-6) var(--site-s-7);
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+  display: grid;
+  gap: var(--site-s-5);
+}
+
+.site-footer .site-logo {
+  padding-inline: 0;
+}
+
+.site-footer__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-4) var(--site-s-6);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-2) var(--site-s-5);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-footer__links a {
+  color: var(--site-ink-2);
+  text-decoration: none;
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+.site-footer__links a:hover {
+  color: var(--site-ink);
+}
+
+.site-footer__legal {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+  max-width: 70ch;
+}
+
+/* ---------- Контентные страницы ---------- */
+
+.site-page {
+  padding-block: var(--site-s-6) var(--site-s-8);
+}
+
+.site-breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 0 0 var(--site-s-4);
+  padding: 0;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-breadcrumbs li {
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-breadcrumbs li + li::before {
+  content: "/";
+  color: var(--site-line-strong);
+  margin-right: 8px;
+}
+
+.site-breadcrumbs a {
+  color: var(--site-ink-3);
+  display: inline-flex;
+  align-items: center;
+}
+
+.site-toc a,
+.site-card a {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* На тач-экранах навигационным ссылкам нужны 44 px по высоте */
+@media (max-width: 1023px) {
+  .site-breadcrumbs li,
+  .site-breadcrumbs a,
+  .site-toc a {
+    min-height: 44px;
+  }
+
+  .site-toc ol { gap: 0; }
+}
+
+.site-article__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-2) var(--site-s-4);
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-prose {
+  line-height: 1.65;
+}
+
+.site-prose > * + * {
+  margin-top: var(--site-s-4);
+}
+
+.site-prose h2 {
+  font-family: var(--site-font-heading);
+  font-weight: 600;
+  font-size: var(--site-text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-top: var(--site-s-7);
+  text-wrap: balance;
+}
+
+.site-prose h3 {
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+  line-height: 1.35;
+  margin-top: var(--site-s-6);
+}
+
+.site-prose p { color: var(--site-ink-2); }
+
+.site-prose ul,
+.site-prose ol {
+  padding-left: 1.2em;
+  color: var(--site-ink-2);
+}
+
+.site-prose li + li { margin-top: 6px; }
+
+.site-prose strong { color: var(--site-ink); }
+
+.site-toc {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-3);
+  padding: var(--site-s-4) var(--site-s-5);
+  font-size: var(--site-text-sm);
+  background: var(--site-paper);
+}
+
+.site-toc__title {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.site-toc ol {
+  margin: 0;
+  padding-left: 1.2em;
+  display: grid;
+  gap: 6px;
+}
+
+.site-layout-2 {
+  display: grid;
+  gap: var(--site-s-6);
+}
+
+@media (min-width: 1024px) {
+  .site-layout-2 {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: var(--site-s-8);
+    align-items: start;
+  }
+
+  .site-aside {
+    position: sticky;
+    top: calc(72px + var(--site-s-4));
+    display: grid;
+    gap: var(--site-s-4);
+  }
+}
+
+/* Строка фактов услуги: формат, срок, основание */
+.site-stat-row {
+  display: grid;
+  gap: var(--site-s-4);
+  margin: 0;
+  padding: var(--site-s-5) 0;
+  border-block: 1px solid var(--site-line);
+}
+
+.site-stat-row > div {
+  display: grid;
+  gap: 4px;
+}
+
+.site-stat-row dt {
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--site-ink-3);
+}
+
+.site-stat-row dd {
+  margin: 0;
+  font-size: var(--site-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+@media (min-width: 640px) {
+  .site-stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Этапы работ */
+.site-phases {
+  list-style: none;
+  counter-reset: ph;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-phases li {
+  counter-increment: ph;
+  display: grid;
+  gap: 8px;
+  padding: var(--site-s-5);
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+}
+
+.site-phases p {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+}
+
+@media (min-width: 768px) {
+  .site-phases {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--site-s-4) var(--site-s-5);
+  }
+}
+
+/* Риски: чем оборачивается бездействие */
+.site-risks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--site-s-3);
+}
+
+.site-risks li {
+  position: relative;
+  padding-left: 26px;
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+}
+
+.site-risks li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 12px;
+  height: 2px;
+  background: var(--site-warn);
+  border-radius: 1px;
+}
+
+/* Призыв внутри страницы (услуга, статья): бумага, свечение, уголки приводки */
+.site-cta-band {
+  position: relative;
+  overflow: hidden;
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  box-shadow: var(--site-shadow-panel);
+  padding: var(--site-s-6) var(--site-s-5);
+  display: grid;
+  gap: var(--site-s-4);
+  text-align: center;
+  justify-items: center;
+}
+
+.site-cta-band::before {
+  content: "";
+  position: absolute;
+  inset: -40% -10% auto;
+  height: 160%;
+  background: radial-gradient(45% 50% at 50% 0%, var(--site-glow-1), transparent 70%);
+  pointer-events: none;
+}
+
+.site-cta-band > * {
+  position: relative;
+  z-index: 1;
+}
+
+.site-cta-band p {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-md);
+  max-width: 46ch;
+}
+
+@media (min-width: 768px) {
+  .site-cta-band { padding: var(--site-s-8) var(--site-s-6); }
+}
+
+/* ---------- Закрывающий лист лендинга ----------
+   Тезис, кнопка и кадр F1 (серия «Бумажные предметы», с версии 16). Версия 11 растворяла левую
+   треть снимка в поле его цвета и подрезала кадр — вместе с краем уходило и то, что на нём снято
+   (замечание заказчика 13.09). С тех пор снимок стоит целиком, без маски. Лист — того же материала, что
+   остальные: материал даёт .site-sheet, здесь снимаются только его поля.
+
+   Раскладка: от 1024 px две половины — текст на бумаге слева, снимок справа от края до края.
+   Ниже 1024 px текст над снимком. */
+
+.site-final {
+  display: grid;
+  padding: 0;
+  overflow: clip;
+  isolation: isolate;
+}
+
+/* width: 100% обязателен: у контейнера авто-поля, а в grid такой элемент сжимается до ширины
+   текста и встаёт по центру */
+.site-final__copy {
+  display: grid;
+  justify-items: start;
+  gap: var(--site-s-5);
+  width: 100%;
+  padding-block: var(--site-s-8) var(--site-s-6);
+}
+
+.site-final__title {
+  font-family: var(--site-font-heading);
+  font-size: var(--site-text-display);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+  max-width: 11em;
+  margin: 0;
+}
+
+.site-final__lead {
+  font-size: var(--site-text-lg);
+  line-height: 1.45;
+  color: var(--site-ink-2);
+  max-width: 26em;
+}
+
+.site-final__media {
+  position: relative;
+  aspect-ratio: 4 / 5;
+  max-height: 88svh;
+  overflow: clip;
+}
+
+.site-final__media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .site-final__media {
+    aspect-ratio: 4 / 3;
+    max-height: none;
+  }
+
+  /* Папка со стопкой стоит чуть ниже середины кадра: при обрезке до 4:3 срезаются пустой верх и низ,
+     а не сиреневая закладка */
+  .site-final__media img {
+    object-position: 50% 58%;
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-final {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-height: max(640px, 100svh);
+  }
+
+  /* Левая половина: текст начинается по линии контейнера страницы, а не от края листа */
+  .site-final__copy {
+    align-self: center;
+    max-width: none;
+    margin: 0;
+    padding-block: var(--site-s-9);
+    padding-inline: max(var(--site-gutter), calc((100vw - var(--site-container)) / 2)) var(--site-s-7);
+  }
+
+  /* Правая половина от края до края: на 1440×900 это ровно 4:5, и снимок виден целиком; на
+     других окнах подрезается на несколько процентов, а папка со стопкой остаётся в середине кадра */
+  .site-final__media {
+    aspect-ratio: auto;
+    max-height: none;
+  }
+}
+
+.site-price {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  background: var(--site-paper);
+  padding: var(--site-s-5);
+  display: grid;
+  gap: var(--site-s-3);
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-2);
+}
+
+/* ---------- Хаб услуг и блог (версия 16) ----------
+   Два списка, по которым человек выбирает, что читать дальше. У каждого материала одна обложка —
+   в списке, наверху его страницы и в превью ссылки (серия «Бумажные предметы», prompts.md). Пропорция
+   одна, 3:2: одна и та же картинка встаёт во все три места без перекадрирования. */
+
+.site-page__head {
+  display: grid;
+  gap: var(--site-s-4);
+  max-width: 44em;
+  margin-block-end: var(--site-s-7);
+}
+
+.site-cover {
+  position: relative;
+  aspect-ratio: 3 / 2;
+  overflow: clip;
+  border-radius: var(--site-r-4);
+  background: var(--site-paper-2);
+}
+
+.site-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: scale var(--site-dur-slow) var(--site-ease-out);
+}
+
+/* Контур как у снимков на листе: полупрозрачный чёрный, а не цвет линии */
+.site-cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
+/* Короткие факты в строку: стоимость, срок, основание */
+.site-facts-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-2) var(--site-s-5);
+  margin: 0;
+}
+
+.site-facts-inline > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--site-s-2);
+}
+
+.site-facts-inline dt {
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--site-ink-3);
+}
+
+.site-facts-inline dd {
+  margin: 0;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink);
+}
+
+/* Проверка в хабе — широкий лист с уголками приводки: главный объект страницы, а не первая из
+   карточек. Радиусы концентричны: лист 24 = обложка 12 + поле 12 */
+.site-offer {
+  display: grid;
+  gap: var(--site-s-5);
+  padding: var(--site-s-3);
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: 24px;
+  box-shadow: var(--site-shadow-panel);
+}
+
+.site-offer .site-cover {
+  border-radius: var(--site-r-3);
+}
+
+.site-offer__body {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: var(--site-s-4);
+  padding: 0 var(--site-s-3) var(--site-s-4);
+}
+
+.site-offer__text {
+  color: var(--site-ink-2);
+  max-width: 46ch;
+}
+
+/* Пополам, а не 7/5: в узкой половине две кнопки не вставали в ряд и складывались столбиком */
+@media (min-width: 900px) {
+  .site-offer {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--site-s-7);
+  }
+
+  .site-offer__body {
+    padding: var(--site-s-5) var(--site-s-6) var(--site-s-5) 0;
+  }
+}
+
+.site-hub {
+  margin-block-start: var(--site-s-9);
+}
+
+.site-hub__head {
+  display: grid;
+  gap: var(--site-s-3);
+  max-width: 44em;
+  margin-block-end: var(--site-s-6);
+}
+
+/* Услуги — строки, а не сетка карточек: их читают по порядку и сравнивают, а не пробегают глазами */
+.site-services {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--site-s-3);
+}
+
+.site-service {
+  position: relative;
+  display: grid;
+  gap: var(--site-s-4);
+  padding: var(--site-s-3);
+  background: var(--site-paper);
+  border: 1px solid var(--site-line);
+  border-radius: 24px;
+  transition-property: border-color, box-shadow;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-service .site-cover {
+  border-radius: var(--site-r-3);
+}
+
+.site-service__body {
+  display: grid;
+  align-content: center;
+  gap: var(--site-s-3);
+  padding: 0 var(--site-s-3) var(--site-s-3);
+}
+
+.site-service__body p {
+  max-width: 60ch;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+}
+
+/* Строка и статья нажимаются целиком: ссылка растянута на них псевдоэлементом, а кольцо фокуса
+   рисует сама строка — иначе оно обводило бы только заголовок */
+.site-service__link,
+.site-post__link {
+  color: inherit;
+}
+
+.site-service__link {
+  text-decoration: none;
+}
+
+.site-service__link::after,
+.site-post__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.site-service__link:focus-visible,
+.site-post__link:focus-visible {
+  outline: none;
+}
+
+.site-service:has(.site-service__link:focus-visible),
+.site-post:has(.site-post__link:focus-visible) {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 4px;
+}
+
+.site-service__arrow {
+  display: none;
+}
+
+@media (hover: hover) {
+  .site-service:hover {
+    border-color: var(--site-line-hover);
+    box-shadow: var(--site-shadow-card);
+  }
+
+  .site-service:hover .site-cover img,
+  .site-post:hover .site-cover img {
+    scale: 1.03;
+  }
+}
+
+@media (min-width: 768px) {
+  .site-service {
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--site-s-6);
+  }
+
+  .site-service__body {
+    padding: var(--site-s-2) 0;
+  }
+
+  .site-service__arrow {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-inline-end: var(--site-s-3);
+    border: 1px solid var(--site-line-strong);
+    border-radius: 50%;
+    color: var(--site-ink);
+    transition-property: background-color, border-color, color;
+    transition-duration: var(--site-dur-fast);
+    transition-timing-function: var(--site-ease-out);
+  }
+
+  .site-service__arrow svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .site-service:hover .site-service__arrow {
+    background: var(--site-ink);
+    border-color: var(--site-ink);
+    color: var(--site-paper);
+  }
+}
+
+.site-hub__terms {
+  display: grid;
+  gap: var(--site-s-6);
+  margin-block-start: var(--site-s-8);
+  padding-block-start: var(--site-s-6);
+  border-top: 1px solid var(--site-line);
+}
+
+.site-hub__terms > div {
+  display: grid;
+  align-content: start;
+  gap: var(--site-s-3);
+}
+
+.site-hub__terms p {
+  max-width: 52ch;
+  color: var(--site-ink-2);
+}
+
+@media (min-width: 768px) {
+  .site-hub__terms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--site-s-8);
+  }
+}
+
+/* Источники в колонке статьи: четыре в ряд там не помещаются, всегда по два */
+@media (min-width: 1024px) {
+  .site-sources-grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Шаги строками: три шага в сетке по два дали бы пустую клетку, а три колонки в колонке статьи —
+   по пять строк на абзац */
+.site-phases.site-phases--rows {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 640px) {
+  .site-phases--rows li {
+    grid-template-columns: minmax(0, 5.5rem) minmax(0, 1fr);
+    column-gap: var(--site-s-4);
+  }
+
+  .site-phases--rows li > .site-tag {
+    grid-row: span 2;
+    align-self: start;
+    padding-top: 5px;
+  }
+
+  .site-phases--rows li > :not(.site-tag) {
+    grid-column: 2;
+  }
+}
+
+/* ---------- Блог ---------- */
+
+/* Фильтр тем. Не .site-chips / .site-chip: так называются чипы преимуществ в первом экране, и в версии
+   16 правила фильтра, стоящие ниже в файле, перебивали их — «AI-анализ» терял выделитель, чипы
+   вырастали до 40 px и переносились на вторую строку */
+.site-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-2);
+  margin-block-end: var(--site-s-6);
+}
+
+/* Выбранная тема — чернила: выбранное на сайте отмечается чернилами, а не цветом */
+.site-filter__btn {
+  appearance: none;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: var(--site-r-pill);
+  background: var(--site-paper);
+  color: var(--site-ink-2);
+  font: inherit;
+  font-size: var(--site-text-sm);
+  cursor: pointer;
+  transition-property: background-color, border-color, color;
+  transition-duration: var(--site-dur-fast);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-filter__btn:hover {
+  border-color: var(--site-line-hover);
+  color: var(--site-ink);
+}
+
+.site-filter__btn[aria-pressed="true"] {
+  background: var(--site-ink);
+  border-color: var(--site-ink);
+  color: var(--site-paper);
+}
+
+@media (max-width: 1023px) {
+  .site-filter__btn {
+    min-height: 44px;
+  }
+}
+
+/* Четыре темы в одну строку на 375 px: с полями 16 и даже 12 последняя переносилась (не хватало 3 px) */
+@media (max-width: 639px) {
+  .site-filter__btn {
+    padding: 0 10px;
+  }
+}
+
+/* Написанные статьи крупно, запланированные — обычным рядом: 2 + 4 дают полные ряды на любой ширине */
+.site-blog {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--site-s-7) var(--site-s-5);
+}
+
+.site-post {
+  position: relative;
+  grid-column: span 12;
+  display: grid;
+  align-content: start;
+  gap: var(--site-s-4);
+  border-radius: var(--site-r-4);
+}
+
+@media (min-width: 640px) {
+  .site-post {
+    grid-column: span 6;
+  }
+}
+
+@media (min-width: 1024px) {
+  .site-post {
+    grid-column: span 3;
+  }
+
+  .site-post--lead {
+    grid-column: span 6;
+  }
+}
+
+.site-post__body {
+  display: grid;
+  gap: var(--site-s-2);
+}
+
+.site-post__title {
+  margin: 0;
+  font-family: var(--site-font-heading);
+  font-size: var(--site-text-lg);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.site-post--lead .site-post__title {
+  font-size: var(--site-text-xl);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+/* Отклик на наведение — выделитель под заголовком, как у ссылки в тексте: толстое подчёркивание,
+   поднятое под нижнюю половину строки, из прозрачного в выделитель */
+.site-post__link {
+  text-decoration-line: underline;
+  text-decoration-thickness: 0.45em;
+  text-underline-offset: -0.3em;
+  text-decoration-skip-ink: none;
+  text-decoration-color: transparent;
+  transition: text-decoration-color var(--site-dur-base) var(--site-ease-out);
+}
+
+.site-post:hover .site-post__link {
+  text-decoration-color: var(--site-marker);
+}
+
+.site-post__excerpt {
+  margin: 0;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+}
+
+.site-post:not(.site-post--lead) .site-post__excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.site-post__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 0;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-post__meta > span + span::before {
+  content: "·";
+  margin-inline: 8px;
+  color: var(--site-line-hover);
+}
+
+/* ---------- Документация токенов ---------- */
+
+.site-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--site-s-4);
+}
+
+.site-swatch {
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-3);
+  overflow: hidden;
+  background: var(--site-paper);
+}
+
+.site-swatch__color {
+  height: 64px;
+  border-bottom: 1px solid var(--site-line);
+}
+
+.site-swatch__meta {
+  padding: 10px 12px;
+  font-size: var(--site-text-xs);
+  line-height: 1.5;
+  color: var(--site-ink-2);
+  display: grid;
+  gap: 2px;
+}
+
+.site-swatch__meta strong {
+  color: var(--site-ink);
+  font-weight: 600;
+}
+
+.site-code {
+  font-family: var(--site-font-mono);
+  font-size: 0.85em;
+  background: var(--site-paper-2);
+  border: 1px solid var(--site-line);
+  padding: 1px 5px;
+  border-radius: var(--site-r-1);
+  color: var(--site-ink);
+}
+
+.site-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--site-text-sm);
+}
+
+.site-table th,
+.site-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--site-line);
+  vertical-align: top;
+}
+
+.site-table th {
+  font-weight: 600;
+  color: var(--site-ink-2);
+  font-size: var(--site-text-xs);
+}
+
+.site-table-wrap { overflow-x: auto; }
+
+.site-spec {
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-spec__row {
+  display: grid;
+  gap: 6px;
+  padding-top: var(--site-s-3);
+  border-top: 1px solid var(--site-line);
+}
+
+.site-spec__label {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-space-demo {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--site-s-3);
+  flex-wrap: wrap;
+}
+
+.site-space-demo > div,
+.site-radius-demo > div {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-space-demo i {
+  display: block;
+  background: var(--site-accent-tint);
+  border: 1px solid var(--site-accent);
+  border-radius: 2px;
+}
+
+.site-radius-demo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-4);
+}
+
+.site-radius-demo i {
+  display: block;
+  width: 56px;
+  height: 56px;
+  background: var(--site-paper);
+  border: 1px solid var(--site-line-strong);
+}
+
+.site-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--site-s-3);
+  align-items: center;
+}
+
+/* ---------- Движение: уважение к настройкам ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .site-spinner {
+    border-right-color: currentColor;
+    opacity: 0.6;
+  }
+
+  .site-scan .site-mark {
+    animation: none;
+    opacity: 0.5;
+  }
+
+  .js .site-reveal,
+  .js .site-reveal--stagger > *,
+  .site-demo__reveal > *,
+  .site-stagger > *,
+  .site-hero .site-formcase,
+  .site-hero .site-seek,
+  .site-hero__grid,
+  .site-steps__card,
+  .site-steps__fill,
+  .site-steps__pop,
+  .site-demo,
+  .site-final__media img,
+  .site-faq details,
+  .site-header__progress,
+  .site-sheet {
+    opacity: 1;
+    transform: none;
+    translate: none;
+    scale: none;
+    animation: none;
+    filter: none;
+  }
+
+  .site-seek__caret { animation: none; }
+
+  /* Полоса прочитанного без прокрутки не имеет смысла — её просто нет */
+  .site-header__progress { display: none; }
+
+  /* Шаги стоят рядом без закрепления и без места под карточку; снимки не оседают */
+  .site-steps__item::before { display: none; }
+
+  .js .site-lines .site-lines__inner { transform: none; }
+
+  /* Фон первого экрана перестаёт двигаться целиком: ни дыхания свечения, ни прохода
+     разбора, ни параллакса сетки. Наползание листов держится тенью и скруглением. */
+  .site-hero::before,
+  .site-hero__scan::before {
+    animation: none;
+  }
+
+  .site-hero__scan { display: none; }
+
+  .site-hero::after { background-position: center 0; }
+}

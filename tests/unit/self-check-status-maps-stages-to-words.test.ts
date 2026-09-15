@@ -99,7 +99,7 @@ describe("проекция идущего прогона", () => {
     const out = publicSelfCheckStatus(running, null, { kind: "running", stage: "collecting", progress: 0 });
     expect(out.run).toEqual({
       stage: "collecting",
-      stageLabel: "Ищем упоминания и сверяем с открытыми источниками и санкционными списками",
+      stageLabel: "Поиск упоминаний и сверка с открытыми источниками и санкционными списками",
       progress: 0,
       nextPollMs: 7000,
       startedAt: STARTED,
@@ -109,7 +109,7 @@ describe("проекция идущего прогона", () => {
 
   it("вердикт — своя подпись", () => {
     const out = publicSelfCheckStatus(running, null, { kind: "running", stage: "verdict", progress: 0.5 });
-    expect(out.run).toMatchObject({ stage: "verdict", stageLabel: "Размечаем находки и готовим результат" });
+    expect(out.run).toMatchObject({ stage: "verdict", stageLabel: "AI-анализ размечает находки и формирует результат" });
   });
 
   it("срок опроса — настройка, но не чаще раза в пять секунд", () => {
