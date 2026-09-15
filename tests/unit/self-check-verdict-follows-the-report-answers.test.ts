@@ -105,11 +105,6 @@ describe("чисто", () => {
     expect(lightVerdict(input([...serpItems(NEUTRAL), wikipediaAbsentItem()])).verdict).toBe("CLEAN");
   });
 
-  it("негативный материал без темы вердикт не меняет: назвать посетителю нечего", () => {
-    const out = lightVerdict(input(serpItems(NEUTRAL, UNTHEMED_ADVERSE)));
-    expect(out).toMatchObject({ verdict: "CLEAN", materialsFound: 0, themes: [] });
-  });
-
   it("материал в теме, но без негатива — чисто: тема сама по себе не приговор", () => {
     // Добавлено после мутационной проверки: «каждый материал негативен» оставалась
     // зелёной — ни один случай «чисто» не держал материал в показываемой теме.
@@ -117,23 +112,46 @@ describe("чисто", () => {
     expect(lightVerdict(input(serpItems(elected)))).toMatchObject({ verdict: "CLEAN", themes: [] });
   });
 
-  it("негатив в деловом профиле темой посетителю не показывается", () => {
+  it("совпадение комплаенса без санкционного или PEP-типа риска вердикт не меняет", () => {
+    const other = complianceItem({ riskTypes: ["OTHER"], profileUrl: null });
+    expect(lightVerdict(input([...serpItems(NEUTRAL), other])).verdict).toBe("CLEAN");
+  });
+
+  it("запись комплаенса судится типом риска, а не площадкой реестра", () => {
+    // Для строки выдачи площадка санкционного реестра — негатив сама по себе, но
+    // совпадение по комплаенсу не подтверждается автоматически: без санкционного или
+    // PEP-типа запись вердикта не меняет, даже если её адрес — на такой площадке.
+    const other = complianceItem({ riskTypes: ["OTHER"] });
+    expect(lightVerdict(input([...serpItems(NEUTRAL), other])).verdict).toBe("CLEAN");
+  });
+});
+
+describe("негатив найден", () => {
+  it("негативный материал без темы — тоже негатив, только без названия темы", () => {
+    // Решение владельца после приёмки 15.09: строку, которую отчёт отмечает
+    // негативной, сайт чистой не называет. Темы нет — уровень по правилу отчёта для
+    // темы без базового уровня, низкий.
+    expect(lightVerdict(input(serpItems(NEUTRAL, UNTHEMED_ADVERSE)))).toMatchObject({
+      verdict: "NEGATIVE_FOUND",
+      materialsFound: 1,
+      findingsTotal: 0,
+      themes: [],
+      riskLevel: "low",
+    });
+  });
+
+  it("негатив в деловом профиле — негатив, но тема «Деловой профиль» не показывается", () => {
     // Добавлено после мутационной проверки: фильтр темы без базового уровня ничем
     // не держался — негативного материала делового профиля в тестах не было.
     const detained = observation(
       "Предприниматель Иванов задержан по делу о мошенничестве",
       "https://ria.ru/20250314/ivanov.html"
     );
-    expect(lightVerdict(input(serpItems(detained))).themes.map((t) => t.id)).not.toContain("business_profile");
+    const out = lightVerdict(input(serpItems(detained)));
+    expect(out.verdict).toBe("NEGATIVE_FOUND");
+    expect(out.themes.map((t) => t.id)).not.toContain("business_profile");
   });
 
-  it("совпадение комплаенса без санкционного или PEP-типа риска вердикт не меняет", () => {
-    const other = complianceItem({ riskTypes: ["OTHER"], profileUrl: null });
-    expect(lightVerdict(input([...serpItems(NEUTRAL), other])).verdict).toBe("CLEAN");
-  });
-});
-
-describe("негатив найден", () => {
   it("уголовное дело — тема «Суд и криминал» с уровнем отчёта", () => {
     expect(lightVerdict(input(serpItems(NEUTRAL, CRIMINAL)))).toMatchObject({
       verdict: "NEGATIVE_FOUND",

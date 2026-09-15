@@ -139,6 +139,19 @@ function isSanctionsHit(item: RawInventoryItem): boolean {
 }
 
 /**
+ * Негативен ли материал — ответом строки отчёта, кроме записи комплаенса.
+ *
+ * Запись комплаенса судится только типом риска. Для строки выдачи площадка
+ * санкционного реестра — негатив сама по себе, а адрес записи комплаенса и есть
+ * такая площадка: предикат строки сделал бы негативом любую запись базы, в том
+ * числе без санкционного и PEP-типа, — а совпадение по комплаенсу автоматически не
+ * подтверждается.
+ */
+function isAdverseMaterial(item: RawInventoryItem): boolean {
+  return item.evidenceType === "compliance_hit" ? isSanctionsHit(item) : resolveItemAdverse(item);
+}
+
+/**
  * Ключ материала. Запись без адреса материалом ни с кем не делится — то же
  * правило, что у ключа материала аналитики (`item-adverse.ts`): иначе три базы с
  * одним именем стали бы одним совпадением.
@@ -176,19 +189,22 @@ export function lightVerdict(input: LightVerdictInput): LightVerdict {
   }
 
   const complianceTheme = getFindingThemes().find((t) => t.themeId === COMPLIANCE_THEME_ID) ?? null;
+  // Негатив считается по всем материалам, с темой и без (решение владельца после
+  // приёмки 15.09): строку, которую отчёт красит негативной, сайт чистой не
+  // называет. Темы только называют посетителю, о чём материалы.
+  const negative = new Set<string>();
   // Тема → материалы темы, у каждого — негативен ли он.
   const byTheme = new Map<string, { theme: ThemeDef; materials: Map<string, boolean> }>();
   for (const item of input.items) {
-    const sanctions = isSanctionsHit(item);
+    const key = materialKey(item);
+    const adverse = isAdverseMaterial(item);
     // Тема без базового уровня (деловой профиль) описывает, а не предупреждает:
     // посетителю её не показывают, и признак живёт в каталоге, а не списком здесь.
     const themes = themesFor(item, false).filter((theme) => theme.baseRisk !== "none");
-    if (sanctions && complianceTheme && !themes.some((t) => t.themeId === complianceTheme.themeId)) {
+    if (isSanctionsHit(item) && complianceTheme && !themes.some((t) => t.themeId === complianceTheme.themeId)) {
       themes.push(complianceTheme);
     }
-    if (themes.length === 0) continue;
-    const adverse = sanctions || resolveItemAdverse(item);
-    const key = materialKey(item);
+    if (adverse) negative.add(key);
     for (const theme of themes) {
       const entry = byTheme.get(theme.themeId) ?? { theme, materials: new Map<string, boolean>() };
       entry.materials.set(key, (entry.materials.get(key) ?? false) || adverse);
@@ -197,16 +213,14 @@ export function lightVerdict(input: LightVerdictInput): LightVerdict {
   }
 
   const themes: VerdictTheme[] = [];
-  const negative = new Set<string>();
   for (const { theme, materials } of byTheme.values()) {
-    const adverseKeys = [...materials].filter(([, isAdverse]) => isAdverse).map(([key]) => key);
-    if (adverseKeys.length === 0) continue;
-    for (const key of adverseKeys) negative.add(key);
+    const adverseCount = [...materials.values()].filter(Boolean).length;
+    if (adverseCount === 0) continue;
     themes.push({
       id: theme.themeId,
       label: SITE_THEME_LABELS[theme.themeId] ?? theme.label,
-      count: adverseKeys.length,
-      level: riskFor(theme, adverseKeys.length, materials.size),
+      count: adverseCount,
+      level: riskFor(theme, adverseCount, materials.size),
     });
   }
   themes.sort(
@@ -219,7 +233,9 @@ export function lightVerdict(input: LightVerdictInput): LightVerdict {
   }
   return {
     verdict: "NEGATIVE_FOUND",
-    riskLevel: themes[0]!.level,
+    // Негатив без показываемой темы — уровень, который `riskFor` даёт негативу в
+    // теме без базового уровня: «low».
+    riskLevel: themes[0]?.level ?? "low",
     materialsFound: negative.size,
     findingsTotal: themes.length,
     themes,
