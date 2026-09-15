@@ -208,7 +208,8 @@ export function CaseHeader({
     unifiedJob?.stage === "ARSENKIN_ENRICHMENT" ||
     unifiedJob?.stage === "COMPOSITE_MERGE" ||
     unifiedJob?.stage === "ORION_PREPARE" ||
-    unifiedJob?.stage === "CLIENT_CONTENT";
+    unifiedJob?.stage === "CLIENT_CONTENT" ||
+    unifiedJob?.stage === "LIGHT_VERDICT";
   const fullAuditBlocked =
     Boolean(unifiedJob?.fullAuditBlocked) ||
     serverRecoveryAllowed ||
@@ -242,6 +243,11 @@ export function CaseHeader({
             {stageLabel ? (
               <span className="dp-muted">
                 · {t("agents.unifiedStage")}: {tStatus(stageLabel)}
+              </span>
+            ) : null}
+            {unifiedJob?.mode === "light" ? (
+              <span className="dp-muted" data-testid="unified-mode-light">
+                · {t("unified.modeLight")}
               </span>
             ) : null}
           </div>

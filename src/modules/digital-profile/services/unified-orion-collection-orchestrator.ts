@@ -28,8 +28,9 @@ import type {
   ReportDataBinding,
   SurfaceCoverageBreakdown,
   UnifiedCollectionJob,
+  UnifiedCollectionMode,
 } from "./unified-collection-types";
-import { computeCoverageProgress } from "./unified-collection-types";
+import { computeCoverageProgress, jobMode } from "./unified-collection-types";
 import {
   assessRealCollection,
   captureBaseCollectionManifest,
@@ -47,6 +48,8 @@ import {
   gptLayerAppliedFromQuality,
 } from "./report-ready-gates";
 import { digitalProfileConfig } from "../config";
+import { riskProbesEnabled } from "../providers/config";
+import { STAGE_OWNER, pipelineFor } from "../workflow/step-plan";
 import {
   ensureOfflineEnrichmentJobWarning,
   isOfflineEnrichmentMode,
@@ -78,7 +81,7 @@ import {
   normalizeArsenkinEnrichmentState,
   surfaceCoverageFromEnrichmentState,
 } from "./arsenkin-enrichment-state";
-import type { FullAuditResultDTO } from "./agent-run-service";
+import type { FullAuditResultDTO, FullAuditRunOptions } from "./agent-run-service";
 import { ensurePersistedUnifiedBaseReportRun } from "./unified-base-report-run";
 import { collectYandexGenAnswer } from "./yandex-gen-answer-collection";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
@@ -224,6 +227,23 @@ export async function persistUnifiedTickFailure(
     errorCode,
     error: err,
   });
+  if (jobMode(job) === "light") {
+    // Лёгкий прогон не опрашивает Arsenkin. Записать его сбой ожиданием опроса
+    // значило бы отправить следующий тик в платное обогащение — за проверку,
+    // которую сайт обещал без него. Отказ повторяемый: шаг на повторе вернёт
+    // свою стадию.
+    return (
+      await patchUnifiedCollectionJob(caseId, {
+        stage: "FAILED_RETRYABLE",
+        status: "WAITING",
+        resumeCheckpoint: null,
+        lastError: message.slice(0, 500),
+        lastErrorCode: errorCode,
+        warnings: [...job.warnings, `unified-tick-error:${errorCode}`],
+        completedAt: null,
+      }) ?? job
+    );
+  }
   // Опрос, завершившийся ошибкой, продвижением не является — он тратит тот же
   // бюджет тишины, что и опрос без изменений (шаг 14).
   const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
@@ -272,7 +292,16 @@ export type UnifiedOrchestratorDeps = {
    * подставить состояние нельзя — маршрут старта `deps` не передаёт.
    */
   loadPersonaGateInput?: (caseId: string) => Promise<PersonaGateInput>;
-  runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
+  runFullAudit?: (
+    caseId: string,
+    actorId: string,
+    options?: FullAuditRunOptions
+  ) => Promise<FullAuditResultDTO>;
+  /**
+   * Запись вердикта лёгкого прогона. Подмена нужна смоку и юнитам: у них нет
+   * базы, а правило вердикта держат свои тесты.
+   */
+  recordLightVerdict?: (job: UnifiedCollectionJob) => Promise<void>;
   /** Offline: ProviderTasks for durable enrichment poll/ingest. */
   listEnrichmentProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
   /** Offline: poll adapter (never /set). */
@@ -361,6 +390,10 @@ function stageProgress(stage: UnifiedCollectionJob["stage"]): number {
       return 1;
     case "COMPLETED_PARTIAL":
       return 0.95;
+    case "LIGHT_VERDICT":
+      return 0.5;
+    case "LIGHT_READY":
+      return 1;
     default:
       return 0.05;
   }
@@ -593,6 +626,8 @@ export async function startUnifiedOrionCollection(input: {
   caseId: string;
   requestedBy?: string;
   arsenkinMode?: "full-first36";
+  /** Режим нового прогона; без него — полный, как из админки. */
+  mode?: UnifiedCollectionMode;
   /** Explicit paid recollection — required to supersede a job with preserved stages. */
   confirmPaidRecollection?: boolean;
   deps?: UnifiedOrchestratorDeps;
@@ -656,6 +691,7 @@ export async function startUnifiedOrionCollection(input: {
     caseId: input.caseId,
     requestedBy: input.requestedBy ?? "system",
     arsenkinMode: input.arsenkinMode ?? "full-first36",
+    mode: input.mode ?? "full",
     forceNew: Boolean(input.confirmPaidRecollection && existing && unifiedJobHasPreservedStages(existing)),
   });
   // REMEDIATION §8.2 — surface silent offline enrichment in deploy-like envs.
@@ -693,7 +729,7 @@ export async function startUnifiedOrionCollection(input: {
 async function enqueueUnifiedPipeline(job: UnifiedCollectionJob): Promise<void> {
   try {
     const { ensurePipelineSteps } = await import("../workflow/step-store");
-    await ensurePipelineSteps({ caseId: job.caseId, jobId: job.unifiedJobId });
+    await ensurePipelineSteps({ caseId: job.caseId, jobId: job.unifiedJobId, mode: jobMode(job) });
   } catch (err) {
     console.error("[unified] не удалось завести конвейер шагов", err);
   }
@@ -847,6 +883,13 @@ export async function runUnifiedCollectionTick(
         completedAt: new Date().toISOString(),
       });
     }
+    if (!stageBelongsToRunMode(job)) {
+      return await failTerminal(
+        job,
+        "RUN_MODE_STAGE_REFUSED",
+        `Стадия ${job.stage} не входит в план прогона режима ${jobMode(job)}`
+      );
+    }
 
     try {
       switch (job.stage) {
@@ -862,6 +905,9 @@ export async function runUnifiedCollectionTick(
         case "ORION_PREPARE":
         case "CLIENT_CONTENT":
           job = await stepPrepare(job, deps);
+          break;
+        case "LIGHT_VERDICT":
+          job = await stepLightVerdict(job, deps);
           break;
         case "FAILED_RETRYABLE":
           // Explicit recovery only — background pump must not auto-lift FAILED_RETRYABLE.
@@ -959,7 +1005,7 @@ async function stepBaseCollection(
 ): Promise<UnifiedCollectionJob> {
   const runFullAudit =
     deps.runFullAudit ??
-    (async (caseId: string, actorId: string) => {
+    (async (caseId: string, actorId: string, options?: FullAuditRunOptions) => {
       const { runFullAudit: real } = await import("./agent-run-service");
       // Evidence-first: on a real (non-mock) run an unconfigured provider must
       // be recorded as unavailable, never silently replaced by its mock agent.
@@ -969,6 +1015,7 @@ async function stepBaseCollection(
       // collection into a terminal PRE_RENDER_DATA_GATE_FAILED.
       return real(caseId, { actorId }, {
         runtimeMode: digitalProfileConfig.mockAgents ? undefined : "real_only",
+        ...options,
       });
     });
 
@@ -985,7 +1032,11 @@ async function stepBaseCollection(
     before = await snapshotExistingIds(prisma, job.caseId);
   }
 
-  const audit = await runFullAudit(job.caseId, job.requestedBy);
+  const mode = jobMode(job);
+  const audit = await runFullAudit(job.caseId, job.requestedBy, {
+    includeRiskProbes: riskProbesEnabled(mode),
+    skipProviders: mode === "light" ? [...LIGHT_RUN_SKIPPED_PROVIDERS] : [],
+  });
   const actualProviders = mapFullAuditToActualProviders(audit);
 
   // Нейро-ответ Яндекса спрашивается между аудитом и снятием манифеста: строки
@@ -1095,9 +1146,10 @@ async function stepBaseCollection(
 
   return (
     await patchUnifiedCollectionJob(job.caseId, {
-      stage: "ARSENKIN_ENRICHMENT",
+      // Лёгкий прогон после сбора идёт на вердикт: обогащения в его плане нет.
+      stage: mode === "light" ? "LIGHT_VERDICT" : "ARSENKIN_ENRICHMENT",
       status: "RUNNING",
-      progress: stageProgress("ARSENKIN_ENRICHMENT"),
+      progress: stageProgress(mode === "light" ? "LIGHT_VERDICT" : "ARSENKIN_ENRICHMENT"),
       actualProviders,
       baseReportRunId,
       artifactPaths: { ...job.artifactPaths, baseCollectionManifest: path },
@@ -1107,6 +1159,76 @@ async function stepBaseCollection(
           : [...job.warnings, "base-collection used mock/fallback — REPORT_READY blocked unless allowMockReport"]),
         ...screeningWarnings,
       ],
+    }) ?? job
+  );
+}
+
+/**
+ * Провайдеры, которых лёгкий прогон не спрашивает.
+ *
+ * Агент зарубежного контура передаёт регионы явно (`UAE`, `INTERNATIONAL`), а
+ * план запросов ставит явные регионы выше регионов дела: по делу из России он
+ * спросил бы зарубежную выдачу. У проверки с сайта регион один, и платить за
+ * чужой контур посетитель не просил.
+ */
+export const LIGHT_RUN_SKIPPED_PROVIDERS: readonly string[] = ["orion_uae_international"];
+
+/** Стадии, которые диспетчер тика исполняет обработчиком. */
+const DISPATCHED_STAGES: ReadonlySet<string> = new Set([
+  "BASE_COLLECTION",
+  "ARSENKIN_ENRICHMENT",
+  "COMPOSITE_MERGE",
+  "ORION_PREPARE",
+  "CLIENT_CONTENT",
+  "LIGHT_VERDICT",
+]);
+
+/**
+ * Исполняет ли джоба стадию в своём режиме.
+ *
+ * Отсутствия шага в плане мало: обработчик у шагов один и исполняет текущую
+ * стадию джобы. Лёгкая джоба, оказавшаяся в стадии обогащения (исключение тика
+ * раньше записывалось ожиданием опроса Arsenkin, стадию ставит и восстановление
+ * по контрольной точке), ушла бы в платные отправки. Стадия чужого плана —
+ * терминальный отказ, а не исполнение.
+ */
+function stageBelongsToRunMode(job: UnifiedCollectionJob): boolean {
+  if (!DISPATCHED_STAGES.has(job.stage)) return true;
+  const owner = STAGE_OWNER.get(job.stage) ?? job.stage;
+  return pipelineFor(jobMode(job)).some((def) => def.stage === owner);
+}
+
+/**
+ * Шаг вердикта лёгкого прогона: без сети, по уже собранному.
+ *
+ * Запись вердикта живёт в модуле сайта и грузится лениво: модуль сайта сам
+ * зовёт сервисы дела, и статический импорт замкнул бы круг. Сбой записи —
+ * повторяемый отказ: собранное цело, и повтор шага платы не стоит.
+ */
+async function stepLightVerdict(
+  job: UnifiedCollectionJob,
+  deps: UnifiedOrchestratorDeps
+): Promise<UnifiedCollectionJob> {
+  try {
+    const record =
+      deps.recordLightVerdict ?? (await import("@/modules/self-check/light-run")).recordLightVerdict;
+    await record(job);
+  } catch (err) {
+    return await failRetryable(
+      job,
+      "LIGHT_VERDICT_FAILED",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+  return (
+    await patchUnifiedCollectionJob(job.caseId, {
+      stage: "LIGHT_READY",
+      status: "COMPLETED",
+      completeness: "full",
+      progress: stageProgress("LIGHT_READY"),
+      completedAt: new Date().toISOString(),
+      lastError: null,
+      lastErrorCode: null,
     }) ?? job
   );
 }

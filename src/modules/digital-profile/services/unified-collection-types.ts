@@ -8,11 +8,24 @@ export type UnifiedCollectionStage =
   | "COMPOSITE_MERGE"
   | "ORION_PREPARE"
   | "CLIENT_CONTENT"
+  /** Лёгкий прогон сайта: базовый сбор готов, идёт вердикт. */
+  | "LIGHT_VERDICT"
   | "REPORT_READY"
+  /**
+   * Лёгкий прогон завершён: вердикт записан, отчёта нет и не будет. Своя
+   * стадия, а не `REPORT_READY`: иначе админка обещала бы скачивание отчёта.
+   */
+  | "LIGHT_READY"
   | "COMPLETED_PARTIAL"
   | "FAILED_RETRYABLE"
   | "FAILED_TERMINAL"
   | "CANCELLED";
+
+/**
+ * Режим прогона: полный — отчёт для клиента, лёгкий — вердикт для сайта
+ * самопроверки (базовый сбор, затем вердикт; без Arsenkin, GPT и рендерера).
+ */
+export type UnifiedCollectionMode = "full" | "light";
 
 export type ActualProviderRuntime = "real" | "mock" | "none";
 
@@ -141,6 +154,12 @@ export type UnifiedCollectionJob = {
    * конвейере затирал бы сведение о полноте.
    */
   completeness?: "full" | "partial";
+  /**
+   * Режим прогона. Живёт в джобе, а не в памяти запроса: воркер берёт шаг из
+   * базы и после деплоя посреди сбора обязан знать, какой это прогон. У джоб,
+   * заведённых до лёгкого режима, поля нет — они полные.
+   */
+  mode?: UnifiedCollectionMode;
   progress: number;
   versionNum: number;
   leaseOwnerId: string | null;
@@ -246,6 +265,11 @@ export type UnifiedCollectionJob = {
     persistedObservations?: number;
   } | null;
 };
+
+/** Режим джобы: джоба без поля заведена до лёгкого режима и полная. */
+export function jobMode(job: Pick<UnifiedCollectionJob, "mode">): UnifiedCollectionMode {
+  return job.mode === "light" ? "light" : "full";
+}
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [
   "ru_yandex_organic",

@@ -394,7 +394,7 @@ export function describeSelfCheckSettings(env: Env = process.env): string[] {
   return [
     `проверка с сайта — ${switchState}; ${captcha}`,
     `лимиты — ${n("SELF_CHECK_IP_HOURLY_LIMIT")} в час и ${n("SELF_CHECK_IP_DAILY_LIMIT")} в сутки на один IP, ` +
-      `${n("SELF_CHECK_DAILY_RUN_LIMIT")} прогонов в сутки, тот же человек повторно — через ${n("SELF_CHECK_DEDUPE_DAYS")} дн.`,
+      `тот же человек повторно — через ${n("SELF_CHECK_DEDUPE_DAYS")} дн.`,
     `данные — обезличивание через ${n("SELF_CHECK_RETENTION_DAYS")} дн., доступ посетителя ${n("SELF_CHECK_TOKEN_TTL_DAYS")} дн., ` +
       `опрос статуса не чаще раза в ${n("SELF_CHECK_POLL_INTERVAL_MS")} мс`,
     boolSetting("SITE_INDEXING_ENABLED", env)

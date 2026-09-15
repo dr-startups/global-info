@@ -13,12 +13,26 @@
  */
 
 import { MAX_ENRICHMENT_WAIT_MS } from "../services/arsenkin-poll-budget";
+import type { UnifiedCollectionMode } from "../services/unified-collection-types";
 import {
   RUNNABLE_STEP_STATES,
   type StepDefinition,
   type StepOutcome,
   type WorkflowStepRow,
 } from "./step-types";
+
+/**
+ * Базовый сбор — одна запись на оба плана. Копия разошлась бы с оригиналом по
+ * бюджетам при первой же правке, а `stepDefinition` по имени отдавал бы одну
+ * из двух.
+ */
+const BASE_COLLECTION_STEP: StepDefinition = {
+  name: "BASE_COLLECTION",
+  position: 1,
+  stage: "BASE_COLLECTION",
+  maxAttempts: 10,
+  maxWaitMs: 30 * 60_000,
+};
 
 /**
  * Конвейер сбора. Порядок здесь — единственный источник правды о порядке.
@@ -37,13 +51,7 @@ import {
  * за другим (шаг 15).
  */
 export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
-  {
-    name: "BASE_COLLECTION",
-    position: 1,
-    stage: "BASE_COLLECTION",
-    maxAttempts: 10,
-    maxWaitMs: 30 * 60_000,
-  },
+  BASE_COLLECTION_STEP,
   {
     name: "ARSENKIN_ENRICHMENT",
     position: 2,
@@ -72,6 +80,34 @@ export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
 ] as const;
 
 /**
+ * Лёгкий прогон сайта самопроверки: базовый сбор, затем вердикт.
+ *
+ * Обогащения, слияния и подготовки отчёта в нём нет — посетитель получает
+ * вердикт, а не отчёт. Шаг вердикта ходит только в базу, поэтому бюджеты у него
+ * короткие: три отказа и пять минут ожидания.
+ */
+export const LIGHT_PIPELINE: readonly StepDefinition[] = [
+  BASE_COLLECTION_STEP,
+  {
+    name: "LIGHT_VERDICT",
+    position: 2,
+    stage: "LIGHT_VERDICT",
+    maxAttempts: 3,
+    maxWaitMs: 5 * 60_000,
+  },
+] as const;
+
+/** План прогона по режиму — один ответ и для постановки шагов, и для их чтения. */
+export function pipelineFor(mode: UnifiedCollectionMode): readonly StepDefinition[] {
+  return mode === "light" ? LIGHT_PIPELINE : UNIFIED_PIPELINE;
+}
+
+/** Шаги, по которым прогон узнаётся лёгким, — те, которых нет в полном плане. */
+const LIGHT_ONLY_STEPS: ReadonlySet<string> = new Set(
+  LIGHT_PIPELINE.filter((def) => !UNIFIED_PIPELINE.includes(def)).map((def) => def.name)
+);
+
+/**
  * Стадии, которые живут **внутри** шага: своего места в конвейере у них нет.
  *
  * `CLIENT_CONTENT` — вторая стадия шага подготовки отчёта, поэтому её позиция
@@ -90,7 +126,12 @@ export const STAGE_OWNER: ReadonlyMap<string, string> = new Map([
 export const DEFAULT_STEP_MAX_WAIT_MS = 60 * 60_000;
 
 export function stepDefinition(name: string): StepDefinition | null {
-  return UNIFIED_PIPELINE.find((s) => s.name === name) ?? null;
+  // Имена шагов уникальны на оба плана: базовый сбор в них — одна запись.
+  return (
+    UNIFIED_PIPELINE.find((s) => s.name === name) ??
+    LIGHT_PIPELINE.find((s) => s.name === name) ??
+    null
+  );
 }
 
 /** Право шага ждать внешнего события, мс. */
@@ -173,6 +214,11 @@ export function deriveJobStage(
 
   const current = list.find((s) => s.state !== "DONE" && s.state !== "SKIPPED");
   if (!current) {
+    // Отчёта у лёгкого прогона нет, и назвать его готовым значило бы пообещать
+    // скачивание. Какой это план, говорят сами шаги.
+    if (list.some((s) => LIGHT_ONLY_STEPS.has(s.name))) {
+      return { stage: "LIGHT_READY", status: "COMPLETED", progress: 1 };
+    }
     return {
       stage: completeness === "partial" ? "COMPLETED_PARTIAL" : "REPORT_READY",
       status: "COMPLETED",

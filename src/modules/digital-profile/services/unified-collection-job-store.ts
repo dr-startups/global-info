@@ -24,6 +24,7 @@ const ACTIVE_STAGES = new Set<UnifiedCollectionStage>([
   "COMPOSITE_MERGE",
   "ORION_PREPARE",
   "CLIENT_CONTENT",
+  "LIGHT_VERDICT",
 ]);
 
 export type UnifiedCollectionJobStoreMode = "file" | "db";
@@ -269,6 +270,7 @@ async function fileFindOrCreate(input: {
   caseId: string;
   requestedBy: string;
   arsenkinMode?: "full-first36";
+  mode?: UnifiedCollectionJob["mode"];
   forceNew?: boolean;
 }): Promise<{ job: UnifiedCollectionJob; created: boolean }> {
   const existing = await fileLoad(input.caseId);
@@ -303,6 +305,7 @@ async function fileFindOrCreate(input: {
     completedAt: null,
     requestedBy: input.requestedBy,
     arsenkinMode: input.arsenkinMode ?? "full-first36",
+    mode: input.mode ?? "full",
     baseReportRunId: null,
     arsenkinReportRunId: null,
     compositeDatasetId: null,
@@ -580,6 +583,7 @@ async function dbFindOrCreate(input: {
   caseId: string;
   requestedBy: string;
   arsenkinMode?: "full-first36";
+  mode?: UnifiedCollectionJob["mode"];
   forceNew?: boolean;
 }): Promise<{ job: UnifiedCollectionJob; created: boolean }> {
   const existing = await dbLoad(input.caseId);
@@ -614,6 +618,7 @@ async function dbFindOrCreate(input: {
     completedAt: null,
     requestedBy: input.requestedBy,
     arsenkinMode: input.arsenkinMode ?? "full-first36",
+    mode: input.mode ?? "full",
     baseReportRunId: null,
     arsenkinReportRunId: null,
     compositeDatasetId: null,
@@ -817,6 +822,8 @@ export async function findOrCreateUnifiedCollectionJob(input: {
   caseId: string;
   requestedBy: string;
   arsenkinMode?: "full-first36";
+  /** Режим нового прогона; без него — полный. Существующую джобу не меняет. */
+  mode?: UnifiedCollectionJob["mode"];
   /** When true, always create a new job (paid recollection confirmation path). */
   forceNew?: boolean;
 }): Promise<{ job: UnifiedCollectionJob; created: boolean }> {

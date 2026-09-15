@@ -735,7 +735,7 @@ export function cleanExampleTitle(raw: string): string {
  * темы отвечают по адресу отдельным списком. Смешивать их в одну строку сверки
  * нельзя — раздел сайта в пути тогда становится темой публикации.
  */
-function themesFor(
+export function themesFor(
   item: RawInventoryItem,
   /** Страницу прочитали и признали благоприятной (и человек с этим не спорил). */
   favourablyRead: boolean
@@ -770,7 +770,7 @@ export function claimFingerprint(themeId: string, item: RawInventoryItem): strin
   return `${themeId}|${normalizedClaim}`;
 }
 
-function riskFor(theme: ThemeDef, adverseCount: number, total: number): RiskLevel {
+export function riskFor(theme: ThemeDef, adverseCount: number, total: number): RiskLevel {
   if (theme.baseRisk === "none") return adverseCount > 0 ? "low" : "none";
   if (adverseCount === 0) return theme.baseRisk === "high" ? "medium" : "low";
   if (theme.baseRisk === "high") return adverseCount >= 3 || adverseCount / total > 0.5 ? "critical" : "high";

@@ -411,3 +411,19 @@ export function listProviderAvailability(): ProviderAvailability[] {
     getProviderAvailability("YANDEX"),
   ];
 }
+
+/**
+ * Включены ли рисковые запросы («ФИО + суд / банкротство / санкции») для
+ * прогона — один ответ на проект.
+ *
+ * Лёгкий прогон сайта спрашивает их всегда (решение заказчика 11.09): посетитель
+ * проверяет себя на негатив, и без проб проверка его не ищет. Полный прогон
+ * слушается `ORION_INCLUDE_RISK_PROBES`, как и раньше, — админка поведения не
+ * меняет.
+ */
+export function riskProbesEnabled(
+  mode: "full" | "light",
+  configured: boolean = providerConfig.orion.includeRiskProbes
+): boolean {
+  return mode === "light" || configured;
+}

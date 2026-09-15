@@ -37,6 +37,10 @@ vi.mock("@/modules/self-check/service", () => ({
     rig.calls.push(`lead:${check.id}`);
     return { leadAt: new Date() };
   },
+  startSelfCheckRun: async (check: { id: string }) => {
+    rig.calls.push(`run:${check.id}`);
+    return { status: "RUNNING", nextPollMs: 7000 };
+  },
   createSelfCheck: async () => {
     rig.calls.push("create");
     return { kind: "created", checkId: "check-new", publicId: "new-public-id", status: "CREATED", token: "new-token" };
@@ -131,20 +135,20 @@ describe("без своей cookie ручки проверки закрыты", 
 });
 
 describe("со своей cookie", () => {
-  it("статус, панель, решение и заявка работают со своей проверкой", async () => {
+  it("статус, панель, решение, заявка и запуск работают со своей проверкой", async () => {
     const own = await createSelfCheckToken(A.id, SECRET);
-    for (const route of ROUTES.filter((r) => r.name !== "запуск")) {
+    for (const route of ROUTES) {
       const res = await call(route, A.publicId, own);
-      expect(res.status, route.name).toBe(200);
+      // Запуск принимает работу, а не отдаёт её результат.
+      expect(res.status, route.name).toBe(route.name === "запуск" ? 202 : 200);
     }
-    expect(rig.calls).toEqual(["status:check-a", "persona:check-a", "decision:check-a", "lead:check-a"]);
-  });
-
-  it("запуск до этапа 3 — 503 NOT_IMPLEMENTED_YET", async () => {
-    const own = await createSelfCheckToken(A.id, SECRET);
-    const res = await call(ROUTES.find((r) => r.name === "запуск")!, A.publicId, own);
-    expect(res.status).toBe(503);
-    expect(await reason(res)).toBe("NOT_IMPLEMENTED_YET");
+    expect(rig.calls).toEqual([
+      "status:check-a",
+      "persona:check-a",
+      "decision:check-a",
+      "lead:check-a",
+      "run:check-a",
+    ]);
   });
 
   it("несуществующая проверка — 404", async () => {

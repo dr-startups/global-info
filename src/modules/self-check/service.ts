@@ -61,6 +61,11 @@ import {
   SelfCheckPersonaDecisionSchema,
   type SelfCheckForm,
 } from "./schemas";
+import {
+  reconcileSelfCheckRun,
+  startSelfCheckRun as startLightRun,
+  type LightRunDeps,
+} from "./light-run";
 import { LEAD_ACCEPTING_STATUSES } from "./status";
 import {
   createSelfCheckToken,
@@ -83,7 +88,7 @@ export type SelfCheckDb = Pick<
   "selfCheck" | "subjectPersonaCheck" | "auditLog" | "$transaction"
 >;
 
-export interface SelfCheckDeps {
+export interface SelfCheckDeps extends Pick<LightRunDeps, "startRun" | "loadJob" | "listSteps"> {
   db?: SelfCheckDb;
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
@@ -332,8 +337,27 @@ export async function getSelfCheckStatus(
   deps: SelfCheckDeps = {}
 ): Promise<PublicSelfCheckStatus> {
   const d = resolveDeps(deps);
-  const persona = check.caseId ? await loadLatestPersonaCheck(check.caseId, personaStore(d)) : null;
-  return publicSelfCheckStatus(check, persona);
+  // Ход прогона читается из джобы; упавший прогон становится записью при чтении.
+  const { check: current, run } = await reconcileSelfCheckRun(check, {
+    ...deps,
+    db: d.db,
+    now: d.now,
+    env: d.env,
+  });
+  const persona = current.caseId
+    ? await loadLatestPersonaCheck(current.caseId, personaStore(d))
+    : null;
+  return publicSelfCheckStatus(current, persona, run, d.env);
+}
+
+/** Запуск лёгкого прогона — правила в `light-run.ts`. */
+export function startSelfCheckRun(
+  check: SelfCheck,
+  ctx: { ip: string },
+  deps: SelfCheckDeps = {}
+): Promise<{ status: "RUNNING"; nextPollMs: number }> {
+  const d = resolveDeps(deps);
+  return startLightRun(check, ctx, { ...deps, db: d.db, now: d.now, env: d.env });
 }
 
 export type SelfCheckAdminRecord = Omit<SelfCheck, "ipHash" | "subjectHash">;

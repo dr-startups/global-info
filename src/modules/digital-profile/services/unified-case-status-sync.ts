@@ -33,6 +33,7 @@ const COLLECTING_STAGES: ReadonlySet<string> = new Set([
   "COMPOSITE_MERGE",
   "ORION_PREPARE",
   "CLIENT_CONTENT",
+  "LIGHT_VERDICT",
   // Отказ, из которого можно продолжить, — это по-прежнему идущая работа,
   // а не возврат кейса в черновик.
   "FAILED_RETRYABLE",
@@ -54,6 +55,12 @@ export function caseStatusForStage(
   if (TERMINAL_HUMAN_STATUSES.has(now)) return null;
 
   const s = String(stage ?? "").toUpperCase();
+  if (s === "LIGHT_READY") {
+    // Отчёта у лёгкого прогона нет: готовность значит, что вердикт ждёт
+    // человека — заявку, решение о полном прогоне, — а не что отчёт есть.
+    if (now === "REVIEW" || now === "REPORT_READY") return null;
+    return "REVIEW";
+  }
   if (READY_STAGES.has(s)) return now === "REPORT_READY" ? null : "REPORT_READY";
   if (COLLECTING_STAGES.has(s)) {
     // REVIEW и REPORT_READY — более поздние состояния, чем сбор.

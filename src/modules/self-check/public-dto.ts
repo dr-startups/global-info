@@ -9,6 +9,12 @@
  */
 
 import type { SelfCheck } from "@prisma/client";
+import { numberSetting } from "@/modules/digital-profile/config/defaults";
+import {
+  clientRiskStep,
+  type ClientRiskStep,
+} from "@/modules/digital-profile/orion-golden/client/risk-scale";
+import type { LightRunView } from "./light-run";
 import type {
   PersonaCard,
   PersonaCheckRow,
@@ -141,6 +147,42 @@ const BLOCKED_MESSAGES: Record<string, string> = {
 const BLOCKED_FALLBACK = "Проверку не удалось запустить. Попробуйте позже.";
 const FAILED_MESSAGE = "Не удалось завершить проверку. Оставьте контакты — проверим вручную.";
 
+/**
+ * Стадии прогона словами. Их две — столько, сколько различают данные джобы
+ * (решение владельца 15.09.2026); тексты ожидания правятся после замера
+ * длительности на первом живом прогоне.
+ */
+const RUN_STAGE_LABELS = {
+  collecting: "Ищем упоминания и сверяем с открытыми источниками и санкционными списками",
+  verdict: "Размечаем находки и готовим результат",
+} as const;
+
+/** Интервал опроса статуса страницей проверки — настройка с нижней границей. */
+export function selfCheckPollMs(env: Record<string, string | undefined> = process.env): number {
+  return numberSetting("SELF_CHECK_POLL_INTERVAL_MS", env);
+}
+
+export interface PublicRunStatus {
+  stage: keyof typeof RUN_STAGE_LABELS;
+  stageLabel: string;
+  progress: number;
+  nextPollMs: number;
+  startedAt: Date | null;
+}
+
+export interface PublicResult {
+  verdict: string;
+  /** Ступень шкалы отчёта; у «данных недостаточно» уровня нет. */
+  riskLevel: ClientRiskStep | null;
+  materialsFound: number;
+  findingsTotal: number;
+  themes: Array<{ id: string; label: string; count: number; level: ClientRiskStep | null }>;
+  partial: boolean;
+  /** Ответившие группы источников: search, surfaces, open_sources, sanctions. */
+  sourcesChecked: string[];
+  checkedAt: Date | null;
+}
+
 export interface PublicSelfCheckStatus {
   publicId: string;
   status: string;
@@ -149,10 +191,10 @@ export interface PublicSelfCheckStatus {
   /** Для заголовка «Проверка: ФИО, дата рождения». */
   subject: { fullName: string; birthDate: string } | null;
   persona: { decided: boolean; cardsCount: number };
-  /** Прогона пока нет. */
-  run: null;
-  /** Вердикта пока нет. */
-  result: null;
+  /** Ход прогона — только у идущей проверки. */
+  run: PublicRunStatus | null;
+  /** Результат — только у проверки с вердиктом. */
+  result: PublicResult | null;
   lead: { submitted: boolean; at: Date | null };
   blocked: { reason: string; message: string } | null;
 }
@@ -174,9 +216,54 @@ function blockedOf(check: SelfCheck): PublicSelfCheckStatus["blocked"] {
   return null;
 }
 
+function runOf(
+  check: SelfCheck,
+  view: LightRunView | null,
+  env: Record<string, string | undefined>
+): PublicRunStatus | null {
+  if (check.status !== "RUNNING") return null;
+  const running = view?.kind === "running" ? view : { stage: "collecting" as const, progress: 0 };
+  return {
+    stage: running.stage,
+    stageLabel: RUN_STAGE_LABELS[running.stage],
+    progress: running.progress,
+    nextPollMs: selfCheckPollMs(env),
+    startedAt: check.runStartedAt,
+  };
+}
+
+/**
+ * Результат — уровнями шкалы отчёта: три ступени и одно место схлопывания
+ * (`risk-scale.ts`). Своей таблицы уровней у сайта нет.
+ */
+function resultOf(check: SelfCheck): PublicResult | null {
+  if (check.status !== "DONE" || !check.verdict) return null;
+  const themes = Array.isArray(check.themesJson)
+    ? (check.themesJson as Array<Record<string, unknown>>)
+    : [];
+  const sources = Array.isArray(check.sourcesJson) ? (check.sourcesJson as unknown[]).map(String) : [];
+  return {
+    verdict: check.verdict,
+    riskLevel: check.riskLevel ? clientRiskStep(check.riskLevel) : null,
+    materialsFound: check.materialsFound ?? 0,
+    findingsTotal: check.findingsTotal ?? 0,
+    themes: themes.map((theme) => ({
+      id: String(theme.id),
+      label: String(theme.label),
+      count: Number(theme.count ?? 0),
+      level: clientRiskStep(String(theme.level ?? "")),
+    })),
+    partial: check.partial,
+    sourcesChecked: sources,
+    checkedAt: check.verdictAt,
+  };
+}
+
 export function publicSelfCheckStatus(
   check: SelfCheck,
-  persona: PersonaCheckRow | null
+  persona: PersonaCheckRow | null,
+  run: LightRunView | null = null,
+  env: Record<string, string | undefined> = process.env
 ): PublicSelfCheckStatus {
   const snapshot = persona?.personasJson as PersonaPanelSnapshot | null | undefined;
   return {
@@ -190,8 +277,8 @@ export function publicSelfCheckStatus(
       decided: Boolean(persona?.decision),
       cardsCount: Array.isArray(snapshot?.cards) ? snapshot.cards.length : 0,
     },
-    run: null,
-    result: null,
+    run: runOf(check, run, env),
+    result: resultOf(check),
     lead: { submitted: check.leadAt !== null, at: check.leadAt },
     blocked: blockedOf(check),
   };

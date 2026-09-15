@@ -71,12 +71,19 @@ export async function countRecentChecksByIp(db: QuotaDb, ipHash: string, now: Da
  * спрашивать, решает cookie — по одним ФИО и дате чужую проверку не открыть.
  */
 export function isReusableCheck(
-  row: Pick<SelfCheck, "subjectHash" | "createdAt" | "anonymizedAt" | "honeypotTripped"> | null,
+  row: Pick<
+    SelfCheck,
+    "subjectHash" | "createdAt" | "anonymizedAt" | "honeypotTripped" | "status" | "verdict"
+  > | null,
   subjectHash: string,
   now: Date,
   env: Env = process.env
 ): boolean {
   if (!row || row.anonymizedAt || row.honeypotTripped) return false;
+  // Проверка без вывода — не то, к чему стоит возвращать: макет на упавшей зовёт
+  // «Запустить заново», на «данных недостаточно» — «Повторить проверку», и
+  // возврат по cookie увёл бы посетителя обратно к тому же экрану.
+  if (row.status === "FAILED" || row.verdict === "INSUFFICIENT_DATA") return false;
   if (row.subjectHash !== subjectHash) return false;
   const windowMs = numberSetting("SELF_CHECK_DEDUPE_DAYS", env) * DAY_MS;
   return row.createdAt.getTime() >= now.getTime() - windowMs;

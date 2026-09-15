@@ -24,6 +24,7 @@ import type {
   ReportDataBinding,
   UnifiedCollectionJob,
 } from "./unified-collection-types";
+import { jobMode } from "./unified-collection-types";
 import type { CompositeMergeResult } from "./composite-serp-merge";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import { autoResumeState } from "../workflow/auto-resume";
@@ -239,6 +240,11 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
   const requested = String(input.requestedJobId ?? "").trim();
   if (requested && requested !== job.jobId && requested !== job.unifiedJobId) {
     return { rebuildAllowed: false, rebuildBlockerReason: "JOB_ID_MISMATCH" };
+  }
+  // У лёгкого прогона отчёта нет вовсе: пересобирать нечего, а подготовка по его
+  // данным была бы тем полным прогоном, которого сайт не заказывал.
+  if (jobMode(job) === "light") {
+    return { rebuildAllowed: false, rebuildBlockerReason: "LIGHT_RUN_HAS_NO_REPORT" };
   }
   /*
    * Стадия и статус отвечают ровно на один вопрос: идёт ли работа прямо

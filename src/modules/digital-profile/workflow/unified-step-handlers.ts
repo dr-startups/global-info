@@ -15,13 +15,13 @@
  */
 
 import { loadUnifiedCollectionJob } from "../services/unified-collection-job-store";
-import type { UnifiedCollectionJob } from "../services/unified-collection-types";
+import { jobMode, type UnifiedCollectionJob } from "../services/unified-collection-types";
 import {
   computeUnifiedPollDelayMs,
   runUnifiedCollectionTick,
   type UnifiedOrchestratorDeps,
 } from "../services/unified-orion-collection-orchestrator";
-import { STAGE_OWNER, UNIFIED_PIPELINE, failedStepWillRetry, stepDefinition } from "./step-plan";
+import { STAGE_OWNER, failedStepWillRetry, pipelineFor, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
@@ -81,6 +81,11 @@ export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | n
     return { kind: "done", outputRef: job.compositeDatasetId ?? job.baseReportRunId ?? null };
   }
 
+  // Лёгкий прогон кончается вердиктом, а не отчётом, — шаг сделан так же.
+  if (job.stage === "LIGHT_READY") {
+    return { kind: "done", outputRef: job.baseReportRunId ?? null };
+  }
+
   return null;
 }
 
@@ -94,9 +99,12 @@ export function outcomeForStoppedJob(job: UnifiedCollectionJob): StepOutcome | n
  *
  * `0` — стадия конвейеру не принадлежит вовсе (отказ, отмена, готовый отчёт).
  */
-function jobStagePosition(stage: string): number {
-  const owner = STAGE_OWNER.get(stage) ?? stage;
-  return UNIFIED_PIPELINE.find((d) => d.stage === owner)?.position ?? 0;
+function jobStagePosition(job: UnifiedCollectionJob): number {
+  const owner = STAGE_OWNER.get(job.stage) ?? job.stage;
+  // План — режима джобы. В лёгком плане обогащения нет, и признать по нему
+  // базовый сбор сделанным значило бы разбудить шаг вердикта на джобе, ушедшей
+  // не туда.
+  return pipelineFor(jobMode(job)).find((d) => d.stage === owner)?.position ?? 0;
 }
 
 /**
@@ -143,7 +151,7 @@ export function outcomeFromJob(
   // ждал бы вечно и сжёг бы бюджет попыток, остановив конвейер. Ровно это и
   // случилось на первом живом прогоне.
   const stepPos = stepDefinition(step.name)?.position ?? 0;
-  const jobPos = jobStagePosition(after.stage);
+  const jobPos = jobStagePosition(after);
   if (jobPos > stepPos) {
     return { kind: "done", outputRef: after.compositeDatasetId ?? after.baseReportRunId ?? null };
   }
@@ -184,7 +192,7 @@ export function stageForRetryAttempt(
   jobStage: string | null | undefined
 ): string | null {
   if (jobStage !== "FAILED_RETRYABLE") return null;
-  const def = UNIFIED_PIPELINE.find((d) => d.name === stepName);
+  const def = stepDefinition(stepName);
   return def ? def.stage : null;
 }
 
@@ -230,7 +238,7 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
      * этом до работы, а не после.
      */
     const stepPosition = stepDefinition(step.name)?.position ?? 0;
-    if (jobStagePosition(before.stage) > stepPosition) {
+    if (jobStagePosition(before) > stepPosition) {
       return {
         kind: "done",
         outputRef: before.compositeDatasetId ?? before.baseReportRunId ?? null,
@@ -335,5 +343,6 @@ export function unifiedStepHandlers(deps: UnifiedOrchestratorDeps = {}): Record<
     ARSENKIN_ENRICHMENT: handler,
     COMPOSITE_MERGE: handler,
     REPORT_PREPARE: handler,
+    LIGHT_VERDICT: handler,
   };
 }

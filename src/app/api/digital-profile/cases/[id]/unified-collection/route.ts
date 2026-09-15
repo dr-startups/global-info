@@ -19,6 +19,7 @@ import {
   unifiedJobHasPreservedStages,
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
+import { jobMode } from "@/modules/digital-profile/services/unified-collection-types";
 import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
 import { evaluateUnifiedPauseEligibility } from "@/modules/digital-profile/services/unified-collection-pause";
 import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profile/services/unified-gpt-copy-retry";
@@ -166,6 +167,8 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           jobId: job.jobId,
           unifiedJobId: job.unifiedJobId,
           stage: job.stage,
+          // Лёгкий прогон сайта: отчёта у него нет, и кнопки отчёта его не касаются.
+          mode: jobMode(job),
           status: job.status,
           progress: job.progress,
           actualProviders: job.actualProviders,

@@ -67,8 +67,8 @@ describe("приём заявки", () => {
   const ctx = { ip: "203.0.113.7" };
   const deps = (db: unknown) => ({ db: db as never, now: () => TEST_NOW, env: {} as NodeJS.ProcessEnv });
 
-  it("после решения по персоне заявка сохраняется, лид — новый (правило этапа 2)", async () => {
-    const check = selfCheckRow({ status: "PERSONA_DECIDED" });
+  it("после результата заявка сохраняется, лид — новый", async () => {
+    const check = selfCheckRow({ status: "DONE" });
     const { db, state } = fakeDb({ selfChecks: [check] });
     const out = await submitSelfCheckLead(check, body, ctx, deps(db));
     expect(out).toEqual({ leadAt: TEST_NOW });
@@ -81,12 +81,12 @@ describe("приём заявки", () => {
       leadMessage: "Позвоните вечером",
       leadAt: TEST_NOW,
       leadStatus: "NEW",
-      status: "PERSONA_DECIDED",
+      status: "DONE",
     });
   });
 
   it("аудит называет каналы, но не контакты", async () => {
-    const check = selfCheckRow({ status: "PERSONA_DECIDED" });
+    const check = selfCheckRow({ status: "DONE" });
     const { db, state } = fakeDb({ selfChecks: [check] });
     await submitSelfCheckLead(check, body, ctx, deps(db));
     const audit = state.audits.find((a) => a.action === "SELF_CHECK_LEAD");
@@ -106,7 +106,9 @@ describe("приём заявки", () => {
     await expect(submitSelfCheckLead(check, body, ctx, deps(db))).resolves.toEqual({ leadAt: TEST_NOW });
   });
 
-  it.each(["CREATED", "PERSONA_PENDING", "RUNNING", "EXPIRED"])(
+  // `PERSONA_DECIDED` — проходное состояние с тех пор, как появился прогон:
+  // посетитель из него идёт дальше, к результату или к отказу.
+  it.each(["CREATED", "PERSONA_PENDING", "PERSONA_DECIDED", "RUNNING", "EXPIRED"])(
     "в статусе %s — 409 LEAD_NOT_APPLICABLE, запись не тронута",
     async (status) => {
       const check = selfCheckRow({ status });
@@ -125,7 +127,7 @@ describe("приём заявки", () => {
   });
 
   it("без контакта — 400 с полем, запись не тронута", async () => {
-    const check = selfCheckRow({ status: "PERSONA_DECIDED" });
+    const check = selfCheckRow({ status: "DONE" });
     const { db, state } = fakeDb({ selfChecks: [check] });
     const err = await refusal(submitSelfCheckLead(check, { name: "Иван" }, ctx, deps(db)));
     expect(err).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });

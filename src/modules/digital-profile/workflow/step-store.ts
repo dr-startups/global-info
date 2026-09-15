@@ -9,7 +9,8 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { UNIFIED_PIPELINE, applyStepOutcome } from "./step-plan";
+import { applyStepOutcome, pipelineFor } from "./step-plan";
+import type { UnifiedCollectionMode } from "../services/unified-collection-types";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
 async function getPrisma(): Promise<PrismaClient> {
@@ -64,13 +65,15 @@ const SELECT = {
 export async function ensurePipelineSteps(input: {
   caseId: string;
   jobId: string;
+  /** План по режиму прогона; без режима — полный конвейер. */
+  mode?: UnifiedCollectionMode;
   now?: Date;
   prisma?: PrismaClient;
 }): Promise<WorkflowStepRow[]> {
   const prisma = input.prisma ?? (await getPrisma());
   const now = input.now ?? new Date();
   await prisma.workflowStep.createMany({
-    data: UNIFIED_PIPELINE.map((d) => ({
+    data: pipelineFor(input.mode ?? "full").map((d) => ({
       caseId: input.caseId,
       jobId: input.jobId,
       name: d.name,

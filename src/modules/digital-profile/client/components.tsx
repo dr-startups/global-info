@@ -47,6 +47,8 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   COMPOSITE_MERGE: "info",
   ORION_PREPARE: "info",
   CLIENT_CONTENT: "info",
+  LIGHT_VERDICT: "info",
+  LIGHT_READY: "ok",
   // agent runs
   RUNNING: "info",
   SUCCEEDED: "ok",

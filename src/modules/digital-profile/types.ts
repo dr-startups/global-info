@@ -1116,6 +1116,11 @@ export interface AgentContext {
   actorId: string;
   /** When true, agent must not hit external APIs (mock/manual mode). */
   mock?: boolean;
+  /**
+   * Рисковые запросы этого прогона — ответ `riskProbesEnabled` по режиму. Без
+   * поля агент слушается настройки, как до лёгкого режима.
+   */
+  includeRiskProbes?: boolean;
 }
 
 export interface SavedEvidenceSummary {

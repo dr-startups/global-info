@@ -102,11 +102,27 @@ export interface OrionProfileRunResult {
   warnings: string[];
 }
 
-function allowsNegativeQueries(subject: CaseSubjectInfo): boolean {
+function allowsNegativeQueries(subject: Pick<CaseSubjectInfo, "lawfulBasis" | "consentStatus">): boolean {
   const basis = (subject.lawfulBasis ?? "").toUpperCase();
   if (!basis) return false;
   if (basis === "CONSENT") return (subject.consentStatus ?? "").toUpperCase() === "GRANTED";
   return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
+}
+
+/**
+ * Идут ли рисковые запросы в план этого прогона.
+ *
+ * Опция приходит из режима прогона (`riskProbesEnabled`); без неё действует
+ * настройка — как до лёгкого режима. Основание обработки спрашивается в обоих
+ * случаях: режим не открывает негативных запросов по делу, где их открывать
+ * нельзя.
+ */
+export function resolveIncludeRiskProbes(
+  option: boolean | undefined,
+  subject: Pick<CaseSubjectInfo, "lawfulBasis" | "consentStatus">,
+  configured: boolean = providerConfig.orion.includeRiskProbes
+): boolean {
+  return (option ?? configured) && allowsNegativeQueries(subject);
 }
 
 function googleReady(): boolean {
@@ -620,9 +636,7 @@ export async function runOrionSearchProfile(
     {
       primaryQueriesByRegion,
       maxPrimaryPerRegion: options.maxPrimaryPerRegion ?? providerConfig.orion.maxPrimaryQueriesPerRegion,
-      includeRiskProbes:
-        options.includeRiskProbes ??
-        (providerConfig.orion.includeRiskProbes && allowsNegativeQueries(subject)),
+      includeRiskProbes: resolveIncludeRiskProbes(options.includeRiskProbes, subject),
       regions: options.regions,
     }
   );

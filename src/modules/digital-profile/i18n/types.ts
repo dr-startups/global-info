@@ -95,6 +95,14 @@ export interface Dictionary {
     runNone: string;
     verdict: string;
     verdictNone: string;
+    verdictMaterials: string;
+    verdictThemes: string;
+    verdictSources: string;
+    verdictPartial: string;
+    sourceSearch: string;
+    sourceSurfaces: string;
+    sourceOpenSources: string;
+    sourceSanctions: string;
     form: string;
     formCity: string;
     formAliases: string;
@@ -487,6 +495,8 @@ export interface Dictionary {
   /** Действия и статусы unified-прогона — шапка кейса (шаг 11.4). */
   unified: {
     downloadPdf: string;
+    /** Признак лёгкого прогона рядом со стадией в шапке дела. */
+    modeLight: string;
     autoResumeWaiting: string;
     autoResumeAt: string;
     downloadPptx: string;

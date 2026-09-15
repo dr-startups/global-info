@@ -46,6 +46,13 @@ const TIME_KEY: Record<string, string> = {
   evening: "selfCheck.timeEvening",
 };
 
+const SOURCE_KEY: Record<string, string> = {
+  search: "selfCheck.sourceSearch",
+  surfaces: "selfCheck.sourceSurfaces",
+  open_sources: "selfCheck.sourceOpenSources",
+  sanctions: "selfCheck.sourceSanctions",
+};
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
@@ -90,6 +97,8 @@ export function SelfCheckPanel({ caseId }: { caseId: string }) {
   const label = (keys: Record<string, string>, value: string | null) =>
     value && keys[value] ? t(keys[value]) : text(value);
   const input = r.inputJson ?? {};
+  const themes = Array.isArray(r.themesJson) ? (r.themesJson as Array<{ label?: string; count?: number }>) : [];
+  const sources = Array.isArray(r.sourcesJson) ? (r.sourcesJson as unknown[]).map(String) : [];
 
   return (
     <Card>
@@ -127,6 +136,22 @@ export function SelfCheckPanel({ caseId }: { caseId: string }) {
               t("selfCheck.verdictNone")
             )}
           </Field>
+          {r.verdict ? (
+            <>
+              <Field label={t("selfCheck.verdictMaterials")}>{r.materialsFound ?? 0}</Field>
+              <Field label={t("selfCheck.verdictThemes")}>
+                {themes.length > 0
+                  ? themes.map((theme) => `${theme.label ?? "—"} — ${theme.count ?? 0}`).join("; ")
+                  : dash}
+              </Field>
+              <Field label={t("selfCheck.verdictSources")}>
+                {sources.length > 0
+                  ? sources.map((source) => (SOURCE_KEY[source] ? t(SOURCE_KEY[source]) : source)).join(", ")
+                  : dash}
+                {r.partial ? ` · ${t("selfCheck.verdictPartial")}` : ""}
+              </Field>
+            </>
+          ) : null}
         </dl>
 
         <div>

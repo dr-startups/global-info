@@ -52,7 +52,7 @@ export class RealOrionSearchProfileAgent implements CaseAgent {
   async run(ctx: AgentContext): Promise<AgentRunResult> {
     const startedAt = new Date().toISOString();
     try {
-      const result = await runOrionSearchProfile(ctx.caseId);
+      const result = await runOrionSearchProfile(ctx.caseId, { includeRiskProbes: ctx.includeRiskProbes });
       return {
         agentName: this.agentName,
         status: "SUCCEEDED",
@@ -113,7 +113,7 @@ export class RealOrionGoogleSurfacesAgent implements CaseAgent {
   async run(ctx: AgentContext): Promise<AgentRunResult> {
     const startedAt = new Date().toISOString();
     try {
-      const result = await runOrionSearchProfile(ctx.caseId, { surfacesOnlyMode: true });
+      const result = await runOrionSearchProfile(ctx.caseId, { surfacesOnlyMode: true, includeRiskProbes: ctx.includeRiskProbes });
       return {
         agentName: this.agentName,
         status: "SUCCEEDED",
@@ -166,7 +166,7 @@ export class RealOrionUaeInternationalAgent implements CaseAgent {
     const startedAt = new Date().toISOString();
     const regions: OrionRegionCode[] = ["UAE", "INTERNATIONAL"];
     try {
-      const result = await runOrionSearchProfile(ctx.caseId, { regions });
+      const result = await runOrionSearchProfile(ctx.caseId, { regions, includeRiskProbes: ctx.includeRiskProbes });
       return {
         agentName: this.agentName,
         status: "SUCCEEDED",

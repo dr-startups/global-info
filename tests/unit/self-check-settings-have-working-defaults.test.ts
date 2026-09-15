@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  NUMBER_DEFAULTS,
   boolSetting,
   numberSetting,
   textSetting,
@@ -26,8 +27,13 @@ describe("значения по умолчанию", () => {
     expect(boolSetting("SITE_INDEXING_ENABLED", NO_ENV)).toBe(false);
   });
 
+  it("суточного потолка прогонов нет: новых лимитов не вводим (решение владельца 15.09)", () => {
+    // Настройка, которую никто не читает, печаталась бы в сводке старта как
+    // действующий лимит.
+    expect(Object.keys(NUMBER_DEFAULTS)).not.toContain("SELF_CHECK_DAILY_RUN_LIMIT");
+  });
+
   it.each([
-    ["SELF_CHECK_DAILY_RUN_LIMIT", 25],
     ["SELF_CHECK_IP_HOURLY_LIMIT", 3],
     ["SELF_CHECK_IP_DAILY_LIMIT", 5],
     ["SELF_CHECK_DEDUPE_DAYS", 30],
@@ -48,14 +54,14 @@ describe("значения по умолчанию", () => {
 
 describe("переопределения", () => {
   it("целое число из переменной принимается", () => {
-    expect(numberSetting("SELF_CHECK_DAILY_RUN_LIMIT", { SELF_CHECK_DAILY_RUN_LIMIT: "40" })).toBe(40);
-    expect(numberSetting("SELF_CHECK_DAILY_RUN_LIMIT", { SELF_CHECK_DAILY_RUN_LIMIT: " 12 " })).toBe(12);
+    expect(numberSetting("SELF_CHECK_IP_DAILY_LIMIT", { SELF_CHECK_IP_DAILY_LIMIT: "40" })).toBe(40);
+    expect(numberSetting("SELF_CHECK_IP_DAILY_LIMIT", { SELF_CHECK_IP_DAILY_LIMIT: " 12 " })).toBe(12);
   });
 
   it.each(["abc", "-5", "2.5", "1e3", "25 проверок"])(
     "непонятое «%s» читается как значение по умолчанию, а не снимает лимит",
     (raw) => {
-      expect(numberSetting("SELF_CHECK_DAILY_RUN_LIMIT", { SELF_CHECK_DAILY_RUN_LIMIT: raw })).toBe(25);
+      expect(numberSetting("SELF_CHECK_IP_DAILY_LIMIT", { SELF_CHECK_IP_DAILY_LIMIT: raw })).toBe(5);
     }
   );
 
@@ -104,9 +110,10 @@ describe("сводка настроек сайта в логе старта", ()
     expect(text(NO_ENV)).not.toContain("SELF_CHECK_ENABLED");
   });
 
-  it("лимиты печатаются теми числами, которые действуют", () => {
-    expect(text(NO_ENV)).toContain("25 прогонов в сутки");
-    expect(text({ SELF_CHECK_DAILY_RUN_LIMIT: "40" })).toContain("40 прогонов в сутки");
+  it("лимиты печатаются теми числами, которые действуют, и только действующие", () => {
+    expect(text(NO_ENV)).toContain("3 в час и 5 в сутки на один IP");
+    expect(text({ SELF_CHECK_IP_DAILY_LIMIT: "40" })).toContain("3 в час и 40 в сутки на один IP");
+    expect(text(NO_ENV)).not.toContain("прогонов в сутки");
   });
 
   it("закрытая индексация видна по имени переменной", () => {

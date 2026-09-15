@@ -24,6 +24,7 @@ import type {
   ReportDataBinding,
   UnifiedCollectionJob,
 } from "./unified-collection-types";
+import { jobMode } from "./unified-collection-types";
 import type { CompositeMergeResult } from "./composite-serp-merge";
 import { loadPreviousPacks } from "../orion-golden/deck-sections/run-deck-build";
 
@@ -126,6 +127,14 @@ export async function evaluateUnifiedGptCopyRetryEligibility(input: {
     return {
       gptCopyRetryAllowed: false,
       gptCopyRetryBlockerReason: "JOB_ID_MISMATCH",
+      fallbackFragmentCount: 0,
+    };
+  }
+  // Переписывать копию GPT не у чего: у лёгкого прогона нет ни пакетов, ни деки.
+  if (jobMode(job) === "light") {
+    return {
+      gptCopyRetryAllowed: false,
+      gptCopyRetryBlockerReason: "LIGHT_RUN_HAS_NO_REPORT",
       fallbackFragmentCount: 0,
     };
   }

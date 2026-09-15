@@ -128,6 +128,23 @@ describe("новая проверка", () => {
     expect((await create(db, { cookieToken: initial.token })).kind).toBe("created");
   });
 
+  it.each([
+    ["упавшая", { status: "FAILED", blockedReason: "RUN_FAILED" }],
+    ["без вывода", { status: "DONE", verdict: "INSUFFICIENT_DATA" }],
+  ])("%s проверка — новая: макет зовёт запустить проверку заново", async (_label, outcome) => {
+    const { db, state } = fakeDb();
+    const initial = await first(db);
+    Object.assign(state.selfChecks[0]!, outcome);
+    expect((await create(db, { cookieToken: initial.token })).kind).toBe("created");
+  });
+
+  it("проверка с результатом — прежняя", async () => {
+    const { db, state } = fakeDb();
+    const initial = await first(db);
+    Object.assign(state.selfChecks[0]!, { status: "DONE", verdict: "NEGATIVE_FOUND" });
+    expect((await create(db, { cookieToken: initial.token })).kind).toBe("existing");
+  });
+
   it("токен с чужой подписью — как без cookie", async () => {
     const { db } = fakeDb();
     const initial = await first(db);

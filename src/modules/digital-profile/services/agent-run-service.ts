@@ -159,7 +159,8 @@ async function ensureActiveCase(caseId: string): Promise<void> {
 export async function runAgent(
   caseId: string,
   agentName: string,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  options: { includeRiskProbes?: boolean } = {}
 ): Promise<AgentRunDTO> {
   await ensureActiveCase(caseId);
 
@@ -177,11 +178,7 @@ export async function runAgent(
     );
   }
 
-  const agentCtx: AgentContext = {
-    caseId,
-    actorId: ctx.actorId ?? "system",
-    mock: agent.kind === "MOCK",
-  };
+  const agentCtx: AgentContext = agentContextFor(caseId, agent, ctx, options);
   await agent.validateInput(agentCtx);
 
   const run = await prisma.agentRun.create({
@@ -367,6 +364,47 @@ export async function runAgent(
 }
 
 /**
+ * Контекст агента. Рисковая проба едет в нём данными: агентов аудит вызывает по
+ * одному, и другого канала от режима прогона до плана запросов нет.
+ */
+export function agentContextFor(
+  caseId: string,
+  agent: { kind: AgentKind },
+  ctx: ActorContext,
+  options: { includeRiskProbes?: boolean }
+): AgentContext {
+  return {
+    caseId,
+    actorId: ctx.actorId ?? "system",
+    mock: agent.kind === "MOCK",
+    ...(options.includeRiskProbes !== undefined ? { includeRiskProbes: options.includeRiskProbes } : {}),
+  };
+}
+
+export interface FullAuditRunOptions {
+  runtimeMode?: ProviderRuntimeMode;
+  /**
+   * Рисковые запросы этого прогона — ответ `riskProbesEnabled` по режиму. Без
+   * поля агенты слушаются настройки, как до лёгкого режима.
+   */
+  includeRiskProbes?: boolean;
+  /**
+   * Провайдеры, которых прогон не спрашивает. Лёгкий прогон сайта не зовёт
+   * зарубежный контур: у проверки с сайта регион один.
+   */
+  skipProviders?: readonly string[];
+}
+
+/** Шаги аудита без провайдеров, которых прогон не спрашивает; порядок сохраняется. */
+export function planFullAuditSteps<T extends { providerId: string }>(
+  steps: readonly T[],
+  skipProviders: readonly string[] = []
+): T[] {
+  const skip = new Set(skipProviders);
+  return steps.filter((step) => !skip.has(step.providerId));
+}
+
+/**
  * Runs all agents in order. A failing agent does NOT abort the audit — the
  * remaining independent agents still run. The overall outcome is SUCCESS (all
  * ok), PARTIAL_SUCCESS (some failed) or FAILED (all failed). There is no
@@ -375,7 +413,7 @@ export async function runAgent(
 export async function runFullAudit(
   caseId: string,
   ctx: ActorContext = {},
-  options: { runtimeMode?: ProviderRuntimeMode } = {}
+  options: FullAuditRunOptions = {}
 ): Promise<FullAuditResultDTO> {
   await ensureActiveCase(caseId);
   const runtimeMode = options.runtimeMode ?? FULL_AUDIT_DEFAULT_RUNTIME_MODE;
@@ -424,9 +462,22 @@ export async function runFullAudit(
     runSummary.map((item) => [item.providerId, item])
   );
 
-  for (const step of runtimeStrategy.steps) {
+  // Провайдер, которого прогон не спрашивает, в сводке — пропуск, а не
+  // недоступность: иначе лёгкий прогон читался бы неполным из-за контура,
+  // которого он не заказывал.
+  const skipped = new Set(options.skipProviders ?? []);
+  for (const item of runSummary) {
+    if (!skipped.has(item.providerId)) continue;
+    item.status = "skipped";
+    item.runtime = "none";
+    item.reason = "Not planned for this run mode.";
+  }
+
+  for (const step of planFullAuditSteps(runtimeStrategy.steps, options.skipProviders)) {
     try {
-      const firstRun = await runAgent(caseId, step.primaryAgent, ctx);
+      const firstRun = await runAgent(caseId, step.primaryAgent, ctx, {
+        includeRiskProbes: options.includeRiskProbes,
+      });
       runs.push(firstRun);
       const summaryItem = summaryByProvider.get(step.providerId);
       if (summaryItem) {
@@ -440,7 +491,9 @@ export async function runFullAudit(
         step.primaryRuntime === "real" &&
         step.fallbackAgent
       ) {
-        const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
+        const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx, {
+          includeRiskProbes: options.includeRiskProbes,
+        });
         runs.push(fallbackRun);
         if (summaryItem) {
           summaryItem.fallbackAgent = step.fallbackAgent;
@@ -493,7 +546,9 @@ export async function runFullAudit(
         step.fallbackAgent
       ) {
         try {
-          const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
+          const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx, {
+            includeRiskProbes: options.includeRiskProbes,
+          });
           runs.push(fallbackRun);
           if (summaryItem) {
             summaryItem.fallbackAgent = step.fallbackAgent;

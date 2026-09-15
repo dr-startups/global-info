@@ -683,6 +683,7 @@ export interface SelfCheckRecord {
   partial: boolean;
   verdictAt: string | null;
   verdictSource: string | null;
+  sourcesJson: unknown;
   leadName: string | null;
   leadPhone: string | null;
   leadEmail: string | null;
@@ -1393,6 +1394,8 @@ export type UnifiedCollectionJobStatus = {
   jobId: string;
   unifiedJobId: string;
   stage: string;
+  /** Режим прогона: `light` — проверка с сайта, отчёта у неё нет. */
+  mode?: "full" | "light";
   status: string;
   progress: number;
   actualProviders: Array<{

@@ -49,6 +49,15 @@ describe("статус кейса следует за стадией прого�
     expect(caseStatusForStage("CANCELLED", "COLLECTING")).toBeNull();
   });
 
+  it("лёгкий прогон: вердикт — ещё сбор, готовая лёгкая проверка — проверка, а не отчёт", () => {
+    // Отчёта у лёгкого прогона нет: `REPORT_READY` было бы неправдой, а
+    // «Сбор данных» навсегда — второй неправдой о том, что сбор ещё идёт.
+    expect(caseStatusForStage("LIGHT_VERDICT", "DRAFT")).toBe("COLLECTING");
+    expect(caseStatusForStage("LIGHT_READY", "COLLECTING")).toBe("REVIEW");
+    expect(caseStatusForStage("LIGHT_READY", "REVIEW")).toBeNull();
+    expect(caseStatusForStage("LIGHT_READY", "REPORT_READY")).toBeNull();
+  });
+
   it("неизвестная стадия и пустые значения ничего не ломают", () => {
     expect(caseStatusForStage(null, "DRAFT")).toBeNull();
     expect(caseStatusForStage("BASE_COLLECTION", null)).toBe("COLLECTING");

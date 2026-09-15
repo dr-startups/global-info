@@ -43,11 +43,17 @@ const { SHIFTED } = vi.hoisted(() => ({
  * `UNIFIED_PIPELINE`, и без подмены половины пары читали бы разные реестры —
  * тест доказывал бы не то. Тело то же самое, поиск по имени.
  */
-vi.mock("@/modules/digital-profile/workflow/step-plan", async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  UNIFIED_PIPELINE: SHIFTED,
-  stepDefinition: (name: string) => SHIFTED.find((d) => d.name === name) ?? null,
-}));
+vi.mock("@/modules/digital-profile/workflow/step-plan", async (importOriginal) => {
+  const original = await importOriginal<Record<string, unknown>>();
+  return {
+    ...original,
+    UNIFIED_PIPELINE: SHIFTED,
+    stepDefinition: (name: string) => SHIFTED.find((d) => d.name === name) ?? null,
+    // План режима читается через `pipelineFor`, а оригинал замкнут на настоящий
+    // реестр — по той же причине, что и `stepDefinition` выше.
+    pipelineFor: (mode: string) => (mode === "light" ? original.LIGHT_PIPELINE : SHIFTED),
+  };
+});
 
 const tick = vi.fn();
 const loadJob = vi.fn();

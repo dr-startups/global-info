@@ -538,6 +538,54 @@ describe("unified orion arsenkin collection", () => {
     await deleteUnifiedCollectionJobForTests(caseId);
   });
 
+  /*
+   * Лёгкий прогон сайта: базовый сбор → вердикт, и больше ничего.
+   *
+   * Обогащение и подготовка подставлены падающими: смок обязан доказать, что
+   * их не зовут, а не что они случайно ничего не сделали. Запись вердикта
+   * подменена — у смока нет базы, а правило вердикта держат юниты.
+   */
+  it("лёгкий прогон доходит до LIGHT_READY без обогащения и подготовки", async () => {
+    const caseId = "unified-smoke-light";
+    await deleteUnifiedCollectionJobForTests(caseId);
+    let arsenkinCalls = 0;
+    let prepareCalls = 0;
+    let verdictCalls = 0;
+    const deps = {
+      autoSchedule: false as const,
+      fixtureBaseRows,
+      runFullAudit: async () => mockFullAuditReal(),
+      runArsenkinEnrichment: async (): Promise<never> => {
+        arsenkinCalls += 1;
+        throw new Error("обогащение в лёгком прогоне");
+      },
+      runPrepare: async (): Promise<never> => {
+        prepareCalls += 1;
+        throw new Error("подготовка отчёта в лёгком прогоне");
+      },
+      recordLightVerdict: async () => {
+        verdictCalls += 1;
+      },
+    };
+    await startUnifiedOrionCollection({
+      caseId,
+      requestedBy: "smoke",
+      mode: "light",
+      deps: { ...deps, ...personaDecided },
+    });
+    const stages: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const job = await runUnifiedCollectionTick(caseId, deps);
+      stages.push(String(job?.stage));
+      if (job?.stage === "LIGHT_READY" || String(job?.stage).startsWith("FAILED")) break;
+    }
+    assert.deepEqual(stages, ["LIGHT_VERDICT", "LIGHT_READY"]);
+    assert.equal(arsenkinCalls, 0);
+    assert.equal(prepareCalls, 0);
+    assert.equal(verdictCalls, 1);
+    await deleteUnifiedCollectionJobForTests(caseId);
+  });
+
   it("coverage breakdown exposes measured/noResults/notSupported/failedFinal", () => {
     const c = {
       plannedSupportedSurfaces: 12,

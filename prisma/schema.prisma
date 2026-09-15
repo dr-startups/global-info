@@ -760,6 +760,7 @@ model SelfCheck {
   runFinishedAt     DateTime?
   /// NEGATIVE_FOUND | CLEAN | INSUFFICIENT_DATA
   verdict           String?
+  /// Уровень данных: none | low | medium | high | critical; посетителю — ступенью шкалы отчёта
   riskLevel         String?
   materialsFound    Int?
   findingsTotal     Int?
@@ -767,6 +768,8 @@ model SelfCheck {
   partial           Boolean   @default(false)
   verdictAt         DateTime?
   verdictSource     String?
+  /// Ответившие группы источников лёгкого прогона: search, surfaces, open_sources, sanctions
+  sourcesJson       Json?
   leadName          String?
   leadPhone         String?
   leadEmail         String?

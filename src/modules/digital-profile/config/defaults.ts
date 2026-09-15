@@ -105,10 +105,11 @@ export const TEXT_DEFAULTS = {
  *
  * Каждая проверка и каждая панель персоны стоят денег, а лимитов расхода в
  * приложении до сайта не было. Значения согласованы с заказчиком.
+ *
+ * Суточного потолка прогонов нет: решение владельца 15.09.2026 — новых лимитов
+ * не вводить. Расход прогонов держат лимит по адресу на создание и рубильник.
  */
 export const NUMBER_DEFAULTS = {
-  /** Прогонов за календарные сутки на весь сайт. */
-  SELF_CHECK_DAILY_RUN_LIMIT: 25,
   /** Проверок с одного IP в час. */
   SELF_CHECK_IP_HOURLY_LIMIT: 3,
   /** Проверок с одного IP в сутки. */
@@ -138,7 +139,6 @@ export type NumberSettingName = keyof typeof NUMBER_DEFAULTS;
  * секунд страница его не дёргает.
  */
 const NUMBER_MINIMUMS: Record<NumberSettingName, number> = {
-  SELF_CHECK_DAILY_RUN_LIMIT: 1,
   SELF_CHECK_IP_HOURLY_LIMIT: 1,
   SELF_CHECK_IP_DAILY_LIMIT: 1,
   SELF_CHECK_DEDUPE_DAYS: 1,
