@@ -66,6 +66,17 @@ describe("страницы сайта", () => {
     }
   });
 
+  it("картинки — файлами из public, а не импортом модуля: CI проверяет типы без next-env.d.ts", () => {
+    // Объявления `*.webp` и прочих картинок даёт next-env.d.ts, а он в .gitignore и
+    // появляется только после запуска Next. Шаг «Типы» в CI идёт до сборки, и импорт
+    // картинки там не собирается, хотя локально tsc зелёный (коммит 278f3b9a).
+    for (const file of [...files(SITE_APP), ...files(SITE_MODULE)]) {
+      for (const spec of imports(read(file))) {
+        expect(/\.(webp|png|jpe?g|gif|avif|svg|ico)$/u.test(spec), `${rel(file)} импортирует ${spec}`).toBe(false);
+      }
+    }
+  });
+
   it("force-dynamic — только у мастера; остальные страницы не читают запрос", () => {
     for (const file of files(SITE_APP)) {
       const text = read(file);

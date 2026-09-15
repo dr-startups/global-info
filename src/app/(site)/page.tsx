@@ -1,5 +1,4 @@
 import Image from "next/image";
-import finalPaper from "@/modules/site/assets/final-paper.webp";
 import { CheckForm } from "@/modules/site/components/CheckForm";
 import { HeroSeek } from "@/modules/site/components/landing/HeroSeek";
 import { ResultDemo } from "@/modules/site/components/landing/ResultDemo";
@@ -356,7 +355,16 @@ export default function LandingPage() {
           </a>
         </div>
         <div className="site-final__media" aria-hidden="true">
-          <Image src={finalPaper} sizes="(min-width: 1024px) 50vw, 100vw" alt="" loading="lazy" />
+          {/* Из public, а не импортом: объявления типов картинок даёт next-env.d.ts, которого
+              в CI на шаге «Типы» ещё нет */}
+          <Image
+            src="/site/final-paper.webp"
+            width={1200}
+            height={1490}
+            sizes="(min-width: 1024px) 50vw, 100vw"
+            alt=""
+            loading="lazy"
+          />
         </div>
       </section>
     </main>

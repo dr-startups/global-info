@@ -16,7 +16,8 @@
    админки и `globals.css`; `src/app/(site)/layout.tsx` — шапка и подвал сайта, `site.css`, шрифты,
    metadata по умолчанию. `src/app/page.tsx` (редирект в админку) удаляется.
 2. `site.css` макета → `src/app/(site)/site.css` с правками переноса (ниже); шрифты →
-   `src/app/(site)/fonts/`; кадр закрывающего листа → `src/modules/site/assets/`.
+   `src/app/(site)/fonts/`; кадр закрывающего листа → `public/site/` (не импортом модуля: объявления типов
+   картинок даёт `next-env.d.ts`, а его нет в CI на шаге «Типы»).
 3. Компоненты `src/modules/site/components/` — те, из которых собраны экраны этапа.
 4. Лендинг со всеми блоками макета; форма на общей схеме, капча при заданном ключе, ловушка.
 5. Мастер: экран по проекции статуса, «Это вы?», запуск, опрос, три результата, заявка, «спасибо»,
@@ -134,8 +135,8 @@
 - `src/app/api/site/config/route.ts`
 - `src/modules/site/`: `api.ts`, `analytics.ts`, `config.ts`; `check/` — `wizard-state.ts`,
   `polling.ts`, `result-view.ts`, `persona-view.ts`, `waiting-view.ts`, `form.ts`, `format.ts`;
-  `components/`; `content/landing.ts`, `content/check.ts`, `content/contacts.ts`; `seo/metadata.ts`;
-  `assets/`
+  `components/`; `content/landing.ts`, `content/check.ts`, `content/contacts.ts`; `seo/metadata.ts`
+- `public/site/final-paper.webp`
 - `src/modules/self-check/run-stages.ts`
 
 Правятся: `src/app/layout.tsx`; `src/modules/self-check/public-dto.ts` (подписи из общего модуля);
