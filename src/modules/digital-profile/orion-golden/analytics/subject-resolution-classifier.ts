@@ -202,10 +202,21 @@ function isQueryLineSurface(surface: string): boolean {
 /** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
 const domainOfUrl = publicDomainOf;
 
+/** Значимые токены псевдонима: слова из двух и более букв, инициалы не в счёт. */
+function aliasTokenCount(alias: string): number {
+  return norm(alias)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2).length;
+}
+
 /** Display-name or first+last phrase present in text (upgrade path for soft surfaces). */
 function hasFullNamePhrase(text: string, subject: SubjectIdentity): boolean {
   const display = norm(subject.displayName);
   if (display.length >= 6 && text.includes(display)) return true;
+  // Многословный псевдоним целиком — тоже полное имя (шаг 0094).
+  if (subject.aliases.some((a) => aliasTokenCount(a) >= 2 && hasBoundedForm(text, norm(a)))) {
+    return true;
+  }
   const first = subject.firstNames.find((n) => matchesToken(text, n));
   const last =
     matchesToken(text, subject.lastName) ||
@@ -391,6 +402,16 @@ export function classifySubjectRelevance(
     };
   }
 
+  /*
+   * Многословный псевдоним профиля целиком в тексте — это полное имя (шаг
+   * 0094). «Philipp Kirkorov» на латинской странице не сходится ни с
+   * транслитерацией имени («filipp»), ни с фамилией по формам, а называет
+   * субъекта не хуже кириллического ФИО. Однословный псевдоним по-прежнему
+   * даёт только «фамилия названа»: «фюрер» стоит в текстах о ком угодно.
+   */
+  const matchedAliasPhrase = subject.aliases.find(
+    (a) => aliasTokenCount(a) >= 2 && hasBoundedForm(text, norm(a))
+  );
   const hasSurname =
     [subject.lastName, ...subject.lastNameVariants].some((s) => matchesToken(text, s)) ||
     subject.aliases.some((a) => norm(a).length > 4 && text.includes(norm(a)));
@@ -400,7 +421,8 @@ export function classifySubjectRelevance(
 
   if (hasSurname) matchedIdentifiers.push(subject.lastName);
 
-  const matchedFirstName = subject.firstNames.find((n) => matchesToken(text, n));
+  const matchedFirstName =
+    subject.firstNames.find((n) => matchesToken(text, n)) ?? matchedAliasPhrase ?? undefined;
   if (matchedFirstName) matchedIdentifiers.push(matchedFirstName);
 
   const matchedPatronymic = subject.patronymics.find(

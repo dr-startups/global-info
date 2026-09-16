@@ -175,6 +175,43 @@ export function anchorsFromStructuredFacts(
   return { birthDate: facts.birthDate ?? null, phrases };
 }
 
+/**
+ * Псевдонимы Викиданных, годные в варианты имени (шаг 0094).
+ *
+ * Берутся только многословные написания без инициалов, у которых хотя бы один
+ * токен совпадает с формой имени субъекта — фамилией, именем или их
+ * транслитерацией: «Adolf Hitler» (adolf), «Philipp Kirkorov» (kirkorov),
+ * «Олег Дерипаска». Запятая нормализуется («Дерипаска, Олег» → «Дерипаска
+ * Олег»). Однословные («Гитлер», «Фюрер», «Hitler») в варианты не идут: слово
+ * «фюрер» стоит в текстах о ком угодно, а фамилия одна тёзку не различает.
+ * Псевдоним без общего токена («Black Star Mafia») — чужое слово, а не имя.
+ */
+export function nameVariantsFromAliases(
+  aliases: readonly string[],
+  subjectNameVariants: readonly string[]
+): string[] {
+  const own = new Set(
+    subjectNameVariants.flatMap((v) => norm(v).split(/[^\p{L}\p{N}]+/u)).filter((t) => t.length >= 2)
+  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of aliases) {
+    const value = String(raw ?? "").replace(/,/gu, " ").replace(/\s+/gu, " ").trim();
+    if (!value) continue;
+    const tokens = value.split(" ");
+    const letters = (t: string): string => t.replace(/[^\p{L}\p{N}]/gu, "");
+    if (tokens.length < 2) continue;
+    if (tokens.some((t) => letters(t).length < 2)) continue;
+    const normTokens = tokens.map((t) => norm(letters(t)));
+    if (!normTokens.some((t) => own.has(t))) continue;
+    const key = normTokens.join(" ");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tokens.map(letters).join(" "));
+  }
+  return out;
+}
+
 export type CardAnchorsResult = {
   profile: SubjectIdentityProfile;
   /** Дата карточки разошлась с датой дела: в профиль не пишется, а называется. */
@@ -228,15 +265,28 @@ export function applyCardAnchorsToProfile(input: {
       : null;
   const birthDate = currentBirthDate ?? cardBirthDate;
 
-  // Карточка ничего нового не дала — ни фразы, ни даты там, где её не было:
-  // профиль не трогается вовсе.
+  // Псевдонимы карточки — вариантами имени, рядом со словами оператора
+  // (шаг 0094). Своё имя дела вариантом не считается.
+  const ownNames = new Set([input.subjectName, profile.displayName].map(norm));
+  const existingAliases = profile.aliases ?? [];
+  const knownAliases = new Set(existingAliases.map(norm));
+  const freshAliases = nameVariantsFromAliases(input.structured?.aliases ?? [], variants).filter(
+    (a) => !knownAliases.has(norm(a)) && !ownNames.has(norm(a))
+  );
+
+  // Карточка ничего нового не дала — ни фразы, ни варианта имени, ни даты там,
+  // где её не было: профиль не трогается вовсе.
   const cardFillsBirthDate = Boolean(cardBirthDate && !currentBirthDate);
-  if (fromCard.length === 0 && !cardFillsBirthDate) return null;
+  if (fromCard.length === 0 && freshAliases.length === 0 && !cardFillsBirthDate) return null;
 
   const existing = profile.anchors?.phrases ?? [];
   const known = new Set(existing.map((p) => norm(p.text)));
   const fresh = fromCard.filter((p) => !known.has(norm(p.text)));
-  if (fresh.length === 0 && (profile.anchors?.birthDate ?? null) === birthDate) {
+  if (
+    fresh.length === 0 &&
+    freshAliases.length === 0 &&
+    (profile.anchors?.birthDate ?? null) === birthDate
+  ) {
     return { profile, birthDateMismatch };
   }
 
@@ -247,6 +297,7 @@ export function applyCardAnchorsToProfile(input: {
     ...input,
     subjectDateOfBirth: birthDate,
     edits: {
+      ...(freshAliases.length > 0 ? { aliases: [...existingAliases, ...freshAliases] } : {}),
       anchors: {
         birthDate,
         phrases: [...existing, ...fresh],
