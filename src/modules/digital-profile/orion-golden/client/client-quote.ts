@@ -175,12 +175,47 @@ function balanceLine(line: string): string {
   return result;
 }
 
-/** Та же чистка для уже собранного текста — построчно. */
+/** Атрибуция после закрывающей кавычки: тире с непустым хвостом. */
+function attributionFollows(tail: string): boolean {
+  return /^[—–-]\s*\S+/u.test(tail.trim());
+}
+
+/** Блок называет источники отдельной строкой — «Где видно: …» / «Источники: …». */
+function blockNamesSources(text: string): boolean {
+  return /(?:Где видно|Источник(?:и)?(?:\s+в\s+регионе)?):\s*\S+/iu.test(text);
+}
+
+/**
+ * Цитата без источника не печатается (шаг 0092).
+ *
+ * Правило то же, что у ворот целости (`quoteIntegrityProblems`): строка не
+ * первая (первая — название темы, наше слово), начинается с «, после
+ * последней » нет атрибуции, а блок не называет источники строкой «Где
+ * видно». Такая строка — утверждение, которое читатель не может проверить:
+ * снимается вместе с обещанием над ней («Найдены …:»), если цитат в блоке не
+ * осталось. Сеть применяет правило, ворота проверяют, что оно выполнено.
+ */
+function withoutUnsourcedQuotes(lines: string[]): string[] {
+  if (blockNamesSources(lines.join("\n"))) return lines;
+  const isQuoteLine = (line: string): boolean => line.trim().startsWith(OPEN);
+  const kept = lines.filter((line, index) => {
+    if (index === 0 || !isQuoteLine(line)) return true;
+    const body = line.replace(/\s*(\[finding-[^\]]*\]\s*)+$/u, "").trim();
+    const closing = body.lastIndexOf(CLOSE);
+    if (closing <= 0) return true;
+    return attributionFollows(body.slice(closing + 1));
+  });
+  if (kept.length === lines.length) return lines;
+  const quoteRemains = kept.some((line, index) => index > 0 && isQuoteLine(line));
+  return quoteRemains ? kept : kept.filter((line) => !/:\s*$/u.test(line.trim()));
+}
+
+/** Та же чистка для уже собранного текста — построчно, затем правило источника. */
 export function normalizeQuoteMarks(text: string): string {
-  return String(text ?? "")
+  const lines = String(text ?? "")
     .split("\n")
-    .map((line) => balanceLine(line))
-    .join("\n");
+    .map((line) => balanceLine(line));
+  return withoutUnsourcedQuotes(lines).join("\n");
 }
 
 const TEXT_FIELDS = [
