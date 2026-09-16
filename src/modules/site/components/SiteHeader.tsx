@@ -9,22 +9,28 @@
  * бургер. Закрывается до перехода по ссылке — иначе закрытие вернуло бы фокус на
  * бургер уже после переноса фокуса на новый экран.
  *
- * Меню — нижний лист, как в мобильном приложении (замечание владельца 16.09.2026 к
- * боковой панели): выезжает снизу и закрывается кнопкой, Escape, касанием подложки
- * или потягиванием за шапку листа вниз. Потягивание слушает только шапка листа:
- * захват указателя на всём листе перехватывал бы клики по пунктам.
+ * Меню выдвигается справа листом (владелец 16.09.2026) и закрывается кнопкой,
+ * Escape, касанием подложки или смахиванием вправо по любой точке листа. Указатель
+ * захватывается только после горизонтального сдвига: захват сразу при касании
+ * перехватывал бы клики по пунктам. Клик, который браузер пришлёт после
+ * смахивания, гасится в фазе захвата — иначе смахивание по пункту уводило бы на
+ * его страницу.
  */
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 import { CONTACTS, HEADER_NAV, type NavItem } from "@/modules/site/content/contacts";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
 import { ArrowIcon, LogoMark } from "./SiteIcons";
 import { Value } from "./Value";
 
-/** Сколько тянуть лист вниз, чтобы он закрылся, а не вернулся на место. */
+/** Сдвиг пальца, после которого это смахивание, а не касание пункта. */
+const SWIPE_START_PX = 10;
+/** Сколько сместить лист вправо, чтобы он закрылся, а не вернулся на место. */
 const SWIPE_CLOSE_PX = 80;
+
+type Drag = { x: number; y: number; dx: number; id: number; active: boolean; idle: boolean };
 
 /** Текущий пункт: точный адрес — "page", раздел (страница услуги, статья) — "true". */
 function currentOf(item: NavItem, pathname: string, hash: string): "page" | "true" | undefined {
@@ -36,11 +42,22 @@ function currentOf(item: NavItem, pathname: string, hash: string): "page" | "tru
   return pathname.startsWith(`${path}/`) ? "true" : undefined;
 }
 
-function NavLinks({ pathname, hash, onNavigate }: { pathname: string; hash: string; onNavigate?: () => void }) {
+function NavLinks({
+  pathname,
+  hash,
+  onNavigate,
+  labelClass,
+}: {
+  pathname: string;
+  hash: string;
+  onNavigate?: (href: string) => void;
+  /** Обёртка подписи: под словом в меню телефона проводится штрих выделителя. */
+  labelClass?: string;
+}) {
   return HEADER_NAV.map((item) => (
     <li key={item.href}>
-      <Link href={item.href} aria-current={currentOf(item, pathname, hash)} onClick={onNavigate}>
-        {item.label}
+      <Link href={item.href} aria-current={currentOf(item, pathname, hash)} onClick={() => onNavigate?.(item.href)}>
+        {labelClass ? <span className={labelClass}>{item.label}</span> : item.label}
       </Link>
     </li>
   ));
@@ -91,35 +108,62 @@ export function SiteHeader() {
 
   const close = () => drawer.current?.close();
 
-  // Потягивание листа: пока палец на шапке листа, лист идёт за ним; отпустили ниже
-  // порога — закрылся, выше — вернулся переходом.
-  const drag = useRef<{ from: number; dy: number } | null>(null);
-  const onDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button")) return;
-    drag.current = { from: event.clientY, dy: 0 };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const onDragMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+  // Смахивание: лист идёт за пальцем вправо; отпустили дальше порога — закрылся,
+  // ближе — вернулся переходом. Вертикальное движение отдаётся прокрутке листа.
+  const drag = useRef<Drag | null>(null);
+  const swallowClick = useRef(false);
+  const onPointerDown = (event: PointerEvent<HTMLDialogElement>) => {
     const sheet = drawer.current;
-    if (!drag.current || !sheet) return;
-    drag.current.dy = Math.max(0, event.clientY - drag.current.from);
-    sheet.style.transition = "none";
-    sheet.style.translate = `0 ${drag.current.dy}px`;
+    swallowClick.current = false;
+    if (!sheet || event.button !== 0) return;
+    const r = sheet.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) return;
+    drag.current = { x: event.clientX, y: event.clientY, dx: 0, id: event.pointerId, active: false, idle: false };
   };
-  const onDragEnd = () => {
+  const onPointerMove = (event: PointerEvent<HTMLDialogElement>) => {
     const sheet = drawer.current;
-    if (!drag.current || !sheet) return;
-    const { dy } = drag.current;
+    const d = drag.current;
+    if (!sheet || !d || d.idle || event.pointerId !== d.id) return;
+    const dx = event.clientX - d.x;
+    const dy = event.clientY - d.y;
+    if (!d.active) {
+      if (Math.abs(dy) > SWIPE_START_PX && Math.abs(dy) > Math.abs(dx)) {
+        d.idle = true;
+        return;
+      }
+      if (dx < SWIPE_START_PX) return;
+      d.active = true;
+      sheet.setPointerCapture(event.pointerId);
+      sheet.classList.add("is-dragging");
+    }
+    d.dx = Math.max(0, dx);
+    sheet.style.translate = `${d.dx}px 0`;
+  };
+  const onPointerEnd = () => {
+    const sheet = drawer.current;
+    const d = drag.current;
     drag.current = null;
-    sheet.style.transition = "";
+    if (!sheet || !d?.active) return;
+    swallowClick.current = true;
+    sheet.classList.remove("is-dragging");
     sheet.style.translate = "";
-    if (dy > SWIPE_CLOSE_PX) sheet.close();
+    if (d.dx > SWIPE_CLOSE_PX) sheet.close();
   };
-  // Переход к якорю ссылкой Next меняет адрес без события hashchange.
-  const navigated = () => {
+  const onClickCapture = (event: MouseEvent<HTMLDialogElement>) => {
+    if (!swallowClick.current) return;
+    swallowClick.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  // Переход к якорю ссылкой Next меняет адрес без события hashchange, и меняет его не сразу:
+  // адрес, прочитанный в обработчике клика или в следующем кадре, ещё старый (текущий пункт не
+  // отмечался вовсе). Поэтому якорь берётся из ссылки, по которой нажали, а не из адреса.
+  const navigated = (href: string) => {
     close();
-    requestAnimationFrame(() => setHash(window.location.hash));
+    const anchor = href.split("#")[1];
+    setHash(anchor === undefined ? "" : `#${anchor}`);
   };
+
 
   return (
     <>
@@ -161,6 +205,13 @@ export function SiteHeader() {
         aria-label="Меню"
         ref={drawer}
         onClose={() => setOpen(false)}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onClickCapture={onClickCapture}
+        // Ссылку браузер перетаскивает сам и отменяет указатель посреди смахивания
+        onDragStart={(event) => event.preventDefault()}
         onClick={(event) => {
           if (event.target !== drawer.current) return;
           const r = drawer.current.getBoundingClientRect();
@@ -169,14 +220,7 @@ export function SiteHeader() {
           if (outside) close();
         }}
       >
-        <div
-          className="site-drawer__head"
-          onPointerDown={onDragStart}
-          onPointerMove={onDragMove}
-          onPointerUp={onDragEnd}
-          onPointerCancel={onDragEnd}
-        >
-          <span className="site-drawer__grip" aria-hidden="true" />
+        <div className="site-drawer__head">
           <p className="site-drawer__title">Меню</p>
           <button className="site-drawer__close" type="button" aria-label="Закрыть меню" onClick={close}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -186,17 +230,19 @@ export function SiteHeader() {
         </div>
         <nav aria-label="Разделы сайта">
           <ul className="site-drawer__nav">
-            <NavLinks pathname={pathname} hash={hash} onNavigate={navigated} />
+            <NavLinks pathname={pathname} hash={hash} onNavigate={navigated} labelClass="site-drawer__label" />
           </ul>
         </nav>
         {/* Главное действие сайта — под большим пальцем, а не где-то вверху страницы за закрытым меню */}
-        <Link className="site-btn site-btn--accent site-btn--lg site-btn--block" href="/#form" onClick={navigated}>
-          {CHECK_FORM_TEXT.submit}
-          <ArrowIcon />
-        </Link>
-        <div className="site-drawer__foot">
-          <Value text={CONTACTS.phone} />
-          <Value text={CONTACTS.email} />
+        <div className="site-drawer__bottom">
+          <Link className="site-btn site-btn--accent site-btn--lg site-btn--block" href="/#form" onClick={() => navigated("/#form")}>
+            {CHECK_FORM_TEXT.submit}
+            <ArrowIcon />
+          </Link>
+          <div className="site-drawer__foot">
+            <Value text={CONTACTS.phone} />
+            <Value text={CONTACTS.email} />
+          </div>
         </div>
       </dialog>
     </>

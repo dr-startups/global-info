@@ -672,12 +672,13 @@ p {
     0 1px 2px rgba(22, 27, 38, 0.06);
 }
 
-/* ---------- Меню узкого экрана: бургер и нижний лист ----------
-   До версии 16 здесь была кнопка «Меню» с выпадающим списком, потом — боковая панель справа
-   (заказчик 13.09: бургер и выдвижное меню). 16.09 заказчик попросил вид ближе к мобильному
-   приложению: меню стало нижним листом — тем же материалом, что листы главной (скруглённый
-   верх --site-sheet-r, блик и тень по кромке), выезжает снизу и закрывается потягиванием за
-   свою шапку. Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). */
+/* ---------- Меню узкого экрана: бургер и выдвижной лист ----------
+   До версии 16 здесь была кнопка «Меню» с выпадающим списком, потом — боковая панель во всю
+   высоту (заказчик 13.09: бургер и выдвижное меню). 16.09 заказчик попросил вид ближе к
+   мобильному приложению, но выдвижение сбоку оставить. Теперь это лист бумаги, который висит над
+   страницей с полем 8 px, а не приклеен к краю: входит длинной «пружинящей» кривой и уходит
+   короче, пункты набраны крупно и входят по очереди, текущий раздел отмечен штрихом выделителя.
+   Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). */
 .site-burger {
   display: inline-grid;
   place-items: center;
@@ -717,59 +718,83 @@ p {
 
 .site-drawer {
   --site-surface: var(--site-paper);
+  /* Кривая входа листа: быстрый старт и долгий мягкий доезд — лист «доплывает» на место */
+  --drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
   position: fixed;
-  inset: auto 0 0 0;
-  width: 100%;
+  inset: 8px 8px 8px auto;
+  width: min(344px, calc(100vw - 48px));
   max-width: none;
   height: auto;
-  max-height: calc(100dvh - 48px);
+  max-height: none;
   margin: 0;
-  padding: 0 var(--site-gutter) max(var(--site-s-5), env(safe-area-inset-bottom));
+  padding: 6px 8px max(12px, env(safe-area-inset-bottom));
   border: 0;
-  border-radius: var(--site-sheet-r) var(--site-sheet-r) 0 0;
+  border-radius: 24px;
   background-color: var(--site-paper);
   background-image: var(--site-grain);
   background-size: 160px 160px;
-  box-shadow: var(--site-shadow-sheet);
+  box-shadow:
+    0 1px 2px rgba(22, 27, 38, 0.06),
+    -24px 0 64px -28px rgba(22, 27, 38, 0.5),
+    inset 0 1px 0 #FFFFFF;
   color: var(--site-ink);
-  overscroll-behavior: contain;
   overflow-y: auto;
-  translate: 0 100%;
+  overscroll-behavior: contain;
+  /* Горизонтальное движение пальца достаётся скрипту (смахивание), вертикальное — прокрутке */
+  touch-action: pan-y;
+  translate: calc(100% + 16px) 0;
+  /* Уход короче и с разгоном: закрытый лист не должен задерживать взгляд */
   transition:
-    translate var(--site-dur-slow) var(--site-ease-out),
-    overlay var(--site-dur-slow) allow-discrete,
-    display var(--site-dur-slow) allow-discrete;
+    translate 240ms cubic-bezier(0.4, 0, 1, 1),
+    overlay 240ms allow-discrete,
+    display 240ms allow-discrete;
 }
 
 .site-drawer[open] {
   display: flex;
   flex-direction: column;
-  gap: var(--site-s-4);
   translate: 0 0;
+  transition:
+    translate 560ms var(--drawer-ease),
+    overlay 560ms allow-discrete,
+    display 560ms allow-discrete;
 }
 
 @starting-style {
   .site-drawer[open] {
-    translate: 0 100%;
+    translate: calc(100% + 16px) 0;
   }
 }
 
-/* Подложка задана числом, а не токеном: ::backdrop не наследует переменные от документа */
+/* Пока палец ведёт лист, он идёт за пальцем без запаздывания */
+.site-drawer.is-dragging {
+  transition: none;
+}
+
+/* Подложка задана числом, а не токеном: ::backdrop не наследует переменные от документа.
+   Лёгкое размытие отодвигает страницу назад — лист читается слоем над ней, а не рядом. */
 .site-drawer::backdrop {
   background-color: rgba(22, 27, 38, 0);
+  -webkit-backdrop-filter: blur(0);
+  backdrop-filter: blur(0);
   transition:
-    background-color var(--site-dur-slow) var(--site-ease-out),
-    overlay var(--site-dur-slow) allow-discrete,
-    display var(--site-dur-slow) allow-discrete;
+    background-color 320ms var(--site-ease-out),
+    backdrop-filter 320ms var(--site-ease-out),
+    overlay 320ms allow-discrete,
+    display 320ms allow-discrete;
 }
 
 .site-drawer[open]::backdrop {
-  background-color: rgba(22, 27, 38, 0.4);
+  background-color: rgba(22, 27, 38, 0.32);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
 }
 
 @starting-style {
   .site-drawer[open]::backdrop {
     background-color: rgba(22, 27, 38, 0);
+    -webkit-backdrop-filter: blur(0);
+    backdrop-filter: blur(0);
   }
 }
 
@@ -778,39 +803,24 @@ html:has(.site-drawer[open]) {
   overflow: hidden;
 }
 
-/* Шапка листа: ручка, заголовок, крестик. За неё лист тянут вниз — поэтому touch-action: none,
-   иначе браузер начнёт прокрутку страницы раньше, чем скрипт получит движение указателя. */
 .site-drawer__head {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 56px;
-  padding-top: 14px;
-  touch-action: none;
-  cursor: grab;
+  min-height: 52px;
+  padding-inline: 12px 0;
 }
 
-.site-drawer__grip {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--site-ink) 16%, transparent);
-  translate: -50% 0;
-}
-
+/* Заголовок тихий: крупно здесь набраны сами разделы */
 .site-drawer__title {
   margin: 0;
-  font-family: var(--site-font-heading);
-  font-size: var(--site-text-lg);
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink-3);
 }
 
-/* Круглая кнопка на вложенной поверхности, как в системных листах; зона нажатия — 44 px */
+/* Круглая кнопка на вложенной поверхности, как в системных листах; зона нажатия — 44 px.
+   Крестик доворачивается, пока лист въезжает: кнопка «собирается» вместе с листом. */
 .site-drawer__close {
   position: relative;
   display: inline-grid;
@@ -824,7 +834,15 @@ html:has(.site-drawer[open]) {
   box-shadow: inset 0 0 0 1px var(--site-line);
   color: var(--site-ink);
   cursor: pointer;
-  transition: background-color var(--site-dur-fast) var(--site-ease-out);
+  transition:
+    background-color var(--site-dur-fast) var(--site-ease-out),
+    rotate 560ms var(--drawer-ease);
+}
+
+@starting-style {
+  .site-drawer[open] .site-drawer__close {
+    rotate: -90deg;
+  }
 }
 
 .site-drawer__close::after {
@@ -852,59 +870,136 @@ html:has(.site-drawer[open]) {
   stroke-linecap: round;
 }
 
-/* Пункты — строки списка на линии гуттера, разделённые волосяными линиями. Подложка текущего
-   и нажатого пункта выходит за гуттер на 12 px, а текст остаётся на линии. */
+/* Разделы — крупный набор без разделителей: пять слов на пол-экрана читаются как оглавление,
+   а не как список настроек. Шеврон справа говорит, что строка ведёт дальше. */
 .site-drawer__nav {
   display: grid;
-  margin: 0;
+  gap: 2px;
+  margin: var(--site-s-2) 0 0;
   padding: 0;
   list-style: none;
-}
-
-.site-drawer__nav li + li {
-  border-top: 1px solid var(--site-line);
 }
 
 .site-drawer__nav a {
   display: flex;
   align-items: center;
-  min-height: 52px;
-  margin-inline: calc(-1 * var(--site-s-3));
-  padding-inline: var(--site-s-3);
-  border-radius: var(--site-r-2);
+  gap: var(--site-s-3);
+  min-height: 58px;
+  padding-inline: 12px 10px;
+  border-radius: 14px;
   color: var(--site-ink);
   text-decoration: none;
   font-family: var(--site-font-heading);
-  font-size: 1.25rem;
-  font-weight: 500;
-  letter-spacing: -0.015em;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color var(--site-dur-fast) var(--site-ease-out);
 }
 
+.site-drawer__nav a::after {
+  content: "";
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-inline-start: auto;
+  background-color: var(--site-ink-3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 5 5 5-5 5'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m8 5 5 5-5 5'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition:
+    translate var(--site-dur-base) var(--site-ease-out),
+    background-color var(--site-dur-base) var(--site-ease-out);
+}
+
 .site-drawer__nav a:active {
-  background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+  background: color-mix(in srgb, var(--site-ink) 5%, transparent);
+}
+
+.site-drawer__nav a:active::after {
+  translate: 3px 0;
+  background-color: var(--site-ink);
 }
 
 @media (hover: hover) {
   .site-drawer__nav a:hover {
-    background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+    background: color-mix(in srgb, var(--site-ink) 5%, transparent);
+  }
+
+  .site-drawer__nav a:hover::after {
+    translate: 3px 0;
+    background-color: var(--site-ink);
   }
 }
 
-/* Текущий раздел отмечен выделителем, как текущий шаг мастера */
-.site-drawer__nav a[aria-current] {
-  background: var(--site-marker-soft);
-  font-weight: 600;
+/* Текущий раздел: под словом проведён штрих выделителя — тот же жест, которым в продукте
+   отмечено найденное. Штрих лежит по нижней половине строчных и проводится слева направо, когда
+   лист уже почти доехал. Анимация, а не переход: закрытый <dialog> не рисуется, и при каждом
+   открытии она запускается заново; конечное состояние — проведённый штрих, без движения тоже. */
+.site-drawer__label {
+  position: relative;
+  isolation: isolate;
 }
 
-.site-drawer > .site-btn {
-  margin-top: var(--site-s-2);
+.site-drawer__label::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 48% -6px 2% -5px;
+  border-radius: 3px 6px 4px 5px;
+  background: var(--site-marker);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.site-drawer__nav a[aria-current] .site-drawer__label::before {
+  transform: none;
+}
+
+.site-drawer[open] .site-drawer__nav a[aria-current] .site-drawer__label::before {
+  animation: site-drawer-stroke 460ms var(--site-ease-out) 360ms backwards;
+}
+
+@keyframes site-drawer-stroke {
+  from { transform: scaleX(0); }
+}
+
+/* Разделы и низ листа входят следом за листом по одному: список читается сверху вниз */
+.site-drawer__nav li,
+.site-drawer__bottom {
+  transition:
+    opacity 360ms var(--site-ease-out),
+    translate 560ms var(--drawer-ease);
+}
+
+.site-drawer__nav li:nth-child(1) { transition-delay: 70ms; }
+.site-drawer__nav li:nth-child(2) { transition-delay: 105ms; }
+.site-drawer__nav li:nth-child(3) { transition-delay: 140ms; }
+.site-drawer__nav li:nth-child(4) { transition-delay: 175ms; }
+.site-drawer__nav li:nth-child(5) { transition-delay: 210ms; }
+.site-drawer__bottom { transition-delay: 250ms; }
+
+@starting-style {
+  .site-drawer[open] .site-drawer__nav li,
+  .site-drawer[open] .site-drawer__bottom {
+    opacity: 0;
+    translate: 40px 0;
+  }
+}
+
+/* Низ листа — под большим пальцем: главное действие и контакты */
+.site-drawer__bottom {
+  display: grid;
+  gap: var(--site-s-4);
+  margin-top: auto;
+  padding: var(--site-s-5) 4px 0;
 }
 
 .site-drawer__foot {
   display: flex;
   flex-wrap: wrap;
   gap: 4px var(--site-s-4);
+  padding-inline: 8px;
   font-size: var(--site-text-sm);
   color: var(--site-ink-2);
 }
