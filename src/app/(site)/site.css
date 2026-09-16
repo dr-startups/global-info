@@ -672,69 +672,69 @@ p {
     0 1px 2px rgba(22, 27, 38, 0.06);
 }
 
-/* ---------- Меню узкого экрана: бургер и выдвижная панель ----------
-   До версии 16 здесь была кнопка «Меню» с выпадающим списком; заказчик 13.09: на телефоне — бургер, и
-   меню выдвигается. Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). Выезжает
-   справа, с той стороны, где бургер, и крестик панели стоит ровно на его месте: плита шапки — 10 px от
-   верха и 27 px от правого края окна. */
-.site-burger,
-.site-drawer__close {
+/* ---------- Меню узкого экрана: бургер и нижний лист ----------
+   До версии 16 здесь была кнопка «Меню» с выпадающим списком, потом — боковая панель справа
+   (заказчик 13.09: бургер и выдвижное меню). 16.09 заказчик попросил вид ближе к мобильному
+   приложению: меню стало нижним листом — тем же материалом, что листы главной (скруглённый
+   верх --site-sheet-r, блик и тень по кромке), выезжает снизу и закрывается потягиванием за
+   свою шапку. Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). */
+.site-burger {
   display: inline-grid;
   place-items: center;
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid var(--site-line);
-  border-radius: 8px;
-  background: var(--site-paper);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   color: var(--site-ink);
   cursor: pointer;
-  transition: border-color var(--site-dur-fast) var(--site-ease-out);
+  /* Значок 20 px в зоне 44: отрицательное поле ставит его правую кромку на линию гуттера */
+  margin-inline-end: -12px;
+  transition: background-color var(--site-dur-fast) var(--site-ease-out);
 }
 
-.site-burger:hover,
-.site-drawer__close:hover {
-  border-color: var(--site-line-hover);
+/* Наведение — только там, где есть мышь: на телефоне :hover залипает после касания */
+.site-burger:active {
+  background: color-mix(in srgb, var(--site-ink) 6%, transparent);
 }
 
-.site-burger svg,
-.site-drawer__close svg {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
+@media (hover: hover) {
+  .site-burger:hover {
+    background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+  }
 }
 
 /* Нижняя черта бургера короче — как нижняя плашка в знаке логотипа */
 .site-burger svg {
   width: 20px;
   height: 14px;
-}
-
-.site-drawer__close svg {
-  width: 16px;
-  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .site-drawer {
   --site-surface: var(--site-paper);
   position: fixed;
-  inset: 0 0 0 auto;
-  width: min(360px, 88vw);
+  inset: auto 0 0 0;
+  width: 100%;
   max-width: none;
-  height: 100dvh;
-  max-height: none;
+  height: auto;
+  max-height: calc(100dvh - 48px);
   margin: 0;
-  padding: 10px 16px var(--site-s-5);
+  padding: 0 var(--site-gutter) max(var(--site-s-5), env(safe-area-inset-bottom));
   border: 0;
-  border-radius: 24px 0 0 24px;
+  border-radius: var(--site-sheet-r) var(--site-sheet-r) 0 0;
   background-color: var(--site-paper);
   background-image: var(--site-grain);
   background-size: 160px 160px;
-  box-shadow: -1px 0 0 var(--site-line), -28px 0 56px -28px rgba(22, 27, 38, 0.3);
+  box-shadow: var(--site-shadow-sheet);
   color: var(--site-ink);
   overscroll-behavior: contain;
-  translate: 100% 0;
+  overflow-y: auto;
+  translate: 0 100%;
   transition:
     translate var(--site-dur-slow) var(--site-ease-out),
     overlay var(--site-dur-slow) allow-discrete,
@@ -750,7 +750,7 @@ p {
 
 @starting-style {
   .site-drawer[open] {
-    translate: 100% 0;
+    translate: 0 100%;
   }
 }
 
@@ -764,7 +764,7 @@ p {
 }
 
 .site-drawer[open]::backdrop {
-  background-color: rgba(22, 27, 38, 0.28);
+  background-color: rgba(22, 27, 38, 0.4);
 }
 
 @starting-style {
@@ -773,44 +773,122 @@ p {
   }
 }
 
-/* Страница под открытой панелью не прокручивается */
+/* Страница под открытым листом не прокручивается */
 html:has(.site-drawer[open]) {
   overflow: hidden;
 }
 
+/* Шапка листа: ручка, заголовок, крестик. За неё лист тянут вниз — поэтому touch-action: none,
+   иначе браузер начнёт прокрутку страницы раньше, чем скрипт получит движение указателя. */
 .site-drawer__head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 60px; /* высота плиты шапки с бордюром: крестик встаёт ровно на место бургера */
-  padding: 0 11px 0 var(--site-s-3);
+  min-height: 56px;
+  padding-top: 14px;
+  touch-action: none;
+  cursor: grab;
 }
 
+.site-drawer__grip {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--site-ink) 16%, transparent);
+  translate: -50% 0;
+}
+
+.site-drawer__title {
+  margin: 0;
+  font-family: var(--site-font-heading);
+  font-size: var(--site-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+/* Круглая кнопка на вложенной поверхности, как в системных листах; зона нажатия — 44 px */
+.site-drawer__close {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--site-paper-2);
+  box-shadow: inset 0 0 0 1px var(--site-line);
+  color: var(--site-ink);
+  cursor: pointer;
+  transition: background-color var(--site-dur-fast) var(--site-ease-out);
+}
+
+.site-drawer__close::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+}
+
+.site-drawer__close:active {
+  background: color-mix(in srgb, var(--site-ink) 8%, var(--site-paper));
+}
+
+@media (hover: hover) {
+  .site-drawer__close:hover {
+    background: color-mix(in srgb, var(--site-ink) 8%, var(--site-paper));
+  }
+}
+
+.site-drawer__close svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* Пункты — строки списка на линии гуттера, разделённые волосяными линиями. Подложка текущего
+   и нажатого пункта выходит за гуттер на 12 px, а текст остаётся на линии. */
 .site-drawer__nav {
   display: grid;
-  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+.site-drawer__nav li + li {
+  border-top: 1px solid var(--site-line);
+}
+
 .site-drawer__nav a {
   display: flex;
   align-items: center;
-  min-height: 56px;
+  min-height: 52px;
+  margin-inline: calc(-1 * var(--site-s-3));
   padding-inline: var(--site-s-3);
-  border-radius: var(--site-r-3);
+  border-radius: var(--site-r-2);
   color: var(--site-ink);
   text-decoration: none;
   font-family: var(--site-font-heading);
-  font-size: var(--site-text-xl);
+  font-size: 1.25rem;
   font-weight: 500;
   letter-spacing: -0.015em;
   transition: background-color var(--site-dur-fast) var(--site-ease-out);
 }
 
-.site-drawer__nav a:hover {
-  background: var(--site-accent-soft);
+.site-drawer__nav a:active {
+  background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+}
+
+@media (hover: hover) {
+  .site-drawer__nav a:hover {
+    background: color-mix(in srgb, var(--site-ink) 6%, transparent);
+  }
 }
 
 /* Текущий раздел отмечен выделителем, как текущий шаг мастера */
@@ -819,31 +897,14 @@ html:has(.site-drawer[open]) {
   font-weight: 600;
 }
 
-/* Пункты входят следом за панелью по одному: список читается сверху вниз */
-.site-drawer__nav li {
-  transition:
-    opacity var(--site-dur-slow) var(--site-ease-out),
-    translate var(--site-dur-slow) var(--site-ease-out);
-}
-
-.site-drawer__nav li:nth-child(2) { transition-delay: 30ms; }
-.site-drawer__nav li:nth-child(3) { transition-delay: 60ms; }
-.site-drawer__nav li:nth-child(4) { transition-delay: 90ms; }
-.site-drawer__nav li:nth-child(5) { transition-delay: 120ms; }
-
-@starting-style {
-  .site-drawer[open] .site-drawer__nav li {
-    opacity: 0;
-    translate: 16px 0;
-  }
+.site-drawer > .site-btn {
+  margin-top: var(--site-s-2);
 }
 
 .site-drawer__foot {
-  display: grid;
-  gap: 6px;
-  margin-top: auto;
-  padding: var(--site-s-4) var(--site-s-3) 0;
-  border-top: 1px solid var(--site-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--site-s-4);
   font-size: var(--site-text-sm);
   color: var(--site-ink-2);
 }
@@ -862,6 +923,53 @@ html:has(.site-drawer[open]) {
 .site-header.is-minimal .site-nav,
 .site-header.is-minimal .site-burger {
   display: none;
+}
+
+/* Узкий экран: плита с рамкой и полями — десктопный приём, на телефоне она читалась как ещё
+   одна карточка (заказчик 16.09). Здесь шапка — панель во всю ширину, как в приложении: бумага
+   с размытием на всей полосе, логотип на линии гуттера, линия и тень появляются при
+   прокрутке, полоса прочитанного — нижняя кромка панели. */
+@media (max-width: 899.98px) {
+  .site-header {
+    padding-block: 0;
+    border-bottom: 1px solid transparent;
+    /* В покое — цвет стола, и панель сливается с верхом страницы; бумага — при прокрутке */
+    background: color-mix(in srgb, var(--site-ground) 72%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    backdrop-filter: blur(18px) saturate(150%);
+    transition-property: background-color, border-color, box-shadow;
+    transition-duration: var(--site-dur-slow);
+    transition-timing-function: var(--site-ease-out);
+  }
+
+  .site-header.is-scrolled {
+    background: color-mix(in srgb, var(--site-paper) 93%, transparent);
+    border-bottom-color: var(--site-line);
+    box-shadow: 0 10px 24px -18px rgba(22, 27, 38, 0.3);
+  }
+
+  .site-header__inner,
+  .site-header.is-scrolled .site-header__inner {
+    min-height: 60px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .site-logo {
+    padding-inline: 0;
+  }
+
+  .site-header__progress {
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    border-radius: 0;
+  }
 }
 
 /* ---------- Кнопки ---------- */
@@ -1865,10 +1973,26 @@ html:has(.site-drawer[open]) {
   margin-top: var(--site-s-2);
 }
 
-/* На узком экране кнопки встают друг под другом, и кнопка без заливки выравнивается по тексту */
+/* На узком экране кнопки встают столбиком во всю ширину, как в приложении: одна ширина у
+   главной и второй кнопки (на 404 разная ширина читалась как перекос — заказчик 16.09), и
+   действие всегда под пальцем. Нажатие — вдавливание, как у site-btn--block: масштаб 0.96 на
+   всю ширину экрана читается как рывок. */
 @media (max-width: 639px) {
-  .site-wizard .site-actions > .site-btn--ghost {
-    margin-inline-start: -12px;
+  .site-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .site-actions > .site-btn {
+    width: 100%;
+  }
+
+  .site-actions > .site-btn:active:not(:disabled):not([aria-busy="true"]) {
+    transform: translateY(1px);
+    box-shadow:
+      0 1px 1px rgba(22, 27, 38, 0.10),
+      0 4px 10px -8px rgba(22, 27, 38, 0.50),
+      inset 0 1px 0 rgba(255, 255, 255, 0.10);
   }
 }
 
@@ -1921,6 +2045,32 @@ html:has(.site-drawer[open]) {
   /* Ожидание: смотрят на журнал проверки, а не читают текст — ему и шире колонка */
   .site-screen--aside-wide {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+/* Служебный экран: в разметке кнопки идут после фактов (на телефоне — дочитал и нажал), а на
+   широком экране сетка возвращает их под подводку. Факты занимают обе строки правой колонки,
+   поэтому кнопки стоят под текстом и при высоком блоке фактов. Расстояние до подводки — те же
+   24 px, что были у кнопок внутри заголовка. Строк промежутка нет: без кнопок вторая строка пуста,
+   и промежуток сетки добавил бы невидимые 24 px. */
+@media (min-width: 1024px) {
+  .site-screen--service {
+    grid-template-rows: auto 1fr;
+    row-gap: 0;
+  }
+
+  .site-screen--service > .site-screen__head {
+    grid-area: 1 / 1;
+  }
+
+  .site-screen--service > .site-screen__aside {
+    grid-area: 1 / 2 / 3 / 3;
+  }
+
+  .site-screen--service > .site-screen__actions {
+    grid-area: 2 / 1;
+    align-self: start;
+    margin-top: var(--site-s-5);
   }
 }
 
@@ -3344,13 +3494,30 @@ html:has(.site-drawer[open]) {
   align-content: start;
 }
 
+/* Узкий экран: строка поиска — иллюстрация к заголовку, поэтому стоит между подводкой и
+   формой, а не после формы, где она читалась оторванным элементом (заказчик 16.09). В разметке
+   она остаётся после формы — порядок задаёт сетка. Форма отбита сильнее, чем строка от текста:
+   строка принадлежит тексту, форма — отдельный объект. */
+@media (max-width: 1023.98px) {
+  .site-hero__grid {
+    gap: var(--site-s-6);
+  }
+
+  .site-hero__copy { order: 0; }
+  .site-hero .site-seek { order: 1; }
+
+  .site-hero .site-formcase {
+    order: 2;
+    margin-top: var(--site-s-4);
+  }
+}
+
 @media (min-width: 1024px) {
   .site-hero {
     padding-block: calc(72px + var(--site-s-7)) var(--site-s-8);
   }
 
-  /* Поисковая строка встаёт под текст, в ту же колонку: на узком экране она идёт после формы
-     (в разметке тоже после неё), чтобы не отодвигать главное действие вниз экрана. */
+  /* Поисковая строка встаёт под текст, в ту же колонку, как и на узком экране. */
   .site-hero__grid {
     grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
     /* Вторая строка тянется (1fr), первая — по тексту: иначе форма, занимающая обе строки,
@@ -3514,6 +3681,12 @@ html:has(.site-drawer[open]) {
 
 .site-hero .site-seek {
   animation: site-rise 600ms var(--site-ease-out) 400ms both;
+}
+
+/* На узком экране строка стоит выше формы — и появляется раньше неё */
+@media (max-width: 1023.98px) {
+  .site-hero .site-seek { animation-delay: 320ms; }
+  .site-hero .site-formcase { animation-delay: 440ms; }
 }
 
 @keyframes site-rise {

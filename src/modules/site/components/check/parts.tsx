@@ -137,6 +137,10 @@ const BUTTON_CLASS: Record<ServiceAction["variant"], string> = {
  * Служебный экран: слева — что случилось и что делать, справа — что стало с
  * данными. Без цветной плашки ошибки: человеку, который проверяет свою
  * репутацию, достаточно объяснения, а не красной тревоги.
+ *
+ * Кнопки — отдельный блок после фактов, а не часть заголовка: на телефоне человек
+ * сначала дочитывает, что стало с данными, и действие ждёт его внизу, под пальцем.
+ * На широком экране сетка возвращает блок под подводку.
  */
 export function ServiceScreen({
   content,
@@ -148,35 +152,16 @@ export function ServiceScreen({
   headingRef?: Ref<HTMLHeadingElement>;
 }) {
   return (
-    <section className="site-screen site-screen--split is-active site-enter" aria-labelledby="service-title">
+    <section
+      className="site-screen site-screen--split site-screen--service is-active site-enter"
+      aria-labelledby="service-title"
+    >
       <div className="site-screen__head">
         <p className={`site-status${content.tone ? ` site-status--${content.tone}` : ""}`}>{content.status}</p>
         <h1 className="site-screen__title" id="service-title" tabIndex={-1} ref={headingRef}>
           {content.title}
         </h1>
         <p className="site-screen__lead">{content.lead}</p>
-        {content.actions.length > 0 ? (
-          <div className="site-actions">
-            {content.actions.map((action) =>
-              action.href ? (
-                <Link key={action.label} className={BUTTON_CLASS[action.variant]} href={action.href}>
-                  {action.label}
-                  {action.variant === "accent" ? <ArrowIcon /> : null}
-                </Link>
-              ) : (
-                <button
-                  key={action.label}
-                  className={BUTTON_CLASS[action.variant]}
-                  type="button"
-                  onClick={() => action.action && onAction?.(action.action)}
-                >
-                  {action.label}
-                  {action.variant === "accent" ? <ArrowIcon /> : null}
-                </button>
-              )
-            )}
-          </div>
-        ) : null}
       </div>
       {content.facts ? (
         <div className="site-screen__aside">
@@ -189,6 +174,28 @@ export function ServiceScreen({
               </div>
             ))}
           </dl>
+        </div>
+      ) : null}
+      {content.actions.length > 0 ? (
+        <div className="site-actions site-screen__actions">
+          {content.actions.map((action) =>
+            action.href ? (
+              <Link key={action.label} className={BUTTON_CLASS[action.variant]} href={action.href}>
+                {action.label}
+                {action.variant === "accent" ? <ArrowIcon /> : null}
+              </Link>
+            ) : (
+              <button
+                key={action.label}
+                className={BUTTON_CLASS[action.variant]}
+                type="button"
+                onClick={() => action.action && onAction?.(action.action)}
+              >
+                {action.label}
+                {action.variant === "accent" ? <ArrowIcon /> : null}
+              </button>
+            )
+          )}
         </div>
       ) : null}
     </section>
