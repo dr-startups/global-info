@@ -7,9 +7,11 @@
  * владельца 15.09.2026); реквизиты и контакты — плейсхолдеры, пока их не дали.
  */
 
+import { formatContentDate } from "./dates";
+
 export const CONSENT_VERSION = "draft-2026-09-15";
 
-const UPDATED = "15 сентября 2026";
+const UPDATED = "2026-09-15";
 
 export interface LegalSection {
   heading: string;
@@ -137,7 +139,7 @@ export const LEGAL_DOCUMENTS = {
       },
       {
         heading: "Версия",
-        paragraphs: [`Версия текста ${CONSENT_VERSION}, ${UPDATED}.`],
+        paragraphs: [`Версия текста ${CONSENT_VERSION}, ${formatContentDate(UPDATED)}.`],
       },
     ],
   },

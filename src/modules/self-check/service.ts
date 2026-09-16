@@ -332,6 +332,22 @@ export async function loadSelfCheckByPublicId(
   return resolveDeps(deps).db.selfCheck.findUnique({ where: { publicId } });
 }
 
+/**
+ * Есть ли проверка с таким адресом — для кода 404 у страницы мастера.
+ *
+ * Сбой базы — не «проверки нет»: человек с живой ссылкой получил бы 404 на свою
+ * проверку. При сбое страница рисует мастер, и тот по отказу ручки скажет «нет
+ * связи». Обезличенная запись существует: «срок истёк» говорит мастер.
+ */
+export async function selfCheckExists(publicId: string, deps: SelfCheckDeps = {}): Promise<boolean> {
+  try {
+    return (await loadSelfCheckByPublicId(publicId, deps)) !== null;
+  } catch (error) {
+    console.warn("[self-check] проверка адреса мастера не удалась, страница рисуется без 404", error);
+    return true;
+  }
+}
+
 export async function getSelfCheckStatus(
   check: SelfCheck,
   deps: SelfCheckDeps = {}

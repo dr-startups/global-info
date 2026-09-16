@@ -23,6 +23,15 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
 RUN npx prisma generate
+# Страницы сайта пререндерятся здесь, и адрес сайта, индексация и коды вебмастеров
+# запекаются в HTML: canonical, robots.txt, карта сайта, noindex. Railway передаёт
+# переменные сервиса в сборку только объявленным ARG; без них сайт собрался бы с
+# адресом localhost и закрытой индексацией. Секретов среди них нет, и в итоговый
+# образ ARG сборочного этапа не попадают.
+ARG SITE_PUBLIC_ORIGIN
+ARG SITE_INDEXING_ENABLED
+ARG SITE_YANDEX_VERIFICATION
+ARG SITE_GOOGLE_VERIFICATION
 RUN npm run build
 
 # ---- runner ----------------------------------------------------------------

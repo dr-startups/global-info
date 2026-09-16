@@ -10,11 +10,18 @@ import { checkPageMetadata } from "@/modules/site/seo/metadata";
  * Prisma или серверный сервис проверки, роняет `npm run build`, а на площадке
  * превращает статическую страницу в запрос к базе на каждый показ. Мастер
  * получает данные только через `/api/self-check/*` и в поиск не попадает.
+ *
+ * Одно исключение названо поимённо: страница мастера спрашивает у сервиса
+ * проверки, есть ли запись, — чтобы неизвестная проверка отвечала кодом 404. Она
+ * и так собирается на каждый запрос. Маршруты `robots.txt`, `sitemap.xml` и
+ * манифеста лежат в корне app и подчиняются тем же правилам, что страницы сайта.
  */
 
 const root = process.cwd();
 const SITE_APP = join(root, "src/app/(site)");
 const SITE_MODULE = join(root, "src/modules/site");
+/** Маршруты метаданных: Next ищет их только в корне app. */
+const METADATA_ROUTES = ["src/app/robots.ts", "src/app/sitemap.ts", "src/app/manifest.ts"].map((p) => join(root, p));
 
 function files(dir: string): string[] {
   if (!existsSync(dir)) return [];
@@ -39,6 +46,8 @@ const SERVER_ONLY = [
 ];
 
 const CHECK_PAGE = "src/app/(site)/check/[publicId]/page.tsx";
+/** Что можно одной странице мастера: спросить, есть ли проверка (`selfCheckExists`). */
+const CHECK_PAGE_MAY_IMPORT = new Set(["@/modules/self-check/service"]);
 
 describe("страницы сайта", () => {
   it("есть лендинг, мастер и страницы отказов создания", () => {
@@ -48,16 +57,27 @@ describe("страницы сайта", () => {
       CHECK_PAGE,
       "src/app/(site)/check/limit/page.tsx",
       "src/app/(site)/check/disabled/page.tsx",
+      "src/app/(site)/uslugi/page.tsx",
+      "src/app/(site)/uslugi/[slug]/page.tsx",
+      "src/app/(site)/blog/page.tsx",
+      "src/app/(site)/blog/[slug]/page.tsx",
+      "src/app/(site)/voprosy/page.tsx",
+      "src/app/(site)/o-proekte/page.tsx",
+      "src/app/(site)/kontakty/page.tsx",
+      "src/app/robots.ts",
+      "src/app/sitemap.ts",
+      "src/app/manifest.ts",
     ]) {
       expect(existsSync(join(root, page)), page).toBe(true);
     }
   });
 
   it("ни один файл сайта не тянет базу и серверную часть проверки", () => {
-    const all = [...files(SITE_APP), ...files(SITE_MODULE)];
+    const all = [...files(SITE_APP), ...files(SITE_MODULE), ...METADATA_ROUTES];
     expect(all.length).toBeGreaterThan(10);
     for (const file of all) {
       for (const spec of imports(read(file))) {
+        if (rel(file) === CHECK_PAGE && CHECK_PAGE_MAY_IMPORT.has(spec)) continue;
         expect(
           SERVER_ONLY.some((re) => re.test(spec)),
           `${rel(file)} импортирует ${spec}`
@@ -77,8 +97,14 @@ describe("страницы сайта", () => {
     }
   });
 
+  it("исключение мастера — ровно одно: база и остальной сервер ему по-прежнему закрыты", () => {
+    const specs = imports(read(join(root, CHECK_PAGE)));
+    expect(specs).toContain("@/modules/self-check/service");
+    expect(specs.filter((spec) => SERVER_ONLY.some((re) => re.test(spec)))).toEqual(["@/modules/self-check/service"]);
+  });
+
   it("force-dynamic — только у мастера; остальные страницы не читают запрос", () => {
-    for (const file of files(SITE_APP)) {
+    for (const file of [...files(SITE_APP), ...METADATA_ROUTES]) {
       const text = read(file);
       if (rel(file) === CHECK_PAGE) {
         expect(text).toMatch(/export const dynamic = "force-dynamic";/u);

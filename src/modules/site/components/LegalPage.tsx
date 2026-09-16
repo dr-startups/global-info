@@ -1,34 +1,23 @@
-import Link from "next/link";
 import { Fragment } from "react";
+import { formatContentDate } from "@/modules/site/content/dates";
 import type { LegalDocument } from "@/modules/site/content/legal";
-import { Value } from "./Value";
+import { siteOrigin } from "@/modules/site/seo/indexing";
+import { breadcrumbLd } from "@/modules/site/seo/json-ld";
+import { Breadcrumbs } from "./content/Breadcrumbs";
+import { RichText } from "./content/RichText";
+import { JsonLd } from "./JsonLd";
 
-/** Текст с плейсхолдерами `{{…}}`: незаполненные значения видны на странице. */
-function WithPlaceholders({ text }: { text: string }) {
-  return (
-    <>
-      {text.split(/(\{\{[^}]+\}\})/u).map((part, i) => (
-        <Value key={i} text={part} />
-      ))}
-    </>
-  );
-}
-
-/** Юридическая страница — черновик, и это видно до первого абзаца. */
+/** Юридическая страница — черновик, и это видно до первого абзаца. Плейсхолдеры `{{…}}` видны на странице. */
 export function LegalPage({ doc }: { doc: LegalDocument }) {
+  const path = `/legal/${doc.slug}`;
   return (
     <main className="site-narrow site-page" id="main">
-      <ol className="site-breadcrumbs" aria-label="Вы здесь">
-        <li>
-          <Link href="/">Главная</Link>
-        </li>
-        <li>{doc.title}</li>
-      </ol>
+      <Breadcrumbs path={path} />
       <article>
         <div className="site-stack" style={{ gap: "var(--site-s-4)", marginBottom: "var(--site-s-5)" }}>
           <h1 className="site-h1">{doc.title}</h1>
           <p className="site-article__meta">
-            <span>Черновик от {doc.updated}</span>
+            <span>Черновик от {formatContentDate(doc.updated)}</span>
             <span>Версия {doc.version}</span>
           </p>
         </div>
@@ -46,14 +35,14 @@ export function LegalPage({ doc }: { doc: LegalDocument }) {
               <h2>{section.heading}</h2>
               {section.paragraphs?.map((paragraph) => (
                 <p key={paragraph}>
-                  <WithPlaceholders text={paragraph} />
+                  <RichText text={paragraph} />
                 </p>
               ))}
               {section.items ? (
                 <ul>
                   {section.items.map((item) => (
                     <li key={item}>
-                      <WithPlaceholders text={item} />
+                      <RichText text={item} />
                     </li>
                   ))}
                 </ul>
@@ -62,6 +51,7 @@ export function LegalPage({ doc }: { doc: LegalDocument }) {
           ))}
         </div>
       </article>
+      <JsonLd data={[breadcrumbLd(path, siteOrigin())]} />
     </main>
   );
 }

@@ -5,12 +5,16 @@ import { SiteChrome } from "@/modules/site/components/SiteChrome";
 import { ArrowIcon } from "@/modules/site/components/SiteIcons";
 
 /**
- * 404. Next рисует её в корневом layout, мимо layout сайта, — поэтому стили и
- * каркас сайта подключены здесь.
+ * 404. Неизвестный адрес Next рисует в корневом layout, мимо layout сайта, — поэтому
+ * стили и каркас сайта подключены здесь.
+ *
+ * Заголовок — целиком: `notFound()` страницы сайта (неизвестная статья или услуга)
+ * рисует эту же страницу внутри layout сайта, и его шаблон «%s — Global Info»
+ * повторил бы название.
  */
 
 export const metadata: Metadata = {
-  title: "Страница не найдена — Global Info",
+  title: { absolute: "Страница не найдена — Global Info" },
   robots: { index: false, follow: false },
 };
 

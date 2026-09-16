@@ -12,6 +12,7 @@
 
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
 import { isLinkReadingEnabled } from "../services/link-page-reader";
+import { siteIndexing } from "@/modules/site/seo/indexing";
 import {
   boolSetting,
   numberSetting,
@@ -388,7 +389,7 @@ export function describeSelfCheckSettings(env: Env = process.env): string[] {
   const switchState = boolSetting("SELF_CHECK_ENABLED", env)
     ? "включена"
     : "выключена (SELF_CHECK_ENABLED не равен true)";
-  const origin = textSetting("SITE_PUBLIC_ORIGIN", env);
+  const indexing = siteIndexing(env);
   const n = (name: NumberSettingName) => numberSetting(name, env);
 
   return [
@@ -397,9 +398,9 @@ export function describeSelfCheckSettings(env: Env = process.env): string[] {
       `тот же человек повторно — через ${n("SELF_CHECK_DEDUPE_DAYS")} дн.`,
     `данные — обезличивание через ${n("SELF_CHECK_RETENTION_DAYS")} дн., доступ посетителя ${n("SELF_CHECK_TOKEN_TTL_DAYS")} дн., ` +
       `опрос статуса не чаще раза в ${n("SELF_CHECK_POLL_INTERVAL_MS")} мс`,
-    boolSetting("SITE_INDEXING_ENABLED", env)
-      ? `индексация — открыта, адрес ${origin}`
-      : `индексация — закрыта (SITE_INDEXING_ENABLED не равен true), адрес ${origin}`,
+    indexing.open
+      ? `индексация — открыта, адрес ${indexing.origin.origin}`
+      : `индексация — закрыта (${indexing.reason}), адрес ${indexing.origin.origin}`,
     textSetting("YANDEX_METRIKA_ID", env)
       ? "Метрика — счётчик задан"
       : "Метрика — не подключена (YANDEX_METRIKA_ID пуст)",

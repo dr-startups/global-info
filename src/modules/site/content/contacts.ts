@@ -9,6 +9,7 @@
 export const CONTACTS = {
   phone: "{{PHONE}}",
   email: "{{EMAIL}}",
+  telegram: "{{TELEGRAM}}",
   legalEntity: "{{LEGAL_ENTITY}}",
   requisites: "{{REQUISITES}}",
 } as const;
@@ -22,10 +23,7 @@ export interface NavItem {
   href: string;
 }
 
-/**
- * Меню шапки — как в макете. «Услуги» и «Блог» — страницы этапа 5 и до него
- * ведут на 404 (решение владельца 15.09.2026).
- */
+/** Меню шапки — как в утверждённом макете: «Вопросы» и «Контакты» ведут к разделам главной и подвалу. */
 export const HEADER_NAV: readonly NavItem[] = [
   { label: "Как это работает", href: "/#how" },
   { label: "Услуги", href: "/uslugi" },
@@ -34,12 +32,18 @@ export const HEADER_NAV: readonly NavItem[] = [
   { label: "Контакты", href: "#contacts" },
 ];
 
+/**
+ * Меню подвала ведёт на страницы: «Вопросы» — на `/voprosy`, где их больше, чем на
+ * главной, «Контакты» — на `/kontakty` (решение владельца 16.09.2026). Шапка при этом
+ * остаётся как в макете.
+ */
 export const FOOTER_NAV: readonly NavItem[] = [
   { label: "Как это работает", href: "/#how" },
   { label: "Услуги", href: "/uslugi" },
-  { label: "Вопросы", href: "/#faq" },
+  { label: "Вопросы", href: "/voprosy" },
   { label: "Блог", href: "/blog" },
   { label: "О проекте", href: "/o-proekte" },
+  { label: "Контакты", href: "/kontakty" },
 ];
 
 export const LEGAL_NAV: readonly NavItem[] = [

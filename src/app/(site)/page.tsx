@@ -1,10 +1,17 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { CheckForm } from "@/modules/site/components/CheckForm";
 import { HeroSeek } from "@/modules/site/components/landing/HeroSeek";
 import { ResultDemo } from "@/modules/site/components/landing/ResultDemo";
 import { ArrowIcon } from "@/modules/site/components/SiteIcons";
 import { vars } from "@/modules/site/components/css-vars";
+import { JsonLd } from "@/modules/site/components/JsonLd";
 import { EXAMPLE, FAQ, FINAL, HERO, HOW, SAFETY, SOURCES, TOPICS } from "@/modules/site/content/landing";
+import { siteOrigin } from "@/modules/site/seo/indexing";
+import { faqLd, websiteLd } from "@/modules/site/seo/json-ld";
+import { pageMetadata } from "@/modules/site/seo/metadata";
+
+export const metadata: Metadata = pageMetadata("/");
 
 /** Делений шкалы у мини-макета третьего шага и примера: «средний» — второй из трёх. */
 function MediumMeter({ fill }: { fill?: boolean }) {
@@ -367,6 +374,7 @@ export default function LandingPage() {
           />
         </div>
       </section>
+      <JsonLd data={[websiteLd(siteOrigin()), faqLd(FAQ.items)]} />
     </main>
   );
 }
