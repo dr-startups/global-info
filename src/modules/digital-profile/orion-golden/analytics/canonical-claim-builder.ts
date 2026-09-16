@@ -30,6 +30,7 @@ import {
 } from "./canonical-themes";
 import { scoreMateriality } from "./materiality-scorer";
 import { sourceAttribution } from "../client/client-address";
+import { sourceQuote } from "../client/client-quote";
 
 const ADVERSE_TEXT =
   /уголов|criminal|арест|санкц|sanction|корруп|corrupt|фбк|расследован|investigat|суд|court|офшор|offshore|pep|rca|скандал|scandal|yacht|рыбк|navalny|навальн|watch.?list|fraud|мошенн/iu;
@@ -396,7 +397,7 @@ function buildOrphanMaterialClaims(input: {
     const fullClaimText = [
       themeLabelRu(ensuredThemes[0]!),
       entry.originalTitle
-        ? `«${entry.originalTitle}»${sourceAttribution({ url: item?.sourceUrl, domain: domains[0] })}`
+        ? sourceQuote(entry.originalTitle, sourceAttribution({ url: item?.sourceUrl, domain: domains[0] }))
         : entry.originalSnippet.slice(0, 240),
     ]
       .filter(Boolean)

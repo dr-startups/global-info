@@ -52,6 +52,7 @@ import {
 } from "../../../serp-observation/resolve-observation-highlights";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
+import { sourceQuote } from "../../client/client-quote";
 import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
 import {
   clientAddress,
@@ -751,6 +752,38 @@ export function clampClientText(text: string, max: number): string {
   // утверждение оставалось без происхождения.
   const asQuote = clampQuotedLine(text, max);
   if (asQuote !== undefined) return asQuote;
+  /*
+   * Многострочный блок режется по строкам, а не по знакам (шаг 0091).
+   *
+   * Рез по знакам попадал внутрь строки-цитаты: «— источник (…)» уходил,
+   * `closeDanglingQuote` дописывал `…»`, и ворота честно называли цитату
+   * безымянной (прогон «Чайка»: `«Он возглавил … регионального…»`). Целые
+   * строки остаются, пока влезают; строка-цитата, которая не влезает,
+   * ужимается внутри кавычек с источником либо снимается целиком; середина
+   * цитаты не режется никогда. Обещание «Найдены…:» без цитаты не остаётся.
+   */
+  if (text.includes("\n")) {
+    const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const kept: string[] = [];
+    let used = 0;
+    for (const line of lines) {
+      const sep = kept.length > 0 ? 1 : 0;
+      if (used + sep + line.length <= max) {
+        kept.push(line);
+        used += sep + line.length;
+        continue;
+      }
+      const room = max - used - sep;
+      const shrunk = room >= 40 ? clampQuotedLine(line, room) : undefined;
+      if (shrunk !== undefined) {
+        kept.push(shrunk);
+        used += sep + shrunk.length;
+      }
+      break;
+    }
+    while (kept.length > 0 && /:\s*$/u.test(kept[kept.length - 1]!)) kept.pop();
+    if (kept.length > 0) return kept.join("\n");
+  }
   const slice = text.slice(0, max);
   const boundaries = [slice.lastIndexOf(". "), slice.lastIndexOf(" · "), slice.lastIndexOf("; ")];
   const cut = Math.max(...boundaries);
@@ -2266,7 +2299,10 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   const regionalQuotes = pickDistinctTitles(titleCandidates, 2).flatMap((c) => {
     // Демо-домен не называется клиенту и здесь: цитата остаётся без источника.
     const domain = clientSafeDomains([c.domain, domains[0]])[0] ?? "";
-    const quote = domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
+    // Цитата без источника не печатается: утверждение, которое читатель не
+    // может проверить, — не цитата (шаг 0091). Демо-домен сюда не доходит.
+    if (!domain) return [];
+    const quote = sourceQuote(c.title, ` — источник ${domain}`);
     const gist = quoteGistLine(c.title, c.gist);
     return gist ? [quote, gist] : [quote];
   });

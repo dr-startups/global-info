@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v190" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v191" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,13 @@ export const DECK_CONTENT_VERSION = "deck-sections-v190" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 16.09 номер двинут до v191: цитата источника собирается одной функцией
+ * (`client/client-quote.ts`), внутренние кавычки становятся лапками, непарные
+ * снимаются; сеть на границе паков выправляет кавычки каждого слайда;
+ * обрезка многострочного блока не снимает источник; блок темы без домена
+ * цитату не печатает (прогон «Чайка», шаг 0091). Правка меняет любую деку, где
+ * цитата содержала чужие кавычки.
  *
  * 14.09 номер двинут до v190: заголовок панели страницы снимка называет дату
  * отчёта — регулярное выражение с `\b` перед кириллицей не совпадало
@@ -639,7 +646,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v190" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "69af4caba60e8a01" as const;
+export const DECK_BUILDER_FINGERPRINT = "7233aed52ca47a00" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -662,7 +669,7 @@ export const DECK_BUILDER_FINGERPRINT = "69af4caba60e8a01" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v190" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v191" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

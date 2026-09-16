@@ -30,6 +30,7 @@ import type { LinkVerdict, VerdictThemeSummary } from "../contracts/link-verdict
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import { riskWord, verdictRiskWord } from "../client/risk-scale";
 import { sourceAttribution } from "../client/client-address";
+import { sourceQuote } from "../client/client-quote";
 import { themeLabelRu } from "./canonical-themes";
 import {
   isQuotableEvidence,
@@ -379,7 +380,7 @@ function articleFromSelection(
     cleanExcerpt ||
       cleanClaimExcerpt ||
       (cleanTitle
-        ? `«${cleanTitle}»${sourceAttribution({ url: cleanUrl, domain: cleanDomain })}.`
+        ? `${sourceQuote(cleanTitle, sourceAttribution({ url: cleanUrl, domain: cleanDomain }))}.`
         : "Описание материала сохранено в доказательной трассе.")
   );
   const allegation = stripInternalLeak(

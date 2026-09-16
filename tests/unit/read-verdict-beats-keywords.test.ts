@@ -41,14 +41,14 @@ function scoped(
     evidenceIndex: {
       "inventory:read-neutral": {
         title: "Тимати в суде дал интервью о новом альбоме и планах на тур",
-        domain: "tv.example",
+        domain: "tv-kanal.ru",
         region: "RU",
         readVerdictTone: tones["inventory:read-neutral"],
         analystDecision,
       },
       "inventory:read-adverse": {
         title: "Суд по иску о взыскании 72 млн рублей с предпринимателя",
-        domain: "news.example",
+        domain: "news-portal.ru",
         region: "RU",
         readVerdictTone: tones["inventory:read-adverse"],
       },

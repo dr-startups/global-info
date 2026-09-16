@@ -43,6 +43,7 @@ import {
 } from "./client-quote-hygiene";
 import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import { sourceAttribution } from "../client/client-address";
+import { sourceQuote } from "../client/client-quote";
 import { readableSnippet, resolveItemAdverse, resolveItemReadFavourably } from "./item-adverse";
 import {
   allDictionaryHitsAreSubjectContext,
@@ -748,7 +749,7 @@ export function buildClientFacingClaim(input: {
     // Источник называется полным адресом: домен читается как «где-то на сайте
     // есть, ищите сами» (замечание владельца к отчёту 20.08). Демо-имена не
     // называются ни адресом, ни доменом — это внутри `sourceAttribution`.
-    quoteLines.push(`«${q}»${sourceAttribution({ url: e.url, domain: e.domain })}`);
+    quoteLines.push(sourceQuote(q, sourceAttribution({ url: e.url, domain: e.domain })));
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");

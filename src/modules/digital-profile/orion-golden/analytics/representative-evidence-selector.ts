@@ -23,6 +23,7 @@ import {
 import { classifyCanonicalThemes, themeLabelRu } from "./canonical-themes";
 import { UNCONFIRMED_SUBJECT_REASONS } from "./subject-anchors";
 import { sourceAttribution } from "../client/client-address";
+import { sourceQuote } from "../client/client-quote";
 
 const MATERIAL_LEVELS = new Set<MaterialityLevel>(["CRITICAL", "HIGH", "MEDIUM"]);
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
@@ -120,10 +121,13 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
     // не первым из общего списка доменов: `sourceDomains` собирает домены всей
     // находки, и его порядок к заголовку отношения не имеет — так карточка
     // ТАСС однажды вышла под именем news.mail.ru.
-    candidate = `«${claim.originalTitle.trim()}»${sourceAttribution({
-      url: claim.originalUrl ?? undefined,
-      domain: claim.originalDomain ?? claim.sourceDomains[0],
-    })}. Материал учтён в трассе доказательств.`;
+    candidate = `${sourceQuote(
+      claim.originalTitle,
+      sourceAttribution({
+        url: claim.originalUrl ?? undefined,
+        domain: claim.originalDomain ?? claim.sourceDomains[0],
+      })
+    )}. Материал учтён в трассе доказательств.`;
   } else {
     candidate = "Материал учтён в трассе доказательств.";
   }
@@ -148,10 +152,13 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
   // Do not word-slice through a quote — fall back to title description.
   if (claim.originalTitle.trim()) {
     return finalizeExcerpt(
-      `«${claim.originalTitle.trim()}»${sourceAttribution({
-        url: claim.originalUrl ?? undefined,
-        domain: claim.originalDomain ?? claim.sourceDomains[0],
-      })}. Полный текст сохранён в evidence/trace.`
+      `${sourceQuote(
+        claim.originalTitle,
+        sourceAttribution({
+          url: claim.originalUrl ?? undefined,
+          domain: claim.originalDomain ?? claim.sourceDomains[0],
+        })
+      )}. Полный текст сохранён в evidence/trace.`
     );
   }
   return finalizeExcerpt(candidate.slice(0, maxChars).trim());

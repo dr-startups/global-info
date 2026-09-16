@@ -68,6 +68,7 @@ import {
 } from "./measured-bullet-fit";
 import { collectTableCutPlan } from "./measured-table-fit";
 import { splitSentences } from "./sentence-split";
+import { normalizeSlideQuoteMarks } from "../client/client-quote";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -128,6 +129,12 @@ export function stripGptCopyFromSectionPacksOnDisk(outputRoot: string): number {
   return stripped;
 }
 
+/** Пак с выправленными кавычками во всех слайдах; тот же объект, если править нечего. */
+function normalizePackQuoteMarks(pack: SectionPackV2): SectionPackV2 {
+  const slides = pack.slides.map(normalizeSlideQuoteMarks);
+  return slides.some((s, i) => s !== pack.slides[i]) ? { ...pack, slides } : pack;
+}
+
 export function runDeckBuild(input: {
   ctx: Omit<SectionBuildContext, "previousPacks" | "buildLog">;
   bundleForValidation: VerifiedFindingBundle;
@@ -153,7 +160,12 @@ export function runDeckBuild(input: {
   const ctx: SectionBuildContext = { ...input.ctx, previousPacks, buildLog };
 
   // 1. Independent SectionPacks (cache-aware) — or the prebuilt set.
-  const packs = input.prebuiltPacks ?? buildAllSections(ctx);
+  //
+  // Сеть на границе паков (шаг 0091): кавычки каждого текстового поля
+  // выправляются здесь — после построителей, стадии GPT и любых обрезок, —
+  // и непарная ёлочка становится невозможной по построению. Ворота целости
+  // цитат остаются последней линией, а не первой.
+  const packs = (input.prebuiltPacks ?? buildAllSections(ctx)).map(normalizePackQuoteMarks);
 
   // 2. Section-level QA before assembly.
   const validationReports = new Map<FragmentKey, SectionValidationReport>();
@@ -331,7 +343,7 @@ export async function buildSectionPacksUnderTableMeasure(input: {
   if (!input.measure) return buildAllSections(ctx);
   // Журнал сборки у черновика свой: его пакеты никуда не поедут, а записи
   // «пересобран/взят из кэша» относятся к настоящему построению ниже.
-  const draftPacks = buildAllSections({ ...ctx, buildLog: [] });
+  const draftPacks = buildAllSections({ ...ctx, buildLog: [] }).map(normalizePackQuoteMarks);
   const draftReports = new Map<FragmentKey, SectionValidationReport>();
   for (const pack of draftPacks) {
     draftReports.set(
