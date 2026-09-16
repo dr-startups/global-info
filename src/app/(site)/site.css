@@ -680,6 +680,8 @@ p {
    короче, пункты набраны крупно и входят по очереди, текущий раздел отмечен штрихом выделителя.
    Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). */
 .site-burger {
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-grid;
   place-items: center;
   width: 44px;
@@ -803,61 +805,48 @@ html:has(.site-drawer[open]) {
   overflow: hidden;
 }
 
+/* Подписи «Меню» у листа нет (заказчик 16.09): что это меню, и так видно, а слово над крупными
+   разделами было лишним уровнем. В шапке листа остаётся только крестик. */
 .site-drawer__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   min-height: 52px;
   padding-inline: 12px 0;
 }
 
-/* Заголовок тихий: крупно здесь набраны сами разделы */
-.site-drawer__title {
-  margin: 0;
-  font-size: var(--site-text-sm);
-  font-weight: 500;
-  color: var(--site-ink-3);
-}
-
-/* Круглая кнопка на вложенной поверхности, как в системных листах; зона нажатия — 44 px.
-   Крестик доворачивается, пока лист въезжает: кнопка «собирается» вместе с листом. */
+/* Крестик — кнопка сайта, а не системный круг: бумага, рамка и радиус вторичной кнопки, та же
+   рамка, что у «На главную». appearance: none обязателен — без него Safari на iPhone дорисовывает
+   кнопке свой вид поверх наших правил (заказчик 16.09: «странная обводка»). При входе листа
+   доворачивается сам крестик, а не рамка: вращающийся квадрат читался бы как сбой. */
 .site-drawer__close {
-  position: relative;
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--site-paper-2);
-  box-shadow: inset 0 0 0 1px var(--site-line);
+  border: 1px solid var(--site-line-strong);
+  border-radius: var(--site-r-2);
+  background: var(--site-paper);
   color: var(--site-ink);
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
   transition:
     background-color var(--site-dur-fast) var(--site-ease-out),
-    rotate 560ms var(--drawer-ease);
-}
-
-@starting-style {
-  .site-drawer[open] .site-drawer__close {
-    rotate: -90deg;
-  }
-}
-
-.site-drawer__close::after {
-  content: "";
-  position: absolute;
-  inset: -2px;
+    border-color var(--site-dur-fast) var(--site-ease-out);
 }
 
 .site-drawer__close:active {
-  background: color-mix(in srgb, var(--site-ink) 8%, var(--site-paper));
+  background: var(--site-paper-2);
+  border-color: var(--site-line-hover);
 }
 
 @media (hover: hover) {
   .site-drawer__close:hover {
-    background: color-mix(in srgb, var(--site-ink) 8%, var(--site-paper));
+    background: var(--site-paper-2);
+    border-color: var(--site-line-hover);
   }
 }
 
@@ -868,7 +857,28 @@ html:has(.site-drawer[open]) {
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
+  transition: rotate 560ms var(--drawer-ease);
 }
+
+@starting-style {
+  .site-drawer[open] .site-drawer__close svg {
+    rotate: -90deg;
+  }
+}
+
+/* Лист получает фокус при открытии (почему — в разметке): это контейнер, кольцо ему не нужно.
+   Кольцо у кнопок и пунктов — токен сайта и только с клавиатуры, а не рисунок браузера. */
+.site-drawer:focus {
+  outline: none;
+}
+
+.site-burger:focus-visible,
+.site-drawer__close:focus-visible,
+.site-drawer__nav a:focus-visible {
+  outline: none;
+  box-shadow: var(--site-focus);
+}
+
 
 /* Разделы — крупный набор без разделителей: пять слов на пол-экрана читаются как оглавление,
    а не как список настроек. Шеврон справа говорит, что строка ведёт дальше. */
@@ -1348,10 +1358,7 @@ html:has(.site-drawer[open]) {
   background-color: var(--site-paper);
 }
 
-/* :focus-within обязателен рядом с :focus: у input[type="date"] Chrome уводит фокус внутрь
-   теневого дерева, и сам input под :focus не попадает — поле остаётся без кольца фокуса. */
 .site-input:focus,
-.site-input:focus-within,
 .site-select:focus,
 .site-textarea:focus,
 .site-input.is-focus {
@@ -1672,12 +1679,6 @@ html:has(.site-drawer[open]) {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%2316181D' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 14px center;
-}
-
-/* input[type=date] показывает свой значок календаря справа — галочке там не место */
-.site-input[type="date"].is-filled {
-  padding-right: 14px;
-  background-image: none;
 }
 
 /* Отрывной корешок: линия отрыва перфорирована, ниже — что именно уйдёт в проверку */

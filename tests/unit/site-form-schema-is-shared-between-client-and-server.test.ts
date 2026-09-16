@@ -56,7 +56,7 @@ describe("форма проверки", () => {
   it("заполненная форма ошибок не даёт, и сервер принимает её тело", () => {
     const values = form({
       fullName: "Проверкин Тест Этапович",
-      birthDate: "1985-03-12",
+      birthDate: "12.03.1985",
       aliases: "Proverkin Test,  Иванова-Проверкина , ",
       consent: true,
     });
@@ -75,12 +75,12 @@ describe("форма проверки", () => {
   it("шкала заполнения: два обязательных поля и согласие — три трети хода", () => {
     expect(checkFormProgress(EMPTY_CHECK_FORM)).toEqual({ filled: 0, meter: 0 });
     expect(checkFormProgress(form({ fullName: "Проверкин Тест" }))).toEqual({ filled: 1, meter: 33 });
-    expect(checkFormProgress(form({ fullName: "Проверкин Тест", birthDate: "1985-03-12" }))).toEqual({
+    expect(checkFormProgress(form({ fullName: "Проверкин Тест", birthDate: "12.03.1985" }))).toEqual({
       filled: 2,
       meter: 67,
     });
     expect(
-      checkFormProgress(form({ fullName: "Проверкин Тест", birthDate: "1985-03-12", consent: true }))
+      checkFormProgress(form({ fullName: "Проверкин Тест", birthDate: "12.03.1985", consent: true }))
     ).toEqual({ filled: 2, meter: 100 });
     expect(checkFormProgress(form({ fullName: "   " }))).toEqual({ filled: 0, meter: 0 });
   });

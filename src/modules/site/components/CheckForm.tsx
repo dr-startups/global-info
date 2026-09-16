@@ -24,6 +24,7 @@ import {
   type CheckFormValues,
   type FieldErrors,
 } from "@/modules/site/check/form";
+import { birthDateToIso, caretAfterDigits, maskBirthDate } from "@/modules/site/check/birth-date";
 import type { SitePublicConfig } from "@/modules/site/check/types";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
 import { vars } from "./css-vars";
@@ -51,11 +52,13 @@ function TextField(props: {
   hint?: ReactNode;
   input: Omit<React.InputHTMLAttributes<HTMLInputElement>, "id" | "className">;
   inputRef?: React.Ref<HTMLInputElement>;
+  /** Когда поле считается заполненным, если «не пусто» не подходит (дата — только полная). */
+  filled?: boolean;
 }) {
   const hintId = props.hint ? `${props.id}-hint` : null;
   const errorId = props.error ? `${props.id}-error` : null;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
-  const filled = String(props.input.value ?? "").trim() !== "";
+  const filled = props.filled ?? String(props.input.value ?? "").trim() !== "";
   return (
     <div className="site-field">
       <label className={`site-label${props.required ? " site-label--req" : ""}`} htmlFor={props.id}>
@@ -104,6 +107,7 @@ export function CheckForm() {
   const [config, setConfig] = useState<SitePublicConfig | null>(null);
   const started = useRef(false);
   const nameInput = useRef<HTMLInputElement>(null);
+  const birthInput = useRef<HTMLInputElement>(null);
   const summaryBox = useRef<HTMLDivElement>(null);
   const captcha = useSmartCaptcha(config?.captchaClientKey ?? null);
 
@@ -265,12 +269,29 @@ export function CheckForm() {
             label="Дата рождения"
             required
             error={errors.birthDate}
+            inputRef={birthInput}
+            filled={birthDateToIso(values.birthDate) !== null}
             input={{
               name: "birthDate",
-              type: "date",
+              type: "text",
+              inputMode: "numeric",
               autoComplete: "bday",
+              placeholder: "дд.мм.гггг",
               value: values.birthDate,
-              onChange: (e) => update("birthDate", e.target.value),
+              onChange: (e) => {
+                const field = e.target;
+                const caret = field.selectionStart ?? field.value.length;
+                const digitsBefore = field.value.slice(0, caret).replace(/\D/gu, "").length;
+                const masked = maskBirthDate(field.value);
+                update("birthDate", masked);
+                // Поле перерисуется значением маски, и курсор уехал бы в конец
+                requestAnimationFrame(() => {
+                  const input = birthInput.current;
+                  if (!input || document.activeElement !== input) return;
+                  const at = caretAfterDigits(masked, digitsBefore);
+                  input.setSelectionRange(at, at);
+                });
+              },
             }}
           />
           <TextField

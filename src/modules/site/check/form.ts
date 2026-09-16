@@ -12,12 +12,14 @@ import {
   SelfCheckFormSchema,
   SelfCheckLeadSchema,
 } from "@/modules/self-check/schemas";
+import { BIRTH_DATE_INCOMPLETE_MESSAGE, birthDateToIso } from "./birth-date";
 
 /** Поле → первый текст отказа. */
 export type FieldErrors = Record<string, string>;
 
 export interface CheckFormValues {
   fullName: string;
+  /** Как в поле: «дд.мм.гггг». В тело запроса уходит «ГГГГ-ММ-ДД». */
   birthDate: string;
   city: string;
   /** Другие написания через запятую — так их вводят в одно поле. */
@@ -47,7 +49,9 @@ export const EMPTY_CHECK_FORM: CheckFormValues = {
 export function checkFormPayload(values: CheckFormValues, captchaToken?: string) {
   return {
     fullName: values.fullName,
-    birthDate: values.birthDate,
+    // Неполная дата уходит в схему как есть: схема отказывает, а текст у поля
+    // подменяет checkFormErrors. Пустая остаётся пустой — «укажите дату».
+    birthDate: birthDateToIso(values.birthDate) ?? values.birthDate.trim(),
     city: values.city,
     aliases: values.aliases
       .split(",")
@@ -74,7 +78,12 @@ export function serverFieldErrors(fieldErrors: Record<string, string[] | undefin
 
 export function checkFormErrors(values: CheckFormValues): FieldErrors {
   const parsed = SelfCheckFormSchema.safeParse(checkFormPayload(values));
-  return parsed.success ? {} : serverFieldErrors(parsed.error.flatten().fieldErrors);
+  const errors = parsed.success ? {} : serverFieldErrors(parsed.error.flatten().fieldErrors);
+  // Схема говорит «ГГГГ-ММ-ДД», а человек набирает по маске — про неполную дату говорим его форматом
+  if (errors.birthDate && values.birthDate.trim() !== "" && birthDateToIso(values.birthDate) === null) {
+    errors.birthDate = BIRTH_DATE_INCOMPLETE_MESSAGE;
+  }
+  return errors;
 }
 
 /**
@@ -82,7 +91,7 @@ export function checkFormErrors(values: CheckFormValues): FieldErrors {
  * три трети хода; счётчик «сколько из двух» — только поля.
  */
 export function checkFormProgress(values: CheckFormValues): { filled: number; meter: number } {
-  const filled = (values.fullName.trim() ? 1 : 0) + (values.birthDate.trim() ? 1 : 0);
+  const filled = (values.fullName.trim() ? 1 : 0) + (birthDateToIso(values.birthDate) ? 1 : 0);
   return { filled, meter: Math.round(((filled + (values.consent ? 1 : 0)) / 3) * 100) };
 }
 

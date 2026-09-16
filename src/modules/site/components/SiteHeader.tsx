@@ -186,7 +186,13 @@ export function SiteHeader() {
               aria-controls="site-drawer"
               aria-expanded={open}
               onClick={() => {
-                drawer.current?.showModal();
+                const sheet = drawer.current;
+                if (!sheet) return;
+                sheet.showModal();
+                // showModal отдаёт фокус первой кнопке листа — крестику, и Safari на iPhone
+                // рисует ему своё кольцо. Фокус берёт сам лист: Tab ведёт к пунктам, а
+                // экранный диктор читает имя меню.
+                sheet.focus({ preventScroll: true });
                 setOpen(true);
               }}
             >
@@ -203,6 +209,7 @@ export function SiteHeader() {
         className="site-drawer"
         id="site-drawer"
         aria-label="Меню"
+        tabIndex={-1}
         ref={drawer}
         onClose={() => setOpen(false)}
         onPointerDown={onPointerDown}
@@ -221,7 +228,6 @@ export function SiteHeader() {
         }}
       >
         <div className="site-drawer__head">
-          <p className="site-drawer__title">Меню</p>
           <button className="site-drawer__close" type="button" aria-label="Закрыть меню" onClick={close}>
             <svg viewBox="0 0 16 16" aria-hidden="true">
               <path d="M3 3l10 10M13 3 3 13" />
