@@ -66,6 +66,56 @@ export interface WikipediaNamesakeCandidate {
   langlinkTitle: string | null;
 }
 
+/** Вид признака, который даёт свойство Викиданных. */
+export type WikipediaFactKind = "position" | "employer" | "education" | "birthPlace" | "fact";
+
+export interface WikipediaStructuredFact {
+  /** Свойство Викиданных (`P39`, `P108`, …) — по нему видно, откуда признак. */
+  property: string;
+  kind: WikipediaFactKind;
+  label: string;
+  strong: boolean;
+}
+
+/**
+ * Структура статьи — то, чем человек отличается от тёзки, по Викиданным.
+ *
+ * Профессия, гражданство и награды сюда не берутся: они стоят у тысяч людей и
+ * признаком не являются. Псевдонимы возвращаются, но в признаки не идут — это
+ * варианты имени, а не факты (отдельный шаг).
+ */
+export interface WikipediaStructuredFacts {
+  itemId: string;
+  /** ISO `YYYY-MM-DD`; null — дата неизвестна или известна грубее дня. */
+  birthDate: string | null;
+  facts: WikipediaStructuredFact[];
+  aliases: string[];
+}
+
+/**
+ * Свойства Викиданных → вид и сила признака.
+ *
+ * Сильные — те, что рядом с полным именем различают людей: должность,
+ * работодатель, владение, партия, членство, семья. Образование и место рождения
+ * слабые: университет и город стоят у многих (решение 0054, №7 — регион якорем
+ * не является; здесь место рождения даёт карточка, а не корпус, и оно слабое).
+ */
+const WIKIDATA_FACT_PROPERTIES: ReadonlyArray<{ property: string; kind: WikipediaFactKind; strong: boolean }> = [
+  { property: "P39", kind: "position", strong: true },
+  { property: "P108", kind: "employer", strong: true },
+  { property: "P1830", kind: "employer", strong: true },
+  { property: "P102", kind: "fact", strong: true },
+  { property: "P463", kind: "fact", strong: true },
+  { property: "P26", kind: "fact", strong: true },
+  { property: "P40", kind: "fact", strong: true },
+  { property: "P22", kind: "fact", strong: true },
+  { property: "P25", kind: "fact", strong: true },
+  { property: "P69", kind: "education", strong: false },
+  { property: "P19", kind: "birthPlace", strong: false },
+];
+const WIKIDATA_BIRTH_DATE = "P569";
+const WIKIDATA_LABEL_LANGUAGES = ["ru", "en"];
+
 export interface WikipediaNamesakeResult {
   language: string;
   query: string;
@@ -280,6 +330,40 @@ function articleUrl(language: string, title: string): string {
   return `https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 }
 
+function wikidataUrl(params: Record<string, string>): string {
+  const query = new URLSearchParams({ ...params, format: "json" });
+  return `https://www.wikidata.org/w/api.php?${query.toString()}`;
+}
+
+/** Идентификатор ссылочной сущности из утверждения; null — не ссылка. */
+function claimItemId(claim: unknown): string | null {
+  const value = (claim as { mainsnak?: { datavalue?: { value?: { id?: unknown } } } })?.mainsnak
+    ?.datavalue?.value;
+  const id = value && typeof value === "object" ? (value as { id?: unknown }).id : null;
+  return typeof id === "string" && /^Q\d+$/u.test(id) ? id : null;
+}
+
+/** Дата рождения с точностью до дня: `+1889-04-20T00:00:00Z`, precision 11. */
+function claimBirthDate(claim: unknown): string | null {
+  const value = (claim as { mainsnak?: { datavalue?: { value?: { time?: unknown; precision?: unknown } } } })
+    ?.mainsnak?.datavalue?.value;
+  if (!value || typeof value !== "object") return null;
+  const { time, precision } = value as { time?: unknown; precision?: unknown };
+  if (typeof time !== "string" || Number(precision) < 11) return null;
+  const m = time.match(/^[+-]?(\d{4})-(\d{2})-(\d{2})T/u);
+  if (!m || m[2] === "00" || m[3] === "00") return null;
+  return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+function labelOf(entity: unknown): string | null {
+  const labels = (entity as { labels?: Record<string, { value?: unknown }> })?.labels ?? {};
+  for (const language of WIKIDATA_LABEL_LANGUAGES) {
+    const value = labels[language]?.value;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 function apiUrl(language: string, params: Record<string, string>): string {
   const query = new URLSearchParams({ format: "json", formatversion: "2", ...params });
   return `https://${language}.wikipedia.org/w/api.php?${query.toString()}`;
@@ -422,6 +506,97 @@ export class WikipediaProvider {
       pageId: s.pageid ?? null,
       snippet: decodeEntities((s.snippet ?? "").replace(/<[^>]*>/g, "")),
     }));
+  }
+
+  /**
+   * Структура статьи по Викиданным — признаки субъекта, а не пересказ лида.
+   *
+   * Три вызова официальных API: `pageprops` даёт идентификатор сущности,
+   * `wbgetentities` — утверждения и метки, второй `wbgetentities` — метки
+   * ссылочных сущностей (должности, организации, люди). Отказ на любом шаге —
+   * `null`: карточка без структуры остаётся карточкой, признаки из прозы
+   * никто не отменял (шаг 0093).
+   */
+  async structuredFacts(params: {
+    language: string;
+    title: string;
+  }): Promise<WikipediaStructuredFacts | null> {
+    try {
+      const props = (await fetchJson(
+        apiUrl(params.language, {
+          action: "query",
+          prop: "pageprops",
+          ppprop: "wikibase_item",
+          redirects: "1",
+          titles: params.title,
+        })
+      )) as { query?: { pages?: Array<{ pageprops?: { wikibase_item?: unknown } }> } };
+      const itemId = props.query?.pages?.[0]?.pageprops?.wikibase_item;
+      if (typeof itemId !== "string" || !/^Q\d+$/u.test(itemId)) return null;
+
+      const entityRaw = (await fetchJson(
+        wikidataUrl({
+          action: "wbgetentities",
+          ids: itemId,
+          props: "claims|labels|aliases",
+          languages: WIKIDATA_LABEL_LANGUAGES.join("|"),
+        })
+      )) as { entities?: Record<string, { claims?: Record<string, unknown[]>; labels?: unknown; aliases?: Record<string, Array<{ value?: unknown }>> }> };
+      const entity = entityRaw.entities?.[itemId];
+      if (!entity) return null;
+      const claims = entity.claims ?? {};
+
+      const birthDate = (claims[WIKIDATA_BIRTH_DATE] ?? []).map(claimBirthDate).find(Boolean) ?? null;
+
+      const refs: Array<{ property: string; kind: WikipediaFactKind; strong: boolean; id: string }> = [];
+      for (const spec of WIKIDATA_FACT_PROPERTIES) {
+        for (const claim of claims[spec.property] ?? []) {
+          const id = claimItemId(claim);
+          if (id && !refs.some((r) => r.id === id)) refs.push({ ...spec, id });
+        }
+      }
+      const labelsById = new Map<string, string>();
+      if (refs.length > 0) {
+        // Не больше 50 идентификаторов за вызов — предел самого API.
+        for (let i = 0; i < refs.length; i += 50) {
+          const batch = refs.slice(i, i + 50).map((r) => r.id);
+          const labelsRaw = (await fetchJson(
+            wikidataUrl({
+              action: "wbgetentities",
+              ids: batch.join("|"),
+              props: "labels",
+              languages: WIKIDATA_LABEL_LANGUAGES.join("|"),
+            })
+          )) as { entities?: Record<string, unknown> };
+          for (const id of batch) {
+            const label = labelOf(labelsRaw.entities?.[id]);
+            if (label) labelsById.set(id, label);
+          }
+        }
+      }
+      const facts: WikipediaStructuredFact[] = [];
+      for (const ref of refs) {
+        const label = labelsById.get(ref.id);
+        if (label) facts.push({ property: ref.property, kind: ref.kind, label, strong: ref.strong });
+      }
+
+      const aliases = new Set<string>();
+      const own = labelOf(entity);
+      if (own) aliases.add(own);
+      const labels = (entity.labels ?? {}) as Record<string, { value?: unknown }>;
+      for (const language of WIKIDATA_LABEL_LANGUAGES) {
+        const value = labels[language]?.value;
+        if (typeof value === "string" && value.trim()) aliases.add(value.trim());
+      }
+      for (const language of WIKIDATA_LABEL_LANGUAGES) {
+        for (const alias of entity.aliases?.[language] ?? []) {
+          if (typeof alias?.value === "string" && alias.value.trim()) aliases.add(alias.value.trim());
+        }
+      }
+      return { itemId, birthDate, facts, aliases: [...aliases] };
+    } catch {
+      return null;
+    }
   }
 
   /**

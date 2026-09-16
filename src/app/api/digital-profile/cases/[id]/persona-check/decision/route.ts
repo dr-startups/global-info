@@ -25,6 +25,7 @@ import {
 } from "@/modules/digital-profile/services/subject-persona-check";
 import { loadCaseSubjectIdentityProfile } from "@/modules/digital-profile/services/subject-profile-admin";
 import { applyCardAnchorsToProfile } from "@/modules/digital-profile/services/persona-card-anchors";
+import { wikipediaProvider } from "@/modules/digital-profile/providers/wikipedia-provider";
 import { loadCaseSubject } from "@/modules/digital-profile/agents/mock/mock-utils";
 import type { PersonaCard } from "@/modules/digital-profile/services/subject-persona-check";
 
@@ -86,18 +87,34 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
    * признаков идемпотентно.
    */
   let cardAnchorPhrases = 0;
+  let cardStructured = false;
+  let cardBirthDateMismatch: { card: string; subject: string } | null = null;
   const selectedCard = (row.selectedPersonaJson as { card?: PersonaCard } | null)?.card;
   if (row.decision === "PERSONA_SELECTED" && selectedCard) {
     const subject = await loadCaseSubject(id);
     const before = loadCaseSubjectIdentityProfile(id)?.anchors?.phrases?.length ?? 0;
+    /*
+     * Структура статьи — Викиданные — спрашивается для одной выбранной
+     * карточки, а не для всех кандидатов панели (шаг 0093). Офлайн-контур в
+     * сеть не ходит; отказ источника решение не отменяет — остаётся запас по
+     * прозе лида.
+     */
+    const article = selectedCard.source === "wikipedia" ? selectedCard.articles[0] : undefined;
+    const structured =
+      article && String(process.env.NETWORK_CALLS ?? "") !== "0"
+        ? await wikipediaProvider.structuredFacts({ language: article.language, title: article.title })
+        : null;
+    cardStructured = Boolean(structured && (structured.facts.length > 0 || structured.birthDate));
     const updated = applyCardAnchorsToProfile({
       caseId: id,
       subjectName: subject.fullName,
       subjectAliases: subject.aliases,
       subjectDateOfBirth: subject.dateOfBirth,
       card: selectedCard,
+      structured,
     });
-    cardAnchorPhrases = Math.max(0, (updated?.anchors?.phrases.length ?? before) - before);
+    cardAnchorPhrases = Math.max(0, (updated?.profile.anchors?.phrases.length ?? before) - before);
+    cardBirthDateMismatch = updated?.birthDateMismatch ?? null;
   }
 
   await recordAudit({
@@ -111,6 +128,10 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
       // Сколько признаков приехало из карточки: по журналу видно, чем размечен
       // прогон — словами оператора или словами подтверждённого источника.
       cardAnchorPhrases,
+      // Откуда признаки: из структуры статьи (Викиданные) или из прозы лида;
+      // расхождение даты карточки с датой дела — тоже в журнал, а не в профиль.
+      cardStructured,
+      ...(cardBirthDateMismatch ? { cardBirthDateMismatch } : {}),
       // Пустая панель — валидное состояние решения, и причина пустоты по
       // каждому источнику остаётся в снимке строки.
       fetchStatus: row.fetchStatus,

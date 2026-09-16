@@ -53,6 +53,7 @@ function store(initial: SubjectIdentityProfile) {
 }
 
 describe("признаки карточки в профиле кейса", () => {
+  // Правка теста (шаг 0093): ответ слияния — `{ profile, birthDateMismatch }`, профиль внутри.
   it("фраза карточки становится якорем рядом с датой рождения", () => {
     const s = store(profile([]));
     const out = applyCardAnchorsToProfile({
@@ -61,8 +62,8 @@ describe("признаки карточки в профиле кейса", () =>
       card,
       store: s,
     });
-    expect(out?.anchors?.phrases.map((p) => p.text)).toEqual(["Русал"]);
-    expect(out?.anchors?.birthDate).toBe("1968-01-02");
+    expect(out?.profile.anchors?.phrases.map((p) => p.text)).toEqual(["Русал"]);
+    expect(out?.profile.anchors?.birthDate).toBe("1968-01-02");
   });
 
   it("фразы оператора не трогаются", () => {
@@ -73,7 +74,7 @@ describe("признаки карточки в профиле кейса", () =>
       card,
       store: store(profile(mine)),
     });
-    expect(out?.anchors?.phrases.map((p) => p.text)).toEqual(["En+ Group", "Русал"]);
+    expect(out?.profile.anchors?.phrases.map((p) => p.text)).toEqual(["En+ Group", "Русал"]);
   });
 
   it("повторное решение по той же карточке ничего не дублирует", () => {
@@ -86,7 +87,7 @@ describe("признаки карточки в профиле кейса", () =>
     };
     applyCardAnchorsToProfile(args);
     const out = applyCardAnchorsToProfile(args);
-    expect(out?.anchors?.phrases.map((p) => p.text)).toEqual(["Русал"]);
+    expect(out?.profile.anchors?.phrases.map((p) => p.text)).toEqual(["Русал"]);
     // Второй раз файл не переписывается: писать то же самое незачем.
     expect(s.written).toHaveLength(1);
   });

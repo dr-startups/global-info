@@ -25,6 +25,9 @@ import {
 } from "../orion-golden/analytics/subject-anchors";
 import type { SubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile";
 import type { PersonaCard } from "./subject-persona-check";
+import type { WikipediaStructuredFacts } from "../providers/wikipedia-provider";
+
+export type { WikipediaStructuredFacts } from "../providers/wikipedia-provider";
 import {
   getSubjectProfileForEdit,
   saveSubjectProfileEdits,
@@ -138,12 +141,57 @@ export function anchorPhrasesFromCard(
   return phrases.slice(0, MAX_CARD_PHRASES);
 }
 
+/** Больше восьми фраз структура не даёт: дальше — дальние родственники и мелкие должности. */
+const MAX_STRUCTURED_PHRASES = 8;
+
+/**
+ * Признаки из структуры статьи — Викиданных (шаг 0093).
+ *
+ * Дата рождения с точностью до дня и фразы своего вида: должность,
+ * работодатель, партия, семья — сильные; образование и место рождения —
+ * слабые. Фильтры те же, что у прозы: есть основы, имя субъекта не
+ * упоминается (родственник с той же фамилией подтвердил бы тёзку сам собой),
+ * без повторов. Сильные идут первыми, чтобы предел не срезал их ради мест.
+ */
+export function anchorsFromStructuredFacts(
+  facts: WikipediaStructuredFacts,
+  subjectNameVariants: readonly string[]
+): { birthDate: string | null; phrases: SubjectAnchorPhrase[] } {
+  const tokens = nameTokens(subjectNameVariants);
+  const seen = new Set<string>();
+  const phrases: SubjectAnchorPhrase[] = [];
+  const ordered = [...facts.facts].sort((a, b) => Number(b.strong) - Number(a.strong));
+  for (const fact of ordered) {
+    const value = fact.label.replace(/\s+/gu, " ").trim();
+    if (!value || value.length > MAX_PHRASE_LENGTH) continue;
+    if (anchorPhraseStems(value).length === 0) continue;
+    if (mentionsSubjectName(value, tokens)) continue;
+    const key = norm(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    phrases.push({ kind: fact.kind, text: value, strong: fact.strong });
+    if (phrases.length >= MAX_STRUCTURED_PHRASES) break;
+  }
+  return { birthDate: facts.birthDate ?? null, phrases };
+}
+
+export type CardAnchorsResult = {
+  profile: SubjectIdentityProfile;
+  /** Дата карточки разошлась с датой дела: в профиль не пишется, а называется. */
+  birthDateMismatch: { card: string; subject: string } | null;
+};
+
 /**
  * Слить признаки выбранной карточки в профиль кейса.
  *
- * `null` — карточка не дала ни одной фразы. Фразы оператора не трогаются
- * никогда: карточка дополняет, а не переписывает; повторное решение по той же
- * карточке файл не переписывает.
+ * `null` — карточка не дала ни одной фразы и ни даты. Фразы оператора не
+ * трогаются никогда: карточка дополняет, а не переписывает; повторное решение
+ * по той же карточке файл не переписывает. Есть структура (Викиданные) —
+ * берётся она; прозаическая эвристика остаётся запасом для карточек без
+ * сущности и для панели знаний. Дата рождения из карточки ставится только
+ * когда у дела её нет: дата дела — признак дела, и карточка её не переписывает.
+ * Сила многословной фразы решается законом профиля (`normalizeAnchors`), а не
+ * здесь.
  */
 export function applyCardAnchorsToProfile(input: {
   caseId: string;
@@ -151,8 +199,9 @@ export function applyCardAnchorsToProfile(input: {
   subjectAliases?: string[];
   subjectDateOfBirth?: string | null;
   card: PersonaCard;
+  structured?: WikipediaStructuredFacts | null;
   store?: SubjectProfileStore;
-}): SubjectIdentityProfile | null {
+}): CardAnchorsResult | null {
   const { profile } = getSubjectProfileForEdit(input);
   const variants = [
     input.subjectName,
@@ -165,23 +214,46 @@ export function applyCardAnchorsToProfile(input: {
       : []),
   ].filter(Boolean);
 
-  const fromCard = anchorPhrasesFromCard(input.card, variants);
-  if (fromCard.length === 0) return null;
+  const structured = input.structured ? anchorsFromStructuredFacts(input.structured, variants) : null;
+  const fromCard =
+    structured && structured.phrases.length > 0
+      ? structured.phrases
+      : anchorPhrasesFromCard(input.card, variants);
+
+  const currentBirthDate = profile.anchors?.birthDate ?? input.subjectDateOfBirth ?? null;
+  const cardBirthDate = structured?.birthDate ?? null;
+  const birthDateMismatch =
+    cardBirthDate && currentBirthDate && cardBirthDate !== currentBirthDate
+      ? { card: cardBirthDate, subject: currentBirthDate }
+      : null;
+  const birthDate = currentBirthDate ?? cardBirthDate;
+
+  // Карточка ничего нового не дала — ни фразы, ни даты там, где её не было:
+  // профиль не трогается вовсе.
+  const cardFillsBirthDate = Boolean(cardBirthDate && !currentBirthDate);
+  if (fromCard.length === 0 && !cardFillsBirthDate) return null;
 
   const existing = profile.anchors?.phrases ?? [];
   const known = new Set(existing.map((p) => norm(p.text)));
   const fresh = fromCard.filter((p) => !known.has(norm(p.text)));
-  if (fresh.length === 0) return profile;
+  if (fresh.length === 0 && (profile.anchors?.birthDate ?? null) === birthDate) {
+    return { profile, birthDateMismatch };
+  }
 
-  return saveSubjectProfileEdits({
+  // Дата — признак дела, и хранилище читает её из базового профиля, а не из
+  // правок: дата карточки подаётся тем же входом, что и дата дела, и только
+  // когда у дела своей нет.
+  const saved = saveSubjectProfileEdits({
     ...input,
+    subjectDateOfBirth: birthDate,
     edits: {
       anchors: {
-        birthDate: profile.anchors?.birthDate ?? null,
+        birthDate,
         phrases: [...existing, ...fresh],
         inn: profile.anchors?.inn ?? [],
         domains: profile.anchors?.domains ?? [],
       },
     },
   }).profile;
+  return { profile: saved, birthDateMismatch };
 }
