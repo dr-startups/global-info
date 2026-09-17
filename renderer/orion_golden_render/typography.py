@@ -277,6 +277,13 @@ def _plain(text: str, tone: str) -> list[Run]:
     return [Run(text, False, tone)]
 
 
+#: Слова, с которых начинается предложение, а не ярлык. Закрытый класс —
+#: местоимения и союзы; именная группа ярлыка с них не начинается.
+_CLAUSE_OPENERS = frozenset(
+    {"мы", "вы", "я", "он", "она", "оно", "они", "это", "если", "чтобы", "когда", "пока", "хотя"}
+)
+
+
 def _label_end(text: str, rules: _Rules) -> int:
     """Конец ярлыка «Итоговая оценка:» в начале строки или 0, если ярлыка нет.
 
@@ -290,7 +297,16 @@ def _label_end(text: str, rules: _Rules) -> int:
     head = text[:colon]
     if not head[0].isupper():
         return 0
+    # С местоимения или союза начинается предложение, а не ярлык: «Мы предлагаем
+    # проверить наличие статьи вручную: при отсутствии — …» (стр. 28 эталона-72).
+    if head.split(" ", 1)[0].casefold() in _CLAUSE_OPENERS:
+        return 0
     if any(ch in head for ch in "«»\".!?;"):
+        return 0
+    # Тире или число до двоеточия — это уже предложение, а не ярлык: «На панели
+    # — 10 подсказок: 9 относятся к субъекту…». Ярлык — именная группа
+    # («Итоговая оценка:», «Подтверждённых тем:»), и жирным клался бы кусок фразы.
+    if any(ch in head for ch in "—–") or any(ch.isdigit() for ch in head):
         return 0
     if len(head.split()) > rules.label_max_words:
         return 0
@@ -304,6 +320,7 @@ def line_layout(
     total: int,
     contract: dict[str, Any] | None = None,
     emphasize: bool = True,
+    free_labels: bool = True,
 ) -> LineLayout:
     """Роль, кегль и прогоны строки — то, чем её и меряют, и рисуют.
 
@@ -314,6 +331,10 @@ def line_layout(
     Выделяются только наши слова. Чужие приходят четырьмя путями, и ни в одном
     акцентов нет: в «ёлочках»; после ярлыка с объявленным признаком дословного
     текста; строкой без конечного знака; страницей чужого текста целиком.
+
+    `free_labels=False` — жирным печатаются только объявленные ярлыки словаря
+    («Что делать:», «Где видно:»), а ярлык, узнанный по форме («Итоговая
+    оценка:»), — нет. Так печатается тело контейнера: у него свой заголовок.
     """
     text = (line or "").strip()
     role = line_role(text, index=index, total=total, contract=contract)
@@ -350,7 +371,7 @@ def line_layout(
         return LineLayout(role, SIZE_BODY, (Run(text, False, TONE_INK),))
     if not own:
         return LineLayout(role, SIZE_BODY, tuple(_plain(text, TONE_INK)))
-    end = _label_end(text, rules)
+    end = _label_end(text, rules) if free_labels else 0
     if end:
         verbatim = bool(rules.verbatim_marker) and rules.verbatim_marker in text[:end].lower()
         tail = (
@@ -360,6 +381,32 @@ def line_layout(
         )
         return LineLayout(role, SIZE_BODY, (Run(text[:end], True, TONE_HEADING), *tail))
     return LineLayout(role, SIZE_BODY, tuple(_emphasize_numbers(text, TONE_INK, list_number=True)))
+
+
+def body_line_layout(
+    line: str, *, contract: dict[str, Any] | None = None, emphasize: bool = True
+) -> LineLayout:
+    """Строка тела контейнера — карточки, карточки матрицы, блока боковой панели.
+
+    Заголовком такая строка не бывает: заголовок у контейнера свой, и ввод
+    «Найдены публикации по теме:» под жирным заголовком карточки — связка, а не
+    тезис. По той же причине нет ярлыков, узнанных по форме: «Проверять блок при
+    обновлении:» под жирным «Что сделать» — вторая жирная строка подряд.
+    Объявленные ярлыки словаря и остальные роли — как у строки блока списка.
+    """
+    return line_layout(
+        line, index=1, total=2, contract=contract, emphasize=emphasize, free_labels=False
+    )
+
+
+def without_weight(layout: LineLayout) -> LineLayout:
+    """То же оформление без единого жирного прогона — роль, кегль и тона остаются.
+
+    Нужно контейнерам с померенной ёмкостью: там выделение не вправе стоить ни
+    строки переноса, и тело, в котором оно стоило бы, печатается ровно. Тон
+    ширины не меняет, поэтому серый и акцентный остаются.
+    """
+    return LineLayout(layout.role, layout.size, tuple(Run(run.text, False, run.tone) for run in layout.runs))
 
 
 def paragraph_layout(

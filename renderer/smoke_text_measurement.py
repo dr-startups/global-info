@@ -24,7 +24,6 @@ from orion_golden_render.common import (
     _trim_dangling_tail,  # noqa: E402
     _close_dangling_lead_in,
     _fit_lines_to_height,
-    _bullet_line_style,
     _font_path,
     _wrapped_line_count,
     assert_render_font_family,
@@ -32,6 +31,7 @@ from orion_golden_render.common import (
     measure_text_height,
     text_width_px,
 )
+from orion_golden_render.typography import SIZE_BODY, line_layout  # noqa: E402
 
 WIDTH = 8_000_000
 SIZE = 10.5
@@ -306,14 +306,18 @@ def main() -> int:
     # `_bullet_block_height` вычислял признак жирности и выбрасывал его
     # (`_, _, size_pt`), а рисование в 73 строках ниже тот же признак
     # использовало. Заголовок темы рисовался жирным, мерился обычным.
+    # С шага 0100 у вида строки один ответ — `typography.line_layout`; прежняя
+    # таблица `_bullet_line_style` удалена, и проверка спрашивает его.
     theme_line = "Криминальные / судебные материалы:"
-    bold_flag, _color, size_pt = _bullet_line_style(theme_line, is_first=True)
+    theme_layout = line_layout(theme_line, index=0, total=2)
+    bold_flag = theme_layout.measure_bold
+    size_pt = 11.0 if theme_layout.size == SIZE_BODY else 9.0
     check(
         "строка-заголовок темы объявлена жирной",
         bold_flag is True,
         f"стиль: bold={bold_flag}, size={size_pt}",
     )
-    plain_flag, _c2, _s2 = _bullet_line_style("Обычная строка доказательства.", is_first=False)
+    plain_flag = line_layout("Обычная строка доказательства.", index=1, total=2).measure_bold
     check("обычная строка не объявлена жирной", plain_flag is False)
 
     # Замер обязан различать эти два случая, иначе признак некуда применять.

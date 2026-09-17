@@ -12,7 +12,7 @@ import re
 import tempfile
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import fitz
 from pptx import Presentation
@@ -52,10 +52,13 @@ from .typography import (
     LineLayout,
     PARAGRAPH_GAP_PT,
     ROLE_SUBHEADING,
+    Run,
+    body_line_layout,
     line_layout,
     meta_line_re,
     paragraph_gap_pt,
     paragraph_layout,
+    without_weight,
 )
 
 # Гарнитура отчёта. Inter — SIL OFL 1.1: встраивание в PPTX/PDF, отдаваемые
@@ -455,6 +458,112 @@ def _wrapped_line_count(
                 line = word
         total_lines += max(1, lines)
     return max(1, total_lines)
+
+
+def _wrapped_line_count_runs(runs: Sequence[Run], width_emu: int, font_size_pt: float) -> int:
+    """Сколько строк займёт строка, в которой часть слов жирная.
+
+    Обобщение `_wrapped_line_count`, а не второй способ считать: ширина строки
+    берётся той же мерой обычного начертания, что и там, и к ней прибавляется
+    ровно то, на что жирные отрезки шире самих себя обычных. Поэтому строка без
+    жирных прогонов даёт **тот же** ответ, что прежняя функция, по построению —
+    на этом держится сверка «выделение не стоило ни строки».
+    """
+    text = "".join(run.text for run in runs)
+    if not any(run.bold and run.text.strip() for run in runs):
+        return _wrapped_line_count(text, width_emu, font_size_pt, False)
+    # Текст обязан быть уже вычищен: иначе отрезки прогонов не совпадут со
+    # словами замера. Не совпал — отвечаем заведомо сверху, целиком жирной мерой.
+    if _safe_preserve_breaks(text) != text or "\n" in text:
+        return _wrapped_line_count(text, width_emu, font_size_pt, True)
+    width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
+    regular = _load_measure_font(font_size_pt, False)
+    bold = _load_measure_font(font_size_pt, True)
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for run in runs:
+        if run.bold:
+            spans.append((pos, pos + len(run.text)))
+        pos += len(run.text)
+
+    def width(a: int, b: int) -> int:
+        box = regular.getbbox(text[a:b])
+        grown = 0.0
+        for start, end in spans:
+            lo, hi = max(a, start), min(b, end)
+            if lo < hi:
+                grown += bold.getlength(text[lo:hi]) - regular.getlength(text[lo:hi])
+        return int(box[2] - box[0]) + int(-(-grown // 1))
+
+    lines = 1
+    line_start: int | None = None
+    cursor = 0
+    for word in text.split(" "):
+        start, end = cursor, cursor + len(word)
+        cursor = end + 1
+        word_px = width(start, end)
+        if word_px > width_px:
+            # Токен шире рамки ломается по знакам — то же правило, что в
+            # `_wrapped_line_count`.
+            if line_start is not None:
+                lines += 1
+            lines += -(-word_px // width_px) - 1
+            line_start = None
+            continue
+        if line_start is None or width(line_start, end) <= width_px:
+            line_start = start if line_start is None else line_start
+        else:
+            lines += 1
+            line_start = start
+    return max(1, lines)
+
+
+def container_line_layouts(
+    lines: Sequence[str],
+    width_emu: int,
+    size_pt_of: Callable[[LineLayout], float],
+    *,
+    contract: dict[str, Any] | None = None,
+    emphasize: bool = True,
+) -> list[LineLayout]:
+    """Оформление строк тела контейнера: выделение не вправе стоить места.
+
+    Карточка анализа, карточка матрицы рисков и блок боковой панели — контейнеры
+    с померенной и объявленной в приложении ёмкостью, и отказ у них плохой:
+    `content_card` режет невлезшее молча, панель режет по предложениям и этим
+    останавливает выдачу отчёта. Жирное шире обычного на 9,6–14,4 %, поэтому
+    правило списка «строка со смешанным весом меряется жирной» здесь съело бы
+    десятую часть ёмкости.
+
+    Решение принимается на тело целиком: если хотя бы одной строке выделения
+    добавили бы строку переноса, **всё тело печатается ровно** — карточка, где
+    одна строка выделена, а соседняя нет, читается как сбой. Шаг строки у
+    обычного и жирного Inter одинаков, значит при равном числе строк переноса
+    высота равна по построению, и геометрию контейнера выделения не трогают.
+    """
+    laid = [body_line_layout(line, contract=contract, emphasize=emphasize) for line in lines]
+    for line, layout in zip(lines, laid):
+        if not layout.measure_bold:
+            continue
+        size = size_pt_of(layout)
+        if _wrapped_line_count_runs(layout.runs, width_emu, size) != _wrapped_line_count(
+            line, width_emu, size, False
+        ):
+            return [without_weight(item) for item in laid]
+    return laid
+
+
+def add_layout_runs(paragraph: Any, layout: LineLayout, size_pt: float) -> None:
+    """Прогоны строки — в абзац: вес и тон от оформления, кегль от вызывающего."""
+    for run in layout.runs:
+        if not run.text:
+            continue
+        r = paragraph.add_run()
+        r.text = run.text
+        r.font.name = FONT
+        r.font.bold = run.bold
+        r.font.size = Pt(size_pt)
+        r.font.color.rgb = _LINE_TONE_COLOR[run.tone]
 
 
 def assert_render_font_family() -> str:
@@ -976,27 +1085,6 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
     return _close_dangling_lead_in("\n".join(kept))
 
 
-def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
-    """Return (bold, color, size_pt) for one line inside a structured bullet.
-
-    С шага 0096 это оформление строк **карточек матрицы рисков** и только их
-    (`executive._card_line_style`): путь списка оформляет строки через
-    `typography.line_layout`. Карточки оставлены здесь намеренно — их мера
-    сверена с растром (К10 смока карточек), и переводить её заодно со списком
-    значило бы менять два откалиброванных пути одним шагом.
-    """
-    if _META_LINE_RE.match(line):
-        return False, MUTED_COLOR, FS_CAPTION
-    # Concrete evidence quotes are body text, not theme headers.
-    if _QUOTE_SOURCE_RE.match(line):
-        return False, BODY_COLOR, float(FS_BODY)
-    if is_first and (_THEME_LINE_RE.match(line) or (line.endswith(":") and len(line) <= 80)):
-        return True, NAVY, FS_BODY
-    if is_first and line.startswith("«") and "»" in line[:90] and "источник" not in line.lower():
-        return True, NAVY, FS_BODY
-    return False, BODY_COLOR, float(FS_BODY)
-
-
 #: Тон и кегль строки блока — словами их называет `typography`, в краску и
 #: пункты переводит тот, кто рисует. Одна таблица на замер и на вывод.
 _LINE_TONE_COLOR = {
@@ -1505,11 +1593,24 @@ class _Ctx:
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
-            r = p.add_run()
-            r.text = body_s
-            r.font.name = FONT
-            r.font.size = Pt(body_size)
-            r.font.color.rgb = BODY_COLOR
+            # Строки тела остаются строками **одного абзаца**: высота карточки
+            # померена без межабзацных отбивок, и абзац на строку раздвинул бы
+            # тело за подложку. Разрыв строки печатается одинаково в PDF и в
+            # PowerPoint; прежний перевод строки внутри `a:t` — только в PDF.
+            #
+            # Кегль у всех строк один, карточный: ёмкость карточки объявлена в
+            # приложении по ровному тексту одного кегля, и роль строки здесь
+            # несёт только вес и тон.
+            laid = container_line_layouts(
+                body_s.split("\n"),
+                inner_w,
+                lambda _layout: float(body_size),
+                contract=self.client_text_contract,
+            )
+            for index, layout in enumerate(laid):
+                if index:
+                    p.add_line_break()
+                add_layout_runs(p, layout, body_size)
         return y + h
 
     def metric_chips(self, metrics: list[dict[str, Any]], x: int, y: int, width: int) -> int:

@@ -32,7 +32,6 @@ from .common import (
     WARN_BG,
     WHITE,
     _Ctx,
-    _bullet_line_style,
     _clip_structured_bullet,
     _clip_words,
     _close_dangling_lead_in,
@@ -42,11 +41,14 @@ from .common import (
     _split_structured_bullet,
     _structured_bullet_body,
     _wrapped_line_count,
+    add_layout_runs,
+    container_line_layouts,
     font_line_step_emu,
     measure_text_height,
     record_bullet_measure,
     record_text_layout,
 )
+from .typography import SIZE_CAPTION, body_line_layout
 from .layout_cleeq import (
     action_block_reserve,
     bars_color,
@@ -224,20 +226,15 @@ def _card_paragraph_spacing(index: int) -> tuple[int, int]:
     return (0 if index == 0 else 1), 1
 
 
-def _card_line_style(line: str, index: int, detail_font: float) -> tuple[bool, RGBColor, float]:
-    """Начертание, цвет и кегль строки тела карточки.
+def _card_line_size(line: str, detail_font: float) -> float:
+    """Кегль строки тела карточки: мета и адрес — подписью, остальное — телом.
 
-    Один ответ на замер и на вывод. Разъедутся стороны хоть на одной ветке —
-    и высота поедет на конкретных карточках: мета-строка («Всего по теме:»,
-    «Где видно:») рисуется кеглем подписи, а мерилась в составе тела кеглем
+    Один ответ на замер и на вывод. Разъедутся стороны хоть на одной ветке — и
+    высота поедет на конкретных карточках: мета-строка («Всего по теме:», «Где
+    видно:») рисуется кеглем подписи, а мерилась в составе тела кеглем
     основного текста.
     """
-    bold, line_color, size_pt = _bullet_line_style(line, is_first=(index == 0))
-    if index == 0 and line.startswith("«"):
-        return False, BODY_COLOR, float(detail_font)
-    if not bold:
-        return False, line_color, float(detail_font) if line_color == BODY_COLOR else FS_CAPTION
-    return bold, line_color, size_pt
+    return float(FS_CAPTION) if body_line_layout(line).size == SIZE_CAPTION else float(detail_font)
 
 
 def _card_body_height(detail: str, text_w: int, detail_font: float) -> int:
@@ -253,13 +250,17 @@ def _card_body_height(detail: str, text_w: int, detail_font: float) -> int:
     Умолчания `measure_text_height` при этом не трогаются: у неё десятки
     потребителей на всех шаблонах, и смена умолчаний — пересчёт всей деки.
     Путь буллетов решён так же: локальной мерой «как рисуется».
+
+    Строки считаются обычным начертанием, и это не расходится с выводом:
+    выделения в теле появляются, только если не стоят ни строки переноса
+    (`container_line_layouts`), а шаг строки у жирного и обычного одинаков.
     """
     lines = _split_structured_bullet(detail) or ([detail] if detail else [])
     total = 0
     for index, line in enumerate(lines):
-        bold, _color, size_pt = _card_line_style(line, index, detail_font)
-        total += _wrapped_line_count(line, text_w, size_pt, bold) * font_line_step_emu(
-            size_pt, _CARD_LINE_SPACING, bold
+        size_pt = _card_line_size(line, detail_font)
+        total += _wrapped_line_count(line, text_w, size_pt, False) * font_line_step_emu(
+            size_pt, _CARD_LINE_SPACING
         )
         total += sum(_card_paragraph_spacing(index)) * EMU_PER_PT
     return int(total * _CARD_MEASURE_SLACK)
@@ -433,25 +434,28 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             tf.word_wrap = True
             # PDF-38 F.1 / G.1 — hierarchical detail inside the card bounds.
             draw_lines = _split_structured_bullet(detail) or [detail]
+            # Ярлык «Что делать:», числа факта, серая атрибуция — общим
+            # оформлением строки; заголовка в теле нет, он у карточки свой.
+            laid = container_line_layouts(
+                draw_lines,
+                text_w,
+                lambda layout: float(FS_CAPTION) if layout.size == SIZE_CAPTION else float(detail_font),
+                contract=ctx.client_text_contract,
+            )
             first = True
-            for li, line in enumerate(draw_lines):
+            for li, (line, layout) in enumerate(zip(draw_lines, laid)):
                 p = tf.paragraphs[0] if first else tf.add_paragraph()
                 first = False
                 space_before, space_after = _card_paragraph_spacing(li)
                 p.space_before = Pt(space_before)
                 p.space_after = Pt(space_after)
                 p.line_spacing = _CARD_LINE_SPACING
-                bold, line_color, size_pt = _card_line_style(line, li, detail_font)
+                size_pt = _card_line_size(line, detail_font)
                 # Строки переноса, а не структурные: поле схемы называется
                 # «сколько строк намерено», и все остальные его производители
                 # пишут туда именно перенос.
-                drawn_lines += _wrapped_line_count(line, text_w, size_pt, bold)
-                r = p.add_run()
-                r.text = line
-                r.font.name = FONT
-                r.font.bold = bold
-                r.font.size = Pt(size_pt)
-                r.font.color.rgb = line_color
+                drawn_lines += _wrapped_line_count(line, text_w, size_pt, False)
+                add_layout_runs(p, layout, size_pt)
         if pill:
             # E.1 — badge height from conservative wrap estimate; long Russian
             # labels like «Требует подтверждения» always get ≥2 lines of room

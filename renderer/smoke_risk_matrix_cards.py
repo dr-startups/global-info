@@ -65,7 +65,7 @@ from orion_golden_render.common import (  # noqa: E402
 )
 from orion_golden_render.executive import (  # noqa: E402
     _card_body_height,
-    _card_line_style,
+    _card_line_size,
     _card_paragraph_spacing,
     _render_executive_dashboard,
     _render_risk_matrix_grid,
@@ -324,9 +324,11 @@ def raster_body_height(detail: str, text_w: int, detail_font: float) -> int:
     lines = _split_structured_bullet(detail) or ([detail] if detail else [])
     total = 0
     for index, line in enumerate(lines):
-        bold, _color, size_pt = _card_line_style(line, index, detail_font)
+        # Строки тела считаются обычным начертанием: выделения в карточке
+        # появляются, только если не стоят ни строки переноса (шаг 0100).
+        size_pt = _card_line_size(line, detail_font)
         step = int(RASTER_LINE_STEP * size_pt / 11)
-        total += _wrapped_line_count(line, text_w, size_pt, bold) * step
+        total += _wrapped_line_count(line, text_w, size_pt, False) * step
         total += sum(_card_paragraph_spacing(index)) * EMU_PER_PT
     return total
 

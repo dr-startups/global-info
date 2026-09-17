@@ -56,6 +56,8 @@ from .common import (
     plural_ru,
     record_bullet_measure,
     record_text_layout,
+    add_layout_runs,
+    container_line_layouts,
 )
 from .layout_cleeq import level_step
 
@@ -342,11 +344,12 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
-        r = p.add_run()
-        r.text = fitted
-        r.font.name = FONT
-        r.font.size = Pt(size)
-        r.font.color.rgb = BODY_COLOR
+        # Выделения — только те, что не стоят ни строки переноса: рез в панели
+        # останавливает выдачу отчёта, и платить за жирное число местом нельзя.
+        (layout,) = container_line_layouts(
+            [fitted], w - 2 * pad, lambda _layout: float(size), contract=ctx.client_text_contract
+        )
+        add_layout_runs(p, layout, size)
         cy += bh + gap
 
     write_block(None, headline, field="headlineConclusion", size=FS_BODY, required=True)
