@@ -48,10 +48,13 @@ from .common import (
     record_text_layout,
 )
 from .layout_cleeq import (
+    action_block_reserve,
     bars_color,
     bars_for_level,
     content_stage,
     draw_level_bars,
+    narrative_without_advice,
+    print_moved_advice,
     render_action_block,
     render_hero_metrics_row,
     stage_heading,
@@ -111,6 +114,14 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     # Сколько абзацев показать, решено на стороне TS: там нарратив режется, а
     # остаток переезжает блоками. Второго среза здесь нет — рисуем всё, что дали;
     # что не влезло, называется потерей, а не выбрасывается молча.
+    # Рекомендация печатается один раз — под «Следующий шаг». Проза находки
+    # кладёт её и последним абзацем страницы; дословный повтор из абзаца
+    # снимается, а место под блок действия держится заранее, чтобы снятое
+    # напечаталось наверняка.
+    actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)][:1]
+    advice = _advice_label(actions)
+    paras, advice_moved = narrative_without_advice(paras, advice)
+    reserve = action_block_reserve(advice) if advice_moved else 0
     dropped_paras = 0
     if paras:
         if CONTENT_BOTTOM - y < _NARRATIVE_MIN_ROOM:
@@ -118,7 +129,9 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
             # там, где места нет. Останавливаться надо до этого.
             dropped_paras = len(paras)
         else:
-            y = ctx.body("\n".join(_safe(p) for p in paras), y, max_h=CONTENT_BOTTOM - y, bold=True) + 30_000
+            y = ctx.body(
+                "\n".join(_safe(p) for p in paras), y, max_h=CONTENT_BOTTOM - y - reserve, bold=True
+            ) + 30_000
             dropped_paras = max(0, int(ctx.last_body["paragraphs"]) - int(ctx.last_body["drawn"]))
             # Абзац, укороченный по предложениям, — тоже не доехавшее содержимое.
             if not dropped_paras and ctx.last_body["clipped"]:
@@ -139,7 +152,6 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     # вопрос и молчаливым: на стр. 3 живого прогона он выбросил третью тему
     # мимо телеметрии, и ворота потерь её не видели.
     findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)]
-    actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)][:1]
     theme_bullets: list[str] = []
     for finding in findings:
         # Строки темы — её структура, и комментарий ниже («keep structured
@@ -161,15 +173,33 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
             theme_bullets.append(text)
     if theme_bullets:
         y = stage_heading(ctx, "Коротко по итогам аудита", y)
-        y = ctx.bullets(theme_bullets, y, max_items=len(theme_bullets), max_chars=900) + 40_000
-    if actions:
-        label = _safe(actions[0].get("label"))
-        # Полная фраза или ничего: оборванная рекомендация не рекомендация.
-        if len(label) > 280:
-            punct = max(label.rfind(". "), label.rfind("! "), label.rfind("? "), label.rfind("; "))
-            if punct > 60:
-                label = label[: punct + 1].strip()
-        render_action_block(ctx, label, y, max_h=1_000_000, heading="Следующий шаг")
+        y = ctx.bullets(
+            theme_bullets,
+            y,
+            max_items=len(theme_bullets),
+            max_chars=900,
+            # Место под «Следующий шаг» темы занять не вправе: не влезшие темы
+            # мерный цикл уносит на продолжение, а снятая из абзаца рекомендация
+            # иначе пропала бы вовсе.
+            bottom=CONTENT_BOTTOM - reserve,
+        ) + 40_000
+    if advice:
+        drawn_to = render_action_block(ctx, advice, y, max_h=1_000_000, heading="Следующий шаг")
+        if advice_moved and drawn_to == y:
+            print_moved_advice(ctx, advice, y)
+
+
+def _advice_label(actions: list[dict[str, Any]]) -> str:
+    """Рекомендация блока действия — полная фраза или ничего."""
+    if not actions:
+        return ""
+    label = _safe(actions[0].get("label"))
+    # Полная фраза или ничего: оборванная рекомендация не рекомендация.
+    if len(label) > 280:
+        punct = max(label.rfind(". "), label.rfind("! "), label.rfind("? "), label.rfind("; "))
+        if punct > 60:
+            label = label[: punct + 1].strip()
+    return label
 
 
 #: Межстрочный, который выставляется абзацам тела карточки при отрисовке.

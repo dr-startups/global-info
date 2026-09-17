@@ -42,6 +42,7 @@ from smoke_counters import print_tap_counters  # noqa: E402
 from orion_golden_render import common  # noqa: E402
 from orion_golden_render.common import (  # noqa: E402
     BULLET_GLYPH,
+    CONTENT_BOTTOM,
     FS_BODY,
     FS_CAPTION,
     MUTED_COLOR,
@@ -966,6 +967,244 @@ def a9_body_measure_is_not_optimistic() -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Рекомендация печатается один раз (шаг 0099)
+# --------------------------------------------------------------------------
+
+ADVICE = "Проверить статусы дел и первоисточники до принятия решений."
+FACTS = "По региону «Россия» собрано 246 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3."
+THEME = "\n".join(
+    [
+        "«Судебные материалы»",
+        "Найдены публикации по теме:",
+        "«Суд назначил заседание по делу фонда» — источник kapital-nyheter.se",
+        "Всего по теме: 5 материалов, с негативным контекстом — 3.",
+    ]
+)
+
+
+def page_text(slide: dict[str, Any], page: int = 12) -> tuple[str, list[dict[str, Any]]]:
+    """Нарисовать страницу целиком; вернуть её текст и мерные записи."""
+    from orion_golden_render.slides import _render_slide
+
+    reset_layout_telemetry()
+    reset_bullet_measure()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, page, 80, slide_key=str(slide.get("slideKey") or "p12"))
+    _render_slide(ctx, slide, {})
+    text = "\n".join(
+        sh.text_frame.text for sh in prs.slides[0].shapes if getattr(sh, "has_text_frame", False)
+    )
+    return text, get_bullet_measure()
+
+
+LONG_ADVICE = (
+    "Проверить статусы трёх судебных дел по картотекам судов и сверить первоисточники публикаций, "
+    "на которые ссылаются агрегаторы, до принятия решений о запросах на удаление материалов "
+    "и обращениях в редакции изданий."
+)
+
+
+def page_shapes(slide: dict[str, Any], page: int = 12) -> list[Any]:
+    """Нарисовать страницу целиком; вернуть её текстовые фигуры."""
+    from orion_golden_render.slides import _render_slide
+
+    reset_layout_telemetry()
+    reset_bullet_measure()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, page, 80, slide_key=str(slide.get("slideKey") or "p12"))
+    _render_slide(ctx, slide, {})
+    return [sh for sh in prs.slides[0].shapes if getattr(sh, "has_text_frame", False)]
+
+
+def d1_d5_advice_is_printed_once() -> None:
+    metrics = [{"label": "Собрано по региону", "value": "246", "tone": "neutral"}]
+    regional = {
+        "template": "orion_golden_metrics_dashboard",
+        "slideKey": "p07_ru_summary",
+        "title": "Россия: в выдаче есть материалы повышенного внимания",
+        "narrative": f"{FACTS}\n{ADVICE}",
+        "metrics": metrics,
+        "actions": [{"label": ADVICE}],
+        "bullets": [THEME],
+    }
+    text, _m = page_text(regional)
+    check(
+        "Д1: страница региона печатает рекомендацию один раз — под «Действие»",
+        text.count(ADVICE) == 1 and "Действие" in text and FACTS.split(".")[0] in text,
+        f"вхождений {text.count(ADVICE)}",
+    )
+    resume = {
+        "template": "orion_golden_executive_dashboard",
+        "slideKey": "p03_executive",
+        "title": "Резюме",
+        "narrative": f"Итоговая оценка: Высокий риск\n{FACTS}\n{ADVICE}",
+        "metrics": metrics,
+        "actions": [{"label": ADVICE}],
+        "keyFindings": [{"detail": THEME, "tone": "warn"}],
+    }
+    text, _m = page_text(resume, page=4)
+    check(
+        "Д2: резюме печатает рекомендацию один раз — под «Следующий шаг»",
+        text.count(ADVICE) == 1 and "Следующий шаг" in text,
+        f"вхождений {text.count(ADVICE)}",
+    )
+    text, _m = page_text({**regional, "actions": []})
+    check(
+        "Д3: без блока действия рекомендация остаётся в абзаце — терять её нельзя",
+        text.count(ADVICE) == 1 and "Действие" not in text,
+        f"вхождений {text.count(ADVICE)}",
+    )
+    other = "Запросить выписки из картотек судов по трём делам."
+    text, _m = page_text({**regional, "actions": [{"label": other}]})
+    check(
+        "Д4: разные слова в абзаце и в действии печатаются оба — ложной вычистки нет",
+        text.count(ADVICE) == 1 and text.count(other) == 1,
+        f"абзац {text.count(ADVICE)}, действие {text.count(other)}",
+    )
+    # Тесная страница: тем столько, что все не влезут. Рекомендация обязана
+    # остаться — место под неё держится заранее, а не влезшие темы называются
+    # потерей, и мерный цикл уносит их на продолжение.
+    crowded = {**resume, "keyFindings": [{"detail": THEME, "tone": "warn"}] * 9}
+    text, measures = page_text(crowded, page=4)
+    dropped = sum(int(m.get("droppedBullets") or 0) for m in measures)
+    check(
+        "Д5: на тесном резюме рекомендация не теряется и не двоится, а не влезшие темы посчитаны",
+        text.count(ADVICE) == 1 and "Следующий шаг" in text and dropped > 0,
+        f"вхождений {text.count(ADVICE)}, потерь по мере {dropped}",
+    )
+    # Рекомендация в две строки: место под блок считается по её высоте, а не
+    # берётся полом. Блок обязан встать под свой заголовок, целиком, основным
+    # кеглем и выше нижней границы содержимого.
+    # Темы в одну строку — чтобы остаток под списком был меньше высоты блока
+    # рекомендации: место держит именно расчёт, а не удачная геометрия фикстуры.
+    long_resume = {
+        **resume,
+        "narrative": f"Итоговая оценка: Высокий риск\n{FACTS}\n{LONG_ADVICE}",
+        "actions": [{"label": LONG_ADVICE}],
+        "keyFindings": [
+            {"detail": f"Короткая тема номер {i + 1} без цитаты и счётчиков.", "tone": "warn"} for i in range(40)
+        ],
+    }
+    shapes = page_shapes(long_resume, page=4)
+    texts = [sh.text_frame.text for sh in shapes]
+    advice_shapes = [sh for sh in shapes if sh.text_frame.text.strip() == LONG_ADVICE]
+    sizes = {
+        run.font.size.pt
+        for sh in advice_shapes
+        for para in sh.text_frame.paragraphs
+        for run in para.runs
+        if run.font.size is not None
+    }
+    bottoms = [int(sh.top) + int(sh.height) for sh in advice_shapes]
+    check(
+        "Д7: рекомендация в две строки встаёт под «Следующий шаг» целиком, основным кеглем и в границах листа",
+        len(advice_shapes) == 1
+        and sum(t.count(LONG_ADVICE) for t in texts) == 1
+        and any(t.strip() == "Следующий шаг" for t in texts)
+        and sizes == {float(FS_BODY)}
+        and max(bottoms) <= CONTENT_BOTTOM,
+        f"блоков {len(advice_shapes)}, кегли {sorted(sizes)}, низ {max(bottoms) if bottoms else None} при границе {CONTENT_BOTTOM}",
+    )
+    # Договор двух функций: места, которое называет `action_block_reserve`,
+    # блоку действия хватает на весь текст основным кеглем. Проверяется в лоб,
+    # без страницы вокруг: на странице остаток под списком зависит от того, где
+    # остановились темы, и недостаточный запас прятался бы за удачной геометрией.
+    from orion_golden_render.layout_cleeq import action_block_reserve, render_action_block
+
+    for label_name, label in (("в одну строку", ADVICE), ("в две строки", LONG_ADVICE)):
+        prs = Presentation()
+        prs.slide_width = Emu(SLIDE_W)
+        prs.slide_height = Emu(SLIDE_H)
+        ctx = _Ctx(prs, 12, 80, slide_key="p12")
+        top = CONTENT_BOTTOM - action_block_reserve(label)
+        end = render_action_block(ctx, label, top, max_h=1_000_000)
+        drawn = [
+            sh
+            for sh in prs.slides[0].shapes
+            if getattr(sh, "has_text_frame", False) and sh.text_frame.text.strip() == label
+        ]
+        drawn_sizes = {
+            run.font.size.pt
+            for sh in drawn
+            for para in sh.text_frame.paragraphs
+            for run in para.runs
+            if run.font.size is not None
+        }
+        low = max((int(sh.top) + int(sh.height) for sh in drawn), default=None)
+        check(
+            f"Д8: удержанного места блоку действия хватает — рекомендация {label_name}",
+            end != top and len(drawn) == 1 and drawn_sizes == {float(FS_BODY)} and low is not None and low <= CONTENT_BOTTOM,
+            f"нарисовано {len(drawn)}, кегли {sorted(drawn_sizes)}, низ {low} при границе {CONTENT_BOTTOM}",
+        )
+    # Страховка: рекомендация снята из абзаца, а блок действия не нарисовался.
+    # Есть место — фраза печатается простым абзацем; нет — ничего не рисуется
+    # ниже границы содержимого, а потеря называется в телеметрии.
+    from orion_golden_render.layout_cleeq import print_moved_advice
+
+    for case, room_emu, expect_drawn in (("место есть", 600_000, True), ("места нет", 100_000, False)):
+        reset_layout_telemetry()
+        prs = Presentation()
+        prs.slide_width = Emu(SLIDE_W)
+        prs.slide_height = Emu(SLIDE_H)
+        ctx = _Ctx(prs, 12, 80, slide_key="p12")
+        top = CONTENT_BOTTOM - room_emu
+        end = print_moved_advice(ctx, LONG_ADVICE, top)
+        drawn = [
+            sh
+            for sh in prs.slides[0].shapes
+            if getattr(sh, "has_text_frame", False) and LONG_ADVICE[:40] in sh.text_frame.text
+        ]
+        losses = [e for e in common.get_layout_telemetry() if int(e.get("droppedLines") or 0) > 0]
+        ok = (
+            (end != top and len(drawn) == 1 and drawn[0].text_frame.text.strip() == LONG_ADVICE and not losses)
+            if expect_drawn
+            else (end == top and not drawn and len(losses) == 1)
+        )
+        check(
+            f"Д10: страховка снятой рекомендации — {case}",
+            ok,
+            f"нарисовано {len(drawn)}, потерь в телеметрии {len(losses)}",
+        )
+    # Плотная страница региона: плитки в два ряда, значок статуса, абзац во весь
+    # потолок и статусная строка. Остаток под ними меньше порога, при котором
+    # блок действия раньше уступал место темам, — снятая из абзаца рекомендация
+    # обязана напечататься и здесь.
+    dense_region = {
+        **regional,
+        "statusBadge": {"label": "Повышенное внимание", "tone": "warn"},
+        "metrics": [
+            {"label": f"Показатель {i + 1}", "value": str(10 + i), "tone": "neutral"} for i in range(7)
+        ],
+        "narrative": "\n".join([FACTS] * 7 + [ADVICE]),
+        "statusNote": " ".join(
+            ["Доля негатива посчитана по прочитанным материалам: 12 из 40, остальные страницы не открылись."] * 2
+        ),
+        "bullets": [THEME] * 9,
+    }
+    shapes = page_shapes(dense_region)
+    texts = [sh.text_frame.text for sh in shapes]
+    heading_tops = [int(sh.top) for sh in shapes if sh.text_frame.text.strip() == "Действие"]
+    room = CONTENT_BOTTOM - heading_tops[0] if heading_tops else None
+    check(
+        "Д9: на плотной странице региона снятая из абзаца рекомендация печатается под «Действие»",
+        sum(t.count(ADVICE) for t in texts) == 1 and bool(heading_tops) and room is not None and room <= 1_800_000,
+        f"вхождений {sum(t.count(ADVICE) for t in texts)}, остаток под абзацем {room}",
+    )
+    crowded_region = {**regional, "bullets": [THEME] * 9}
+    text, measures = page_text(crowded_region)
+    dropped = sum(int(m.get("droppedBullets") or 0) for m in measures)
+    check(
+        "Д6: на тесной странице региона — то же: рекомендация одна, потери посчитаны",
+        text.count(ADVICE) == 1 and "Действие" in text and dropped > 0,
+        f"вхождений {text.count(ADVICE)}, потерь по мере {dropped}",
+    )
+
+
 def main() -> int:
     t1_lines_reach_the_page()
     t2_heading()
@@ -983,6 +1222,7 @@ def main() -> int:
     a6_a7_nothing_is_dropped_silently()
     a8_search_table_intro_is_one_paragraph()
     a9_body_measure_is_not_optimistic()
+    d1_d5_advice_is_printed_once()
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))

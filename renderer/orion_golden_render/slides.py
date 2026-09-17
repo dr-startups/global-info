@@ -59,6 +59,8 @@ from .executive import (
 from .layout_cleeq import (
     alternating_color,
     content_stage,
+    narrative_without_advice,
+    print_moved_advice,
     render_action_block,
     render_hero_metrics_row,
     render_metric_tiles,
@@ -544,6 +546,13 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             top=metrics_bottom + 40_000 if metrics else None,
             corner_marks=True,
         )
+        # Рекомендация печатается один раз — под «Действие». Проза находки кладёт
+        # её и последним абзацем страницы; дословный повтор из абзаца снимается,
+        # и блок действия после этого обязан напечататься (см. ниже).
+        actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
+        advice = _safe(actions[0].get("label")) if actions else ""
+        narrative_paras, advice_moved = narrative_without_advice(narrative.split("\n"), advice)
+        narrative = "\n".join(p for p in narrative_paras if p.strip())
         if narrative:
             # Потолок поднят вместе с абзацами (шаг 0098): прежние 900 000 были
             # впритык одному абзацу в четыре строки (замер: 0,88 потолка), и
@@ -574,11 +583,13 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 color=MUTED_COLOR,
                 font_size=FS_CAPTION,
             ) + 60_000
-        actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
-        if actions and (not bullets or (CONTENT_BOTTOM - y) > 1_800_000):
-            y = render_action_block(
-                ctx, _safe(actions[0].get("label")), y, max_h=1_000_000
-            )
+        # Без дубля блок по-прежнему уступает место темам на тесном листе: абзац
+        # рекомендацию уже несёт. Снятая из абзаца — печатается безусловно.
+        if advice and (advice_moved or not bullets or (CONTENT_BOTTOM - y) > 1_800_000):
+            drawn_to = render_action_block(ctx, advice, y, max_h=1_000_000)
+            if advice_moved and drawn_to == y:
+                drawn_to = print_moved_advice(ctx, advice, y)
+            y = drawn_to
         if bullets:
             # Потолок читаемости, а не ёмкости: сколько блоков влезает, решает
             # мерка высоты, приведённая к тому, что рисуется (шаг 16, 07.6).

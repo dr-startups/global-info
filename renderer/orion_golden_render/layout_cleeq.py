@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
@@ -51,6 +52,7 @@ from .common import (
     _fit_text_to_height,
     _safe,
     measure_text_height,
+    record_text_layout,
 )
 
 #: Насколько сцена выступает за текстовую колонку. Внутренние поля карточки
@@ -361,6 +363,83 @@ def stage_heading(ctx: _Ctx, text: str, y: int, *, x: int | None = None, w: int 
     r.font.size = Pt(FS_BODY)
     r.font.color.rgb = ACCENT
     return y + 200_000
+
+
+def _advice_key(text: str) -> str:
+    """Рекомендация для сравнения: без регистра, пробелов и конечного знака."""
+    return re.sub(r"[\s.!?…]+$", "", _safe(text)).casefold()
+
+
+def narrative_without_advice(paragraphs: list[str], label: str) -> tuple[list[str], bool]:
+    """Абзацы страницы без рекомендации, которую напечатает блок действия.
+
+    Проза находки кладёт рекомендацию последним абзацем страницы
+    (`composeFindingProse`), и она же едет дашборду полем `actions` — под свой
+    заголовок. Страница печатала одну и ту же фразу дважды: абзацем и под
+    «Действие» / «Следующий шаг».
+
+    Снимается только **дословный** повтор — абзац целиком, каким его и пишет
+    приложение: разные слова в абзаце и в действии остаются оба. Второй ответ —
+    было ли что снято: вызывающий после этого **обязан** напечатать блок
+    действия, иначе рекомендация пропадёт вовсе.
+    """
+    key = _advice_key(label)
+    if not key:
+        return list(paragraphs), False
+    kept = [para for para in paragraphs if _advice_key(para) != key]
+    return kept, len(kept) != len(paragraphs)
+
+
+def action_block_reserve(label: str) -> int:
+    """Сколько высоты держать под блок действия, чтобы он напечатался наверняка.
+
+    Числа те же, которыми блок решает, рисоваться ли: порог 420 000, полоса
+    заголовка и отбивок 260 000 и высота текста той же мерой, что у `ctx.body`.
+    """
+    text = _safe(label)
+    if not text:
+        return 0
+    body = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.2)
+    return max(420_000, body + 260_000 + 80_000)
+
+
+def print_moved_advice(ctx: _Ctx, advice: str, y: int) -> int:
+    """Рекомендация, снятая из абзаца, обязана напечататься — хоть строкой.
+
+    Сюда попадают, только если блок действия не нарисовался: на резюме место
+    под него держится заранее, и по расчёту такого не бывает; на странице
+    региона блок стоит выше списка тем и не помещается лишь на листе, уже
+    занятом плитками и абзацем. Страховка печатает фразу простым абзацем; не
+    вышло и это — потеря называется вслух и останавливает выдачу, а не остаётся
+    немой: абзац её уже не несёт.
+
+    Высота сверяется до вызова `ctx.body`: у того пол в 200 000 EMU, и текст был
+    бы нарисован даже там, где места нет, — ниже границы содержимого.
+    """
+    text = _safe(advice)
+    room = max(0, CONTENT_BOTTOM - y)
+    needed = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.2)
+    if needed <= room:
+        drawn_to = ctx.body(text, y, max_h=room)
+        if drawn_to != y and not ctx.last_body["clipped"]:
+            return drawn_to
+        y = drawn_to
+    record_text_layout(
+        page=ctx.page,
+        name=f"orion_advice_dropped_p{ctx.page}",
+        role="text",
+        font_family=FONT,
+        font_size_pt=FS_BODY,
+        box_width=CONTENT_W,
+        box_height=0,
+        available_height=room,
+        required_height=needed,
+        measured_lines=0,
+        text_length=len(text),
+        clipped=True,
+        dropped_lines=1,
+    )
+    return y
 
 
 def render_action_block(
