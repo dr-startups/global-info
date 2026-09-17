@@ -127,5 +127,11 @@
       "sidebarDegradedCount": 0,
       "warnings": []
     }
+  },
+  "blockStructure": {
+    "blocks": 173,
+    "multiLineBlocks": 48,
+    "headedBlocks": 26,
+    "lines": 286
   }
 }

@@ -181,6 +181,8 @@ describe("контракты резюме", () => {
     );
     expect(out.status).toBe("READY");
     const bullets = out.slides.flatMap((s) => s.content.bullets ?? []);
-    expect(bullets.some((b) => b.startsWith("Криминальные и судебные материалы."))).toBe(true);
+    // Заголовок блока — своей строкой без точки (шаг 0097); тело замороженного
+    // артефакта остаётся как записано — одним абзацем.
+    expect(bullets.some((b) => b.startsWith("Криминальные и судебные материалы\n"))).toBe(true);
   });
 });

@@ -136,7 +136,9 @@ describe("сюжет от вердикта до снимка клиентско�
     );
     const snapshot = clientTextOf(out.slides);
     const bullets = snapshot.slides.flatMap((s) => s.bullets ?? []);
-    expect(bullets.some((b) => b.startsWith(`${STOCKHOLM}.`))).toBe(true);
+    // Снимок нормализует пробелы: заголовок блока стоит своей строкой без точки
+    // (шаг 0097), и в снимке за ним идёт пробел, а не «. ».
+    expect(bullets.some((b) => b.startsWith(`${STOCKHOLM} По сюжету прочитано`))).toBe(true);
     expect(bullets.join(" ")).toContain(STOCKHOLM_QUOTE);
   });
 

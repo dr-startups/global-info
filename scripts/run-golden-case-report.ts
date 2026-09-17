@@ -84,7 +84,57 @@ export type GoldenBaseline = {
   observationStats: Record<string, number>;
   /** Stable projection of report-quality-summary (no generatedAt). */
   quality: Omit<ReportQualitySummary, "generatedAt">;
+  /**
+   * Структура блоков списка в пейлоаде рендерера.
+   *
+   * Эталон слов нормализует пробелы, поэтому переноса строки не видит — а с
+   * шага 0097 перенос и есть структура блока: заголовок, цитата, подпись
+   * источников стоят своими строками, и рендерер печатает их по ролям. Правка,
+   * которая снова склеит части блока пробелом, не изменит в эталоне слов ни
+   * знака; здесь она изменит числа.
+   */
+  blockStructure: BlockStructure;
 };
+
+export type BlockStructure = {
+  /** Блоков списка в деке: буллеты и тела карточек. */
+  blocks: number;
+  /** Из них отданы больше чем одной строкой. */
+  multiLineBlocks: number;
+  /** Из многострочных — с заголовком: первая строка без конечного знака. */
+  headedBlocks: number;
+  /** Строк во всех блоках. */
+  lines: number;
+};
+
+/**
+ * Снять структуру блоков с пейлоада — того, что получит рендерер.
+ *
+ * Признак заголовка тот же, которым роль строки определяет рендерер
+ * (`typography.line_role`): первая строка многострочного блока, не кончающаяся
+ * знаком предложения, двоеточием, запятой или точкой с запятой.
+ */
+export function blockStructureOf(finalSlides: ReadonlyArray<Record<string, unknown>>): BlockStructure {
+  const blocks = finalSlides.flatMap((slide) => [
+    ...(Array.isArray(slide.bullets) ? (slide.bullets as unknown[]) : []),
+    ...(Array.isArray(slide.keyFindings)
+      ? (slide.keyFindings as Array<Record<string, unknown>>).map((k) => k?.detail)
+      : []),
+  ]);
+  const linesOf = (block: unknown): string[] =>
+    String(block ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  const split = blocks.map(linesOf).filter((lines) => lines.length > 0);
+  const multi = split.filter((lines) => lines.length > 1);
+  return {
+    blocks: split.length,
+    multiLineBlocks: multi.length,
+    headedBlocks: multi.filter((lines) => !/[.!?…:;,]$/u.test(lines[0]!)).length,
+    lines: split.reduce((n, lines) => n + lines.length, 0),
+  };
+}
 
 function loadSubjectProfile(): ClassifierSubjectProfile {
   return JSON.parse(readFileSync(PROFILE_PATH, "utf8")) as ClassifierSubjectProfile;
@@ -470,8 +520,8 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   assert.ok(existsSync(summaryPath), "report-quality-summary.json missing");
   const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as ReportQualitySummary;
 
-  const baseline: GoldenBaseline = {
-    version: "golden-case-baseline-v1",
+  const baselineBase = {
+    version: "golden-case-baseline-v1" as const,
     observationCount: rows.length,
     observationStats: goldenCaseObservationStats(rows),
     quality: stableQuality(summary),
@@ -506,6 +556,12 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     "renderer payload must carry finalSlides — иначе снимок клиентского текста пуст и ничего не проверяет"
   );
   const clientText = extractClientText({ slides: finalSlides });
+  // Структура снимается с того же пейлоада, что и слова: между сборкой деки и
+  // пейлоадом лежит раскладка строк (`reflowThemeBullet`), и она — часть ответа.
+  const baseline: GoldenBaseline = {
+    ...baselineBase,
+    blockStructure: blockStructureOf(finalSlides as Array<Record<string, unknown>>),
+  };
 
   return { summary, baseline, clientText, prepareOk: res.ok === true };
 }

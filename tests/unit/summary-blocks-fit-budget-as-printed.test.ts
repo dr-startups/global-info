@@ -37,7 +37,9 @@ const BUDGETS = getClientTextFieldBudgets();
  */
 function printedByDeck(block: { kind: string; heading?: string; text: string }): string {
   if (block.heading && block.kind === "theme") {
-    return block.text.startsWith(block.heading) ? block.text : `${block.heading}. ${block.text}`;
+    // Заголовок — своей строкой, без точки (шаг 0097): прежде он приклеивался
+    // точкой и становился первым предложением тела.
+    return block.text.startsWith(block.heading) ? block.text : `${block.heading}\n${block.text}`;
   }
   return block.text;
 }

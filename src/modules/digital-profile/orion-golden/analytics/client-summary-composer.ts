@@ -30,6 +30,7 @@ import { pluralRu } from "../../report/i18n/plural-ru";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 import { sourceAttribution } from "../client/client-address";
 import { sourceQuote } from "../client/client-quote";
+import { composeBlockLines } from "../client/block-lines";
 import { splitSentences } from "../deck-sections/sentence-split";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
@@ -297,7 +298,9 @@ function composeReadPlotSection(
   ]
     .filter(Boolean)
     .map(finishSentence)
-    .join(" ");
+    // Часть блока — своей строкой (шаг 0097): рендерер печатает строки по
+    // ролям, а склеенные пробелом части он получал стеной текста.
+    .join("\n");
 
   return {
     themeId: plot.plotId,
@@ -352,7 +355,7 @@ function composeThemeSection(
     // Тема не дублируется: она уже заголовок блока, и `formatSemanticBullet`
     // припишет её к телу, если тело с неё не начинается.
     finishSentence(theme.conclusion),
-    articleBits.join(" "),
+    ...articleBits,
     allegation,
     once(theme.whyItMatters),
     ownChecks.length ? once(`Что проверить: ${ownChecks.join(" ")}`) : "",
@@ -362,7 +365,8 @@ function composeThemeSection(
     basisLine,
   ]
     .filter(Boolean)
-    .join(" ");
+    // Часть блока — своей строкой (шаг 0097), как у блока сюжета.
+    .join("\n");
 
   return {
     themeId: theme.themeId,
@@ -394,7 +398,7 @@ function composeIsolated(pack: ClientSummaryPack): string {
       `«${item.title}»${sourceSuffix(item.domain)}. ${item.description} ${item.qualification}`
     )
   );
-  return [`Единичные существенные публикации.`, ...lines].join(" ");
+  return composeBlockLines("Единичные существенные публикации", lines);
 }
 
 function composeDatabases(pack: ClientSummaryPack): string {
@@ -408,7 +412,7 @@ function composeDatabases(pack: ClientSummaryPack): string {
       `${d.databaseName}. ${d.statusSummary} ${d.qualification}`
     )
   );
-  return [`Международные базы и официальные источники.`, ...lines].join(" ");
+  return composeBlockLines("Международные базы и официальные источники", lines);
 }
 
 function composeChanges(pack: ClientSummaryPack): string {
@@ -440,21 +444,27 @@ function composeChanges(pack: ClientSummaryPack): string {
 
 function composeNextSteps(pack: ClientSummaryPack): string {
   const steps = pack.nextSteps.slice(0, 8).map((s, i) => `${i + 1}) ${finishSentence(s)}`);
-  return [`Следующие проверки.`, ...steps].join(" ");
+  return composeBlockLines("Следующие проверки", steps);
 }
 
 /**
- * Заголовок темы и её текст — одной строкой, без повтора заголовка.
+ * Заголовок темы и её текст — одним блоком, без повтора заголовка.
  *
  * Ответ на этот вопрос жил в двух местах: дека приписывала заголовок к телу
  * (`formatSemanticBullet`), а сборка полного текста резюме — нет. Пока тело
  * начиналось с названия темы, расхождение было незаметно; стоило убрать оттуда
  * дубль — и в полном тексте темы остались без названий.
+ *
+ * Заголовок стоит **своей строкой и без точки** (шаг 0097). Прежде он
+ * приклеивался точкой («Тема. Найдены…») и становился первым предложением
+ * тела: рендереру нечем было отличить его от текста, и блок печатался стеной.
  */
 export function themeBlockText(heading: string | undefined, body: string): string {
+  // Заголовок не нормализуется: название сюжета печатается дословно строкой
+  // `link-verdicts.json` — теми же знаками, что на странице «о чём публикации».
   const h = (heading ?? "").trim();
   if (!h) return body;
-  return body.startsWith(h) ? body : `${h}. ${body}`;
+  return body.startsWith(h) ? body : `${h}\n${body}`;
 }
 
 function assembleFullText(

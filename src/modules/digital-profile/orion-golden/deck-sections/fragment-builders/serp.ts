@@ -2117,7 +2117,10 @@ export function buildSerpScreenshotFragment(
   const slides: SlideContentContract[] = [slide];
   if (explanations.length > 0 && needsContinuation) {
     const budget = getClientTextFieldBudgets().bullet;
-    const bullets = sidebar.phrases.map((p) => clampClientText(p.full, budget));
+    // Лист печатает фразу **строками** (`block`): материал — заголовком блока,
+    // основание или цитата — своим абзацем, адрес — подписью. `clampClientText`
+    // режет многострочный блок по строкам, поэтому цитата и адрес не рвутся.
+    const bullets = sidebar.phrases.map((p) => clampClientText(p.block, budget));
     const cont = DECK_TEMPLATE_REGISTRY["continuation"];
     const pages = packBulletPages(
       bullets,

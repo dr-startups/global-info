@@ -53,12 +53,14 @@ import {
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
 import { sourceQuote } from "../../client/client-quote";
+import { composeBlockLines } from "../../client/block-lines";
 import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
 import {
   clientAddress,
   clientAddressText,
   parseClientAddress,
   SOURCE_ATTRIBUTION_SOURCE,
+  sourceAttribution,
 } from "../../client/client-address";
 import { normalizeForCompare } from "../text-compare";
 import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
@@ -1798,7 +1800,10 @@ export function reflowThemeBullet(text: string): string {
   const lineNeedsReflow = (l: string): boolean => {
     const n = (l.match(quoteRe) ?? []).length;
     if (n > 1) return true;
-    if (n === 1 && /(?:Всего по теме:|В корпусе:|Для банка|Банки |Риск в том|Что делать:)/u.test(l)) {
+    if (
+      n === 1 &&
+      /(?:Всего по теме:|В корпусе:|Где видно:|Для банка|Банки |Риск в том|Что делать:)/u.test(l)
+    ) {
       return true;
     }
     return new RegExp(`^«[^»]{2,80}»\\s+(?:${QUOTE_INTRO_WORDS})`, "u").test(l);
@@ -1807,12 +1812,17 @@ export function reflowThemeBullet(text: string): string {
   // границы не находит вовсе: строка-цитата не опознавалась, уже размеченный
   // блок каждый раз пересобирался заново — и всё, что стояло между цитатами,
   // при пересборке терялось.
-  const quoteLines = existing.filter((l) => /^«[^»]{8,}»\s*—\s*источник(?!\p{L})/u.test(l));
-  if (
-    quoteLines.length >= 1 &&
-    existing.length >= 3 &&
-    !existing.some(lineNeedsReflow)
-  ) {
+  /*
+   * Строки, данные построителем, авторитетны (шаг 0097).
+   *
+   * Блок пересобирается только тогда, когда в нём есть строка, которую надо
+   * разложить: две цитаты на одной строке, цитата с приклеенной метой, тема с
+   * вводом в одну строку. Прежде условие требовало ещё «не меньше трёх строк и
+   * хотя бы одна строка-цитата» — и блок из двух строк (заголовок + основание
+   * с цитатой внутри) пересобирался целиком: заголовок уезжал в «ввод», а
+   * строки склеивались.
+   */
+  if (existing.length >= 2 && !existing.some(lineNeedsReflow)) {
     return marker ? `${existing.join("\n")}${marker}` : existing.join("\n");
   }
 
@@ -1933,10 +1943,22 @@ export function reflowNarrativeParagraphs(text: string, maxParas = 3): string {
 export function structureThemeClaimText(text: string): string {
   const raw = String(text ?? "").replace(/\r\n/gu, "\n").trim();
   if (!raw) return raw;
+  /*
+   * Уже размеченный текст остаётся своими строками.
+   *
+   * Сторож был написан с `\b` после кириллицы. В JavaScript `\b` определён на
+   * ASCII: после «Где видно» или «источник» границы он не находит, поэтому
+   * условие не выполнялось **никогда** — и утверждение синтезатора из пяти
+   * правильных строк (ввод / цитата / «Всего по теме» / «Где видно» /
+   * присказка) выходило отсюда тремя: всё, что не счёт и не источники,
+   * схлопывалось в одну строку, и «Где видно: …» с присказкой печатались
+   * приклеенными к цитате. Тот же дефект в `reflowThemeBullet` уже чинили;
+   * здесь он прожил дольше, потому что вывод выглядел «почти структурным».
+   */
   if (
     raw.includes("\n") &&
-    (/(?:^|\n)(?:Источники|Примеры|Где видно|В корпусе|Всего по теме|Пример)\b/u.test(raw) ||
-      /(?:^|\n)«[^»]{8,}»\s*—\s*источник\b/u.test(raw))
+    (/(?:^|\n)(?:Источники|Примеры|Где видно|В корпусе|Всего по теме|Пример)(?!\p{L})/u.test(raw) ||
+      /(?:^|\n)«[^»]{8,}»\s*—\s*источник(?!\p{L})/u.test(raw))
   ) {
     return raw
       .replace(/Примеры заголовков:/gu, "Примеры:")
@@ -3840,12 +3862,27 @@ function readFailureWords(reason: string | undefined): string {
   }
 }
 
-/** Фраза «Почему выделено» в двух формах: для узкой колонки и целиком. */
+/** Первая буква прописной: основание, вставшее своим абзацем, начинает предложение. */
+function capitalizeFirst(text: string): string {
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : text;
+}
+
+/** Фраза «Почему выделено» в трёх формах: для узкой колонки, целиком и целиком строками. */
 export type HighlightPhrase = {
   /** Форма для боковой панели: помещается в её бюджет знаков. */
   sidebar: string;
   /** Форма целиком — с полной цитатой и полным адресом. */
   full: string;
+  /**
+   * Форма целиком, но **строками** — её печатает лист «почему выделено»:
+   * материал (заголовок блока), основание или цитата, оговорка, адрес.
+   *
+   * Собирается из тех же частей, что и `full`, поэтому слова у них одни; в
+   * строчной форме после заголовка нет двоеточия, а основание начинается с
+   * прописной — оно стоит своим абзацем. `full` остаётся плоской: по ней
+   * считается `sidebarComplete`, и сравнивать строки с абзацем панели нельзя.
+   */
+  block: string;
   /** Адрес наблюдения в клиентской форме, если он известен. */
   link?: string;
   /** Адрес уцелел в сайдбарной форме. */
@@ -3952,7 +3989,7 @@ export function highlightPhrase(input: {
       input.finding ? "; материал учтён в находках отчёта" : "",
       ".",
     ].join("");
-    return { sidebar: text, full: text, sidebarHasLink: false, sidebarComplete: true, read };
+    return { sidebar: text, full: text, block: text, sidebarHasLink: false, sidebarComplete: true, read };
   }
 
   if (!read) {
@@ -3993,10 +4030,19 @@ export function highlightPhrase(input: {
     // Строка без публичного адреса (подсказка, связанный запрос) — не страница:
     // говорить о непрочитанном тексте здесь не о чем.
     if (!linkText && !domain) {
-      const head = `${named}: отнесено к теме «${rubric}» по формулировке${tail}.`;
+      const basisNoLink = `отнесено к теме «${rubric}» по формулировке${tail}.`;
+      const head = `${named}: ${basisNoLink}`;
       const ladder = [head, `${named}: тема «${rubric}»${tail}.`, `${named}${tail}.`];
       const sidebar = ladder.find((step) => step.length <= budget) ?? ladder[ladder.length - 1]!;
-      return { sidebar, full: head, link, sidebarHasLink: false, sidebarComplete: sidebar === head, read: false };
+      return {
+        sidebar,
+        full: head,
+        block: composeBlockLines(named, [capitalizeFirst(basisNoLink)]),
+        link,
+        sidebarHasLink: false,
+        sidebarComplete: sidebar === head,
+        read: false,
+      };
     }
     const textNote = readFailure
       ? `текст страницы проверить не удалось: ${readFailureWords(readFailure)}`
@@ -4009,7 +4055,9 @@ export function highlightPhrase(input: {
     const basis = `по заголовку и описанию в выдаче${trigger ? ` («${trigger}»)` : ""}`;
     // Без заголовка тема не повторяется дважды: «рубрика — домен: по выдаче».
     const attribution = title ? `отнесено к теме «${rubric}» ` : "";
-    const head = `${named}${domain ? ` — ${domain}` : ""}: ${attribution}${basis}; ${textNote}${tail}.`;
+    const material = `${named}${domain ? ` — ${domain}` : ""}`;
+    const grounds = `${attribution}${basis}; ${textNote}${tail}.`;
+    const head = `${material}: ${grounds}`;
     const addr = linkText ? ` ${linkText}.` : "";
     const ladder = [
       head,
@@ -4030,6 +4078,7 @@ export function highlightPhrase(input: {
     return {
       sidebar,
       full,
+      block: composeBlockLines(material, [capitalizeFirst(grounds), linkText ? `${linkText}.` : ""]),
       link,
       sidebarHasLink: Boolean(linkText) && sidebar.includes(linkText!),
       sidebarComplete: sidebar === full,
@@ -4070,6 +4119,31 @@ export function highlightPhrase(input: {
   };
 
   const full = compose(quoteSentences.length, true);
+  /*
+   * Строчная форма: заголовок, цитата **с источником на той же строке**, оговорка.
+   *
+   * Цитата печатается единым форматом деки (`sourceQuote`), а не строкой «…» с
+   * адресом ниже: строку-цитату без атрибуции снимает сеть на границе паков
+   * («цитата без источника не печатается», шаг 0092) — вместе с самой цитатой
+   * лист потерял бы ответ на вопрос «что на странице написано». Ни один эталон
+   * этого не показал бы: прочитанных страниц нет ни в золотом кейсе, ни в
+   * эталоне-72.
+   *
+   * Источник назвать нечем — блок остаётся одной строкой, как плоская форма:
+   * там цитата стоит внутри предложения, и правило сети к ней не относится.
+   */
+  const fullQuote = quoteSentences.join(" ");
+  const attribution = sourceAttribution({ url: e?.url, domain: e?.domain });
+  const quoteLine = fullQuote && attribution ? `${sourceQuote(fullQuote, attribution)}.` : "";
+  const addressLine = !fullQuote && linkText ? `${linkText}.` : "";
+  const blockLines = [quoteLine, caveat ?? "", addressLine].filter(Boolean);
+  const block =
+    fullQuote && !attribution
+      ? full
+      : blockLines.length > 0
+        ? composeBlockLines(head, blockLines)
+        : // Без единой строки под заголовком блок — одно предложение, и точка у него своя.
+          `${head}.`;
   // Цитата уступает адресу: без адреса утверждение нечем проверить, а
   // укороченная по границе предложения цитата остаётся дословной.
   let sidebar: string | undefined;
@@ -4094,6 +4168,7 @@ export function highlightPhrase(input: {
   return {
     sidebar: sidebar ?? full,
     full,
+    block,
     link,
     sidebarHasLink,
     sidebarComplete: (sidebar ?? full) === full,

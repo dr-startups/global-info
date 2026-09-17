@@ -121,6 +121,43 @@ describe("вычистка присказок", () => {
     expect(out.removed).toEqual([]);
   });
 
+  /*
+   * Присказка последней строкой блока — вместе с маркером находки.
+   *
+   * Так блок выглядит с шага 0097: построитель отдаёт части строками, и
+   * присказка «почему это важно» стоит последней, а `bulletWithFindingId`
+   * приклеивает маркер к последней строке блока. Правило «строку из одной
+   * присказки с маркером не трогаем» писалось ради блока из одной строки —
+   * маркер нельзя осиротить. В многострочном блоке оно отменяло вычистку
+   * целиком: на золотом кейсе снятых повторов стало 0 вместо 3, и присказка
+   * печаталась на каждой странице заново. Маркер принадлежит блоку, а не
+   * строке, поэтому он переезжает на строку выше.
+   */
+  it("повтор присказки последней строкой снимается, а маркер находки остаётся у блока", () => {
+    const WHY = "Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.";
+    const block = (marker: string): string =>
+      [
+        "«Офшорные структуры»",
+        "Найдены публикации об офшорных структурах:",
+        "«Фонд связан с мальтийским холдингом» — источник (watch-nyheter.se/fond-2)",
+        "Всего по теме: 2 материала, с негативным контекстом — 2.",
+        "Где видно: watch-nyheter.se, reestr-novosti.ru.",
+        `${WHY} ${marker}`,
+      ].join("\n");
+    const said = new Set<string>();
+    const first = withoutRepeatedBoilerplate(block("[finding-offshore-subject_match-1111aaaa]"), said);
+    expect(first.removed).toEqual([]);
+    expect(first.text).toContain(WHY);
+
+    const second = withoutRepeatedBoilerplate(block("[finding-offshore-subject_match-2222bbbb]"), said);
+    expect(second.removed).toEqual([WHY]);
+    expect(second.text).not.toContain(WHY);
+    const lines = second.text.split("\n");
+    expect(lines[lines.length - 1]).toBe(
+      "Где видно: watch-nyheter.se, reestr-novosti.ru. [finding-offshore-subject_match-2222bbbb]"
+    );
+  });
+
   it("потолок отменяет вычистку, если со страницы ушла бы больше трети текста", () => {
     const boiler = BOILERPLATE_COMMENTARY[0]!;
     const said = new Set<string>();

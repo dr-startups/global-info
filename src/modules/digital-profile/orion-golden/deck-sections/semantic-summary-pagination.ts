@@ -125,16 +125,40 @@ export function splitOverlongSentence(sentence: string, maxChars: number): strin
  * предложение переносится на соседний блок — страничная разбивка ставит их
  * подряд.
  */
-export function packSentencesNoTruncate(text: string, maxChars: number): string[] {
-  const sentences = splitSentences(text).flatMap((s) => splitOverlongSentence(s, maxChars));
-  if (sentences.length === 0) return [];
+export function packSentencesNoTruncate(
+  text: string,
+  maxChars: number,
+  /**
+   * `keepLines` — строки текста это структура блока (шаг 0097): предложения
+   * одной строки склеиваются пробелом, разные строки — переводом строки.
+   *
+   * Без него укладка собирала куски через пробел, и блок, отданный построителем
+   * строками, доезжал до рендерера стеной. Признак временный: абзац страницы
+   * укладывается по-прежнему и переходит на строки шагом 3 программы 0095 —
+   * там параметр снимается, и укладка знает строки всегда.
+   */
+  opts: { keepLines?: boolean } = {}
+): string[] {
+  const lines = opts.keepLines
+    ? text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+    : [text];
+  // Единица укладки — предложение; про каждое известно, начинает ли оно строку.
+  const units = lines.flatMap((line) =>
+    splitSentences(line)
+      .flatMap((s) => splitOverlongSentence(s, maxChars))
+      .map((sentence, i) => ({ sentence, startsLine: Boolean(opts.keepLines) && i === 0 }))
+  );
+  if (units.length === 0) return [];
   const chunks: string[] = [];
   let buf = "";
-  for (const s of sentences) {
-    const trial = buf ? `${buf} ${s}` : s;
+  for (const { sentence, startsLine } of units) {
+    const trial = buf ? `${buf}${startsLine ? "\n" : " "}${sentence}` : sentence;
     if (buf && trial.length > maxChars) {
       chunks.push(buf);
-      buf = s;
+      buf = sentence;
     } else {
       buf = trial;
     }
@@ -217,7 +241,8 @@ function themeToBlocks(
 ): SemanticBlock[] {
   const chunks = packSentencesNoTruncate(
     theme.body,
-    bodyBudgetForTheme(theme.heading, bulletBudget)
+    bodyBudgetForTheme(theme.heading, bulletBudget),
+    { keepLines: true }
   );
   if (chunks.length <= 1) {
     return [
@@ -265,7 +290,9 @@ function textBlocks(
 ): SemanticBlock[] {
   const t = text.trim();
   if (!t) return [];
-  const chunks = packSentencesNoTruncate(t, bodyBudgetForBlock({ kind }, bulletBudget));
+  const chunks = packSentencesNoTruncate(t, bodyBudgetForBlock({ kind }, bulletBudget), {
+    keepLines: true,
+  });
   if (chunks.length <= 1) {
     // Идентификатор односоставного блока прежний: короткий текст не должен
     // менять ни имени блока, ни эталона.
