@@ -58,7 +58,7 @@ from .layout_cleeq import (
     narrative_without_advice,
     print_moved_advice,
     render_action_block,
-    render_hero_metrics_row,
+    render_metric_rows,
     stage_heading,
 )
 from .visual import (
@@ -103,8 +103,9 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
     metrics_bottom = y
     if metrics:
-        metrics_bottom = render_hero_metrics_row(
-            ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
+        # Все метрики, а не `[:4]`: пятая («Ключевых тем») терялась молча.
+        metrics_bottom = render_metric_rows(
+            ctx, metrics, MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
         )
         y = metrics_bottom + 140_000
     content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None, corner_marks=True)

@@ -37,8 +37,7 @@ from .common import (
     FONT,
     FS_BODY,
     FS_CAPTION,
-    FS_SECTION,
-    FS_TITLE,
+    FS_LEAD,
     MARGIN_X,
     MUTED_COLOR,
     STAGE_SHADOW,
@@ -51,6 +50,8 @@ from .common import (
     disable_shape_shadow,
     _fit_text_to_height,
     _safe,
+    _wrapped_line_count,
+    font_line_step_emu,
     measure_text_height,
     record_text_layout,
 )
@@ -69,10 +70,32 @@ STAGE_BLEED = 100_000
 STAGE_SHADOW_DX = 35_000
 STAGE_SHADOW_DY = 45_000
 
-#: Высота ряда метрик. Совпадает с `_render_kpi_cards`: hero-плитка отличается
-#: кеглем цифры и шириной, но не высотой ряда — иначе содержимое ниже уезжает
-#: за нижнюю границу листа.
-METRIC_ROW_H = 780_000
+#: Пол высоты ряда метрик (шаг 0101): число 20 pt с подписью 9 pt в одну
+#: строку и поля — 47,1 pt. Выше пола ряд поднимает только содержимое: подпись
+#: в две строки или значение-фраза, и тогда ряд считается по мере, а не
+#: назначается. Прежние 780 000 назначались на все случаи и всё равно не
+#: вмещали подпись в две строки — она ложилась на нижний край плитки.
+METRIC_ROW_MIN_H = 600_000
+#: Отбивка между плитками и между рядами.
+METRIC_GAP = 80_000
+#: Сколько плиток несёт ряд: до шести — один ряд, дальше два поровну. Второй
+#: ряд ради одной-трёх метрик стоил листу 860 000 EMU, и на странице региона
+#: из-за него уезжал блок тем.
+METRICS_PER_ROW = 6
+#: Больше двух рядов лист не несёт: лишние метрики — потеря, названная в
+#: телеметрии, а не молчаливый срез. Построители столько не выпускают.
+METRIC_ROWS_MAX = 2
+#: Первая плитка ряда шире остальных: 1,6 доли, но не больше 34 % ряда. При
+#: четырёх плитках это ровно прежняя геометрия; при пяти-шести она сужается
+#: вместе с остальными.
+HERO_SHARE = 1.6
+#: Поля плитки по вертикали — над числом и под подписью. Внутренние отступы
+#: текстовой рамки по вертикали сняты, чтобы высота считалась в лоб.
+TILE_PAD_TOP = 76_200
+TILE_PAD_BOTTOM = 63_500
+#: Горизонтальное поле плитки до текстовой рамки плюс её собственный отступ.
+TILE_PAD_X = 140_000
+TILE_TEXT_INSET = 91_440
 
 
 def draw_stage(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
@@ -205,7 +228,7 @@ def bars_color(filled: int) -> RGBColor:
     return TONE_RISK if filled >= 4 else TONE_WARN
 
 
-def render_hero_metrics_row(
+def render_metric_rows(
     ctx: _Ctx,
     metrics: list[dict[str, Any]],
     x: int,
@@ -214,84 +237,104 @@ def render_hero_metrics_row(
     *,
     tone_value_color,
 ) -> int:
-    """Ряд метрик, где первая — герой страницы: крупная цифра во всю плитку.
+    """Плитки метрик страницы — один ответ на вопрос «как они лежат».
 
-    Высота ряда — та же, что у обычного ряда плиток (`METRIC_ROW_H`). В
-    исходной ветке hero-полоса была высотой 1 350 000 плюс отбивка, то есть
-    забирала у страницы 570 000 EMU — примерно три с половиной строки текста,
-    которые дальше нечем было вернуть, кроме обрезки.
+    До шести метрик — один ряд; больше — два ряда поровну, первый не меньше
+    второго (семь метрик профиля — 4 + 3). Высота каждого ряда — по самой
+    высокой плитке, не ниже `METRIC_ROW_MIN_H`. Рисуются **все** поданные
+    метрики: резюме прежде резало `metrics[:4]` и молча теряло пятую.
 
-    Кегли: герой — `FS_TITLE`, остальные — `FS_SECTION`, длинные значения
-    опускаются до `FS_BODY`. Ступень `FS_LEAD` намеренно не используется: на
-    странице и так есть заголовок (`FS_SECTION`), подписи (`FS_BODY`) и
-    колонтитул (`FS_CAPTION`), а шкала разрешает четыре ступени на страницу.
+    Число — `FS_LEAD` (20 pt), подпись — `FS_CAPTION`: на странице уже стоят
+    заголовок 22 pt, текст 11 и подпись 9, а шкала кеглей разрешает не больше
+    четырёх ступеней на страницу и ровно один элемент первого уровня (держит
+    `smoke_deck_raster_layout.py`). Прежний герой 26 pt был этим первым
+    уровнем; теперь им, как на остальных страницах, служит заголовок. Ряд в
+    600 000 EMU иначе недостижим: число 26 pt — это строка 31,5 pt, и вместе с
+    подписью и полями плитка не уложилась бы в 47,2 pt.
     """
-    items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))][:4]
+    items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))]
     if not items:
         return y
-    hero, rest = items[0], items[1:]
-    gap = 80_000
-    hero_w = int(width * 0.34) if rest else width
-    _metric_tile(
-        ctx,
-        hero,
-        x,
-        y,
-        hero_w,
-        METRIC_ROW_H,
-        value_size=FS_TITLE,
-        tone_value_color=tone_value_color,
-    )
-    if rest:
-        rest_x = x + hero_w + gap
-        rest_w = width - hero_w - gap
-        tile_w = (rest_w - gap * (len(rest) - 1)) // len(rest)
-        for i, m in enumerate(rest):
-            _metric_tile(
-                ctx,
-                m,
-                rest_x + i * (tile_w + gap),
-                y,
-                tile_w,
-                METRIC_ROW_H,
-                value_size=FS_SECTION,
-                tone_value_color=tone_value_color,
-            )
-    return y + METRIC_ROW_H
-
-
-def render_metric_tiles(
-    ctx: _Ctx,
-    metrics: list[dict[str, Any]],
-    x: int,
-    y: int,
-    width: int,
-    *,
-    tone_value_color,
-    cols: int = 3,
-) -> int:
-    """Ряд равных плиток — продолжение ряда метрик под hero-строкой.
-
-    Кегль тот же, что у плиток hero-строки: страница уже держит четыре ступени
-    шкалы, и пятая (`FS_LEAD`) на ней запрещена.
-    """
-    items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))][:cols]
-    if not items:
-        return y
-    gap = 80_000
-    tile_w = (width - gap * (len(items) - 1)) // len(items)
-    for i, m in enumerate(items):
-        _metric_tile(
-            ctx,
-            m,
-            x + i * (tile_w + gap),
-            y,
-            tile_w,
-            METRIC_ROW_H,
-            value_size=FS_SECTION,
-            tone_value_color=tone_value_color,
+    shown = items[: METRICS_PER_ROW * METRIC_ROWS_MAX]
+    if len(shown) < len(items):
+        record_text_layout(
+            page=ctx.page,
+            name=f"orion_metric_tiles_p{ctx.page}",
+            role="text",
+            font_family=FONT,
+            font_size_pt=FS_LEAD,
+            box_width=width,
+            box_height=0,
+            available_height=0,
+            required_height=METRIC_ROW_MIN_H,
+            measured_lines=len(shown),
+            text_length=sum(len(_safe(m.get("label"))) for m in items),
+            clipped=True,
+            dropped_bullets=len(items) - len(shown),
         )
-    return y + METRIC_ROW_H
+    rows = [shown] if len(shown) <= METRICS_PER_ROW else [shown[: (len(shown) + 1) // 2], shown[(len(shown) + 1) // 2 :]]
+    for index, row in enumerate(rows):
+        if index:
+            y += METRIC_GAP
+        y = _render_metric_row(ctx, row, x, y, width, hero=index == 0, tone_value_color=tone_value_color)
+    return y
+
+
+def _metric_row_widths(count: int, width: int, *, hero: bool) -> list[int]:
+    """Ширины плиток ряда: первая — герой, остальные равные."""
+    if count <= 1:
+        return [width]
+    if not hero:
+        tile_w = (width - METRIC_GAP * (count - 1)) // count
+        return [tile_w] * count
+    unit = (width - METRIC_GAP * (count - 1)) / (count - 1 + HERO_SHARE)
+    hero_w = min(int(width * 0.34), int(unit * HERO_SHARE))
+    rest_w = width - hero_w - METRIC_GAP
+    tile_w = (rest_w - METRIC_GAP * (count - 2)) // (count - 1)
+    return [hero_w] + [tile_w] * (count - 1)
+
+
+def _render_metric_row(
+    ctx: _Ctx,
+    row: list[dict[str, Any]],
+    x: int,
+    y: int,
+    width: int,
+    *,
+    hero: bool,
+    tone_value_color,
+) -> int:
+    widths = _metric_row_widths(len(row), width, hero=hero)
+    row_h = max([METRIC_ROW_MIN_H, *(_metric_tile_height(m, w) for m, w in zip(row, widths))])
+    left = x
+    for metric, tile_w in zip(row, widths):
+        _metric_tile(ctx, metric, left, y, tile_w, row_h, tone_value_color=tone_value_color)
+        left += tile_w + METRIC_GAP
+    return y + row_h
+
+
+def _metric_texts(metric: dict[str, Any]) -> tuple[str, str, float]:
+    """Значение, подпись и кегль значения — одни на замер и на вывод."""
+    value = _clip_words(_safe(metric.get("value")), 36)
+    label = _clip_words(_safe(metric.get("label")), 40)
+    # Длинное значение — это не цифра, а фраза вроде «Данные не собраны»:
+    # крупным кеглем она не помещается и распадается на три строки.
+    size = FS_LEAD if len(value) <= 10 else FS_BODY
+    return value, label, float(size)
+
+
+def _metric_tile_height(metric: dict[str, Any], w: int) -> int:
+    """Высота плитки по содержимому — тем же переносом, которым текст рисуется.
+
+    Ширина текста — рамка без горизонтальных отступов: на узкой плитке
+    отступы съедают заметную долю, и мера по полной ширине рамки обещала бы
+    одну строку там, где вёрстка даёт две.
+    """
+    value, label, size = _metric_texts(metric)
+    text_w = max(120_000, w - 2 * TILE_PAD_X - 2 * TILE_TEXT_INSET)
+    value_h = _wrapped_line_count(value, text_w, size, True) * font_line_step_emu(size, 1.0, True)
+    label_h = _wrapped_line_count(label, text_w, FS_CAPTION) * font_line_step_emu(FS_CAPTION, 1.0)
+    return TILE_PAD_TOP + value_h + int(1 * 12_700) + label_h + TILE_PAD_BOTTOM
 
 
 def _metric_tile(
@@ -302,26 +345,20 @@ def _metric_tile(
     w: int,
     h: int,
     *,
-    value_size: float,
     tone_value_color,
 ) -> None:
     tone = str(metric.get("tone") or "neutral")
-    value = _clip_words(_safe(metric.get("value")), 36)
-    label = _clip_words(_safe(metric.get("label")), 40)
+    value, label, size = _metric_texts(metric)
     ctx.card(y, h=h, x=x, w=w, fill=WHITE, border=None, radius=0.1)
-    # Длинное значение — это не цифра, а фраза вроде «Данные не собраны»:
-    # крупным кеглем она не помещается и распадается на три строки.
-    size = value_size if len(value) <= 10 else FS_BODY
-    inner_w = w - 280_000
-    # Плотная интерлиньяж и малая отбивка — не украшение: подпись метрики вроде
-    # «Тем повышенного внимания» встаёт в две строки, и при обычном интерлиньяже
-    # вторая строка выходит за нижний край плитки. Текстовая рамка в PPTX не
-    # обрезает, поэтому подпись просто ложилась поверх того, что ниже.
     box = ctx.slide.shapes.add_textbox(
-        Emu(x + 140_000), Emu(y + 90_000), Emu(inner_w), Emu(h - 150_000)
+        Emu(x + TILE_PAD_X), Emu(y + TILE_PAD_TOP), Emu(w - 2 * TILE_PAD_X), Emu(h - TILE_PAD_TOP - TILE_PAD_BOTTOM)
     )
     tf = box.text_frame
     tf.word_wrap = True
+    # Вертикальные отступы рамки — ноль: высота плитки посчитана от полей
+    # плитки, и скрытые 45 720 EMU сверху сдвигали бы подпись за нижний край.
+    tf.margin_top = Emu(0)
+    tf.margin_bottom = Emu(0)
     p0 = tf.paragraphs[0]
     p0.line_spacing = 1.0
     r0 = p0.add_run()
@@ -330,20 +367,13 @@ def _metric_tile(
     r0.font.bold = True
     r0.font.size = Pt(size)
     r0.font.color.rgb = tone_value_color(tone)
-    # Подписи длиннее двух строк в плитку не помещаются ни при какой отбивке:
-    # ступень ниже (`FS_CAPTION`) на странице уже есть — это колонтитул, так что
-    # новой ступени шкалы здесь не заводится.
-    label_size = FS_BODY
-    two_lines = 2 * measure_text_height("x", inner_w, FS_BODY, line_spacing=1.0, paragraph_spacing_pt=0)
-    if measure_text_height(label, inner_w, FS_BODY, line_spacing=1.0, paragraph_spacing_pt=0) > two_lines:
-        label_size = FS_CAPTION
     p1 = tf.add_paragraph()
-    p1.space_before = Pt(2)
+    p1.space_before = Pt(1)
     p1.line_spacing = 1.0
     r1 = p1.add_run()
     r1.text = label
     r1.font.name = FONT
-    r1.font.size = Pt(label_size)
+    r1.font.size = Pt(FS_CAPTION)
     r1.font.color.rgb = MUTED_COLOR
 
 

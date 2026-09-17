@@ -62,8 +62,7 @@ from .layout_cleeq import (
     narrative_without_advice,
     print_moved_advice,
     render_action_block,
-    render_hero_metrics_row,
-    render_metric_tiles,
+    render_metric_rows,
 )
 from .visual import (
     _add_search_table,
@@ -424,8 +423,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
-            metrics_bottom = render_hero_metrics_row(
-                ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
+            metrics_bottom = render_metric_rows(
+                ctx, metrics, MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
             )
             y = metrics_bottom + 140_000
         content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None)
@@ -525,20 +524,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         # рисуется под текстом и его не двигает.
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
-            y = render_hero_metrics_row(
-                ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
+            # До шести метрик — один ряд; семь — два ряда 4 + 3 (шаг 0101).
+            metrics_bottom = render_metric_rows(
+                ctx, metrics, MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
             )
-            if len(metrics) > 4:
-                y = render_metric_tiles(
-                    ctx,
-                    metrics[4:7],
-                    MARGIN_X,
-                    y + 80_000,
-                    CONTENT_W,
-                    tone_value_color=_tone_value_color,
-                )
-            metrics_bottom = y
-            y += 140_000
+            y = metrics_bottom + 140_000
         # Уголки — метка «сцены выводов» в языке cleeq.
         content_stage(
             ctx,

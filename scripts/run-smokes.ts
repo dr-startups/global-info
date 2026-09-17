@@ -151,6 +151,13 @@ export const SMOKES: Smoke[] = [
       "строки блока доживают до листа и печатаются по ролям; в чужих словах выделений нет; мера не оптимистичнее вёрстки LibreOffice (нужны Python-пакеты)",
   },
   {
+    name: "metric-tiles",
+    argv: ["PYTHON", "renderer/smoke_metric_tiles.py"],
+    tier: "full",
+    about:
+      "плитки метрик одним рядом, высота ряда по содержимому, подпись внутри плитки по вёрстке LibreOffice (нужны Python-пакеты)",
+  },
+  {
     name: "layout-telemetry-response",
     argv: ["PYTHON", "renderer/smoke_layout_telemetry_reaches_response.py"],
     tier: "full",
