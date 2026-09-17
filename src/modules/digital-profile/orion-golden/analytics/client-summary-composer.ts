@@ -135,11 +135,21 @@ function composeOverall(pack: ClientSummaryPack): string {
      * участвовал вовсе: плашка говорила «Недостаточно данных», а текст под ней
      * — «низкий риск». Ступень называет тот, кто её вычислил.
      */
-    finishSentence(pack.overallAssessment.conclusion),
-    reasons.length > 0 && pack.readPlots.length === 0
-      ? `Главные основания. ${reasons.join(" ")}`
-      : "",
-    limitations.length ? `Ограничения. ${limitations.join(" ")}` : "",
+    /*
+     * Вывод — своей строкой, перечень — следующей (шаг 0098).
+     *
+     * Жирным на странице печатается первый абзац — вывод. Пока оценка и
+     * перечень оснований шли одной строкой, «выводом» оказывались оба, а весь
+     * абзац уезжал рендереру стеной. Делится строка по предложениям, слова не
+     * меняются.
+     */
+    ...splitSentences(finishSentence(pack.overallAssessment.conclusion)),
+    // Подзаголовки абзаца — своей строкой и без точки: рендерер узнаёт
+    // подзаголовок по форме, а с точкой он был бы предложением в общем тексте.
+    ...(reasons.length > 0 && pack.readPlots.length === 0
+      ? [composeBlockLines("Главные основания", reasons)]
+      : []),
+    ...(limitations.length ? [composeBlockLines("Ограничения", [limitations.join(" ")])] : []),
   ].filter(Boolean);
   return parts.join("\n");
 }

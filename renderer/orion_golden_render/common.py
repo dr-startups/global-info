@@ -50,8 +50,12 @@ from .typography import (
     TONE_INK,
     TONE_MUTED,
     LineLayout,
+    PARAGRAPH_GAP_PT,
+    ROLE_SUBHEADING,
     line_layout,
     meta_line_re,
+    paragraph_gap_pt,
+    paragraph_layout,
 )
 
 # Гарнитура отчёта. Inter — SIL OFL 1.1: встраивание в PPTX/PDF, отдаваемые
@@ -1052,6 +1056,8 @@ class _Ctx:
         self.slide_key = slide_key
         self.client_text_contract = resolve_contract(client_text_contract)
         self.warnings: list[str] = []
+        # Итог последнего `body`: сколько абзацев подано, сколько нарисовано.
+        self.last_body: dict[str, Any] = {"paragraphs": 0, "drawn": 0, "clipped": False}
         self.dark = False
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
@@ -1195,64 +1201,154 @@ class _Ctx:
     ) -> int:
         """Render body text and return actual bottom Y from measured content height.
 
-        `bold` обязан совпадать с начертанием, которым текст будет нарисован:
-        он и рисует, и меряет одной таблицей начертаний. Лид на «сцене» cleeq — жирный, и
-        мерить его обычным начертанием значит занизить высоту абзаца.
+        Абзацы провода — абзацы листа. Приложение отдаёт текст страницы строками
+        (подзаголовок, абзац построителя, проза находки, рекомендация), а здесь
+        они делились по переводу строки **после** `_safe`, который перевод
+        строки схлопывает: делить было уже нечего, и страница печатала стену.
+
+        `bold` — «лид»: жирным печатается **первый абзац**, вывод страницы, а не
+        весь текст. Оформление абзаца — `typography.paragraph_layout`: им
+        пользуются и замер, и вывод, поэтому строка, нарисованная жирной,
+        жирной и меряется.
+
+        Один абзац меряется и подгоняется ровно как прежде: на этой мере держится
+        ёмкость страниц выдачи, чей вводный абзац занимает 0,99 своего потолка.
+
+        Итог последнего вызова лежит в `self.last_body`: вызывающему, у которого
+        невлезший абзац — потеря содержимого, а не клип, нужно знать, сколько
+        абзацев подано и сколько нарисовано.
         """
         left = MARGIN_X if x is None else x
         width = CONTENT_W if w is None else w
         avail = max(200000, min(max_h, CONTENT_BOTTOM - y))
-        chunks = [c.strip() for c in re.split(r"\n+", _safe(text)) if c.strip()]
-        if not chunks:
+        self.last_body = {"paragraphs": 0, "drawn": 0, "clipped": False}
+        # Делим до чистки: `_safe` схлопывает перевод строки вместе с пробелами.
+        paragraphs = [c for c in (_safe(part) for part in re.split(r"\n+", str(text or ""))) if c]
+        if not paragraphs:
             return y
-        # Prefer height-fit over crude char starvation (was ~200 chars at 420k emu).
-        joined_raw = "\n".join(chunks[:8])
+        self.last_body["paragraphs"] = len(paragraphs)
+        contract = self.client_text_contract
+        # Выделения — только основному тексту чернилами. Подпись, серый текст и
+        # текст на тёмном листе печатаются ровно: там выделение — шум, а ёмкость
+        # вводного абзаца страниц выдачи откалибрована по ровному тексту.
+        emphasize = color == BODY_COLOR and font_size >= FS_BODY
+
+        def _layouts(paras: list[str]) -> list[LineLayout]:
+            return [
+                paragraph_layout(
+                    para, index=i, total=len(paras), lead=bold, contract=contract, emphasize=emphasize
+                )
+                for i, para in enumerate(paras)
+            ]
+
+        def _height(paras: list[str], size: float) -> int:
+            """Высота абзацев: каждый своим начертанием, отбивки — между ними.
+
+            Для одного абзаца это ровно прежняя формула; запас ×1,18 на отбивках
+            тот же, что внутри `measure_text_height`.
+            """
+            laid = _layouts(paras)
+            total = sum(
+                measure_text_height(
+                    para, width, size, line_spacing=1.2, paragraph_spacing_pt=0, bold=layout.measure_bold
+                )
+                for para, layout in zip(paras, laid)
+            )
+            gaps = sum(paragraph_gap_pt(layout) for layout in laid[:-1])
+            return total + int(gaps * EMU_PER_PT * 1.18)
+
+        dangling = re.compile(
+            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b(?:как|что|чтобы|и|а|или|по|на|в|с)\b|,|;|—|–|-)\s*$",
+            re.I,
+        )
+
+        def _fit_paragraph(raw: str, size: float, budget: int, para_bold: bool) -> str:
+            """Один абзац под бюджет высоты: целые предложения, без оборванного хвоста."""
+            fitted = _fit_text_to_height(raw, width, size, budget, line_spacing=1.2, bold=para_bold)
+            fitted = _trim_dangling_tail(fitted)
+            if dangling.search(fitted) or (fitted and fitted[-1] not in ".!?…»)"):
+                sentences = re.split(r"(?<=[.!?…])\s+", _safe(raw))
+                kept_s: list[str] = []
+                for sent in sentences:
+                    trial = " ".join(kept_s + [sent]).strip()
+                    if measure_text_height(trial, width, size, line_spacing=1.2, bold=para_bold) <= budget:
+                        kept_s.append(sent)
+                    else:
+                        break
+                # Drop a trailing incomplete clause (e.g. ends with «как»).
+                while kept_s and (dangling.search(kept_s[-1]) or kept_s[-1][-1] not in ".!?…»)"):
+                    kept_s.pop()
+                if kept_s:
+                    fitted = " ".join(kept_s).strip()
+                else:
+                    # Last resort: first sentence trimmed of dangling tail.
+                    first = _trim_dangling_tail(sentences[0] if sentences else fitted)
+                    fitted = first if first and not dangling.search(first) else _trim_dangling_tail(fitted)
+            return fitted
+
         # PDF-36 D.3 — before dropping sentences, shrink the font 1–2 pt
         # (min 9pt): full text at 10pt beats a cut paragraph at 11pt.
-        if measure_text_height(joined_raw, width, font_size, line_spacing=1.2, bold=bold) > avail:
+        if _height(paragraphs, font_size) > avail:
             # Кегль снижается по объявленной шкале, а не арифметикой:
             # `- 1` / `- 2` порождали 9,5 и 10,5, которых в шкале нет.
             for candidate in _scale_steps_below(font_size):
                 if candidate < 9:
                     break
-                if measure_text_height(joined_raw, width, candidate, line_spacing=1.2, bold=bold) <= avail:
+                if _height(paragraphs, candidate) <= avail:
                     font_size = candidate
                     break
-        fitted = _fit_text_to_height(joined_raw, width, font_size, avail, line_spacing=1.2, bold=bold)
-        fitted = _trim_dangling_tail(fitted)
-        dangling = re.compile(
-            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b(?:как|что|чтобы|и|а|или|по|на|в|с)\b|,|;|—|–|-)\s*$",
-            re.I,
-        )
-        if dangling.search(fitted) or (fitted and fitted[-1] not in ".!?…»)"):
-            sentences = re.split(r"(?<=[.!?…])\s+", _safe(joined_raw))
-            kept_s: list[str] = []
-            for sent in sentences:
-                trial = " ".join(kept_s + [sent]).strip()
-                if measure_text_height(trial, width, font_size, line_spacing=1.2, bold=bold) <= avail:
-                    kept_s.append(sent)
-                else:
-                    break
-            # Drop a trailing incomplete clause (e.g. ends with «как»).
-            while kept_s and (
-                dangling.search(kept_s[-1]) or kept_s[-1][-1] not in ".!?…»)"
+        kept: list[str] = []
+        if len(paragraphs) == 1:
+            # Путь одного абзаца — прежний до знака, включая подгонку влезшего
+            # текста: оборванный хвост снимается и тогда, когда высоты хватило.
+            fitted = _fit_paragraph(paragraphs[0], font_size, avail, _layouts(paragraphs)[0].measure_bold)
+            if fitted:
+                kept = [fitted]
+        elif _height(paragraphs, font_size) <= avail:
+            kept = list(paragraphs)
+        else:
+            # Не влезло: целые абзацы, пока помещаются; первый невлезший
+            # подгоняется по предложениям; остальные снимаются. Прежде здесь
+            # стоял срез `chunks[:8]` — девятый абзац исчезал молча.
+            for para in paragraphs:
+                trial = kept + [para]
+                if _height(trial, font_size) <= avail:
+                    kept.append(para)
+                    continue
+                room = avail - (_height(kept, font_size) if kept else 0)
+                room -= int(PARAGRAPH_GAP_PT * EMU_PER_PT * 1.18) if kept else 0
+                layout = paragraph_layout(
+                    para, index=len(kept), total=len(paragraphs), lead=bold, contract=contract, emphasize=emphasize
+                )
+                partial = _fit_paragraph(para, font_size, room, layout.measure_bold) if room > 0 else ""
+                # Обрубок абзаца не печатается: полстроки под целым абзацем
+                # читается как сбой. Первый абзац остаётся в любом случае.
+                if partial and (not kept or _height(kept + [partial], font_size) <= avail):
+                    kept.append(partial)
+                break
+            # Подзаголовок, под которым ничего не осталось, не печатается:
+            # «Ограничения» последней строкой обещают текст, которого нет.
+            while len(kept) > 1 and len(kept) < len(paragraphs) and (
+                _layouts(paragraphs)[len(kept) - 1].role == ROLE_SUBHEADING
             ):
-                kept_s.pop()
-            if kept_s:
-                fitted = " ".join(kept_s).strip()
-            else:
-                # Last resort: first sentence trimmed of dangling tail.
-                first = _trim_dangling_tail(sentences[0] if sentences else fitted)
-                fitted = first if first and not dangling.search(first) else _trim_dangling_tail(fitted)
-        kept = [c for c in fitted.split("\n") if c.strip()] or ([fitted] if fitted else [])
+                kept.pop()
         if not kept:
             return y
-        joined = "\n".join(kept)
-        needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8, bold=bold)
+        laid = _layouts(kept)
+        needed = _height(kept, font_size)
         box_h = min(avail, max(needed + 40_000, int(font_size * EMU_PER_PT)))
-        measured_lines, uncertain = _count_measured_lines(joined, width, font_size, bold)
-        # Clipping = placed text does not fit the box. Fitting/truncating source is not layout overflow.
-        clipped = needed > avail
+        measured_lines = sum(
+            _count_measured_lines(para, width, font_size, layout.measure_bold)[0]
+            for para, layout in zip(kept, laid)
+        )
+        joined = "\n".join(kept)
+        # Клип — «подано не то, что нарисовано»: сняты абзацы или предложения.
+        # Прежде признак считался по уже подогнанному тексту и был ложью по
+        # построению: срез предложений оставался немым.
+        submitted_chars = len(re.sub(r"\s+", "", "".join(paragraphs)))
+        drawn_chars = len(re.sub(r"\s+", "", "".join(kept)))
+        clipped = needed > avail or drawn_chars < submitted_chars
+        self.last_body = {"paragraphs": len(paragraphs), "drawn": len(kept), "clipped": clipped}
         record_text_layout(
             page=self.page,
             name=f"orion_text_body_p{self.page}",
@@ -1266,7 +1362,7 @@ class _Ctx:
             measured_lines=measured_lines,
             text_length=len(joined),
             clipped=clipped,
-            measurement_uncertain=uncertain,
+            measurement_uncertain=False,
         )
         box = self.slide.shapes.add_textbox(Emu(left), Emu(y), Emu(width), Emu(box_h))
         try:
@@ -1275,17 +1371,19 @@ class _Ctx:
             pass
         tf = box.text_frame
         tf.word_wrap = True
-        first = True
-        for chunk in kept:
-            p = tf.paragraphs[0] if first else tf.add_paragraph()
-            first = False
-            p.space_after = Pt(8)
-            r = p.add_run()
-            r.text = chunk
-            r.font.name = FONT
-            r.font.bold = bold
-            r.font.size = Pt(font_size)
-            r.font.color.rgb = color
+        for index, layout in enumerate(laid):
+            p = tf.paragraphs[0] if index == 0 else tf.add_paragraph()
+            p.space_after = Pt(paragraph_gap_pt(layout))
+            for run in layout.runs:
+                if not run.text:
+                    continue
+                r = p.add_run()
+                r.text = run.text
+                r.font.name = FONT
+                r.font.bold = run.bold
+                r.font.size = Pt(font_size)
+                # Цвет абзаца задаёт вызывающий; оформление несёт только вес.
+                r.font.color.rgb = color
         return y + box_h
 
     def content_card(

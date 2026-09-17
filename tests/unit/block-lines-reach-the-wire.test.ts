@@ -22,8 +22,15 @@
 
 import { describe, expect, it } from "vitest";
 import { composeBlockLines } from "@/modules/digital-profile/orion-golden/client/block-lines";
-import { themeBlockText } from "@/modules/digital-profile/orion-golden/analytics/client-summary-composer";
-import { packSentencesNoTruncate } from "@/modules/digital-profile/orion-golden/deck-sections/semantic-summary-pagination";
+import {
+  composeClientSummary,
+  themeBlockText,
+} from "@/modules/digital-profile/orion-golden/analytics/client-summary-composer";
+import { sampleClientSummaryPack } from "@/modules/digital-profile/orion-golden/contracts/sample-contracts";
+import {
+  packSentencesNoTruncate,
+  paginateComposedClientSummary,
+} from "@/modules/digital-profile/orion-golden/deck-sections/semantic-summary-pagination";
 import {
   highlightPhrase,
   reflowThemeBullet,
@@ -94,11 +101,22 @@ describe("укладка блока знает строки", () => {
     expect(chunks.join("\n")).not.toContain("нежелательные. Источники:");
   });
 
-  it("без признака укладка абзаца прежняя — строки склеиваются пробелом", () => {
-    // Абзац страницы переходит на строки шагом 3; до него его укладка не меняется.
+  it("без признака строки склеиваются пробелом — так укладывается чужой текст", () => {
+    // Ответ поискового ИИ укладывается без строк: его переносы — не наша структура.
     expect(packSentencesNoTruncate("Первое предложение.\nВторое предложение.", 900)).toEqual([
       "Первое предложение. Второе предложение.",
     ]);
+  });
+
+  it("абзац резюме доезжает до дашборда строками: вывод, перечень, подзаголовки", () => {
+    const plan = paginateComposedClientSummary(composeClientSummary({ pack: sampleClientSummaryPack() }));
+    const lines = plan.overviewNarrative.join("\n").split("\n");
+    expect(lines[0]).toBe("Итоговая оценка: высокий риск.");
+    expect(lines[1]!.startsWith("Основные основания: ")).toBe(true);
+    expect(lines).toContain("Главные основания");
+    expect(lines).toContain("Ограничения");
+    // Ни знака не потеряно: ворота обрезок по-прежнему на нуле.
+    expect(plan.gates.CLIENT_TEXT_TRUNCATIONS).toBe(0);
   });
 });
 

@@ -55,6 +55,17 @@ LINE_GAP_PT = 3
 #: Насколько цитата стоит глубже остальных строк блока, EMU.
 QUOTE_EXTRA_INDENT = 170_000
 
+#: Отбивка абзаца страницы и отбивка под подзаголовком, pt. Подзаголовок
+#: принадлежит абзацу под ним, поэтому стоит к нему ближе, чем к абзацу сверху.
+PARAGRAPH_GAP_PT = 8
+SUBHEADING_GAP_PT = 2
+
+ROLE_LEAD = "lead"
+ROLE_SUBHEADING = "subheading"
+
+#: Длиннее — уже предложение без точки, а не подзаголовок абзаца.
+SUBHEADING_MAX_CHARS = 90
+
 #: Длиннее — уже предложение, а не заголовок блока.
 HEADING_MAX_CHARS = 160
 #: Прежнее правило: строка-ввод с двоеточием жирная, только пока она коротка.
@@ -349,3 +360,50 @@ def line_layout(
         )
         return LineLayout(role, SIZE_BODY, (Run(text[:end], True, TONE_HEADING), *tail))
     return LineLayout(role, SIZE_BODY, tuple(_emphasize_numbers(text, TONE_INK, list_number=True)))
+
+
+def paragraph_layout(
+    paragraph: str,
+    *,
+    index: int,
+    total: int,
+    lead: bool,
+    contract: dict[str, Any] | None = None,
+    emphasize: bool = True,
+) -> LineLayout:
+    """Оформление абзаца страницы: лид, подзаголовок или текст.
+
+    Абзац страницы — не блок списка: заголовком у блока бывает только первая
+    строка, а у абзаца подзаголовок стоит где угодно («Главные основания»,
+    «Ограничения»). Признак тот же — форма: короткий абзац без конечного знака,
+    и не единственный — одиночную строку озаглавливать нечем.
+
+    `lead` — вызывающий просил жирный текст. Жирным становится **только первый
+    абзац**, вывод страницы: прежде жирным красился весь текст до тысячи знаков,
+    и вывод тонул в стене.
+
+    Кегль и цвет абзаца задаёт вызывающий; отсюда берутся только прогоны и их
+    вес. `emphasize=False` — подпись, текст не чернилами, чужой текст: без
+    выделений вовсе.
+    """
+    text = (paragraph or "").strip()
+    if lead and index == 0:
+        return LineLayout(ROLE_LEAD, SIZE_BODY, (Run(text, True, TONE_INK),))
+    if (
+        total > 1
+        and text
+        and len(text) <= SUBHEADING_MAX_CHARS
+        and text[-1] not in _NOT_A_HEADING_TAIL
+        and not text.startswith("«")
+        and not _ADDRESS_RE.match(text)
+    ):
+        return LineLayout(ROLE_SUBHEADING, SIZE_BODY, (Run(text, True, TONE_INK),))
+    # Текст абзаца оформляется как строка блока, но заголовком блока не бывает:
+    # `index=1` снимает правило первой строки.
+    inner = line_layout(text, index=1, total=max(2, total), contract=contract, emphasize=emphasize)
+    return LineLayout(ROLE_TEXT, SIZE_BODY, inner.runs)
+
+
+def paragraph_gap_pt(layout: LineLayout) -> int:
+    """Отбивка после абзаца — читают и замер, и вывод."""
+    return SUBHEADING_GAP_PT if layout.role == ROLE_SUBHEADING else PARAGRAPH_GAP_PT

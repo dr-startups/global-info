@@ -671,6 +671,301 @@ def t9_one_vocabulary() -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# Абзац страницы (шаг 0098)
+# --------------------------------------------------------------------------
+
+#: Абзац резюме в том виде, в каком его отдаст композитор: оценка, перечень,
+#: подзаголовки своими строками, основания по строке.
+NARRATIVE = "\n".join(
+    [
+        "Итоговая оценка: высокий риск.",
+        "Основные основания: Деловые связи и контрагенты; Судебные материалы; Офшоры.",
+        "Главные основания",
+        "Деловые связи и контрагенты: фонд привлекает семейные офисы Залива.",
+        "Судебные материалы: основателю фонда предъявлено налоговое обвинение.",
+        "Ограничения",
+        "Вывод основан на открытых источниках; первичные документы могут изменить оценку.",
+        "Исследованы результаты поиска (ТОП-20) по 2 регионам. Данные собраны 04.09.2026.",
+    ]
+)
+
+
+def draw_body(text: str, **kwargs: Any) -> tuple[Any, Any, list[dict[str, Any]]]:
+    """Нарисовать абзац на пустой странице; вернуть презентацию, рамку и телеметрию."""
+    from orion_golden_render.common import get_layout_telemetry
+
+    reset_layout_telemetry()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, 4, 48, slide_key="p04_body")
+    ctx.body(text, 1_230_000, **kwargs)
+    box = next(
+        (sh for sh in prs.slides[0].shapes if getattr(sh, "name", "").startswith("orion_text_body")),
+        None,
+    )
+    return prs, box, get_layout_telemetry()
+
+
+def body_runs(paragraph: Any) -> list[Any]:
+    return [r for r in paragraph.runs if r.text.strip()]
+
+
+def body_bold(paragraph: Any) -> list[str]:
+    return [r.text.strip() for r in body_runs(paragraph) if r.font.bold]
+
+
+def a1_a4_paragraphs_and_lead() -> None:
+    lines = NARRATIVE.split("\n")
+    _prs, box, _tel = draw_body(NARRATIVE, max_h=4_000_000, bold=True)
+    paras = paragraphs(box)
+    check(
+        "А1: абзацы провода рисуются абзацами",
+        len(paras) == len(lines),
+        f"пришло {len(lines)}, нарисовано {len(paras)}",
+    )
+    lead = paras[0] if paras else None
+    rest_bold = [body_bold(p) for p in paras[1:]]
+    check(
+        "А2: при bold=True жирный целиком только первый абзац — вывод",
+        lead is not None
+        and all(r.font.bold for r in body_runs(lead))
+        and not any(p.text.strip() and all(r.font.bold for r in body_runs(p)) and p.text.strip()[-1:] in ".!?…" for p in paras[1:]),
+        f"жирное дальше первого абзаца: {rest_bold[:4]}",
+    )
+    heads = [p for p in paras if p.text.strip() in ("Главные основания", "Ограничения")]
+    check(
+        "А3а: абзац без конечного знака — подзаголовок, жирным целиком",
+        len(heads) == 2 and all(all(r.font.bold for r in body_runs(p)) for p in heads),
+        f"найдено подзаголовков {len(heads)}",
+    )
+    _prs, box, _tel = draw_body("Короткая строка без точки", max_h=900_000)
+    single = paragraphs(box)
+    check(
+        "А3б: единственный абзац подзаголовком не становится",
+        len(single) == 1 and not body_bold(single[0]),
+        f"жирное: {body_bold(single[0]) if single else '—'}",
+    )
+    _prs, box, _tel = draw_body(NARRATIVE, max_h=4_000_000, bold=True)
+    grounds = next((p for p in paragraphs(box) if p.text.strip().startswith("Основные основания:")), None)
+    scope = next((p for p in paragraphs(box) if p.text.strip().startswith("Исследованы")), None)
+    check(
+        "А4а: ярлык абзаца и числа выделены; дата и «ТОП-20» — нет",
+        grounds is not None
+        and body_bold(grounds) == ["Основные основания:"]
+        and scope is not None
+        and body_bold(scope) == ["2"],
+        f"ярлык: {body_bold(grounds) if grounds is not None else '—'}; числа: {body_bold(scope) if scope is not None else '—'}",
+    )
+    caption = "Доля негатива: 17 % (10 из 58).\nСтраницы о других людях (1) в долю не входят."
+    _prs, box, _tel = draw_body(caption, max_h=900_000, color=MUTED_COLOR, font_size=FS_CAPTION)
+    check(
+        "А4б: в подписи серым ничего не выделяется",
+        bool(paragraphs(box)) and not any(body_bold(p) for p in paragraphs(box)),
+        f"жирное: {[body_bold(p) for p in paragraphs(box)]}",
+    )
+
+
+def a5_single_paragraph_measures_as_before() -> None:
+    """Один абзац — та же формула: на ней держится ёмкость страниц выдачи."""
+    from orion_golden_render.common import CONTENT_W, measure_text_height
+
+    intro = (
+        "Показана выдача Яндекса по запросу «Фонд Северный капитал»: 20 позиций, из них 3 отмечены "
+        "как нежелательные. Страница формирует первое впечатление о субъекте у банка и партнёра. "
+        "Проверить первоисточники выделенных результатов и сверить статусы дел."
+    )
+    for label, kwargs in (
+        ("обычным", {}),
+        ("жирным", {"bold": True}),
+        ("подписью серым", {"color": MUTED_COLOR}),
+    ):
+        _prs, _box, tel = draw_body(intro, max_h=1_000_000, **kwargs)
+        entry = next((e for e in tel if str(e.get("name", "")).startswith("orion_text_body")), None)
+        expected = measure_text_height(
+            intro, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=8, bold=bool(kwargs.get("bold"))
+        )
+        # Жирный лид и подпись серым меряются ровно как прежде — на подписи серым
+        # держится ёмкость страниц выдачи. Основной текст вправе стать
+        # консервативнее: строка с выделенным числом меряется жирной целиком.
+        exact = label != "обычным"
+        check(
+            f"А5: один абзац {label} меряется {'той же формулой, что до шага' if exact else 'не оптимистичнее, чем до шага'}",
+            entry is not None
+            and (entry["requiredHeight"] == expected if exact else entry["requiredHeight"] >= expected),
+            f"мера {entry['requiredHeight'] if entry else '—'}, прежняя формула {expected}",
+        )
+
+
+def a5b_bold_lead_is_measured_bold() -> None:
+    """Жирный лид меряется жирным — на ширине, где это видно.
+
+    На ширине колонки жирный и обычный текст переносятся одинаково, и сверка
+    высот их не различает: мутация «мерить абзац обычным начертанием» оставалась
+    зелёной. Ширина ищется та, на которой лишние проценты жирного дают лишний
+    перенос, — тот же приём, что в `smoke_text_measurement.py`.
+    """
+    from orion_golden_render.common import measure_text_height
+
+    lead = "Итоговая оценка по открытым источникам: высокий риск для деловой репутации проверяемого лица."
+    found = next(
+        (
+            w
+            for w in range(1_500_000, 9_000_001, 50_000)
+            if measure_text_height(lead, w, FS_BODY, line_spacing=1.2, bold=True)
+            > measure_text_height(lead, w, FS_BODY, line_spacing=1.2, bold=False)
+        ),
+        None,
+    )
+    if found is None:
+        check("А5б: найдена ширина, на которой жирный лид выше обычного", False, "не найдена")
+        return
+    _prs, _box, tel = draw_body(lead + "\nВторой абзац обычным начертанием.", max_h=3_000_000, bold=True, w=found)
+    entry = next((e for e in tel if str(e.get("name", "")).startswith("orion_text_body")), None)
+    second = measure_text_height("Второй абзац обычным начертанием.", found, FS_BODY, line_spacing=1.2, bold=False)
+    bold_h = measure_text_height(lead, found, FS_BODY, line_spacing=1.2, bold=True)
+    regular_h = measure_text_height(lead, found, FS_BODY, line_spacing=1.2, bold=False)
+    gap = int(8 * 12_700 * 1.18)
+    check(
+        "А5б: жирный лид меряется жирным, абзац под ним — обычным",
+        entry is not None and entry["requiredHeight"] == bold_h + second + gap and bold_h > regular_h,
+        f"мера {entry['requiredHeight'] if entry else '—'}; жирным {bold_h + second + gap}, обычным {regular_h + second + gap} (ширина {found})",
+    )
+
+
+def a6_a7_nothing_is_dropped_silently() -> None:
+    nine = "\n".join(f"Абзац номер {i}: проверка того, что срез по числу абзацев снят." for i in range(1, 10))
+    _prs, box, _tel = draw_body(nine, max_h=4_500_000)
+    check(
+        "А6: девять абзацев рисуются все девять — молчаливого среза по числу нет",
+        len(paragraphs(box)) == 9,
+        f"нарисовано {len(paragraphs(box))}",
+    )
+    many = "\n".join(
+        f"Абзац {i}: " + "длинное предложение о проверке первоисточников и статусов дел. " * 4
+        for i in range(1, 9)
+    )
+    _prs, box, tel = draw_body(many, max_h=1_200_000)
+    drawn = paragraphs(box)
+    entry = next((e for e in tel if str(e.get("name", "")).startswith("orion_text_body")), None)
+    check(
+        "А7а: не влезающий текст — абзацы сняты с конца, первый на месте",
+        0 < len(drawn) < 8 and drawn[0].text.strip().startswith("Абзац 1:"),
+        f"нарисовано {len(drawn)} из 8",
+    )
+    check(
+        "А7б: срез слышен — запись телеметрии помечена клипом",
+        entry is not None and entry.get("clipped") is True,
+        f"clipped={entry.get('clipped') if entry else '—'}",
+    )
+    whole = "Короткий абзац целиком.\nВторой короткий абзац."
+    _prs, _box, tel = draw_body(whole, max_h=1_200_000)
+    entry = next((e for e in tel if str(e.get("name", "")).startswith("orion_text_body")), None)
+    check(
+        "А7в: влезший целиком текст клипом не помечен",
+        entry is not None and entry.get("clipped") is False,
+        f"clipped={entry.get('clipped') if entry else '—'}",
+    )
+
+
+def a8_search_table_intro_is_one_paragraph() -> None:
+    from orion_golden_render.slides import _render_slide
+
+    intro = "Показана выдача Яндекса: 20 позиций.\nСтраница формирует первое впечатление.\nПроверить первоисточники."
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, 16, 80, slide_key="p09_ru_serp_table")
+    _render_slide(
+        ctx,
+        {
+            "template": "orion_golden_search_table",
+            "title": "Россия — Яндекс: собранная выдача",
+            "narrative": intro,
+            "table": {"headers": ["№", "Заголовок", "Оценка"], "rows": [["1", "Материал", "Нейтральный"]]},
+        },
+        {},
+    )
+    box = next(
+        (sh for sh in prs.slides[0].shapes if getattr(sh, "name", "").startswith("orion_text_body")),
+        None,
+    )
+    check(
+        "А8: вводный абзац страницы выдачи остаётся одним абзацем — его ёмкость откалибрована так",
+        len(paragraphs(box)) == 1,
+        f"абзацев {len(paragraphs(box))}",
+    )
+
+
+def a9_body_measure_is_not_optimistic() -> None:
+    """Мера многоабзацного текста против вёрстки LibreOffice."""
+    try:
+        import fitz  # noqa: F401
+        from orion_golden_render.api import render_orion_golden
+    except Exception as exc:  # noqa: BLE001
+        print(f"# SKIP А9 мера абзаца против отрисовки — нет зависимостей рендера: {exc}")
+        return
+    import fitz
+
+    long_lines = [
+        "Итоговая оценка: высокий риск.",
+        "Основные основания: " + "; ".join(f"тема риска номер {i} с длинным названием" for i in range(1, 7)) + ".",
+        "Главные основания",
+    ] + [
+        f"Тема риска номер {i}: публикация о споре вокруг актива фонда и его контрагентов в двух юрисдикциях, "
+        f"повторённая {i + 2} изданиями в течение квартала."
+        for i in range(1, 6)
+    ] + ["Ограничения", "Вывод основан на открытых источниках; первичные документы могут изменить оценку."]
+    payload = {
+        "reportSpec": {"subject": {"displayName": "Субъект Проверки"}},
+        "deckManifest": {
+            "finalSlides": [
+                {
+                    "slideKey": "p03_executive",
+                    "template": "orion_golden_executive_dashboard",
+                    "title": "Резюме",
+                    "pageNumber": 1,
+                    "totalPageCount": 1,
+                    "narrative": "\n".join(long_lines),
+                    "metrics": [{"label": "Материалов собрано", "value": "341", "tone": "neutral"}],
+                    "keyFindings": [],
+                }
+            ]
+        },
+        "assets": [],
+    }
+    out = render_orion_golden(payload)
+    if out.get("pdfExportMode") != "libreoffice":
+        print("# SKIP А9 мера абзаца против отрисовки — LibreOffice недоступен")
+        return
+    prs = Presentation(__import__("io").BytesIO(base64.b64decode(out["pptxBase64"])))
+    doc = fitz.open(stream=base64.b64decode(out["pdfBase64"]), filetype="pdf")
+    box = next(
+        (sh for sh in prs.slides[0].shapes if getattr(sh, "name", "").startswith("orion_text_body")),
+        None,
+    )
+    if box is None:
+        check("А9: абзац резюме нарисован", False, "рамки абзаца нет")
+        return
+    top_pt, bottom_pt = box.top / 12_700, (box.top + box.height) / 12_700
+    footer_top_pt = (SLIDE_H - 480_000) / 12_700
+    bottoms = [
+        span["bbox"][3]
+        for block in doc[0].get_text("dict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line.get("spans", [])
+        if span["text"].strip() and top_pt - 2 <= span["bbox"][1] < footer_top_pt
+    ]
+    drawn = len(paragraphs(box))
+    check("А9а: абзацы резюме нарисованы одним блоком", drawn == len(long_lines), f"абзацев {drawn} из {len(long_lines)}")
+    check(
+        "А9б: последняя строка абзаца не ниже рамки, отведённой мерой",
+        bool(bottoms) and max(bottoms) - bottom_pt <= 0.5,
+        f"строка ниже рамки на {max(bottoms) - bottom_pt:.1f} pt" if bottoms else "строк не найдено",
+    )
+
+
 def main() -> int:
     t1_lines_reach_the_page()
     t2_heading()
@@ -682,6 +977,12 @@ def main() -> int:
     t7_flat_input_still_splits()
     t8_measure_is_not_optimistic()
     t9_one_vocabulary()
+    a1_a4_paragraphs_and_lead()
+    a5_single_paragraph_measures_as_before()
+    a5b_bold_lead_is_measured_bold()
+    a6_a7_nothing_is_dropped_silently()
+    a8_search_table_intro_is_one_paragraph()
+    a9_body_measure_is_not_optimistic()
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))

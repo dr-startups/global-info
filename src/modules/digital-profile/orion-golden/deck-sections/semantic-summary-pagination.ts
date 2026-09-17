@@ -133,9 +133,9 @@ export function packSentencesNoTruncate(
    * одной строки склеиваются пробелом, разные строки — переводом строки.
    *
    * Без него укладка собирала куски через пробел, и блок, отданный построителем
-   * строками, доезжал до рендерера стеной. Признак временный: абзац страницы
-   * укладывается по-прежнему и переходит на строки шагом 3 программы 0095 —
-   * там параметр снимается, и укладка знает строки всегда.
+   * строками, доезжал до рендерера стеной. Наш текст — блоки резюме и абзац
+   * страницы — укладывается со строками. Без признака остаётся один вызывающий:
+   * ответ поискового ИИ (`knowledge-ai.ts`) — его переносы не наша структура.
    */
   opts: { keepLines?: boolean } = {}
 ): string[] {
@@ -549,7 +549,12 @@ export function paginateComposedClientSummary(
   const narrativeSource = [summary.sections.overallAssessment, summary.sections.scope]
     .filter(Boolean)
     .join("\n\n");
-  let overviewNarrative = packSentencesNoTruncate(narrativeSource, budgets.narrative);
+  // Абзац резюме укладывается со строками: вывод, перечень оснований и
+  // подзаголовки («Главные основания», «Ограничения») композитор отдаёт своими
+  // строками, и дашборд печатает их абзацами, а не стеной.
+  let overviewNarrative = packSentencesNoTruncate(narrativeSource, budgets.narrative, {
+    keepLines: true,
+  });
   // Dashboard shows ≤3 narrative cards — overflow narrative sentences become blocks.
   const narrativeOverflow: SemanticBlock[] = [];
   if (overviewNarrative.length > 3) {

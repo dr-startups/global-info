@@ -88,6 +88,10 @@ from .visual import (
 SEARCH_TABLE_INTRO_MAX_H = 1_000_000
 SEARCH_TABLE_INTRO_GAP = 40_000
 
+#: Потолок абзаца страницы региона: с плитками метрик и без них.
+METRICS_NARRATIVE_MAX_H = 1_500_000
+METRICS_NARRATIVE_MAX_H_NO_TILES = 1_700_000
+
 
 #: Шаблоны деки, чьи страницы печатают чужой текст без кавычек. Страница
 #: AI-ответов без картинки идёт прозаическим макетом, и узнать её можно только
@@ -255,7 +259,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     # Validated upstream (TS registry); unknown values fall back to default.
     variant = str(slide.get("layoutVariant") or "")
     title = _safe(slide.get("title") or "ORION")
-    narrative = _safe(slide.get("narrative") or "")
+    # Абзацы страницы — её структура: приложение отдаёт подзаголовок, абзац
+    # построителя, прозу находки и рекомендацию строками. `_safe` схлопывал
+    # перевод строки, и до `ctx.body` абзац доходил стеной. Макет, чей абзац
+    # откалиброван как один (страница выдачи), схлопывает его сам и явно.
+    narrative = _safe_preserve_breaks(slide.get("narrative") or "")
     # PDF-47 — keep structured theme newlines; _safe() collapses them and then
     # nested «…«…»» quotes cannot reflow → theme-only stubs («Офшоры»).
     bullets = [
@@ -537,11 +545,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             corner_marks=True,
         )
         if narrative:
+            # Потолок поднят вместе с абзацами (шаг 0098): прежние 900 000 были
+            # впритык одному абзацу в четыре строки (замер: 0,88 потолка), и
+            # с отбивками между абзацами текст ушёл бы в понижение кегля. Лишнего
+            # абзац не занимает — рамка по мере, а список под ним набирается по
+            # мере же: не влезшие блоки уезжают на продолжение.
+            #
+            # Жирным абзац больше не печатается: вывод страницы региона — её
+            # заголовок («Россия: в выдаче есть материалы повышенного внимания»),
+            # а абзац под плитками — факты. Жирный целиком, он был стеной в три
+            # предложения; теперь в нём выделены ярлыки и числа, и глаз находит
+            # «Подтверждённых тем: 5» без чтения подряд.
             y = ctx.body(
                 narrative,
                 y,
-                max_h=900_000 if metrics else 1_100_000,
-                bold=True,
+                max_h=METRICS_NARRATIVE_MAX_H if metrics else METRICS_NARRATIVE_MAX_H_NO_TILES,
             ) + 70_000
         # Статусная строка страницы региона: доля негатива среди прочитанного и
         # база, по которой она посчитана. Своей строкой, а не хвостом нарратива:
@@ -769,11 +787,14 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_no_data_compact":
         # C.2 — honest empty state as a structured page: status card,
         # "what it means" card, recommendation card, methodology footnote.
+        # Карточный абзац остаётся одним абзацем: ёмкость карточки померена по
+        # сплошному тексту (`CARD_NARRATIVE_CHAR_BUDGET`), карточки переходят на
+        # строки отдельным шагом программы 0095.
         _render_status_cards(
             ctx,
             slide,
             title,
-            narrative or "Для данного раздела недостаточно подтверждённых данных.",
+            _safe(narrative) or "Для данного раздела недостаточно подтверждённых данных.",
             bullets,
             status_title="Статус сбора",
             bullets_as_card=True,
@@ -788,7 +809,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             ctx,
             slide,
             title,
-            narrative,
+            _safe(narrative),
             bullets,
             status_title="Результат проверки",
             bullets_as_card=False,
@@ -814,7 +835,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     content_stage(ctx, y)
     # PDF-36 D.3 / PDF-47 — page bottom is the real budget; theme cards need
     # the full 900-char structured budget (520 starved nested-quote bullets).
-    short_narrative = _clip_words(narrative, 900) if narrative else ""
+    # `_clip_words` схлопывает перевод строки: многоабзацный текст он не режет —
+    # его высоту подгоняет `ctx.body`, и абзацы остаются абзацами.
+    short_narrative = (
+        (narrative if "\n" in narrative else _clip_words(narrative, 900)) if narrative else ""
+    )
     if short_narrative and not bullets:
         ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000, bold=True)
         return
