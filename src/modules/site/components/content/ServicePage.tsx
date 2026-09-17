@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
 import type { ServiceContent } from "@/modules/site/content/services";
 import { siteOrigin } from "@/modules/site/seo/indexing";
 import { breadcrumbLd, serviceLd } from "@/modules/site/seo/json-ld";
+import { ButtonLink } from "../Button";
 import { JsonLd } from "../JsonLd";
 import { Blocks } from "./Blocks";
 import { Breadcrumbs } from "./Breadcrumbs";
@@ -53,9 +53,9 @@ export function ServicePage({ service }: { service: ServiceContent }) {
                 <RichText text={text} />
               </p>
             ))}
-            <Link className="site-btn site-btn--accent site-btn--block" href="/#form">
+            <ButtonLink variant="accent" block href="/#form">
               {CHECK_FORM_TEXT.submit}
-            </Link>
+            </ButtonLink>
           </div>
         </aside>
       </div>

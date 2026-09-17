@@ -7,16 +7,15 @@
  * строк: ни заголовков, ни ссылок, ни доменов.
  */
 
-import Link from "next/link";
 import { Fragment, type Ref } from "react";
 import { formatDay } from "@/modules/site/check/format";
 import { resultView, type ResultJson } from "@/modules/site/check/result-view";
 import type { PublicStatusJson } from "@/modules/site/check/types";
 import { DISCLAIMER, RESULT_TEXT } from "@/modules/site/content/check";
+import { Button, ButtonLink } from "../Button";
 import { vars } from "../css-vars";
-import { ArrowIcon } from "../SiteIcons";
 import { CopyButton, CopyStatus, useCopyLink } from "./CopyLink";
-import { Ledger, RiskScale } from "./parts";
+import { Ledger, RiskScale, VERDICT_TONE_CLASS } from "./parts";
 
 /** Ширины плашек по кругу: одинаковые полосы читались бы таблицей, а не скрытыми заголовками. */
 const BAR_WIDTHS = ["78%", "54%", "84%", "66%", "72%", "58%", "80%", "62%"];
@@ -59,7 +58,7 @@ export function ResultScreen({
 
   return (
     <section
-      className={`site-screen site-result site-verdict--${view.scale.tone} is-active site-enter${reveal ? " is-revealing" : ""}`}
+      className={`site-screen site-result ${VERDICT_TONE_CLASS[view.scale.tone]} is-active site-enter${reveal ? " is-revealing" : ""}`}
       aria-labelledby="result-title"
     >
       <div className="site-result__verdict">
@@ -88,10 +87,9 @@ export function ResultScreen({
                   {RESULT_TEXT.NEGATIVE_FOUND.slipTitle}
                 </h2>
                 <p>{RESULT_TEXT.NEGATIVE_FOUND.slipText}</p>
-                <button className="site-btn site-btn--accent site-btn--lg site-btn--block" type="button" onClick={onLead}>
+                <Button variant="accent" large block arrow onClick={onLead}>
                   {RESULT_TEXT.NEGATIVE_FOUND.cta}
-                  <ArrowIcon />
-                </button>
+                </Button>
               </div>
               {slipFoot}
             </>
@@ -103,13 +101,12 @@ export function ResultScreen({
                 </h2>
                 <p>{RESULT_TEXT.CLEAN.slipText}</p>
                 <div className="site-slip__actions">
-                  <Link className="site-btn site-btn--accent site-btn--lg site-btn--block" href="/#form">
+                  <ButtonLink variant="accent" large block arrow href="/#form">
                     {RESULT_TEXT.CLEAN.cta}
-                    <ArrowIcon />
-                  </Link>
-                  <button className="site-btn site-btn--secondary site-btn--block" type="button" onClick={onLead}>
+                  </ButtonLink>
+                  <Button variant="secondary" block onClick={onLead}>
                     {RESULT_TEXT.CLEAN.secondary}
-                  </button>
+                  </Button>
                 </div>
               </div>
               {slipFoot}
@@ -121,13 +118,12 @@ export function ResultScreen({
               </h2>
               <p>{RESULT_TEXT.INSUFFICIENT_DATA.slipText}</p>
               <div className="site-slip__actions">
-                <button className="site-btn site-btn--accent site-btn--lg site-btn--block" type="button" onClick={onLead}>
+                <Button variant="accent" large block arrow onClick={onLead}>
                   {RESULT_TEXT.INSUFFICIENT_DATA.cta}
-                  <ArrowIcon />
-                </button>
-                <Link className="site-btn site-btn--secondary site-btn--block" href="/#form">
+                </Button>
+                <ButtonLink variant="secondary" block href="/#form">
                   {RESULT_TEXT.INSUFFICIENT_DATA.secondary}
-                </Link>
+                </ButtonLink>
               </div>
             </div>
           )}

@@ -12,6 +12,7 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { EXAMPLE } from "@/modules/site/content/landing";
+import { Button } from "../Button";
 
 type FeedItem = (typeof EXAMPLE.feed)[number];
 
@@ -140,9 +141,9 @@ export function ResultDemo({ children }: { children: ReactNode }) {
           <span className="site-demo__stage" ref={stage} aria-live="polite">
             {FINAL_STAGE}
           </span>
-          <button className="site-btn site-btn--ghost site-demo__replay" type="button" onClick={run}>
+          <Button variant="ghost" className="site-demo__replay" onClick={run}>
             Показать ещё раз
-          </button>
+          </Button>
         </div>
         <div
           className="site-progress"

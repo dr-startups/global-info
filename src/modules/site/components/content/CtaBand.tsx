@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
-import { ArrowIcon } from "../SiteIcons";
+import { ButtonLink } from "../Button";
 
 /** Лента «проверьте бесплатно» в конце страницы: каждая страница ведёт на проверку. */
 export function CtaBand({ title, text }: { title: string; text: string }) {
@@ -10,10 +9,9 @@ export function CtaBand({ title, text }: { title: string; text: string }) {
         {title}
       </h2>
       <p>{text}</p>
-      <Link className="site-btn site-btn--accent site-btn--lg" href="/#form">
+      <ButtonLink variant="accent" large arrow href="/#form">
         {CHECK_FORM_TEXT.submit}
-        <ArrowIcon />
-      </Link>
+      </ButtonLink>
     </div>
   );
 }

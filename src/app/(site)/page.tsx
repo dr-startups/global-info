@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { ButtonLink } from "@/modules/site/components/Button";
 import { CheckForm } from "@/modules/site/components/CheckForm";
+import { Faq } from "@/modules/site/components/Faq";
 import { HeroSeek } from "@/modules/site/components/landing/HeroSeek";
 import { ResultDemo } from "@/modules/site/components/landing/ResultDemo";
-import { ArrowIcon } from "@/modules/site/components/SiteIcons";
 import { vars } from "@/modules/site/components/css-vars";
 import { JsonLd } from "@/modules/site/components/JsonLd";
 import { EXAMPLE, FAQ, FINAL, HERO, HOW, SAFETY, SOURCES, TOPICS } from "@/modules/site/content/landing";
@@ -337,14 +338,7 @@ export default function LandingPage() {
               </h2>
               <p className="site-lead">{FAQ.lead}</p>
             </div>
-            <div className="site-faq site-reveal">
-              {FAQ.items.map((item) => (
-                <details key={item.q}>
-                  <summary>{item.q}</summary>
-                  <p>{item.a}</p>
-                </details>
-              ))}
-            </div>
+            <Faq items={FAQ.items} className="site-reveal" />
           </div>
         </section>
       </div>
@@ -356,10 +350,9 @@ export default function LandingPage() {
             {FINAL.title}
           </h2>
           <p className="site-final__lead">{FINAL.lead}</p>
-          <a className="site-btn site-btn--accent site-btn--lg" href="#form">
+          <ButtonLink variant="accent" large arrow href="#form">
             {FINAL.cta}
-            <ArrowIcon />
-          </a>
+          </ButtonLink>
         </div>
         <div className="site-final__media" aria-hidden="true">
           {/* Из public, а не импортом: объявления типов картинок даёт next-env.d.ts, которого

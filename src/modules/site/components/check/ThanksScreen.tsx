@@ -10,6 +10,7 @@ import { useState, type Ref } from "react";
 import { formatDay } from "@/modules/site/check/format";
 import type { PublicStatusJson } from "@/modules/site/check/types";
 import { RESULT_TEXT, THANKS_TEXT } from "@/modules/site/content/check";
+import { Button } from "../Button";
 import { CopyButton, CopyStatus, useCopyLink } from "./CopyLink";
 import { nextStepsFor } from "./LeadScreen";
 
@@ -55,9 +56,9 @@ export function ThanksScreen({
           ))}
         </ol>
         <div className="site-actions">
-          <button className="site-btn site-btn--secondary" type="button" onClick={onBack}>
+          <Button variant="secondary" onClick={onBack}>
             {status.status === "FAILED" ? THANKS_TEXT.backFailed : THANKS_TEXT.back}
-          </button>
+          </Button>
         </div>
       </div>
       <aside className="site-screen__aside" aria-labelledby="thanks-saved">

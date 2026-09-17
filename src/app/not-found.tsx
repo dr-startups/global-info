@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./(site)/site.css";
+import { ButtonLink } from "@/modules/site/components/Button";
 import { SiteChrome } from "@/modules/site/components/SiteChrome";
-import { ArrowIcon } from "@/modules/site/components/SiteIcons";
 
 /**
  * 404. Неизвестный адрес Next рисует в корневом layout, мимо layout сайта, — поэтому
@@ -29,13 +28,12 @@ export default function NotFound() {
             Ссылка устарела или в ней опечатка. Начните с главной или сразу запустите бесплатную проверку.
           </p>
           <div className="site-actions">
-            <Link className="site-btn site-btn--accent site-btn--lg" href="/#form">
+            <ButtonLink variant="accent" large arrow href="/#form">
               Проверить бесплатно
-              <ArrowIcon />
-            </Link>
-            <Link className="site-btn site-btn--secondary site-btn--lg" href="/">
+            </ButtonLink>
+            <ButtonLink variant="secondary" large href="/">
               На главную
-            </Link>
+            </ButtonLink>
           </div>
         </div>
       </main>

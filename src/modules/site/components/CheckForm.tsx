@@ -12,7 +12,7 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { track } from "@/modules/site/analytics";
 import { siteApi } from "@/modules/site/api";
 import {
@@ -27,62 +27,13 @@ import {
 import { birthDateToIso, caretAfterDigits, maskBirthDate } from "@/modules/site/check/birth-date";
 import type { SitePublicConfig } from "@/modules/site/check/types";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
+import { Button } from "./Button";
 import { vars } from "./css-vars";
-import { ArrowIcon, ErrorIcon } from "./SiteIcons";
+import { FieldError, TextField } from "./Field";
 import { useSmartCaptcha } from "./useSmartCaptcha";
 
 /** Поля под «Уточнить поиск»: ошибка в них раскрывает блок, иначе её не видно. */
 const DETAIL_FIELDS: ReadonlySet<string> = new Set(["aliases", "inn", "website", "employer", "position"]);
-
-function FieldError({ id, text }: { id: string; text: string | undefined }) {
-  if (!text) return null;
-  return (
-    <p className="site-error" id={id}>
-      <ErrorIcon />
-      <span>{text}</span>
-    </p>
-  );
-}
-
-function TextField(props: {
-  id: string;
-  label: string;
-  required?: boolean;
-  error?: string;
-  hint?: ReactNode;
-  input: Omit<React.InputHTMLAttributes<HTMLInputElement>, "id" | "className">;
-  inputRef?: React.Ref<HTMLInputElement>;
-  /** Когда поле считается заполненным, если «не пусто» не подходит (дата — только полная). */
-  filled?: boolean;
-}) {
-  const hintId = props.hint ? `${props.id}-hint` : null;
-  const errorId = props.error ? `${props.id}-error` : null;
-  const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
-  const filled = props.filled ?? String(props.input.value ?? "").trim() !== "";
-  return (
-    <div className="site-field">
-      <label className={`site-label${props.required ? " site-label--req" : ""}`} htmlFor={props.id}>
-        {props.label}
-        {props.required ? <span className="site-visually-hidden">, обязательное поле</span> : null}
-      </label>
-      <input
-        {...props.input}
-        ref={props.inputRef}
-        className={`site-input${filled ? " is-filled" : ""}`}
-        id={props.id}
-        aria-required={props.required || undefined}
-        aria-invalid={props.error ? true : undefined}
-        aria-describedby={describedBy}
-      />
-      {props.hint ? (
-        <p className="site-hint" id={hintId!}>
-          {props.hint}
-        </p>
-      ) : null}
-      <FieldError id={`${props.id}-error`} text={props.error} />
-    </div>
-  );
-}
 
 function DisabledPanel() {
   return (
@@ -424,16 +375,9 @@ export function CheckForm() {
 
         {config?.captchaClientKey ? <div ref={captcha.container} /> : null}
 
-        <button
-          className="site-btn site-btn--accent site-btn--lg site-btn--block"
-          id="check-submit"
-          type="submit"
-          aria-busy={busy || undefined}
-        >
-          <span className="site-spinner" aria-hidden="true" />
-          <span>{CHECK_FORM_TEXT.submit}</span>
-          <ArrowIcon />
-        </button>
+        <Button variant="accent" large block arrow id="check-submit" type="submit" busy={busy}>
+          {CHECK_FORM_TEXT.submit}
+        </Button>
       </div>
 
       <div className="site-panel__foot">

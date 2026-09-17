@@ -46,15 +46,6 @@ export function SiteIcons() {
   );
 }
 
-/** Стрелка решающей кнопки. */
-export function ArrowIcon() {
-  return (
-    <svg className="site-btn__arrow" viewBox="0 0 16 16" aria-hidden="true">
-      <use href="#ic-arrow" />
-    </svg>
-  );
-}
-
 /** Значок у текста ошибки поля. */
 export function ErrorIcon() {
   return (

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Breadcrumbs } from "@/modules/site/components/content/Breadcrumbs";
 import { CtaBand } from "@/modules/site/components/content/CtaBand";
-import { RichText } from "@/modules/site/components/content/RichText";
+import { Faq } from "@/modules/site/components/Faq";
 import { JsonLd } from "@/modules/site/components/JsonLd";
 import { FAQ_PAGE } from "@/modules/site/content/faq";
 import { FINAL } from "@/modules/site/content/landing";
@@ -31,16 +31,7 @@ export default function FaqPage() {
           <h2 className="site-h2" id={`faq-group-${i + 1}`}>
             {group.title}
           </h2>
-          <div className="site-faq" style={{ marginTop: "var(--site-s-4)" }}>
-            {group.items.map((item) => (
-              <details key={item.q}>
-                <summary>{item.q}</summary>
-                <p>
-                  <RichText text={item.a} />
-                </p>
-              </details>
-            ))}
-          </div>
+          <Faq items={group.items} style={{ marginTop: "var(--site-s-4)" }} />
         </section>
       ))}
 

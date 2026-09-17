@@ -7,10 +7,10 @@
 import Link from "next/link";
 import type { ReactNode, Ref } from "react";
 import { formatBirthDate } from "@/modules/site/check/format";
-import type { ScaleView } from "@/modules/site/check/result-view";
+import type { RiskTone, ScaleView } from "@/modules/site/check/result-view";
 import { STEP_LABELS, type ServiceAction, type ServiceScreenContent } from "@/modules/site/content/check";
+import { Button, ButtonLink } from "../Button";
 import { vars } from "../css-vars";
-import { ArrowIcon } from "../SiteIcons";
 
 export function WizardBand({
   subject,
@@ -70,6 +70,33 @@ export function WizardFrame({ band, children }: { band?: ReactNode; children: Re
   );
 }
 
+/*
+ * Тон → класс — таблицами, а не сборкой имени из значения: полное имя видят поиск и тест
+ * `site-css-declares-only-classes-the-site-uses`, а полноту таблицы проверяет TypeScript.
+ */
+
+export const METER_TONE_CLASS: Record<RiskTone, string> = {
+  low: "site-meter--low",
+  medium: "site-meter--medium",
+  high: "site-meter--high",
+  none: "site-meter--none",
+};
+
+export const VERDICT_TONE_CLASS: Record<RiskTone, string> = {
+  low: "site-verdict--low",
+  medium: "site-verdict--medium",
+  high: "site-verdict--high",
+  none: "site-verdict--none",
+};
+
+/** Ответ источника: у результата — есть ответ или нет, у панели персоны ещё «не подключён». */
+const LEDGER_TONE_CLASS = { ok: "is-ok", warn: "is-warn", off: "is-off" } as const;
+
+const STATUS_TONE_CLASS: Record<NonNullable<ServiceScreenContent["tone"]>, string> = {
+  warn: "site-status--warn",
+  danger: "site-status--danger",
+};
+
 export function MeterSegments({ filled, animate }: { filled: number; animate?: boolean }) {
   return (
     <>
@@ -88,7 +115,7 @@ export function RiskScale({ scale, decorative }: { scale: ScaleView; decorative?
   return (
     <div className="site-scale">
       <div
-        className={`site-meter site-meter--${scale.tone} site-meter--lg`}
+        className={`site-meter ${METER_TONE_CLASS[scale.tone]} site-meter--lg`}
         role={decorative ? undefined : "img"}
         aria-label={decorative ? undefined : scale.ariaLabel}
         aria-hidden={decorative || undefined}
@@ -111,14 +138,14 @@ export function Ledger({
   inline,
   label,
 }: {
-  rows: ReadonlyArray<{ name: string; value: string | null; tone: string }>;
+  rows: ReadonlyArray<{ name: string; value: string | null; tone: keyof typeof LEDGER_TONE_CLASS }>;
   inline?: boolean;
   label?: string;
 }) {
   return (
     <ul className={`site-ledger${inline ? " site-ledger--inline" : ""}`} aria-label={label}>
       {rows.map((row) => (
-        <li key={row.name} className={`is-${row.tone}`}>
+        <li key={row.name} className={LEDGER_TONE_CLASS[row.tone]}>
           <span className="site-ledger__name">{row.name}</span>
           {row.value ? <span className="site-ledger__value">{row.value}</span> : null}
         </li>
@@ -126,12 +153,6 @@ export function Ledger({
     </ul>
   );
 }
-
-const BUTTON_CLASS: Record<ServiceAction["variant"], string> = {
-  accent: "site-btn site-btn--accent site-btn--lg",
-  secondary: "site-btn site-btn--secondary site-btn--lg",
-  ghost: "site-btn site-btn--ghost",
-};
 
 /**
  * Служебный экран: слева — что случилось и что делать, справа — что стало с
@@ -157,7 +178,7 @@ export function ServiceScreen({
       aria-labelledby="service-title"
     >
       <div className="site-screen__head">
-        <p className={`site-status${content.tone ? ` site-status--${content.tone}` : ""}`}>{content.status}</p>
+        <p className={`site-status${content.tone ? ` ${STATUS_TONE_CLASS[content.tone]}` : ""}`}>{content.status}</p>
         <h1 className="site-screen__title" id="service-title" tabIndex={-1} ref={headingRef}>
           {content.title}
         </h1>
@@ -178,24 +199,22 @@ export function ServiceScreen({
       ) : null}
       {content.actions.length > 0 ? (
         <div className="site-actions site-screen__actions">
-          {content.actions.map((action) =>
-            action.href ? (
-              <Link key={action.label} className={BUTTON_CLASS[action.variant]} href={action.href}>
+          {content.actions.map((action) => {
+            const look = {
+              variant: action.variant,
+              large: action.variant !== "ghost",
+              arrow: action.variant === "accent",
+            };
+            return action.href ? (
+              <ButtonLink key={action.label} {...look} href={action.href}>
                 {action.label}
-                {action.variant === "accent" ? <ArrowIcon /> : null}
-              </Link>
+              </ButtonLink>
             ) : (
-              <button
-                key={action.label}
-                className={BUTTON_CLASS[action.variant]}
-                type="button"
-                onClick={() => action.action && onAction?.(action.action)}
-              >
+              <Button key={action.label} {...look} onClick={() => action.action && onAction?.(action.action)}>
                 {action.label}
-                {action.variant === "accent" ? <ArrowIcon /> : null}
-              </button>
-            )
-          )}
+              </Button>
+            );
+          })}
         </div>
       ) : null}
     </section>

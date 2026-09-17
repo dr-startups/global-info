@@ -6187,6 +6187,25 @@ https://smartcaptcha.cloud.yandex.ru/validate`, форма `secret`, `token`, `i
   font-size: 14px }`, и в корне все `rem` сайта считались бы от 14 px. Шапка, подвал,
   шрифты и `site.css` — в `(site)/layout.tsx`
   (`site-layout-declares-russian-lang-and-metadata-base.test.ts`).
+- **Кнопка, поле и блок вопросов — по одному компоненту.** `components/Button.tsx`
+  (`Button` и `ButtonLink`), `Field.tsx` (`TextField`, `FieldError`), `Faq.tsx`: классы
+  `site-btn*`, `site-input`, `site-error` и `site-faq` в другом коде сайта не пишутся, и
+  правка вида идёт в одно место (`site-buttons-fields-and-faq-are-drawn-by-one-component.test.ts`).
+  Ссылка-кнопка на якорь этой же страницы (`#form`) — обычный `<a>`, а не `Link`: форма
+  ставит курсор в первое поле по `hashchange`, которого переход `Link` не даёт. Спиннер
+  ставит в разметку переданный `busy` — даже `false`: при ожидании меняется только
+  `aria-busy`, и кнопка не прыгает. Остальные компоненты списка 5.5 ТЗ (`Checkbox`, `Card`,
+  `Notice`, `Container`, `Badge`) не заведены: у каждого одно место в разметке или ни одного.
+- **Имя класса не собирается из значения.** Тон превращается в класс таблицей
+  `Record<тон, класс>` (`check/parts.tsx`: `METER_TONE_CLASS`, `VERDICT_TONE_CLASS`,
+  `LEDGER_TONE_CLASS`, `STATUS_TONE_CLASS`). Полное имя видят поиск по проекту и сторож
+  `site-css-declares-only-classes-the-site-uses.test.ts`, полноту таблицы проверяет
+  TypeScript. Пока класс собирался (`is-${tone}`), правило строки «не подключена» выглядело
+  мёртвым и было удалено — вернула его сверка снимков.
+- **В `site.css` нет классов, которых код не рисует** (тот же сторож). Файл блокирует
+  отрисовку, поэтому мёртвое правило стоит посетителю времени; нужное возвращается из
+  макета. Сторож не видит мёртвого сочетания внутри живого селектора — такие
+  (`.site-btn.is-active` из экрана токенов макета) убираются чтением.
 - **Ничего из сайта не ходит в базу на сборке.** Страницы, кроме мастера,
   пререндерятся при `next build`, а CI собирает без базы. Ни один файл `(site)`,
   `modules/site` и маршрутов метаданных не импортирует Prisma, `next/headers` и серверные

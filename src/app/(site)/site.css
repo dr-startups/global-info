@@ -52,9 +52,7 @@
      цвет, и с сиренью её не спутать. */
   --site-accent: #16181D;
   --site-accent-hover: #000000;
-  --site-accent-tint: var(--site-marker-soft);   /* выбранное, текущий шаг */
   --site-accent-soft: #F1F2EE;                   /* блок «что дальше», подсказки, наведение */
-  --site-accent-glow: var(--site-marker);
 
   --site-marker: #D8CCFA;
   --site-marker-soft: #EFEAFD;
@@ -81,14 +79,6 @@
   --site-warn-bg: #FFFAEB;
   --site-danger: #B42318;
   --site-danger-bg: #FEF3F2;
-  --site-critical: #7A1C16;
-  --site-critical-bg: #FBE9E7;
-  --site-on-critical: #FFFFFF;
-
-  /* Primary-кнопка — те же чернила, но без метки маркера: действие второго ряда */
-  --site-btn-bg: #16181D;
-  --site-btn-bg-hover: #2A2D34;
-  --site-btn-fg: #FFFFFF;
 
   /* Атмосфера первого экрана: свет из того же окна, что на снимке в закрывающем листе, —
      холодная тень рамы, светлое пятно и слабый отблеск маркера — плюс сетка поверх фона */
@@ -368,27 +358,9 @@ p {
   max-width: 34em;
 }
 
-.site-text {
-  max-width: 70ch;
-  color: var(--site-ink-2);
-}
-
-.site-small {
-  font-size: var(--site-text-sm);
-  line-height: 1.5;
-}
-
 .site-caption {
   font-size: var(--site-text-xs);
   line-height: 1.45;
-  color: var(--site-ink-3);
-}
-
-.site-num {
-  font-variant-numeric: tabular-nums;
-}
-
-.site-muted {
   color: var(--site-ink-3);
 }
 
@@ -405,19 +377,6 @@ p {
   text-transform: uppercase;
   color: var(--site-ink-3);
   white-space: nowrap;
-}
-
-.site-tag--pill {
-  padding: 4px 10px;
-  border: 1px solid var(--site-line-strong);
-  border-radius: var(--site-r-pill);
-  background: var(--site-paper);
-}
-
-.site-tag--accent {
-  color: var(--site-accent);
-  border-color: color-mix(in srgb, var(--site-accent) 32%, transparent);
-  background: var(--site-accent-soft);
 }
 
 /* ---------- Уголки приводки ----------
@@ -1114,31 +1073,6 @@ html:has(.site-drawer[open]) {
   transform: translateX(3px);
 }
 
-/* Заливка не плоская: блик по верхней кромке и тень под кнопкой дают материал, а не
-   прямоугольник цвета. Тень мягкая и в цвете самой кнопки, чтобы она не читалась серой. */
-.site-btn--primary {
-  background-color: var(--site-btn-bg);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0) 58%);
-  border-color: var(--site-btn-bg);
-  color: var(--site-btn-fg);
-  box-shadow:
-    0 1px 1px rgba(22, 27, 38, 0.10),
-    0 8px 18px -10px rgba(22, 27, 38, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-}
-
-.site-btn--primary:hover,
-.site-btn--primary.is-hover {
-  background-color: var(--site-btn-bg-hover);
-  border-color: var(--site-btn-bg-hover);
-  color: var(--site-btn-fg);
-  transform: translateY(-1px);
-  box-shadow:
-    0 1px 1px rgba(22, 27, 38, 0.10),
-    0 14px 26px -12px rgba(22, 27, 38, 0.60),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-}
-
 /* Решающее действие: запуск проверки, выбор карточки, заявка. Чернила с блеском по верхней
    кромке и метка маркера под стрелкой — остальные кнопки её не несут, поэтому главное
    действие узнаётся по ней на любой странице. Синий градиент версий 6–9 заказчик счёл
@@ -1154,8 +1088,7 @@ html:has(.site-drawer[open]) {
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
-.site-btn--accent:hover,
-.site-btn--accent.is-hover {
+.site-btn--accent:hover {
   background-image: linear-gradient(180deg, var(--site-cta-from-hover), var(--site-cta-to-hover));
   color: #FFFFFF;
   transform: translateY(-1px);
@@ -1183,8 +1116,7 @@ html:has(.site-drawer[open]) {
   color: var(--site-ink);
 }
 
-.site-btn--secondary:hover,
-.site-btn--secondary.is-hover {
+.site-btn--secondary:hover {
   background: var(--site-paper-2);
   border-color: var(--site-line-hover);
   color: var(--site-ink);
@@ -1197,27 +1129,23 @@ html:has(.site-drawer[open]) {
   padding-inline: 12px;
 }
 
-.site-btn--ghost:hover,
-.site-btn--ghost.is-hover {
+.site-btn--ghost:hover {
   background: var(--site-accent-soft);
   color: var(--site-accent-hover);
 }
 
-.site-btn:focus-visible,
-.site-btn.is-focus {
+.site-btn:focus-visible {
   outline: none;
   box-shadow: var(--site-focus);
 }
 
-.site-btn:active:not(:disabled):not([aria-busy="true"]),
-.site-btn.is-active {
+.site-btn:active:not(:disabled):not([aria-busy="true"]) {
   transform: scale(0.96);
 }
 
 /* Кнопка во всю ширину: 0.96 на 400 px читается как рывок, поэтому нажатие показывается
    вдавливанием — кнопка садится на бумагу и теряет дальнюю тень. */
-.site-btn--block:active:not(:disabled):not([aria-busy="true"]),
-.site-btn--block.is-active {
+.site-btn--block:active:not(:disabled):not([aria-busy="true"]) {
   transform: translateY(1px);
   box-shadow:
     0 1px 1px rgba(22, 27, 38, 0.10),
@@ -1265,13 +1193,6 @@ html:has(.site-drawer[open]) {
   animation: site-spin 0.9s linear infinite;
 }
 
-.site-spinner--lg {
-  width: 28px;
-  height: 28px;
-  border-width: 2.5px;
-  color: var(--site-accent);
-}
-
 @keyframes site-spin {
   to {
     transform: rotate(1turn);
@@ -1296,11 +1217,6 @@ html:has(.site-drawer[open]) {
   font-weight: 500;
   color: var(--site-ink);
   line-height: 1.4;
-}
-
-.site-label__opt {
-  font-weight: 400;
-  color: var(--site-ink-3);
 }
 
 .site-hint {
@@ -1328,7 +1244,6 @@ html:has(.site-drawer[open]) {
 /* Поле — заливка, а не рамка на белом: холодная подложка показывает границы ввода до
    наведения, а белым поле становится в фокусе. Вдавленность даёт внутренняя тень. */
 .site-input,
-.site-select,
 .site-textarea {
   width: 100%;
   min-height: var(--site-control-h);
@@ -1352,16 +1267,13 @@ html:has(.site-drawer[open]) {
 }
 
 .site-input:hover,
-.site-select:hover,
 .site-textarea:hover {
   border-color: var(--site-field-line-hover);
   background-color: var(--site-paper);
 }
 
 .site-input:focus,
-.site-select:focus,
-.site-textarea:focus,
-.site-input.is-focus {
+.site-textarea:focus {
   outline: none;
   border-color: var(--site-cta-from);
   background-color: var(--site-paper);
@@ -1382,7 +1294,6 @@ html:has(.site-drawer[open]) {
 }
 
 .site-input[aria-invalid="true"],
-.site-select[aria-invalid="true"],
 .site-textarea[aria-invalid="true"] {
   border-color: var(--site-danger);
 }
@@ -1392,7 +1303,6 @@ html:has(.site-drawer[open]) {
 }
 
 .site-input:disabled,
-.site-select:disabled,
 .site-textarea:disabled {
   background: var(--site-paper-2);
   color: var(--site-ink-3);
@@ -1402,14 +1312,6 @@ html:has(.site-drawer[open]) {
 .site-textarea {
   min-height: 112px;
   resize: vertical;
-}
-
-.site-select {
-  appearance: none;
-  padding-right: 40px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23494D56' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
 }
 
 .site-input-group {
@@ -1645,26 +1547,6 @@ html:has(.site-drawer[open]) {
   transition: width var(--site-dur-slow) var(--site-ease-out);
 }
 
-.site-panel__headrow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--site-s-4);
-}
-
-.site-panel__count {
-  flex: none;
-  font-family: var(--site-font-mono);
-  font-size: var(--site-text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--site-ink-3);
-}
-
-.site-panel__count b {
-  color: var(--site-ink);
-  font-weight: 600;
-}
-
 /* Поля формы проверки крупнее обычных: это первое, к чему тянется рука на странице */
 .site-panel--form .site-input {
   min-height: 52px;
@@ -1716,31 +1598,6 @@ html:has(.site-drawer[open]) {
   background: var(--site-accent);
   border-radius: inherit;
   transition: width 600ms var(--site-ease-out);
-}
-
-/* ---------- Бейджи ---------- */
-
-.site-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: var(--site-r-1);
-  font-size: var(--site-text-xs);
-  font-weight: 500;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-.site-badge--low { color: var(--site-ok); background: var(--site-ok-bg); }
-.site-badge--medium { color: var(--site-warn); background: var(--site-warn-bg); }
-.site-badge--high { color: var(--site-danger); background: var(--site-danger-bg); }
-.site-badge--critical { color: var(--site-on-critical); background: var(--site-critical); }
-
-.site-badge--neutral {
-  color: var(--site-ink-2);
-  background: var(--site-paper);
-  border: 1px solid var(--site-line-strong);
 }
 
 /* ---------- Плашка (фирменный приём) ---------- */
@@ -1872,15 +1729,6 @@ html:has(.site-drawer[open]) {
   color: var(--site-ink);
   font-weight: 600;
   font-size: var(--site-text-lg);
-}
-
-.site-verdict__title {
-  font-weight: 600;
-  font-size: var(--site-text-xl);
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-  margin: 0;
-  text-wrap: balance;
 }
 
 .site-disclaimer {
@@ -2515,8 +2363,7 @@ html:has(.site-drawer[open]) {
   line-height: 1.15;
 }
 
-.site-run__time [role="timer"],
-.site-run__clock {
+.site-run__time [role="timer"] {
   min-width: 3.2ch;
   font-size: var(--site-text-xl);
   font-weight: 600;
@@ -3318,17 +3165,6 @@ html:has(.site-drawer[open]) {
   height: 24px;
 }
 
-.site-stamp--sm {
-  width: 32px;
-  height: 32px;
-  box-shadow: 0 0 0 4px var(--site-marker-soft);
-}
-
-.site-stamp--sm svg {
-  width: 16px;
-  height: 16px;
-}
-
 .site-thanks {
   justify-items: start;
 }
@@ -3336,20 +3172,6 @@ html:has(.site-drawer[open]) {
 .site-thanks > .site-screen__head,
 .site-thanks > .site-timeline {
   justify-self: stretch;
-}
-
-.site-done {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: var(--site-s-4);
-  font-size: var(--site-text-md);
-  color: var(--site-ink-2);
-}
-
-.site-done b {
-  color: var(--site-ink);
-  font-weight: 600;
 }
 
 /* ---------- Служебные экраны ----------
@@ -3451,13 +3273,11 @@ html:has(.site-drawer[open]) {
   }
 
   /* «Заявка принята»: отметка появляется, галочка следом — подтверждение действия, а не праздник */
-  .site-screen.site-enter .site-stamp,
-  .site-done:not([hidden]) .site-stamp {
+  .site-screen.site-enter .site-stamp {
     animation: site-wz-stamp 220ms var(--site-ease-out) 80ms backwards;
   }
 
-  .site-screen.site-enter .site-stamp svg,
-  .site-done:not([hidden]) .site-stamp svg {
+  .site-screen.site-enter .site-stamp svg {
     animation: site-wz-icon 200ms var(--site-ease-out) 200ms backwards;
   }
 }
@@ -3680,16 +3500,8 @@ html:has(.site-drawer[open]) {
   min-width: 0;
 }
 
-/* Имя закрашено плашкой всегда, а слово рядом с ним набирается по буквам: показывает,
-   с чем именно человек приходит в поиск, и при этом никого не называет. Буквы печатает
-   скрипт — ширина глифов в пропорциональной гарнитуре разная, и «печать» шириной блока
-   резала бы буквы пополам. */
-.site-seek__name {
-  width: 9ch;
-  height: 11px;
-  flex: none;
-}
-
+/* Запрос набирается по буквам. Буквы печатает скрипт — ширина глифов в пропорциональной
+   гарнитуре разная, и «печать» шириной блока резала бы буквы пополам. */
 .site-seek__word {
   font-size: var(--site-text-md);
   color: var(--site-ink);
@@ -4118,14 +3930,6 @@ html:has(.site-drawer[open]) {
     }
   }
 
-  @keyframes site-rail-fill {
-    to { transform: scaleX(1); }
-  }
-
-  @keyframes site-node-pop {
-    to { transform: scale(1); }
-  }
-
   @keyframes site-step-in {
     from { opacity: 0; translate: 0 26px; filter: blur(7px); }
     to { opacity: 1; translate: 0 0; filter: blur(0); }
@@ -4465,23 +4269,6 @@ html:has(.site-drawer[open]) {
   font-size: var(--site-text-sm);
 }
 
-/* Кого проверяют — закрашено той же плашкой, что и заголовки находок: в примере на сайте
-   нет ни живого, ни выдуманного человека. */
-.site-demo__subject {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.site-demo__subject .site-tag {
-  margin-right: 2px;
-}
-
-.site-demo__subject .site-mark {
-  height: 9px;
-  opacity: 0.55;
-}
-
 .site-demo__stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4610,36 +4397,6 @@ html:has(.site-drawer[open]) {
 /* Кнопку можно ужать только там, где указатель мышь: на тач-экране ей нужны 44 px */
 @media (min-width: 1024px) {
   .site-demo__replay { --h: 36px; }
-}
-
-/* ---------- Иллюстрации ----------
-   Рисунки свои, линейные, в акценте и чернилах: закрашенная выдача, карта источников, лист
-   вердикта. Стоковых фотографий на сайте нет — лицо на фотографии обещало бы конкретного
-   человека, а продукт работает с любым. */
-
-.site-figure {
-  position: relative;
-  border-radius: var(--site-r-4);
-  overflow: hidden;
-}
-
-.site-figure svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
-
-.site-figure--tint {
-  background: linear-gradient(155deg, var(--site-accent-soft), var(--site-ground));
-  border: 1px solid var(--site-line);
-}
-
-.site-figure__caption {
-  font-size: var(--site-text-xs);
-  color: var(--site-ink-3);
-  padding: var(--site-s-3) var(--site-s-4);
-  border-top: 1px solid var(--site-line);
-  background: var(--site-paper);
 }
 
 /* ---------- Прочие блоки лендинга ---------- */
@@ -5958,133 +5715,6 @@ html:has(.site-drawer[open]) {
   content: "·";
   margin-inline: 8px;
   color: var(--site-line-hover);
-}
-
-/* ---------- Документация токенов ---------- */
-
-.site-swatches {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: var(--site-s-4);
-}
-
-.site-swatch {
-  border: 1px solid var(--site-line);
-  border-radius: var(--site-r-3);
-  overflow: hidden;
-  background: var(--site-paper);
-}
-
-.site-swatch__color {
-  height: 64px;
-  border-bottom: 1px solid var(--site-line);
-}
-
-.site-swatch__meta {
-  padding: 10px 12px;
-  font-size: var(--site-text-xs);
-  line-height: 1.5;
-  color: var(--site-ink-2);
-  display: grid;
-  gap: 2px;
-}
-
-.site-swatch__meta strong {
-  color: var(--site-ink);
-  font-weight: 600;
-}
-
-.site-code {
-  font-family: var(--site-font-mono);
-  font-size: 0.85em;
-  background: var(--site-paper-2);
-  border: 1px solid var(--site-line);
-  padding: 1px 5px;
-  border-radius: var(--site-r-1);
-  color: var(--site-ink);
-}
-
-.site-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--site-text-sm);
-}
-
-.site-table th,
-.site-table td {
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--site-line);
-  vertical-align: top;
-}
-
-.site-table th {
-  font-weight: 600;
-  color: var(--site-ink-2);
-  font-size: var(--site-text-xs);
-}
-
-.site-table-wrap { overflow-x: auto; }
-
-.site-spec {
-  display: grid;
-  gap: var(--site-s-4);
-}
-
-.site-spec__row {
-  display: grid;
-  gap: 6px;
-  padding-top: var(--site-s-3);
-  border-top: 1px solid var(--site-line);
-}
-
-.site-spec__label {
-  font-size: var(--site-text-xs);
-  color: var(--site-ink-3);
-}
-
-.site-space-demo {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--site-s-3);
-  flex-wrap: wrap;
-}
-
-.site-space-demo > div,
-.site-radius-demo > div {
-  display: grid;
-  gap: 6px;
-  justify-items: center;
-  font-size: var(--site-text-xs);
-  color: var(--site-ink-3);
-}
-
-.site-space-demo i {
-  display: block;
-  background: var(--site-accent-tint);
-  border: 1px solid var(--site-accent);
-  border-radius: 2px;
-}
-
-.site-radius-demo {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--site-s-4);
-}
-
-.site-radius-demo i {
-  display: block;
-  width: 56px;
-  height: 56px;
-  background: var(--site-paper);
-  border: 1px solid var(--site-line-strong);
-}
-
-.site-states {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--site-s-3);
-  align-items: center;
 }
 
 /* ---------- Движение: уважение к настройкам ---------- */

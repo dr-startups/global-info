@@ -20,7 +20,7 @@ import {
   type PersonaPanelJson,
 } from "@/modules/site/check/persona-view";
 import { PERSONA_TEXT } from "@/modules/site/content/check";
-import { ArrowIcon } from "../SiteIcons";
+import { Button } from "../Button";
 import { Ledger } from "./parts";
 
 const SOURCE_ICON: Record<PersonaCardJson["source"], string> = {
@@ -44,18 +44,11 @@ function RunButton({
   large?: boolean;
   onClick: () => void;
 }) {
+  // Крупная кнопка стоит одна под подводкой, остальные — в подвале карточки во всю её ширину.
   return (
-    <button
-      className={`site-btn site-btn--${variant}${large ? " site-btn--lg" : " site-btn--block"}`}
-      type="button"
-      disabled={disabled}
-      aria-busy={busy || undefined}
-      onClick={onClick}
-    >
-      <span className="site-spinner" aria-hidden="true" />
-      <span>{label}</span>
-      {large ? <ArrowIcon /> : null}
-    </button>
+    <Button variant={variant} large={large} block={!large} arrow={large} busy={busy} disabled={disabled} onClick={onClick}>
+      {label}
+    </Button>
   );
 }
 

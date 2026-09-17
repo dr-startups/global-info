@@ -22,8 +22,9 @@ import { formatDay } from "@/modules/site/check/format";
 import { resultView } from "@/modules/site/check/result-view";
 import type { PublicStatusJson } from "@/modules/site/check/types";
 import { LEAD_TEXT, NEXT_STEPS } from "@/modules/site/content/check";
-import { ArrowIcon, ErrorIcon } from "../SiteIcons";
-import { MeterSegments } from "./parts";
+import { Button } from "../Button";
+import { FieldError, TextField } from "../Field";
+import { METER_TONE_CLASS, MeterSegments, VERDICT_TONE_CLASS } from "./parts";
 
 export function nextStepsFor(status: PublicStatusJson) {
   if (status.status === "DONE" && status.result?.verdict === "NEGATIVE_FOUND") return NEXT_STEPS.NEGATIVE_FOUND;
@@ -51,7 +52,7 @@ function Attached({ status }: { status: PublicStatusJson }) {
         ? [["Материалы без темы", result.materialsFound] as const]
         : [];
   return (
-    <div className={`site-slip__body site-verdict--${view.scale.tone}`}>
+    <div className={`site-slip__body ${VERDICT_TONE_CLASS[view.scale.tone]}`}>
       <h2 className="site-slip__subtitle" id="lead-attached">
         {LEAD_TEXT.attached}
       </h2>
@@ -64,7 +65,7 @@ function Attached({ status }: { status: PublicStatusJson }) {
           view.title.text
         )}
       </p>
-      <div className={`site-meter site-meter--${view.scale.tone}`} aria-hidden="true">
+      <div className={`site-meter ${METER_TONE_CLASS[view.scale.tone]}`} aria-hidden="true">
         <MeterSegments filled={view.scale.filled} />
       </div>
       {themes.length > 0 ? (
@@ -174,30 +175,19 @@ export function LeadScreen({
             {summary}
           </div>
 
-          <div className="site-field">
-            <label className="site-label site-label--req" htmlFor="lead-name">
-              {LEAD_TEXT.name}
-              <span className="site-visually-hidden">, обязательное поле</span>
-            </label>
-            <input
-              className={`site-input${values.name.trim() ? " is-filled" : ""}`}
-              id="lead-name"
-              name="name"
-              type="text"
-              autoComplete="given-name"
-              aria-required="true"
-              aria-invalid={errors.name ? true : undefined}
-              aria-describedby={errors.name ? "lead-name-error" : undefined}
-              value={values.name}
-              onChange={(e) => update("name", e.target.value)}
-            />
-            {errors.name ? (
-              <p className="site-error" id="lead-name-error">
-                <ErrorIcon />
-                <span>{errors.name}</span>
-              </p>
-            ) : null}
-          </div>
+          <TextField
+            id="lead-name"
+            label={LEAD_TEXT.name}
+            required
+            error={errors.name}
+            input={{
+              name: "name",
+              type: "text",
+              autoComplete: "given-name",
+              value: values.name,
+              onChange: (e) => update("name", e.target.value),
+            }}
+          />
 
           <fieldset className="site-fieldset">
             <legend className="site-label site-label--req">
@@ -223,32 +213,26 @@ export function LeadScreen({
               const key = channel.value as LeadChannel;
               const on = values.channel === key;
               return (
-                <div className="site-field" key={key} hidden={!on}>
-                  <label className="site-visually-hidden" htmlFor={`lead-${key}`}>
-                    {channel.label}
-                  </label>
-                  <input
-                    className={`site-input${values[key].trim() ? " is-filled" : ""}`}
-                    id={`lead-${key}`}
-                    name={key}
-                    type={channel.type}
-                    inputMode={channel.inputMode}
-                    autoComplete={channel.autoComplete}
-                    placeholder={channel.placeholder}
-                    aria-invalid={on && contactError ? true : undefined}
-                    aria-describedby={on && contactError ? "lead-contact-error" : undefined}
-                    value={values[key]}
-                    onChange={(e) => update(key, e.target.value)}
-                  />
-                </div>
+                <TextField
+                  key={key}
+                  id={`lead-${key}`}
+                  label={channel.label}
+                  labelHidden
+                  hidden={!on}
+                  error={on && contactError ? { id: "lead-contact-error" } : undefined}
+                  input={{
+                    name: key,
+                    type: channel.type,
+                    inputMode: channel.inputMode,
+                    autoComplete: channel.autoComplete,
+                    placeholder: channel.placeholder,
+                    value: values[key],
+                    onChange: (e) => update(key, e.target.value),
+                  }}
+                />
               );
             })}
-            {contactError ? (
-              <p className="site-error" id="lead-contact-error">
-                <ErrorIcon />
-                <span>{contactError}</span>
-              </p>
-            ) : null}
+            <FieldError id="lead-contact-error" text={contactError} />
           </fieldset>
 
           <fieldset className="site-fieldset">
@@ -288,14 +272,12 @@ export function LeadScreen({
           </details>
 
           <div className="site-actions">
-            <button className="site-btn site-btn--accent site-btn--lg" id="lead-submit" type="submit" aria-busy={busy || undefined}>
-              <span className="site-spinner" aria-hidden="true" />
-              <span>{LEAD_TEXT.submit}</span>
-              <ArrowIcon />
-            </button>
-            <button className="site-btn site-btn--ghost" type="button" onClick={onBack}>
+            <Button variant="accent" large arrow id="lead-submit" type="submit" busy={busy}>
+              {LEAD_TEXT.submit}
+            </Button>
+            <Button variant="ghost" onClick={onBack}>
               {failed ? LEAD_TEXT.backFailed : LEAD_TEXT.back}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

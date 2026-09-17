@@ -22,7 +22,8 @@ import { usePathname } from "next/navigation";
 import { type MouseEvent, type PointerEvent, useEffect, useRef, useState } from "react";
 import { CONTACTS, HEADER_NAV, type NavItem } from "@/modules/site/content/contacts";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
-import { ArrowIcon, LogoMark } from "./SiteIcons";
+import { ButtonLink } from "./Button";
+import { LogoMark } from "./SiteIcons";
 import { Value } from "./Value";
 
 /** Сдвиг пальца, после которого это смахивание, а не касание пункта. */
@@ -241,10 +242,9 @@ export function SiteHeader() {
         </nav>
         {/* Главное действие сайта — под большим пальцем, а не где-то вверху страницы за закрытым меню */}
         <div className="site-drawer__bottom">
-          <Link className="site-btn site-btn--accent site-btn--lg site-btn--block" href="/#form" onClick={() => navigated("/#form")}>
+          <ButtonLink variant="accent" large block arrow href="/#form" onClick={() => navigated("/#form")}>
             {CHECK_FORM_TEXT.submit}
-            <ArrowIcon />
-          </Link>
+          </ButtonLink>
           <div className="site-drawer__foot">
             <Value text={CONTACTS.phone} />
             <Value text={CONTACTS.email} />

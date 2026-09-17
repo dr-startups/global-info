@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ButtonLink } from "@/modules/site/components/Button";
 import { Breadcrumbs } from "@/modules/site/components/content/Breadcrumbs";
 import { Cover } from "@/modules/site/components/content/Cover";
 import { RichText } from "@/modules/site/components/content/RichText";
 import { JsonLd } from "@/modules/site/components/JsonLd";
-import { ArrowIcon } from "@/modules/site/components/SiteIcons";
 import { CHECK_FORM_TEXT } from "@/modules/site/content/landing";
 import { SERVICES, SERVICES_HUB } from "@/modules/site/content/services";
 import { siteOrigin } from "@/modules/site/seo/indexing";
@@ -41,13 +41,12 @@ export default function ServicesHubPage() {
             ))}
           </dl>
           <div className="site-actions">
-            <Link className="site-btn site-btn--accent site-btn--lg" href="/#form">
+            <ButtonLink variant="accent" large arrow href="/#form">
               {CHECK_FORM_TEXT.submit}
-              <ArrowIcon />
-            </Link>
-            <Link className="site-btn site-btn--secondary site-btn--lg" href={check!.path}>
+            </ButtonLink>
+            <ButtonLink variant="secondary" large href={check!.path}>
               {SERVICES_HUB.offerMore}
-            </Link>
+            </ButtonLink>
           </div>
         </div>
       </article>

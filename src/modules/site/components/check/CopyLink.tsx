@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COPY_TEXT } from "@/modules/site/content/check";
+import { Button } from "../Button";
 
 export function useCopyLink() {
   const [copied, setCopied] = useState(false);
@@ -46,9 +47,10 @@ export function CopyButton({
   block?: boolean;
 }) {
   return (
-    <button
-      className={`site-btn site-btn--${variant}${block ? " site-btn--block" : ""} site-copy${state.copied ? " is-copied" : ""}`}
-      type="button"
+    <Button
+      variant={variant}
+      block={block}
+      className={`site-copy${state.copied ? " is-copied" : ""}`}
       onClick={() => void state.copy()}
     >
       <span className="site-copy__icons" aria-hidden="true">
@@ -64,7 +66,7 @@ export function CopyButton({
         <span className="site-copy__text">{COPY_TEXT.idle}</span>
         <span className="site-copy__text site-copy__text--done">{COPY_TEXT.done}</span>
       </span>
-    </button>
+    </Button>
   );
 }
 

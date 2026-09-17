@@ -1,6 +1,7 @@
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { Block, Phase } from "@/modules/site/content/blocks";
 import { HOW, SOURCES, TOPICS } from "@/modules/site/content/landing";
+import { Faq } from "../Faq";
 import { RichText } from "./RichText";
 
 /**
@@ -106,16 +107,7 @@ function expand(blocks: readonly Block[]): Item[] {
           {
             kind: "wide",
             node: (
-              <div key={i} className="site-faq" style={gap(4)}>
-                {block.items.map((item) => (
-                  <details key={item.q}>
-                    <summary>{item.q}</summary>
-                    <p>
-                      <RichText text={item.a} />
-                    </p>
-                  </details>
-                ))}
-              </div>
+              <Faq key={i} items={block.items} style={gap(4)} />
             ),
           },
         ];
