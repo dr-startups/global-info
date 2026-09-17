@@ -56,8 +56,37 @@
   "sidebarEllipsisForbidden": true,
   "rawCaseIdPattern": "\\bcmr[a-z0-9]{10,}\\b",
   "rendererStripPattern": "(storage/|C:\\\\\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL)",
+  "typography": {
+    "metaLabels": [
+      "Источники в регионе",
+      "Источники ответа",
+      "Источники",
+      "Примеры заголовков",
+      "Примеры",
+      "Пример",
+      "Где видно",
+      "В корпусе",
+      "Всего по теме"
+    ],
+    "metaDashLabels": [
+      "Источники"
+    ],
+    "countLabels": [
+      "Всего по теме",
+      "В корпусе"
+    ],
+    "actionLabels": [
+      "Что делать",
+      "Что проверить",
+      "Что сделать"
+    ],
+    "verbatimLabelMarker": "дословно",
+    "labelMaxChars": 48,
+    "labelMaxWords": 6
+  },
   "notes": {
     "apiAndEngine": "REMEDIATION §6.1 — «API» and «движок» removed from hard sidebar bans; keep only clearly internal tokens.",
+    "typography": "Шаг 0096: формы строк блока. Рендерер определяет роль строки по форме — ярлык меты («Источники:», строка источников через тире), ярлык действия, пределы короткого ярлыка до двоеточия — и оформляет по роли. Числа выделяются только в наших законченных предложениях: в мета-строке — лишь под счётным ярлыком (countLabels), после ярлыка со словом verbatimLabelMarker — никогда: там чужие слова. Разметки в клиентском тексте нет: структура блока — его строки.",
     "quotedText": "Живой прогон 03.09.2026: сборка упала на «Audit» из названия сайта Audit-it внутри ответа Google. internalTokenPattern — машинные идентификаторы, недопустимые в любом клиентском тексте, включая цитаты; ownVocabularyPattern — наши слова, которые встречаются и в мире (audit, pipeline, arsenkin): проверяются только в тексте, который пишем мы, и не применяются к цитируемому материалу источников (quoted)."
   }
 }

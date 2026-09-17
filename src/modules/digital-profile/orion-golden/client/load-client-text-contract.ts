@@ -15,6 +15,24 @@ const FieldBudgetsSchema = z.object({
   whatToCheck: z.number().int().positive(),
 });
 
+/**
+ * Формы строк блока, по которым рендерер определяет роль строки и её оформление
+ * (`renderer/orion_golden_render/typography.py`).
+ *
+ * Приложение этот словарь не исполняет — оно его **везёт**: контракт едет в
+ * пейлоаде, и рендерер читает раздел оттуда. Необязателен, потому что контракт
+ * без раздела законен: рендерер берёт раздел из своей копии файла.
+ */
+const TypographySchema = z.object({
+  metaLabels: z.array(z.string().min(1)).min(1),
+  metaDashLabels: z.array(z.string().min(1)),
+  countLabels: z.array(z.string().min(1)),
+  actionLabels: z.array(z.string().min(1)).min(1),
+  verbatimLabelMarker: z.string().min(1),
+  labelMaxChars: z.number().int().positive(),
+  labelMaxWords: z.number().int().positive(),
+});
+
 export const ClientTextContractSchema = z.object({
   version: z.string().min(1),
   forbiddenRawTokens: z.array(z.string().min(1)).min(1),
@@ -31,6 +49,7 @@ export const ClientTextContractSchema = z.object({
   sidebarEllipsisForbidden: z.boolean(),
   rawCaseIdPattern: z.string().min(1),
   rendererStripPattern: z.string().min(1),
+  typography: TypographySchema.optional(),
   notes: z.record(z.string()).optional(),
 });
 

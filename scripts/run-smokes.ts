@@ -144,6 +144,13 @@ export const SMOKES: Smoke[] = [
       "мерный прогон не оптимистичнее отрисовки, слышит перебор элементов и следов не оставляет (нужны Python-пакеты)",
   },
   {
+    name: "line-typography",
+    argv: ["PYTHON", "renderer/smoke_line_typography.py"],
+    tier: "full",
+    about:
+      "строки блока доживают до листа и печатаются по ролям; в чужих словах выделений нет; мера не оптимистичнее вёрстки LibreOffice (нужны Python-пакеты)",
+  },
+  {
     name: "layout-telemetry-response",
     argv: ["PYTHON", "renderer/smoke_layout_telemetry_reaches_response.py"],
     tier: "full",

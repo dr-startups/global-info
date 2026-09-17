@@ -89,6 +89,13 @@ SEARCH_TABLE_INTRO_MAX_H = 1_000_000
 SEARCH_TABLE_INTRO_GAP = 40_000
 
 
+#: Шаблоны деки, чьи страницы печатают чужой текст без кавычек. Страница
+#: AI-ответов без картинки идёт прозаическим макетом, и узнать её можно только
+#: по идентификатору шаблона деки — тем же признаком, которым её узнаёт ветка
+#: `orion_golden_surface_panel`.
+VERBATIM_TEMPLATE_IDS = frozenset({"ai-overview"})
+
+
 def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
     """Абстрактные полосы бренда справа — обложка без портрета субъекта.
 
@@ -815,6 +822,12 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         y = ctx.body(short_narrative, y, max_h=1100000, bold=True)
         y = y + 80000
     if bullets:
-        ctx.bullets(bullets, y, max_items=9, max_chars=900)
+        ctx.bullets(
+            bullets,
+            y,
+            max_items=9,
+            max_chars=900,
+            emphasize=str(slide.get("templateId") or "") not in VERBATIM_TEMPLATE_IDS,
+        )
 
 

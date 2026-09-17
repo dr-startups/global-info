@@ -341,20 +341,56 @@ def main() -> int:
     # Проводка: признак начертания обязан доехать до замера, а не быть
     # вычисленным и выброшенным. Именно так он и терялся — `_, _, size_pt` на
     # замере против `bold, line_color, size_pt` на рисовании, в одном файле, в
-    # семидесяти строках друг от друга. Проверяется по исходнику, потому что
-    # `_bullet_block_height` — замыкание внутри `body()` и снаружи не вызывается.
+    # семидесяти строках друг от друга.
+    #
+    # Проверялось это по исходнику — поиском вызовов `_bullet_line_style(` в
+    # `common.py`. С шага 0096 путь списка оформляет строки через
+    # `typography.line_layout`, таких вызовов в файле не осталось, и проверка
+    # краснела на отсутствии того, что искала, а не на дефекте. Теперь она
+    # поведенческая и спрашивает саму меру: блок, чья первая строка — заголовок
+    # (жирный), обязан где-то стоить больше высоты, чем тот же блок, где та же
+    # строка — предложение (обычным начертанием). Ширина ищется та, на которой
+    # лишние проценты жирного дают лишний перенос.
+    from pptx import Presentation
+    from pptx.util import Emu
+
+    from orion_golden_render.common import (
+        SLIDE_H,
+        SLIDE_W,
+        _Ctx,
+        get_bullet_measure,
+        reset_bullet_measure,
+    )
+
+    def measured_block_height(block: str, width: int) -> int:
+        reset_bullet_measure()
+        prs = Presentation()
+        prs.slide_width = Emu(SLIDE_W)
+        prs.slide_height = Emu(SLIDE_H)
+        ctx = _Ctx(prs, 1, 1, slide_key="p01_probe")
+        ctx.bullets([block], 1_230_000, max_items=9, max_chars=900, width=width)
+        return int(get_bullet_measure()[-1]["itemHeights"][0])
+
+    heading_line = "Криминальные и судебные материалы по проверяемому лицу за последние три года"
+    as_heading = f"{heading_line}\nПо теме найдено 5 материалов."
+    as_sentence = f"{heading_line}.\nПо теме найдено 5 материалов."
+    wiring_found = next(
+        (
+            (w, measured_block_height(as_sentence, w), measured_block_height(as_heading, w))
+            for w in range(2_000_000, 8_000_001, 100_000)
+            if measured_block_height(as_heading, w) > measured_block_height(as_sentence, w)
+        ),
+        None,
+    )
+    check(
+        "мера блока знает, что заголовок рисуется жирным",
+        wiring_found is not None,
+        f"ширина {wiring_found[0]}: предложением {wiring_found[1]}, заголовком {wiring_found[2]}"
+        if wiring_found
+        else "на всех ширинах блок с заголовком меряется как блок без него",
+    )
     common_src = (Path(__file__).resolve().parent / "orion_golden_render" / "common.py").read_text(
         encoding="utf-8"
-    )
-    measure_sites = [
-        ln.strip()
-        for ln in common_src.splitlines()
-        if "_bullet_line_style(" in ln and "def " not in ln
-    ]
-    check(
-        "признак начертания не выбрасывается ни на одном месте использования",
-        measure_sites and all(not ln.startswith("_, _,") for ln in measure_sites),
-        f"мест: {len(measure_sites)}",
     )
     check(
         "высота карточки считается по жирному заголовку",

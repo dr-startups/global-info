@@ -39,6 +39,21 @@ except ImportError:  # pragma: no cover — package-style import inside containe
         sidebar_check_failures,
     )
 
+from .typography import (
+    BLOCK_GAP_PT,
+    LINE_GAP_PT,
+    QUOTE_EXTRA_INDENT,
+    SIZE_BODY,
+    SIZE_CAPTION,
+    TONE_ACTION,
+    TONE_HEADING,
+    TONE_INK,
+    TONE_MUTED,
+    LineLayout,
+    line_layout,
+    meta_line_re,
+)
+
 # Гарнитура отчёта. Inter — SIL OFL 1.1: встраивание в PPTX/PDF, отдаваемые
 # клиенту, разрешено лицензией и не требует покупки. Кириллица нарисована
 # авторами гарнитуры, а не подставлена запасным шрифтом.
@@ -732,18 +747,24 @@ def _clip_words(text: str, max_chars: int) -> str:
     return _trim_dangling_tail(slice_)
 
 
-_META_LINE_RE = re.compile(
-    r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?|Где видно|В корпусе|Всего по теме|Пример)\s*:",
-    re.I,
-)
+#: Мета-строка «Ярлык: …». Список ярлыков — в контракте клиентского текста
+#: (раздел `typography`), и роль строки узнаётся по нему же: пока списков было
+#: два, строка могла быть метой для ножниц и текстом для оформления.
+_META_LINE_RE = meta_line_re()
 # Allow one level of nested guillemets: «Экс-владелец «Главстроя»».
 _QUOTE_BODY = r"(?:[^«»]|«[^»]*»)+"
 _QUOTE_SOURCE_RE = re.compile(rf"^«{_QUOTE_BODY}»\s*—\s*источник\b", re.I)
 _THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
 
 
+#: Куда ведёт атрибуция цитаты: домен либо полный адрес в скобках (решение
+#: «источник называется полным адресом»). Регулярка знала только первую форму,
+#: и плоский блок сегодняшнего текста не раскладывался вовсе — клиент получал
+#: стену там, где июльский текст печатался по строкам. Домен бывает
+#: кириллическим (судьироссии.рф), поэтому класс знаков — буквы Юникода.
+_SOURCE_TARGET = r"(?:\((?:[^()]|\([^()]*\))+\)|[^\W_][\w.-]*)"
 _QUOTE_SOURCE_INLINE_RE = re.compile(
-    rf"«{_QUOTE_BODY}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*",
+    rf"«{_QUOTE_BODY}»\s*—\s*источник\s+{_SOURCE_TARGET}",
     re.I,
 )
 _TAIL_SPLIT_RE = re.compile(
@@ -756,8 +777,7 @@ def _reflow_g2b_bullet(raw: str) -> list[str] | None:
     flat = re.sub(r"\s+", " ", raw.replace("\n", " ")).strip()
     if not flat:
         return None
-    quotes = _QUOTE_SOURCE_INLINE_RE.findall(flat)
-    if not quotes:
+    if not _QUOTE_SOURCE_INLINE_RE.search(flat):
         return None
     theme = ""
     rest = flat
@@ -769,26 +789,46 @@ def _reflow_g2b_bullet(raw: str) -> list[str] | None:
     ):
         theme = theme_m.group(1).strip()
         rest = theme_m.group(2).strip()
-        quotes = _QUOTE_SOURCE_INLINE_RE.findall(rest)
     first = _QUOTE_SOURCE_INLINE_RE.search(rest)
     if not first:
         return None
     framing = rest[: first.start()].strip()
     if framing and re.search(r"Найдены|публик|материал", framing, re.I) and not framing.endswith(":"):
         framing = re.sub(r"[.:]\s*$", "", framing) + ":"
-    last_end = 0
-    for m in _QUOTE_SOURCE_INLINE_RE.finditer(rest):
-        last_end = m.end()
-    tail = rest[last_end:].strip()
     out: list[str] = []
     if theme:
         out.append(theme)
     if framing:
         out.append(framing)
-    out.extend(q.strip() for q in quotes)
-    if tail:
-        out.extend(p.strip() for p in _TAIL_SPLIT_RE.split(tail) if p.strip())
+    # Между цитатами ничего не пропадает. Блок пересобирается из совпадений, и
+    # всё, что стояло между ними, прежде выбрасывалось молча — слова вместе со
+    # знаками. На стороне приложения тот же дефект уже чинили (шаг 0025); здесь
+    # он стал достижимее, когда регулярка узнала вторую форму источника.
+    matches = list(_QUOTE_SOURCE_INLINE_RE.finditer(rest))
+    for i, m in enumerate(matches):
+        out.append(m.group(0).strip())
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(rest)
+        _append_reflow_fragment(out, rest[m.end() : end])
     return out if len(out) >= 3 else None
+
+
+_LEADING_PUNCTUATION_RE = re.compile(r"^[.,;:!?…]+")
+
+
+def _append_reflow_fragment(out: list[str], fragment: str) -> None:
+    """Кусок между цитатами: знаки — предыдущей строке, слова — своими строками.
+
+    Точка принадлежит предложению, которое закончилось, а не тому, которое
+    начинается: «…» — источник (адрес)**.** Всего по теме: …
+    """
+    text = fragment.strip()
+    if not text:
+        return
+    lead = _LEADING_PUNCTUATION_RE.match(text)
+    if lead and out:
+        out[-1] = f"{out[-1]}{lead.group(0)}"
+        text = text[lead.end() :].strip()
+    out.extend(p.strip() for p in _TAIL_SPLIT_RE.split(text) if p.strip())
 
 
 def _normalize_nested_guillemets(text: str) -> str:
@@ -933,7 +973,14 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
 
 
 def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
-    """Return (bold, color, size_pt) for one line inside a structured bullet."""
+    """Return (bold, color, size_pt) for one line inside a structured bullet.
+
+    С шага 0096 это оформление строк **карточек матрицы рисков** и только их
+    (`executive._card_line_style`): путь списка оформляет строки через
+    `typography.line_layout`. Карточки оставлены здесь намеренно — их мера
+    сверена с растром (К10 смока карточек), и переводить её заодно со списком
+    значило бы менять два откалиброванных пути одним шагом.
+    """
     if _META_LINE_RE.match(line):
         return False, MUTED_COLOR, FS_CAPTION
     # Concrete evidence quotes are body text, not theme headers.
@@ -944,6 +991,41 @@ def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, fl
     if is_first and line.startswith("«") and "»" in line[:90] and "источник" not in line.lower():
         return True, NAVY, FS_BODY
     return False, BODY_COLOR, float(FS_BODY)
+
+
+#: Тон и кегль строки блока — словами их называет `typography`, в краску и
+#: пункты переводит тот, кто рисует. Одна таблица на замер и на вывод.
+_LINE_TONE_COLOR = {
+    TONE_INK: BODY_COLOR,
+    TONE_MUTED: MUTED_COLOR,
+    TONE_HEADING: NAVY,
+    TONE_ACTION: TONE_GOOD,
+}
+_LINE_SIZE_PT = {SIZE_BODY: float(FS_BODY), SIZE_CAPTION: float(FS_CAPTION)}
+
+
+def _block_line_spacing(index: int, total: int) -> tuple[int, int]:
+    """Отбивки строки блока списка в пунктах: до и после.
+
+    Объявлены отдельно, потому что их читают двое — замер и вывод; разойдутся
+    они, и высота блока перестанет совпадать с нарисованной. Между блоками —
+    отбивка блока с обеих сторон, между строками блока — отбивка строки.
+    """
+    before = BLOCK_GAP_PT if index == 0 else LINE_GAP_PT
+    after = BLOCK_GAP_PT if index == total - 1 else 0
+    return before, after
+
+
+def _set_paragraph_indent(paragraph, left: int, first_line: int) -> None:
+    """Отступ абзаца: `left` — всех строк, `first_line` — первой относительно них.
+
+    Отрицательный `first_line` даёт висячий отступ: маркер стоит левее, а
+    перенесённая строка встаёт под текст. python-pptx этих атрибутов не
+    отдаёт, они пишутся в `a:pPr` напрямую.
+    """
+    ppr = paragraph._p.get_or_add_pPr()
+    ppr.set("marL", str(int(left)))
+    ppr.set("indent", str(int(first_line)))
 
 
 # REMEDIATION §6.2 — replace QA-violating sidebar fields; never fail the whole render.
@@ -1390,8 +1472,13 @@ class _Ctx:
         bottom: int | None = None,
         x: int | None = None,
         width: int | None = None,
+        emphasize: bool = True,
     ) -> int:
         """Нарисовать список буллетов; вернуть нижнюю Y.
+
+        `emphasize=False` — страница печатает чужой текст без кавычек (ответ
+        поискового ИИ): роли строк остаются, но ярлыки и числа внутри текста не
+        выделяются — в чужих словах рендерер акцентов не расставляет.
 
         `x`/`width` — колонка списка; по умолчанию вся полоса содержимого.
         Страница AI-ответов печатает тела под панелью в левой колонке, а
@@ -1422,7 +1509,13 @@ class _Ctx:
         submitted = 0
         clipped_chars = 0
         for idx, b in enumerate(items):
-            raw = _safe(b)
+            # Строки блока, присланные приложением, — его структура: `\n` ставят
+            # `clampClientText`, `reflowThemeBullet` и модель по промпту стадии 2.
+            # Здесь стоял `_safe`, который схлопывает любые пробелы вместе с
+            # переводом строки: 35 из 173 блоков золотого кейса приходили
+            # строками и печатались одним куском, а структуру потом угадывали
+            # регулярки, не узнающие сегодняшнюю форму текста.
+            raw = _safe_preserve_breaks(b)
             if not raw:
                 prepared.append("")
                 continue
@@ -1483,29 +1576,47 @@ class _Ctx:
         page_avail = max(0, (CONTENT_BOTTOM if bottom is None else bottom) - y - 120_000)
         measure_slack = 1.08
 
+        contract = self.client_text_contract
+        # Отступ строк блока — ширина маркера с пробелом. Настоящий отступ
+        # абзаца, а не три пробела в начале строки: с пробелами перенесённая
+        # строка вставала под маркер, а не под текст.
+        text_indent = int(text_width_px(f"{BULLET_GLYPH} ", FS_BODY, True) * 9_525) + 20_000
+
+        def _line_indent(layout: LineLayout) -> int:
+            return text_indent + (QUOTE_EXTRA_INDENT if layout.deep_indent else 0)
+
+        def _layouts(block: str) -> list[tuple[str, LineLayout]]:
+            """Строки блока и их оформление — один ответ на замер и на вывод."""
+            parts = _split_structured_bullet(block) or [block]
+            return [
+                (
+                    line,
+                    line_layout(
+                        line, index=li, total=len(parts), contract=contract, emphasize=emphasize
+                    ),
+                )
+                for li, line in enumerate(parts)
+            ]
+
         def _bullet_block_height(blocks: list[str]) -> int:
             total = 0
             for b in blocks:
-                parts = _split_structured_bullet(b) or [b]
-                for li, line in enumerate(parts):
-                    text = f"{BULLET_GLYPH} {line}" if li == 0 else f"   {line}"
-                    # Начертание берётся то же, которым строка будет нарисована
-                    # (ниже, в самом выводе — тот же `_bullet_line_style`).
-                    # Здесь признак жирности выбрасывался: `_, _, size_pt`, — и
-                    # заголовок темы, который рисуется жирным, мерился обычным.
-                    # Жирное шире на 9,6–14,4%, поэтому блок буллетов считался
-                    # ниже, чем печатается, и уезжал за нижнюю границу листа.
-                    bold_line, _, size_pt = _bullet_line_style(line, is_first=(li == 0))
+                laid = _layouts(b)
+                for li, (line, layout) in enumerate(laid):
+                    # Начертание и кегль — те же, которыми строка будет
+                    # нарисована: оформление приходит тем же вызовом, что и в
+                    # выводе ниже. Строка со смешанным весом меряется жирной, а
+                    # ширина — колонка минус отступ строки: мера ошибается
+                    # только в сторону «строка длиннее».
                     total += measure_text_height(
-                        text,
-                        col_w,
-                        size_pt,
+                        line,
+                        col_w - _line_indent(layout),
+                        _LINE_SIZE_PT[layout.size],
                         line_spacing=1.12,
                         paragraph_spacing_pt=0,
-                        bold=bold_line,
+                        bold=layout.measure_bold,
                     )
-                    space_before = 6 if li == 0 else 1
-                    space_after = 6 if li == len(parts) - 1 else 1
+                    space_before, space_after = _block_line_spacing(li, len(laid))
                     total += int((space_before + space_after) * EMU_PER_PT)
             return int(total * measure_slack) + 60_000
 
@@ -1569,12 +1680,6 @@ class _Ctx:
         )
         if not kept:
             return y
-        text_lines: list[str] = []
-        for b in kept:
-            parts = _split_structured_bullet(b) or [b]
-            text_lines.append(f"{BULLET_GLYPH} {parts[0]}")
-            text_lines.extend(f"   {p}" for p in parts[1:])
-        text = "\n".join(text_lines)
         needed = _bullet_block_height(kept)
         avail = max(200_000, min(needed, page_avail))
         # Hard cap: textbox bottom must stay at/above CONTENT_BOTTOM.
@@ -1587,33 +1692,42 @@ class _Ctx:
         tf.word_wrap = True
         first_para = True
         for bi, bullet in enumerate(kept):
-            lines = _split_structured_bullet(bullet) or [bullet]
-            for li, line in enumerate(lines):
+            laid = _layouts(bullet)
+            for li, (_line, layout) in enumerate(laid):
                 p = tf.paragraphs[0] if first_para else tf.add_paragraph()
                 first_para = False
-                p.space_before = Pt(6 if li == 0 else 1)
-                p.space_after = Pt(6 if li == len(lines) - 1 else 1)
+                space_before, space_after = _block_line_spacing(li, len(laid))
+                p.space_before = Pt(space_before)
+                p.space_after = Pt(space_after)
                 p.line_spacing = 1.12
-                bold, line_color, size_pt = _bullet_line_style(line, is_first=(li == 0))
-                # Fallback color arg only for flat single-line bullets.
-                if len(lines) == 1 and color != BODY_COLOR:
-                    line_color = color
+                size_pt = _LINE_SIZE_PT[layout.size]
                 if li == 0:
                     # Маркер — отдельный прогон, чтобы квадрат был цветным, а
-                    # текст пункта — чернилами. Замер этого не касается: строка
-                    # меряется целиком, вместе с маркером и пробелом.
+                    # текст пункта — чернилами. Табуляция ставит текст на
+                    # отступ абзаца, и перенос встаёт под текст.
+                    _set_paragraph_indent(p, text_indent, -text_indent)
                     marker = p.add_run()
-                    marker.text = f"{BULLET_GLYPH} "
+                    marker.text = f"{BULLET_GLYPH}\t"
                     marker.font.name = FONT
-                    marker.font.bold = bold
+                    marker.font.bold = True
                     marker.font.size = Pt(size_pt)
                     marker.font.color.rgb = ACCENT if bi % 2 == 0 else VIOLET
-                r = p.add_run()
-                r.text = line if li == 0 else f"   {line}"
-                r.font.name = FONT
-                r.font.bold = bold
-                r.font.size = Pt(size_pt)
-                r.font.color.rgb = line_color
+                else:
+                    _set_paragraph_indent(p, _line_indent(layout), 0)
+                for run in layout.runs:
+                    if not run.text:
+                        continue
+                    r = p.add_run()
+                    r.text = run.text
+                    r.font.name = FONT
+                    r.font.bold = run.bold
+                    r.font.size = Pt(size_pt)
+                    # Цвет вызывающего — только плоскому пункту из одной строки
+                    # и только его основному тексту.
+                    tone_color = _LINE_TONE_COLOR[run.tone]
+                    if len(laid) == 1 and color != BODY_COLOR and tone_color == BODY_COLOR:
+                        tone_color = color
+                    r.font.color.rgb = tone_color
         return y + min(avail, needed + 60_000)
 
 

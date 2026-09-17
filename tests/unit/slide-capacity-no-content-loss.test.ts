@@ -173,7 +173,13 @@ describe("рендерер о выброшенном содержимом соо
     const src = readFileSync(join(process.cwd(), "renderer/orion_golden_render/common.py"), "utf8");
     // Каждая строка меряется своим кеглем: подписи «Где видно…» рисуются
     // мельче тела, и общая мерка на FS_BODY завышала высоту в 1.7–1.8 раза.
-    expect(src).toMatch(/_bullet_line_style\(line, is_first=\(li == 0\)\)/u);
+    //
+    // С шага 0096 кегль и начертание строки приходят из `typography.line_layout`
+    // — одним вызовом на замер и на вывод (`_layouts` в `ctx.bullets`). Прежде
+    // проверка искала вызов `_bullet_line_style(...)`, которого на пути списка
+    // больше нет; свойство то же — мера берёт кегль и вес строки, а не общий.
+    expect(src).toMatch(/_LINE_SIZE_PT\[layout\.size\]/u);
+    expect(src).toMatch(/bold=layout\.measure_bold/u);
     expect(src).toMatch(/measure_slack = 1\.08/u);
   });
 });

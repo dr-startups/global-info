@@ -32,6 +32,7 @@ npm run build     # сборка приложения
 | Путь | Зачем |
 |---|---|
 | `renderer/orion_golden_render/common.py` | бренд-токены, фон, карточки, колонтитул, портрет обложки |
+| `renderer/orion_golden_render/typography.py` | роль строки блока и её оформление: заголовок, цитата, мета, действие, адрес; что выделяется жирным |
 | `renderer/orion_golden_render/layout_cleeq.py` | сцена, шкала степени, ряд метрик с ключевой цифрой |
 | `renderer/orion_golden_render/slides.py` | обложка, содержание, разделители, таблицы, страницы-документы |
 | `renderer/orion_golden_render/visual.py` | плитки метрик, боковые панели, таблицы выдачи, страница AI-ответов |
@@ -49,6 +50,7 @@ npx tsx scripts/run-orion-deck-sections-report72.ts   # 20 ворот, код 1 
 npx tsx scripts/replay-deck-from-job.ts <каталог джобы>  # реплей настоящего прогона: сборка, отрисовка, суд
 python3 renderer/smoke_deck_raster_layout.py          # растр, шкала кеглей, гарнитура в PDF
 python3 renderer/smoke_search_table_layout.py         # ширины колонок и высоты строк таблиц
+python3 renderer/smoke_line_typography.py             # строки блока, роли, выделения, мера против вёрстки
 ```
 
 Правки вёрстки проверяются этими командами, а не глазами: типографическая

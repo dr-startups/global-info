@@ -140,7 +140,11 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)][:1]
     theme_bullets: list[str] = []
     for finding in findings:
-        detail = _safe(finding.get("detail") or "")
+        # Строки темы — её структура, и комментарий ниже («keep structured
+        # newlines») всегда это и подразумевал. Но `_safe` схлопывает перевод
+        # строки вместе с пробелами, и до `ctx.bullets` тема доходила одной
+        # строкой: сохранять было уже нечего.
+        detail = _safe_preserve_breaks(finding.get("detail") or "")
         headline = _safe(finding.get("headline") or "")
         # Prefer detail; avoid duplicating headline when detail already starts with it.
         if detail and headline and detail.lower().startswith(headline.lower()[:24].lower()):

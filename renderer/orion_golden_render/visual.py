@@ -547,6 +547,10 @@ def _render_ai_answers_page(
     """Страница AI-ответов: панель и тела ответов в левой колонке, сайдбар
     полной высоты справа; продолжение — только текст.
 
+    Ответ поискового ИИ — чужой текст без кавычек, поэтому список печатается
+    без выделений (`emphasize=False`): расставить в нём жирным числа значило бы
+    расставить акценты в словах поисковика.
+
     Шаблон `ai-overview` шёл в макет «картинка + сайдбар», а тот буллеты не
     рисует: текст ответов не попадал на бумагу ни разу (отчёт 83, стр. 50–55).
     Следующая раскладка ставила панель и сайдбар в верхнюю треть листа, а тела
@@ -597,6 +601,7 @@ def _render_ai_answers_page(
                 bottom=CONTENT_BOTTOM,
                 x=MARGIN_X,
                 width=img_w,
+                emphasize=False,
             )
         return
     if not continuation:
@@ -606,7 +611,12 @@ def _render_ai_answers_page(
         # молча, ворот «поле оставило след на странице» это и поймал.
         if bullets:
             y = ctx.bullets(
-                bullets, y + 40000, max_items=8, max_chars=1400, bottom=y + (CONTENT_BOTTOM - y) // 2
+                bullets,
+                y + 40000,
+                max_items=8,
+                max_chars=1400,
+                bottom=y + (CONTENT_BOTTOM - y) // 2,
+                emphasize=False,
             ) + 60000
         if has_sidebar:
             _render_analysis_cards_full_width(ctx, slide, y)
@@ -614,7 +624,9 @@ def _render_ai_answers_page(
     if bullets:
         # Ответ печатается целиком: бюджет строки — бюджет буллета шаблона
         # (`itemCharBudget` 1200), а не общий потолок в 900 знаков.
-        ctx.bullets(bullets, y + 40000, max_items=8, max_chars=1400, bottom=CONTENT_BOTTOM)
+        ctx.bullets(
+            bullets, y + 40000, max_items=8, max_chars=1400, bottom=CONTENT_BOTTOM, emphasize=False
+        )
 
 
 def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) -> None:
