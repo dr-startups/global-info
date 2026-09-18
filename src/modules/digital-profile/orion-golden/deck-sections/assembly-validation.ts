@@ -1127,26 +1127,29 @@ export function validateAssembly(input: {
   const repeatedTextSlides = new Set<string>();
   let anyPageComparable = false;
   for (const slide of rendererSlides) {
-    if (isDataRowTemplate(templateBySlot.get(slide.slideKey) ?? "")) continue;
+    const templateId = templateBySlot.get(slide.slideKey) ?? "";
+    if (isDataRowTemplate(templateId)) continue;
     const printed = [slide.narrative, ...(slide.bullets ?? []), slide.sourceNote]
       .map((block) => withoutFindingMarkers(String(block ?? "")))
       .filter((block) => block.length > 0);
     if (printed.length >= 2) anyPageComparable = true;
+    /*
+     * Ключи блоков — той же функцией, что у починки `repairRepeatedBlocks`
+     * (шаг 0107): карточка матрицы рисков — это заголовок (тема из строки
+     * таблицы) и тело, и два одинаковых тела под разными темами — не повтор.
+     * Живой прогон 18.09.2026: починка такие карточки пропустила, а ворота с
+     * ключом по одному телу уронили сборку — два ответа на вопрос
+     * «одинаково ли». Блок без единого слова после нормализации (одно тире,
+     * многоточие) в сравнение не идёт там же: клиенту он текстом не виден.
+     */
     const seen = new Set<string>();
-    for (const block of printed) {
-      // Блок, от которого после нормализации не осталось ни слова (одно тире,
-      // многоточие), текстом клиенту не виден: считать такие дублем значило бы
-      // краснеть на вёрстке, а не на повторе.
-      const key = normalizeForCompare(block);
-      if (!key) continue;
-      if (seen.has(key)) {
+    for (const block of printedBlocksForRepeatCheck(slide, templateId)) {
+      if (seen.has(block.key)) {
         repeatedTextSlides.add(slide.slideKey);
-        issues.push(
-          `repeated text on ${slide.slideKey}: ${block.replace(/\s+/gu, " ").slice(0, 90)}`
-        );
+        issues.push(`repeated text on ${slide.slideKey}: ${block.excerpt}`);
         continue;
       }
-      seen.add(key);
+      seen.add(block.key);
     }
   }
   if (!anyPageComparable) {

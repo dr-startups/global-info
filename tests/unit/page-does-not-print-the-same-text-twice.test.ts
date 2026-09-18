@@ -34,6 +34,8 @@ type Page = {
   narrative?: string;
   bullets?: string[];
   sourceNote?: string;
+  /** Таблица страницы: у матрицы рисков строка таблицы — заголовок карточки. */
+  table?: { headers: string[]; rows: string[][] };
 };
 
 function rendererSlide(page: Page, i: number, total: number): RendererSlide {
@@ -50,6 +52,7 @@ function rendererSlide(page: Page, i: number, total: number): RendererSlide {
     narrative: page.narrative,
     bullets: page.bullets ?? [],
     sourceNote: page.sourceNote,
+    table: page.table,
     evidenceRefs: [],
     findingIds: [],
     metrics: {},
@@ -304,5 +307,68 @@ describe("ворот на эталонах: ложных срабатывани�
     const report = reportFor(pages);
     expect(repeatIssues(report), repeatIssues(report).join(" | ")).toHaveLength(0);
     expect(report.checks.noRepeatedTextOnPage).toBe(true);
+  });
+});
+
+/**
+ * Шаг 0107. Живой прогон 18.09.2026 (DPA-2026-0062): две карточки матрицы
+ * рисков разных тем получили одинаковое тело (числа совпали, совет модели
+ * совпал), и ворота уронили сборку — хотя починка `repairRepeatedBlocks`
+ * ключует карточку матрицы заголовком (темой из строки таблицы) и повтором её
+ * не считает. Один словарь ключей на починку и ворота.
+ */
+describe("ворот и починка понимают «одинаково» одинаково: карточка матрицы — это заголовок и тело", () => {
+  const body =
+    "Всего по теме: 1 материал, с негативным контекстом — 1.\n" +
+    "Что делать: Проверить сведения по судебным и реестровым источникам.";
+  const headers = ["Тема", "Уровень", "Приоритет", "Идентификатор"];
+
+  it("Р1: два одинаковых тела под разными темами — не повтор, сборка не блокируется", () => {
+    const report = reportFor([
+      {
+        slideKey: "p04_risk_dashboard__cont1",
+        templateId: "risk-matrix",
+        bullets: [body, body],
+        table: {
+          headers,
+          rows: [
+            ["Финансовые претензии / долговые споры", "Средний", "P2", "finding-financial-1"],
+            ["Офшорные структуры", "Средний", "P2", "finding-offshore-1"],
+          ],
+        },
+      },
+    ]);
+    expect(repeatIssues(report)).toEqual([]);
+    expect(repeatBlocking(report)).toEqual([]);
+  });
+
+  it("Р2: те же тела под одинаковыми темами — повтор, как прежде", () => {
+    const report = reportFor([
+      {
+        slideKey: "p04_risk_dashboard__cont1",
+        templateId: "risk-matrix",
+        bullets: [body, body],
+        table: {
+          headers,
+          rows: [
+            ["Офшорные структуры", "Средний", "P2", "finding-offshore-1"],
+            ["Офшорные структуры", "Средний", "P2", "finding-offshore-2"],
+          ],
+        },
+      },
+    ]);
+    expect(repeatBlocking(report)).toHaveLength(1);
+  });
+
+  it("Р3: тела без соответствия строкам таблицы сравниваются как есть — повтор", () => {
+    const report = reportFor([
+      {
+        slideKey: "p04_risk_dashboard__cont1",
+        templateId: "risk-matrix",
+        bullets: [body, body],
+        table: { headers, rows: [["Офшорные структуры", "Средний", "P2", "finding-offshore-1"]] },
+      },
+    ]);
+    expect(repeatBlocking(report)).toHaveLength(1);
   });
 });
