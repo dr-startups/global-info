@@ -324,9 +324,35 @@ export function planBulletRecut(input: {
       ? contBudgets.reduce((a, b) => (b.bulletHeight > a.bulletHeight ? b : a))
       : { bulletHeight: UNKNOWN_CAPACITY, bulletSlots: UNKNOWN_CAPACITY };
 
+    /*
+     * Мера выше арифметики. Страница, на которой рендерер назвал потерю, отдаёт
+     * не меньше потерянных блоков — даже когда измеренные высоты говорят
+     * «влезает». Прогон «Абрамович» (14.09.2026): по высотам все пять блоков
+     * продолжения помещались, раскладка давала прежние [1,5,5], план
+     * пропускался как «ничего не изменилось», а рендерер терял блок на той же
+     * странице каждую итерацию — цикл сдавался на второй из четырёх. Потеря
+     * строк без потери блоков — тоже потеря: уезжает хотя бы последний блок.
+     *
+     * Ёмкость такого листа — число блоков (`bulletCount − lost`), и оно входит
+     * в ход вперёд наравне с высотой и слотами. Прежде потерянные блоки
+     * сваливались на следующий лист без проверки его ёмкости, мера следующей
+     * итерации называла потерю уже там — по одному листу за итерацию: прогон
+     * «Дерипаска» (18.09.2026) прошёл лестницу `cont3 → … → cont9` и упёрся
+     * в предел из восьми итераций (шаг 0106). Теперь переполнение течёт
+     * дальше по измеренным высотам и растекается по листам в один шаг.
+     */
+    const capByPage = chain.pages.map((page) => {
+      const m = measured.get(page.slideId);
+      if (!m) return undefined;
+      const lost = m.droppedBullets > 0 ? m.droppedBullets : m.droppedLines > 0 ? 1 : 0;
+      return lost > 0 ? Math.max(0, page.bulletCount - lost) : undefined;
+    });
+
     const counts = budgets.map(() => 0);
     const countAt = (i: number): number => counts[i] ?? 0;
     const budgetAt = (i: number): PageBudget => budgets[i] ?? freshPage;
+    const slotsAt = (i: number): number =>
+      Math.min(budgetAt(i).bulletSlots, capByPage[i] ?? Number.POSITIVE_INFINITY);
     let p = 0;
     let used = 0;
     for (const [idx, h] of heights.entries()) {
@@ -337,7 +363,7 @@ export function planBulletRecut(input: {
         p = seedPage[idx]!;
         used = 0;
       }
-      if (countAt(p) > 0 && (used + h > budgetAt(p).bulletHeight || countAt(p) >= budgetAt(p).bulletSlots)) {
+      if (countAt(p) > 0 && (used + h > budgetAt(p).bulletHeight || countAt(p) >= slotsAt(p))) {
         p += 1;
         used = 0;
       }
@@ -349,7 +375,7 @@ export function planBulletRecut(input: {
       while (
         countAt(p) === 0 &&
         p < budgets.length &&
-        (h > budgetAt(p).bulletHeight || budgetAt(p).bulletSlots < 1)
+        (h > budgetAt(p).bulletHeight || slotsAt(p) < 1)
       ) {
         p += 1;
         used = 0;
@@ -357,31 +383,6 @@ export function planBulletRecut(input: {
       while (counts.length <= p) counts.push(0);
       counts[p] = countAt(p) + 1;
       used += h;
-    }
-
-    /*
-     * Мера выше арифметики. Страница, на которой рендерер назвал потерю, отдаёт
-     * не меньше потерянных блоков следующей — даже когда измеренные высоты
-     * говорят «влезает». Прогон «Абрамович» (14.09.2026): по высотам все пять
-     * блоков продолжения помещались, раскладка давала прежние [1,5,5], план
-     * пропускался как «ничего не изменилось», а рендерер терял блок на той же
-     * странице каждую итерацию — цикл сдавался на второй из четырёх. Потеря
-     * строк без потери блоков — тоже потеря: уезжает хотя бы последний блок.
-     * Уехавшие блоки могут переполнить следующую страницу; её потерю назовёт
-     * следующая мера, а предел кладёт число итераций.
-     */
-    for (let i = 0; i < chain.pages.length; i += 1) {
-      const page = chain.pages[i]!;
-      const m = measured.get(page.slideId);
-      if (!m) continue;
-      const lost = m.droppedBullets > 0 ? m.droppedBullets : m.droppedLines > 0 ? 1 : 0;
-      if (lost === 0) continue;
-      const cap = Math.max(0, page.bulletCount - lost);
-      const overflow = countAt(i) - cap;
-      if (overflow <= 0) continue;
-      counts[i] = cap;
-      while (counts.length <= i + 1) counts.push(0);
-      counts[i + 1] = countAt(i + 1) + overflow;
     }
 
     /*
