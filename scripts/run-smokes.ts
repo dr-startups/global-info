@@ -158,6 +158,12 @@ export const SMOKES: Smoke[] = [
       "плитки метрик одним рядом, высота ряда по содержимому, подпись внутри плитки по вёрстке LibreOffice (нужны Python-пакеты)",
   },
   {
+    name: "sidebar-provenance",
+    argv: ["PYTHON", "renderer/smoke_sidebar_provenance.py"],
+    tier: "full",
+    about: "подпись происхождения боковой панели — внутри панели, после последнего блока, по вёрстке LibreOffice (нужны Python-пакеты)",
+  },
+  {
     name: "layout-telemetry-response",
     argv: ["PYTHON", "renderer/smoke_layout_telemetry_reaches_response.py"],
     tier: "full",

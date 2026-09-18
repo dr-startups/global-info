@@ -268,6 +268,14 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         if action
         else 0
     )
+    # Запас под подпись происхождения — измеренный, а не 160 000 (шаг 0103).
+    # Одна строка укладывалась в прежний запас впритык, две — нет: на странице
+    # подсказок подпись выходила за нижний край подложки на 10 pt. Мера та же,
+    # что у блоков; без подписи остаётся прежний нижний запас.
+    provenance_h = (
+        measure_text_height(provenance, w - 2 * pad, FS_CAPTION, line_spacing=1.2) if provenance else 0
+    )
+    provenance_reserve = provenance_h + gap if provenance else 160_000
 
     def write_block(
         title: str | None,
@@ -288,7 +296,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         # Вывод места рекомендации не уступает: он выше её в объявленном
         # порядке важности, и страница без вывода не читается вовсе.
         reserve = 0 if required or field == "recommendedActions" else action_reserve
-        avail = max_bottom - cy - 160_000 - title_h - reserve
+        avail = max_bottom - cy - provenance_reserve - title_h - reserve
         # PDF-36 D.3 — shrink the font 1–1.5 pt before dropping sentences.
         if needed > avail:
             # Только ступени шкалы: «минус полтора пункта» её нарушало.
@@ -359,23 +367,25 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     if action:
         write_block("Что сделать", action, field="recommendedActions", size=11)
     if provenance:
-        # Fine print, no frame
-        if cy >= max_bottom - 80_000:
-            # Ветка достижима только когда обязательный вывод не поместился и
-            # заменён запасной фразой: у прочих блоков в запасе остаётся
-            # 160 000 EMU, и подпись после них влезает всегда.
+        # Подпись — мелкий шрифт без рамки, после последнего блока и только
+        # целиком: рамка своей высоты, верх — `cy`. Прежняя рамка была в одну
+        # строку с верхом «не ниже max_bottom − 120 000»: подпись в две строки
+        # выходила за подложку, а при блоках у самого низа ложилась поверх
+        # последнего из них. Не входит — не рисуется; потеря названа как прежде
+        # (предупреждение, не блокер), поверх блока и за край — никогда.
+        if cy + provenance_h > max_bottom:
             _sidebar_loss(
                 ctx,
                 "provenanceLabel",
                 "dropped",
                 max_bottom - cy,
-                measure_text_height(provenance, w - 2 * pad, FS_CAPTION, line_spacing=1.2),
+                provenance_h,
                 FS_CAPTION,
                 w,
                 provenance,
             )
-        if cy < max_bottom - 80_000:
-            box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(min(cy, max_bottom - 120_000)), Emu(w - 2 * pad), Emu(140_000))
+        else:
+            box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(provenance_h))
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]

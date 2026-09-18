@@ -52,6 +52,7 @@ python3 renderer/smoke_deck_raster_layout.py          # растр, шкала �
 python3 renderer/smoke_search_table_layout.py         # ширины колонок и высоты строк таблиц
 python3 renderer/smoke_line_typography.py             # строки блока, роли, выделения, мера против вёрстки
 python3 renderer/smoke_metric_tiles.py                # плитки метрик: один ряд, высота по содержимому, подпись внутри
+python3 renderer/smoke_sidebar_provenance.py          # подпись происхождения боковой панели — внутри панели
 ```
 
 Правки вёрстки проверяются этими командами, а не глазами: типографическая
