@@ -1539,6 +1539,237 @@ def k8_one_answer_about_line_look() -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# О — оговорки серым (шаг 0105): роль строки — по словарю контракта
+# --------------------------------------------------------------------------
+#
+# Оговорка — законченное предложение фиксированного словаря без факта внутри.
+# Словарь один — раздел `typography.caveats` контракта; производители берут
+# текст оттуда же. Печать: кегль тела, серым, без единого жирного прогона.
+# Тон ширины не стоит, поэтому геометрия страницы с оговоркой и без словаря —
+# одна и та же: правило контейнеров шага 4 здесь не нарушается.
+
+CAVEAT_DOMAINS = "kapitalnytt.se, stockholm-kuriren.se"
+
+
+def _bundled_contract() -> dict[str, Any]:
+    return json.loads((REPO_ROOT / "renderer/client_text_contract.json").read_text(encoding="utf-8"))
+
+
+def caveat_templates() -> dict[str, str]:
+    return dict((_bundled_contract().get("typography") or {}).get("caveats") or {})
+
+
+def without_caveats() -> dict[str, Any]:
+    contract = _bundled_contract()
+    contract["typography"] = {**(contract.get("typography") or {}), "caveats": {}}
+    return contract
+
+
+def draw_with(items: list[str], contract: dict[str, Any] | None, *, page: int = 7) -> tuple[Any, Any]:
+    """Как `draw`, но с контрактом страницы: словарь оговорок — часть контракта."""
+    reset_layout_telemetry()
+    reset_bullet_measure()
+    prs = Presentation()
+    prs.slide_width = Emu(SLIDE_W)
+    prs.slide_height = Emu(SLIDE_H)
+    ctx = _Ctx(prs, page, 48, slide_key=f"p{page:02d}_caveat", client_text_contract=contract)
+    ctx.bullets(items, 1_230_000, max_items=9, max_chars=900)
+    box = next(
+        (
+            sh
+            for sh in prs.slides[0].shapes
+            if getattr(sh, "has_text_frame", False) and sh.text_frame.text.startswith(BULLET_GLYPH)
+        ),
+        None,
+    )
+    return prs, box
+
+
+def o1_o5_caveat_is_a_role() -> None:
+    try:
+        from orion_golden_render import typography
+    except ImportError:
+        check("О1: модуль типографики есть", False, "модуля нет")
+        return
+    templates = caveat_templates()
+    check(
+        "О0: словарь оговорок объявлен в контракте (не меньше двенадцати шаблонов)",
+        len(templates) >= 12,
+        f"шаблонов: {len(templates)}, ключи: {sorted(templates)}",
+    )
+    role_caveat = getattr(typography, "ROLE_CAVEAT", None)
+    wrong: list[str] = []
+    for key, template in templates.items():
+        text = template.replace("{domains}", CAVEAT_DOMAINS)
+        layout = typography.line_layout(text, index=1, total=3)
+        ok = (
+            role_caveat is not None
+            and layout.role == role_caveat
+            and layout.size == typography.SIZE_BODY
+            and all(run.tone == typography.TONE_MUTED and not run.bold for run in layout.runs)
+            and not layout.measure_bold
+        )
+        if not ok:
+            wrong.append(
+                f"{key}: роль {layout.role}, тона {[r.tone for r in layout.runs]}, "
+                f"жирных {sum(r.bold for r in layout.runs)}"
+            )
+    check(
+        "О1: каждый шаблон словаря — роль caveat, кегль тела, серым, без жирного",
+        bool(templates) and not wrong,
+        "; ".join(wrong)[:400] if templates else "словаря нет",
+    )
+    if not templates:
+        check("О2–О5: словаря нет — проверять нечего", False, "")
+        return
+    single = templates.get("context", "")
+    another = templates.get("databaseCardCheck", "")
+    fact_free = templates.get("sourceNotFact", "")
+    check(
+        "О0б: в словаре есть шаблоны, которыми пользуются проверки ниже",
+        bool(single and another and fact_free),
+        f"context={bool(single)}, databaseCardCheck={bool(another)}, sourceNotFact={bool(fact_free)}",
+    )
+    two = typography.line_layout(f"{single} {another}", index=1, total=3)
+    check(
+        "О2: два предложения словаря в одной строке — тоже оговорка",
+        two.role == role_caveat and all(r.tone == typography.TONE_MUTED for r in two.runs),
+        f"роль: {two.role}",
+    )
+    mixed = typography.line_layout(
+        f"Найдена статья «Дело фонда» (kapital-nyheter.se). {fact_free}", index=1, total=3
+    )
+    check(
+        "О3: факт + предложение словаря — текст: роль — свойство строки, а не куска",
+        mixed.role == typography.ROLE_TEXT and all(r.tone == typography.TONE_INK for r in mixed.runs),
+        f"роль: {mixed.role}, тона {[r.tone for r in mixed.runs]}",
+    )
+    plain = typography.line_layout(
+        "Материал требует проверки по первичным документам, и это отмечено в трассе.", index=1, total=3
+    )
+    check(
+        "О4: обычное предложение со словами оговорки — текст",
+        plain.role == typography.ROLE_TEXT,
+        f"роль: {plain.role}",
+    )
+    first = typography.line_layout(fact_free, index=0, total=3)
+    check(
+        "О5: оговорка первой строкой блока — не заголовок",
+        first.role == role_caveat and not any(r.bold for r in first.runs),
+        f"роль: {first.role}, жирных {sum(r.bold for r in first.runs)}",
+    )
+
+
+def o6_o7_grey_costs_no_place() -> None:
+    from orion_golden_render.common import CONTENT_W, MARGIN_X
+
+    caveat = caveat_templates().get("sourceNotFact", "")
+    if not caveat:
+        check("О6–О7: словаря нет — проверять нечего", False, "")
+        return
+    block = "\n".join(
+        [
+            "Уголовное дело о налоговом мошенничестве",
+            "Найдены конкретные материалы, в том числе «Дело фонда» (kapital-nyheter.se): 2 публикации.",
+            caveat,
+        ]
+    )
+    _, box = draw_with([block], None)
+    _, box0 = draw_with([block], without_caveats())
+    paras = paragraphs(box)
+    para = find(paras, "утверждения источника не равны")
+    runs = text_runs(para) if para is not None else []
+    check(
+        "О6а: на листе оговорка — абзац серым, кеглем текста, без жирного",
+        bool(runs)
+        and all(
+            r.font.color.rgb == MUTED_COLOR and not r.font.bold and r.font.size.pt == FS_BODY for r in runs
+        ),
+        f"прогоны: {[(r.text[:20], str(r.font.color.rgb), bool(r.font.bold)) for r in runs]}",
+    )
+    fact = find(paras, "Найдены конкретные")
+    fact_runs = text_runs(fact) if fact is not None else []
+    check(
+        "О6б: факт рядом остался чёрным, число в нём — жирным",
+        any(r.font.bold and r.text.strip() == "2" for r in fact_runs)
+        and any(r.font.color.rgb != MUTED_COLOR for r in fact_runs),
+        f"прогоны: {[(r.text[:20], str(r.font.color.rgb), bool(r.font.bold)) for r in fact_runs]}",
+    )
+    same = (
+        box is not None
+        and box0 is not None
+        and (int(box.top), int(box.height)) == (int(box0.top), int(box0.height))
+    )
+    check(
+        "О6в: тон не стоит места — рамка списка та же, что с пустым словарём",
+        same,
+        f"со словарём {(int(box.top), int(box.height)) if box is not None else None}, "
+        f"без {(int(box0.top), int(box0.height)) if box0 is not None else None}",
+    )
+
+    text = "Найдены публикации по теме: 3 материала.\n" + caveat
+    card_kwargs = dict(
+        title="Что показывает раздел",
+        x=MARGIN_X,
+        y=1_500_000,
+        width=CONTENT_W,
+        min_h=420_000,
+        max_h=2_000_000,
+        tone="neutral",
+        title_size=11,
+        body_size=11,
+    )
+    prs, ctx = fresh_ctx()
+    bottom = ctx.content_card(text=text, **card_kwargs)
+    prs0 = Presentation()
+    prs0.slide_width = Emu(SLIDE_W)
+    prs0.slide_height = Emu(SLIDE_H)
+    ctx0 = _Ctx(prs0, 12, 80, slide_key="p12", client_text_contract=without_caveats())
+    bottom0 = ctx0.content_card(text=text, **card_kwargs)
+    body = shape_with(prs, "утверждения источника")
+    body0 = shape_with(prs0, "утверждения источника")
+    caveat_runs = [
+        r
+        for para in (body.text_frame.paragraphs if body is not None else [])
+        for r in para.runs
+        if r.text.strip() and r.text.strip() in caveat
+    ]
+    check(
+        "О7а: в теле карточки оговорка серая и не жирная",
+        bool(caveat_runs) and all(r.font.color.rgb == MUTED_COLOR and not r.font.bold for r in caveat_runs),
+        f"прогоны: {[(r.text[:20], str(r.font.color.rgb), bool(r.font.bold)) for r in caveat_runs]}",
+    )
+    geometry = (int(body.top), int(body.height)) if body is not None else None
+    geometry0 = (int(body0.top), int(body0.height)) if body0 is not None else None
+    check(
+        "О7б: геометрия карточки — как с пустым словарём",
+        bottom == bottom0 and geometry is not None and geometry == geometry0,
+        f"низ {bottom} / {bottom0}, тело {geometry} / {geometry0}",
+    )
+
+    # Тело, в котором выделение стоило бы строки, печатается ровно
+    # (`without_weight`, шаг 4) — но ровно значит без жирного, а не без тона:
+    # оговорка остаётся серой и в таком теле.
+    prs2, ctx2 = fresh_ctx()
+    ctx2.content_card(text=TIGHT_LINE + "\n" + caveat, **card_kwargs)
+    body2 = shape_with(prs2, "утверждения источника")
+    bold2 = shape_bold_texts(body2) if body2 is not None else ["<нет тела>"]
+    caveat_runs2 = [
+        r
+        for para in (body2.text_frame.paragraphs if body2 is not None else [])
+        for r in para.runs
+        if r.text.strip() and r.text.strip() in caveat
+    ]
+    check(
+        "О7в: в ровном теле (выделение стоило бы строки) оговорка всё равно серая",
+        not bold2
+        and bool(caveat_runs2)
+        and all(r.font.color.rgb == MUTED_COLOR for r in caveat_runs2),
+        f"жирные: {bold2}, прогоны оговорки: {[(r.text[:20], str(r.font.color.rgb)) for r in caveat_runs2]}",
+    )
+
+
 def main() -> int:
     t1_lines_reach_the_page()
     t2_heading()
@@ -1564,6 +1795,8 @@ def main() -> int:
     k6b_inline_quote_is_foreign()
     k9_clause_is_not_a_label()
     k8_one_answer_about_line_look()
+    o1_o5_caveat_is_a_role()
+    o6_o7_grey_costs_no_place()
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))

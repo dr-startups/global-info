@@ -31,6 +31,8 @@ const TypographySchema = z.object({
   verbatimLabelMarker: z.string().min(1),
   labelMaxChars: z.number().int().positive(),
   labelMaxWords: z.number().int().positive(),
+  /** Словарь оговорок: ключ → шаблон предложения, `{domains}` — единственная подстановка (шаг 0105). */
+  caveats: z.record(z.string().min(1)),
 });
 
 export const ClientTextContractSchema = z.object({

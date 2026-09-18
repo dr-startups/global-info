@@ -90,6 +90,7 @@ import {
   isMockClientDomain,
 } from "../../../services/composite-serp-merge";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
+import { caveatText } from "../../client/caveats";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 
 export type ExecutiveSummaryExtras = {
@@ -4089,10 +4090,8 @@ export function highlightPhrase(input: {
   }
 
   const head = domain ? `На странице ${domain} — ${theme}` : `Выделенный результат — ${theme}`;
-  const caveat =
-    e?.verdictSubjectMatch === "likely"
-      ? "Принадлежность материала проверяемому лицу требует подтверждения."
-      : undefined;
+  // Оговорка — из словаря контракта: рендерер узнаёт её по нему и печатает серым (шаг 0105).
+  const caveat = e?.verdictSubjectMatch === "likely" ? caveatText("subjectMatchLikely") : undefined;
   const quoteSentences = splitSentences(String(e?.pageQuote ?? "").trim());
   /*
    * Цитата с многоточием в боковую панель не идёт.

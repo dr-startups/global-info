@@ -15,6 +15,7 @@ import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import type { RiskLevel } from "../contracts/common";
 import { clientSafeDomain, clientSafeDomains } from "../../services/composite-serp-merge";
 import { complianceProviderLabel } from "../../compliance-providers/provider-labels";
+import { caveatText } from "../client/caveats";
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
@@ -246,8 +247,8 @@ export const CLIENT_SUMMARY_THEME_WHY_FALLBACK =
  * композере, а `once(...)` вычищает повтор по точному тексту — две копии
  * разошлись бы, и оговорка напечаталась бы дважды.
  */
-export const CLIENT_MATERIAL_QUALIFICATION =
-  "Сведения требуют проверки по первичным документам; наличие публикации не подтверждает изложенные обвинения.";
+/** Оговорка материала — из словаря контракта: рендерер узнаёт её по нему (шаг 0105). */
+export const CLIENT_MATERIAL_QUALIFICATION = caveatText("materialUnverified");
 
 function whyItMatters(themeId: CanonicalThemeId): string {
   return CLIENT_SUMMARY_THEME_WHY[themeId] ?? CLIENT_SUMMARY_THEME_WHY_FALLBACK;
@@ -385,10 +386,10 @@ function articleFromSelection(
   );
   const allegation = stripInternalLeak(
     claim.claimKind === "DATABASE_STATUS"
-      ? "Статус в комплаенс-/мониторинговой базе требует сверки карточки."
+      ? caveatText("databaseCardCheck")
       : claim.claimKind === "OFFICIAL_RECORD"
-        ? "Официальная или реестровая запись; сверить актуальность статуса."
-        : "В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту."
+        ? caveatText("officialRecordCheck")
+        : caveatText("sourceNotFact")
   );
   return {
     title: cleanTitle,
@@ -734,10 +735,7 @@ function buildInternationalDatabases(
           ? `По открытым/импортированным данным есть сигнал, связанный с записью «${top.originalTitle}».`
           : "Зафиксирован предварительный сигнал международной или комплаенс-базы."
       ),
-      qualification: stripInternalLeak(
-        top.clientQualification ||
-          "Сигнал базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом."
-      ),
+      qualification: stripInternalLeak(top.clientQualification || caveatText("databaseSignalCheck")),
       evidenceRefs: [...new Set(list.flatMap((c) => c.evidenceRefs))],
       sourceDomains: [domain],
     });

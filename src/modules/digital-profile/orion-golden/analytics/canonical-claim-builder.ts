@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { toDisplayDate } from "../../providers/published-date";
 import { publicDomainOf } from "./public-domain";
+import { caveatText } from "../client/caveats";
 import { clientSafeDomains } from "../../services/composite-serp-merge";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
@@ -136,21 +137,31 @@ function inferClaimKind(input: {
   return "CONTEXT";
 }
 
-function qualificationFor(kind: ClaimKind, domains: string[]): string {
+/**
+ * Оговорка претензии — из словаря контракта (`typography.caveats`), а не
+ * константой здесь: рендерер узнаёт оговорку по тому же словарю и печатает её
+ * серым (шаг 0105); второй экземпляр текста разошёлся бы с первым молча.
+ *
+ * Домены называются клиенту только безопасные (`clientSafeDomains`); когда
+ * таких нет, печатается форма без доменов — «Публикация ()» на странице не бывает.
+ */
+export function qualificationFor(kind: ClaimKind, domains: string[]): string {
   switch (kind) {
-    case "SOURCE_ALLEGATION":
-      return domains.length
-        ? `Публикация (${clientSafeDomains(domains).slice(0, 2).join(", ")}) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.`
-        : "Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.";
+    case "SOURCE_ALLEGATION": {
+      const named = clientSafeDomains(domains).slice(0, 2).join(", ");
+      return named
+        ? caveatText("sourceAllegationWithDomains", { domains: named })
+        : caveatText("sourceAllegation");
+    }
     case "DATABASE_STATUS":
-      return "Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.";
+      return caveatText("databaseStatus");
     case "OFFICIAL_RECORD":
-      return "Официальная/реестровая запись; сверить актуальность статуса по первоисточнику.";
+      return caveatText("officialRecord");
     case "FACT":
-      return "Утверждение опирается на проверяемые идентификаторы/записи; сохранить ссылку на первоисточник.";
+      return caveatText("fact");
     case "CONTEXT":
     default:
-      return "Контекстный материал; не использовать как самостоятельное доказательство риска без дополнительной сверки.";
+      return caveatText("context");
   }
 }
 

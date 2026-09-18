@@ -33,3 +33,21 @@ export function composeBlockLines(heading: string | undefined, lines: readonly s
   const body = lines.map((l) => String(l ?? "").replace(/\s+/gu, " ").trim()).filter(Boolean);
   return [head, ...body].filter(Boolean).join("\n");
 }
+
+/**
+ * Записи блока с оговорками: факт — строкой, оговорка — следующей строкой.
+ *
+ * Роль строки в рендерере — свойство строки целиком (шаг 0105): оговорка,
+ * приклеенная к факту пробелом, печаталась бы чёрным вместе с ним. Одинаковая
+ * оговорка у всех записей блока печатается один раз, последней строкой: три
+ * раза подряд «сигнал требует сверки» — не три оговорки, а одна, повторённая.
+ */
+export function linesWithCaveats(items: readonly { line: string; caveat: string }[]): string[] {
+  const clean = items.map((it) => ({ line: it.line.trim(), caveat: it.caveat.trim() }));
+  const distinct = new Set(clean.map((it) => it.caveat).filter(Boolean));
+  if (distinct.size <= 1) {
+    const [shared] = distinct;
+    return [...clean.map((it) => it.line).filter(Boolean), ...(shared ? [shared] : [])];
+  }
+  return clean.flatMap((it) => [it.line, it.caveat].filter(Boolean));
+}

@@ -38,6 +38,9 @@ ROLE_QUOTE = "quote"
 ROLE_META = "meta"
 ROLE_ACTION = "action"
 ROLE_ADDRESS = "address"
+#: Оговорка — строка целиком из предложений словаря `typography.caveats`
+#: контракта: квалификация источника или сигнала без факта внутри (шаг 0105).
+ROLE_CAVEAT = "caveat"
 
 TONE_INK = "ink"
 TONE_MUTED = "muted"
@@ -129,6 +132,7 @@ class _Rules:
     meta_any: re.Pattern[str]
     count: re.Pattern[str] | None
     action: re.Pattern[str]
+    caveat: re.Pattern[str] | None
     verbatim_marker: str
     label_max_chars: int
     label_max_words: int
@@ -139,6 +143,25 @@ def _alternation(labels: list[str]) -> str:
     # как «Источники» с хвостом.
     ordered = sorted({str(x).strip() for x in labels if str(x).strip()}, key=len, reverse=True)
     return "|".join(re.escape(x).replace(r"\ ", r"\s+") for x in ordered)
+
+
+def _caveat_line_re(templates: dict[str, Any]) -> re.Pattern[str] | None:
+    """Строка, целиком состоящая из предложений словаря оговорок.
+
+    Шаблон — предложение слово в слово; `{domains}` — список доменов в скобках.
+    Строка из двух предложений словаря — оговорка; факт с оговоркой в хвосте —
+    нет: роль — свойство строки, а не её куска, и серым уйдёт только то, что
+    целиком не несёт факта.
+    """
+    forms: list[str] = []
+    for template in sorted((str(t).strip() for t in templates.values()), key=len, reverse=True):
+        if not template:
+            continue
+        parts = [re.escape(p).replace(r"\ ", r"\s+") for p in template.split("{domains}")]
+        forms.append(r"[^()]+".join(parts))
+    if not forms:
+        return None
+    return re.compile(rf"^(?:(?:{'|'.join(forms)})\s*)+$")
 
 
 @lru_cache(maxsize=8)
@@ -157,6 +180,7 @@ def _compile_rules(section_json: str) -> _Rules:
         meta_any=meta_any,
         count=re.compile(rf"^(?:{count})\s*:", re.I) if count else None,
         action=re.compile(rf"^(?:{action})\s*:", re.I),
+        caveat=_caveat_line_re(dict(section.get("caveats") or {})),
         verbatim_marker=str(section.get("verbatimLabelMarker") or "").strip().lower(),
         label_max_chars=int(section.get("labelMaxChars") or 48),
         label_max_words=int(section.get("labelMaxWords") or 6),
@@ -196,6 +220,9 @@ def line_role(line: str, *, index: int, total: int, contract: dict[str, Any] | N
         return ROLE_ACTION
     if rules.meta_any.match(text):
         return ROLE_META
+    # Раньше заголовка: оговорка первой строкой блока — всё равно оговорка.
+    if rules.caveat is not None and rules.caveat.match(text):
+        return ROLE_CAVEAT
     attributed = text.startswith("«") and _QUOTE_ATTRIBUTION_RE.search(text) is not None
     if index == 0 and not attributed:
         if _THEME_LINE_RE.match(text):
@@ -344,6 +371,11 @@ def line_layout(
         return LineLayout(role, SIZE_BODY, (Run(text, True, TONE_HEADING),))
     if role == ROLE_ADDRESS:
         return LineLayout(role, SIZE_CAPTION, (Run(text, False, TONE_MUTED),))
+    if role == ROLE_CAVEAT:
+        # Серым, кеглем тела, без единого жирного прогона: оговорка не спорит
+        # с фактом за внимание, но остаётся читаемой (решение 3(а) шага 0095).
+        # Тон ширины не стоит — мера и геометрия те же, что у ровного текста.
+        return LineLayout(role, SIZE_BODY, (Run(text, False, TONE_MUTED),))
     if role == ROLE_META:
         m = rules.meta_any.match(text)
         end = m.end() if m else 0

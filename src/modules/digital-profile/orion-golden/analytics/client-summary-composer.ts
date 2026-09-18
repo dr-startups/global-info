@@ -30,7 +30,7 @@ import { pluralRu } from "../../report/i18n/plural-ru";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 import { sourceAttribution } from "../client/client-address";
 import { sourceQuote } from "../client/client-quote";
-import { composeBlockLines } from "../client/block-lines";
+import { composeBlockLines, linesWithCaveats } from "../client/block-lines";
 import { splitSentences } from "../deck-sections/sentence-split";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
@@ -403,10 +403,12 @@ function composeIsolated(pack: ClientSummaryPack): string {
    * дел, и занимать им строку в резюме руководителя незачем.
    */
   if (pack.isolatedSignificantItems.length === 0) return "";
-  const lines = pack.isolatedSignificantItems.slice(0, 5).map((item) =>
-    finishSentence(
-      `«${item.title}»${sourceSuffix(item.domain)}. ${item.description} ${item.qualification}`
-    )
+  // Оговорка — своей строкой, одинаковая у всех публикаций — один раз (шаг 0105).
+  const lines = linesWithCaveats(
+    pack.isolatedSignificantItems.slice(0, 5).map((item) => ({
+      line: finishSentence(`«${item.title}»${sourceSuffix(item.domain)}. ${item.description}`),
+      caveat: finishSentence(item.qualification),
+    }))
   );
   return composeBlockLines("Единичные существенные публикации", lines);
 }
@@ -417,10 +419,12 @@ function composeDatabases(pack: ClientSummaryPack): string {
       "Отдельные подтверждённые карточки международных баз в клиентском резюме не сформированы либо требуют отдельной сверки"
     );
   }
-  const lines = pack.internationalDatabases.map((d) =>
-    finishSentence(
-      `${d.databaseName}. ${d.statusSummary} ${d.qualification}`
-    )
+  // Запись базы — строкой, оговорка — следующей; одна на блок, если у всех одинакова (шаг 0105).
+  const lines = linesWithCaveats(
+    pack.internationalDatabases.map((d) => ({
+      line: finishSentence(`${d.databaseName}. ${d.statusSummary}`),
+      caveat: finishSentence(d.qualification),
+    }))
   );
   return composeBlockLines("Международные базы и официальные источники", lines);
 }

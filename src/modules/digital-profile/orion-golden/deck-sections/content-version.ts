@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v196" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v197" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,11 @@ export const DECK_CONTENT_VERSION = "deck-sections-v196" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 18.09 номер двинут до v197: оговорка «почему выделено» берётся из словаря
+ * контракта (`typography.caveats`), текст тот же — рендерер узнаёт оговорку по
+ * словарю и печатает серым (шаг 0105). Подъём ничего не стоит: паков v196 нигде
+ * нет, Railway ещё на прежней ветке.
  *
  * 18.09 номер двинут до v196: обрезанный поисковиком заголовок печатается как «…»
  * к последнему слову, а многоточие внутри «ёлочек» больше не переписывается
@@ -674,7 +679,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v196" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "60a2707451532abc" as const;
+export const DECK_BUILDER_FINGERPRINT = "0c8310580e410422" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -697,7 +702,7 @@ export const DECK_BUILDER_FINGERPRINT = "60a2707451532abc" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v196" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v197" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
