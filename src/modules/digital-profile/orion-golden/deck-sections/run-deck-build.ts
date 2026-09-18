@@ -1425,6 +1425,14 @@ export function bulletItemFoldOf(input: {
   return { leading, trailing };
 }
 
+/** Применить правку к тексту вне «ёлочек»; сами цитаты остаются как есть. */
+function outsideQuotes(text: string, fix: (part: string) => string): string {
+  return text
+    .split(/(«[^»]*»)/u)
+    .map((part, i) => (i % 2 === 1 ? part : fix(part)))
+    .join("");
+}
+
 /**
  * Sidebar text must be complete sentences without ellipsis (renderer QA).
  * PDF-36 D.1 — cut ONLY on sentence boundaries: a shorter complete thought
@@ -1433,7 +1441,12 @@ export function bulletItemFoldOf(input: {
  */
 export function sidebarSafe(text: string | undefined, budget = 240): string | undefined {
   if (!text) return undefined;
-  const out = text.replace(/\s*(\.\.\.|…)\s*/gu, ". ").replace(/\.\s*\./gu, ".").trim();
+  // Многоточие внутри «ёлочек» — слова источника (обрезанный поисковиком
+  // заголовок), и переписывать его нельзя: «Глинка. »; на листе «почему
+  // выделено» — след прежней замены (шаг 0104). Правило действует вне кавычек.
+  const out = outsideQuotes(text, (part) =>
+    part.replace(/\s*(\.\.\.|…)\s*/gu, ". ").replace(/\.\s*\./gu, ".")
+  ).trim();
   if (out.length <= budget) return out || undefined;
   // Keep whole sentences that fit the budget.
   const sentences = splitSentences(out);

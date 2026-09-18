@@ -140,6 +140,9 @@ describe("client-text-contract §6.1", () => {
       { text: "requires_review status", surface: "body" },
       { text: "lexis_nexis screening ok", surface: "body" },
       { text: "См. таблицу…", surface: "sidebar" },
+      // Многоточие внутри «ёлочек» — слова источника (обрезанный поисковиком
+      // заголовок), а не оборванное предложение панели (шаг 0104).
+      { text: "«Связанный с Россией бизнесмен Сергей Глинка…» — x.com: по заголовку в выдаче.", surface: "sidebar" },
       { text: "Данные от provider X", surface: "sidebar" },
       { text: "synthetic reconstruction of SERP", surface: "sidebar" },
       { text: "Поисковый движок не вызывался", surface: "sidebar" },
@@ -177,6 +180,26 @@ describe("client-text-contract §6.1", () => {
         `fixture ${i} issues for "${fixtures[i]!.text}"`
       );
     }
+
+    // Шаг 0104: многоточие внутри «ёлочек» — слова источника, не дефект панели;
+    // вне кавычек — по-прежнему дефект. Обе стороны обязаны ответить так.
+    const quotedIdx = fixtures.findIndex((f) => f.text.startsWith("«Связанный с Россией"));
+    assert.ok(quotedIdx >= 0, "образец с многоточием в кавычках есть в списке");
+    assert.equal(
+      pyVerdicts[quotedIdx]!.issues.some((i) => i.code === "sidebar-ellipsis"),
+      false,
+      "python: многоточие внутри кавычек — не дефект панели"
+    );
+    assert.equal(
+      evaluateClientText(fixtures[quotedIdx]!.text, { surface: "sidebar" }).issues.some((i) => i.code === "sidebar-ellipsis"),
+      false,
+      "ts: многоточие внутри кавычек — не дефект панели"
+    );
+    assert.equal(
+      evaluateClientText("См. таблицу…", { surface: "sidebar" }).issues.some((i) => i.code === "sidebar-ellipsis"),
+      true,
+      "многоточие вне кавычек — дефект панели, как прежде"
+    );
 
     // After §6.1: API / движок alone must not fail sidebar.
     assert.equal(evaluateClientText("Поисковый движок не вызывался", { surface: "sidebar" }).ok, true);

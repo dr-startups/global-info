@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:b9fdddea2358c06548f29ff9cba880d15088f13086bdabaa94469d93eb91e665",
-  "contentVersion": "deck-sections-v195",
+  "contentHash": "sha256:bd2f993d7d65caaff0792dcefc13f8972dd77f44c5eb288999ba8c7f06e0203a",
+  "contentVersion": "deck-sections-v196",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,7 +149,7 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP_SCREENSHOT",
-  "generatedAt": "2026-09-18T11:55:49.201Z",
+  "generatedAt": "2026-09-18T12:34:30.859Z",
   "inputHash": "sha256:42b9bb176abbae5bc27c7085897640ad0a6a7f2caa043d858d2f304d2642e2c1:bfdcc53cd95ed05f",
   "inputs": {
     "evidenceRefs": [
@@ -370,7 +370,7 @@
       "content": {
         "highlightExplanations": [
           {
-            "clientReason": "«Связанный с Россией бизнесмен Сергей Глинка ...»; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
+            "clientReason": "«Связанный с Россией бизнесмен Сергей Глинка…»; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта. (x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
             "frameTone": "red"
           },
           {
@@ -444,7 +444,7 @@
       "baseSlotId": "p10_ru_serp_visual",
       "content": {
         "bullets": [
-          "«Связанный с Россией бизнесмен Сергей Глинка ...» — x.com\nОтнесено к теме «Криминальные / судебные материалы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта.\n(x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
+          "«Связанный с Россией бизнесмен Сергей Глинка…» — x.com\nОтнесено к теме «Криминальные / судебные материалы» по заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта.\n(x.com/rucriminalinfo/status/2008361452998914141?lang=ru).",
           "PEP / RCA / watchlist-сигналы — rupep.org\nПо заголовку и описанию в выдаче; текст страницы в этом прогоне не проверялся; материал учтён в находках отчёта.\n(rupep.org/ru/person/8095)."
         ]
       },

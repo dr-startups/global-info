@@ -52,7 +52,7 @@ import {
 } from "../../../serp-observation/resolve-observation-highlights";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
-import { sourceQuote } from "../../client/client-quote";
+import { quoteBody, sourceQuote } from "../../client/client-quote";
 import { composeBlockLines } from "../../client/block-lines";
 import { clientRiskStep, riskAttentionPhrase, riskWord } from "../../client/risk-scale";
 import {
@@ -4021,7 +4021,9 @@ export function highlightPhrase(input: {
     // печатает адрес в конце фразы, а в кавычках он читался бы как название.
     const titleIsAddress = /^(?:https?:\/\/|www\.)/i.test(rawTitle) || (linkText != null && rawTitle === linkText);
     const title = titleIsAddress ? "" : clampClientText(rawTitle, 110);
-    const named = title ? `«${title}»` : rubric;
+    // Заголовок — цитата источника, и печатает её составитель цитаты: обрезку
+    // поисковика («...») он показывает как «…», а «ёлочки» внутри — лапками.
+    const named = title ? `«${quoteBody(title)}»` : rubric;
     // Точка с запятой, а не тире: у «материал учтён» своё подлежащее, и через
     // тире оценка приравнивалась к материалу.
     const tail = input.finding

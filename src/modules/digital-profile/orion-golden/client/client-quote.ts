@@ -77,8 +77,19 @@ function stripWrapping(text: string): string {
  * решить за источник, где кончается его цитата. Прямые кавычки считаются по
  * чётности, непарная последняя снимается.
  */
+/**
+ * Хвостовое многоточие заголовка — маркер обрезки у поисковика (« ...»).
+ *
+ * Печатается так же, как закрывается оборванная цитата (`closeTail`): «…»,
+ * приклеенное к последнему слову. Прежде заголовок шёл как есть — «Глинка ...»
+ * с пробелом перед точками, а панель, которой многоточия запрещены, переписывала
+ * его в «Глинка. » (шаг 0104). Многоточие в середине — слова источника, не
+ * трогается.
+ */
+const TRAILING_ELLIPSIS_RE = /\s*(?:\.{3}|…)+\s*$/u;
+
 export function quoteBody(text: string): string {
-  const src = stripWrapping(String(text ?? ""));
+  const src = stripWrapping(String(text ?? "")).replace(TRAILING_ELLIPSIS_RE, "…");
   const out: string[] = [];
   const openStack: number[] = [];
   let straightOpen = false;

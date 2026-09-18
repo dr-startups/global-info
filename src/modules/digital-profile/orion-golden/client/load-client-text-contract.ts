@@ -149,7 +149,11 @@ export function evaluateClientText(
   const value = String(text ?? "");
 
   if (surface === "sidebar") {
-    if (contract.sidebarEllipsisForbidden && (value.includes("…") || value.includes("..."))) {
+    // Многоточие внутри «ёлочек» — слова источника, а не оборванное
+    // предложение панели; правило действует вне кавычек (шаг 0104). Тот же
+    // разрез стоит в `renderer/client_text_contract.py`.
+    const outside = value.replace(/«[^»]*»/gu, "");
+    if (contract.sidebarEllipsisForbidden && (outside.includes("…") || outside.includes("..."))) {
       issues.push({ code: "sidebar-ellipsis" });
     }
     const m = sidebarBannedRegex(contract).exec(value);

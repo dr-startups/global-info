@@ -74,7 +74,11 @@ def evaluate_client_text(
     issues: list[dict[str, str]] = []
 
     if surface == "sidebar":
-        if c.get("sidebarEllipsisForbidden") and ("…" in value or "..." in value):
+        # Многоточие внутри «ёлочек» — слова источника, а не оборванное
+        # предложение панели; правило действует вне кавычек (шаг 0104). Тот же
+        # разрез — в `load-client-text-contract.ts`.
+        outside = re.sub(r"«[^»]*»", "", value)
+        if c.get("sidebarEllipsisForbidden") and ("…" in outside or "..." in outside):
             issues.append({"code": "sidebar-ellipsis"})
         banned = re.compile(str(c["sidebarBannedPattern"]), re.I)
         m = banned.search(value)
