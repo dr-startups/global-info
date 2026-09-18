@@ -16,7 +16,30 @@
 
 const BOUNDARY = /(?<=[.!?…])\s+/gu;
 
-type QuoteState = { angle: number; low: number; straight: number };
+/*
+ * Точка после сокращения или инициала — не конец предложения (шаг 0110).
+ *
+ * Отчёт Дерипаски 18.09.2026: боковая панель печатала цитату «Оле́г Влади́мирович
+ * Дерипа́ска ( род.», блок темы — «2 января 1968, Дзержинск …) — российский
+ * предприниматель…» дважды: одно предложение Википедии, разрезанное по «род.».
+ * Тот же нож резал «г. Москва», «Ф. С. Бондарчук», «12 тыс. рублей».
+ * Словарь короткий и один на модуль; инициал — одиночная буква перед точкой.
+ */
+const ABBREVIATIONS = new Set(
+  (
+    "род ум г гг ул пр просп пл д кв стр т тыс млн млрд им св ст п пп см руб коп обл пос гл ч ред изд " +
+    "англ лат рус нем фр др тел etc vs st mr mrs dr jr no inc ltd co"
+  ).split(" ")
+);
+
+function endsWithAbbreviation(text: string, dotAt: number): boolean {
+  if (text[dotAt] !== ".") return false;
+  const word = /(\p{L}+)$/u.exec(text.slice(0, dotAt))?.[1];
+  if (!word) return false;
+  return [...word].length === 1 || ABBREVIATIONS.has(word.toLowerCase());
+}
+
+type QuoteState = { angle: number; low: number; straight: number; paren: number };
 
 function step(state: QuoteState, ch: string): void {
   if (ch === "«") state.angle += 1;
@@ -24,11 +47,13 @@ function step(state: QuoteState, ch: string): void {
   else if (ch === "„") state.low += 1;
   else if (ch === "“") state.low -= 1;
   else if (ch === '"') state.straight += 1;
+  else if (ch === "(") state.paren += 1;
+  else if (ch === ")") state.paren -= 1;
 }
 
 /** Кавычки текста парны: ёлочки и лапки сходятся к нулю, прямых — чётное число. */
 function quotesBalance(text: string): boolean {
-  const state: QuoteState = { angle: 0, low: 0, straight: 0 };
+  const state: QuoteState = { angle: 0, low: 0, straight: 0, paren: 0 };
   for (const ch of text) {
     step(state, ch);
     if (state.angle < 0 || state.low < 0) return false;
@@ -36,18 +61,35 @@ function quotesBalance(text: string): boolean {
   return state.angle === 0 && state.low === 0 && state.straight % 2 === 0;
 }
 
-/** Позиции границ предложений (индекс начала пробела), с учётом кавычек. */
+/** Скобки текста парны: предложение не кончается внутри открытой скобки — если они сходятся. */
+function parensBalance(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(") depth += 1;
+    else if (ch === ")") {
+      depth -= 1;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
+/** Позиции границ предложений (индекс начала пробела), с учётом кавычек, скобок и сокращений. */
 function boundaries(text: string): number[] {
   const guarded = quotesBalance(text);
+  const parensGuarded = parensBalance(text);
   const out: number[] = [];
-  const state: QuoteState = { angle: 0, low: 0, straight: 0 };
+  const state: QuoteState = { angle: 0, low: 0, straight: 0, paren: 0 };
   let scanned = 0;
   for (const m of text.matchAll(BOUNDARY)) {
     const at = m.index ?? 0;
     for (const ch of text.slice(scanned, at)) step(state, ch);
     scanned = at;
-    const inside = state.angle > 0 || state.low > 0 || state.straight % 2 === 1;
-    if (!guarded || !inside) out.push(at);
+    const insideQuotes = state.angle > 0 || state.low > 0 || state.straight % 2 === 1;
+    if (guarded && insideQuotes) continue;
+    if (parensGuarded && state.paren > 0) continue;
+    if (endsWithAbbreviation(text, at - 1)) continue;
+    out.push(at);
   }
   return out;
 }
@@ -74,7 +116,7 @@ export function splitSentences(text: string): string[] {
 export function splitOutsideQuotes(text: string, boundary: string): string[] {
   const guarded = quotesBalance(text);
   const parts: string[] = [];
-  const state: QuoteState = { angle: 0, low: 0, straight: 0 };
+  const state: QuoteState = { angle: 0, low: 0, straight: 0, paren: 0 };
   let from = 0;
   let i = 0;
   while (i < text.length) {

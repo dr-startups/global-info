@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v200" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v201" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,11 @@ export const DECK_CONTENT_VERSION = "deck-sections-v200" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 18.09 номер двинут до v201: токенизатор предложений знает сокращения
+ * («род.», «г.», «тыс.»), инициалы и скобки — цитата «Олег Дерипаска (род.
+ * 2 января 1968, …)» больше не режется на два обрывка (шаг 0110). Паки v200
+ * (отчёт Дерипаски, 21:31) печатали обрывки и без подъёма взялись бы из кэша.
  *
  * 18.09 номер двинут до v200: цитата чистится от знаков ударения Википедии и
  * пробелов перед знаками из разметки источника, цитаты-двойники по тексту не
@@ -697,7 +702,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v200" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "04f86d4c6d9d504d" as const;
+export const DECK_BUILDER_FINGERPRINT = "80c71bb4a340bedb" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -720,7 +725,7 @@ export const DECK_BUILDER_FINGERPRINT = "04f86d4c6d9d504d" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v200" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v201" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
