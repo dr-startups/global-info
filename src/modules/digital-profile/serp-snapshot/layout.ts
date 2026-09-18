@@ -5,8 +5,7 @@
  * deterministic for a given width/height.
  */
 
-/** Average glyph width as a fraction of font size (system sans approximation). */
-const CHAR_W_FACTOR = 0.52;
+import { FALLBACK_ADVANCE, DEJAVU_SANS_UNITS_PER_EM, textWidthPx } from "./font-metrics";
 
 export const FONT_STACK =
   "'DejaVu Sans','Segoe UI',Arial,Helvetica,'Liberation Sans',sans-serif";
@@ -129,12 +128,22 @@ export function computeLayout(width: number, height: number): SnapshotLayout {
 // Text fitting (deterministic, char-width approximation)
 // ---------------------------------------------------------------------------
 
+/**
+ * Ширина текста — по таблице глифов DejaVu Sans (`font-metrics.ts`), а не по
+ * среднему знаку (шаг 0116): множитель 0.52 занижал кириллицу на 13 %, и
+ * строки панели ИИ-ответа, свёрстанные под ширину карточки, в растре выходили
+ * за её край.
+ */
 export function estTextWidth(text: string, fontSize: number): number {
-  return text.length * fontSize * CHAR_W_FACTOR;
+  return textWidthPx(text, fontSize);
 }
 
+/**
+ * Сколько знаков самой широкой строчной буквы влезает в ширину — верхняя
+ * оценка для грубых прикидок; вёрстка меряет кандидатов `estTextWidth`.
+ */
 export function maxCharsForWidth(widthPx: number, fontSize: number): number {
-  return Math.max(1, Math.floor(widthPx / (fontSize * CHAR_W_FACTOR)));
+  return Math.max(1, Math.floor(widthPx / ((fontSize * FALLBACK_ADVANCE) / DEJAVU_SANS_UNITS_PER_EM)));
 }
 
 /** Truncate to fit `widthPx` at `fontSize`, appending an ellipsis if cut. */
@@ -144,10 +153,14 @@ export function truncateToWidth(
   fontSize: number
 ): string {
   const t = String(text ?? "");
-  const max = maxCharsForWidth(widthPx, fontSize);
-  if (t.length <= max) return t;
-  if (max <= 1) return "…";
-  return t.slice(0, max - 1).trimEnd() + "…";
+  if (estTextWidth(t, fontSize) <= widthPx) return t;
+  const chars = [...t];
+  // Снимаем знаки с конца, пока строка с многоточием не влезет.
+  for (let n = chars.length - 1; n > 0; n -= 1) {
+    const cut = chars.slice(0, n).join("").trimEnd() + "…";
+    if (estTextWidth(cut, fontSize) <= widthPx) return cut;
+  }
+  return "…";
 }
 
 /**
@@ -160,7 +173,7 @@ export function wrapToWidth(
   fontSize: number,
   maxLines: number
 ): string[] {
-  const max = maxCharsForWidth(widthPx, fontSize);
+  const fits = (s: string): boolean => estTextWidth(s, fontSize) <= widthPx;
   const words = String(text ?? "")
     .replace(/\s+/g, " ")
     .trim()
@@ -173,10 +186,14 @@ export function wrapToWidth(
 
   const pushHardSplit = (word: string) => {
     let rest = word;
-    while (rest.length > max) {
+    while (!fits(rest)) {
       if (lines.length >= maxLines) return;
-      lines.push(rest.slice(0, max - 1) + "…");
-      rest = rest.slice(max - 1);
+      // Самый длинный кусок, который вместе с многоточием влезает в строку.
+      const chars = [...rest];
+      let n = chars.length - 1;
+      while (n > 1 && !fits(chars.slice(0, n).join("") + "…")) n -= 1;
+      lines.push(chars.slice(0, n).join("") + "…");
+      rest = chars.slice(n).join("");
     }
     current = rest;
   };
@@ -184,7 +201,7 @@ export function wrapToWidth(
   for (const word of words) {
     if (lines.length >= maxLines) break;
     const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= max) {
+    if (fits(candidate)) {
       current = candidate;
       continue;
     }
@@ -193,7 +210,7 @@ export function wrapToWidth(
       current = "";
       if (lines.length >= maxLines) break;
     }
-    if (word.length > max) {
+    if (!fits(word)) {
       pushHardSplit(word);
     } else {
       current = word;
@@ -206,9 +223,8 @@ export function wrapToWidth(
     const consumed = lines.join(" ").length;
     const totalLen = words.join(" ").length;
     if (totalLen > consumed) {
-      const last = lines[maxLines - 1];
-      lines[maxLines - 1] =
-        last.length >= max ? last.slice(0, max - 1) + "…" : last + "…";
+      const last = lines[maxLines - 1]!;
+      lines[maxLines - 1] = fits(`${last}…`) ? `${last}…` : truncateToWidth(last, widthPx, fontSize);
     }
   }
   return lines;
