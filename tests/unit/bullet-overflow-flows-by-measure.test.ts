@@ -120,4 +120,74 @@ describe("переполнение течёт по мере", () => {
     });
     expect(plan.get("p29_uae_wikipedia")).toEqual([1, 5, 4, 1]);
   });
+
+  it("П5: ёмкость листа с потерей — сколько блоков на нём осталось, а не bulletCount минус выброшенные элементы", () => {
+    // Хвостовая обвязка («Источники — …») — последний элемент листа; рендерер
+    // выбрасывает с конца, и она уходит первой. Подано три блока и строка
+    // источников, оставлено два блока, выброшены блок и строка: droppedBullets = 2,
+    // а блоков потеряно один. Ёмкость — два блока.
+    const chain: SlotChain = {
+      baseSlotId: "appendix_main_base",
+      pages: [
+        { slideId: "appendix_main_base", bulletCount: 3, fold: { leading: 0, trailing: 1 } },
+        { slideId: "appendix_main_base__cont1", bulletCount: 1, fold: { leading: 0, trailing: 1 } },
+      ],
+    };
+    const plan = planBulletRecut({
+      chains: [chain],
+      verdict: verdict([
+        page({
+          slideKey: "appendix_main_base",
+          itemHeights: [H, H, H, H / 4],
+          keptItems: 2,
+          droppedBullets: 2,
+          availableHeight: H * 2 + H / 4,
+          columnWidth: 10_000_000,
+        }),
+        page({
+          slideKey: "appendix_main_base__cont1",
+          itemHeights: [H, H / 4],
+          keptItems: 2,
+          availableHeight: H * 2 + H / 4,
+          columnWidth: 10_000_000,
+        }),
+      ]),
+    });
+    expect(plan.get("appendix_main_base")).toEqual([2, 2]);
+  });
+
+  it("П6: выброшена только строка источников — лист всё равно отдаёт один блок (правило 0080)", () => {
+    // По высотам все три блока и строка источников влезают (3,25H при 4H), а
+    // рендерер строку выбросил — «мера выше арифметики»: лист отдаёт блок.
+    // Первая редакция фикстуры давала листу 3H, и блок уезжал по высоте сам:
+    // мутация «снят предел bulletCount − 1» оставалась зелёной.
+    const chain: SlotChain = {
+      baseSlotId: "appendix_main_base",
+      pages: [
+        { slideId: "appendix_main_base", bulletCount: 3, fold: { leading: 0, trailing: 1 } },
+        { slideId: "appendix_main_base__cont1", bulletCount: 1, fold: { leading: 0, trailing: 1 } },
+      ],
+    };
+    const plan = planBulletRecut({
+      chains: [chain],
+      verdict: verdict([
+        page({
+          slideKey: "appendix_main_base",
+          itemHeights: [H, H, H, H / 4],
+          keptItems: 3,
+          droppedBullets: 1,
+          availableHeight: H * 4,
+          columnWidth: 10_000_000,
+        }),
+        page({
+          slideKey: "appendix_main_base__cont1",
+          itemHeights: [H, H / 4],
+          keptItems: 2,
+          availableHeight: H * 3,
+          columnWidth: 10_000_000,
+        }),
+      ]),
+    });
+    expect(plan.get("appendix_main_base")).toEqual([2, 2]);
+  });
 });

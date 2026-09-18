@@ -344,8 +344,21 @@ export function planBulletRecut(input: {
     const capByPage = chain.pages.map((page) => {
       const m = measured.get(page.slideId);
       if (!m) return undefined;
-      const lost = m.droppedBullets > 0 ? m.droppedBullets : m.droppedLines > 0 ? 1 : 0;
-      return lost > 0 ? Math.max(0, page.bulletCount - lost) : undefined;
+      if (m.droppedBullets > 0) {
+        /*
+         * Ёмкость — сколько **блоков** на листе осталось, а не `bulletCount −
+         * droppedBullets`: рендерер выбрасывает элементы с конца, и первой
+         * уходит хвостовая обвязка («Источники — …»), которая блоком не
+         * является. Считая её потерянным блоком, планировщик занижал ёмкость
+         * каждого листа с потерей на один блок — базовый лист приложения
+         * оставался с одним блоком и тремя четвертями пустого листа (шаг 0108).
+         * Лист с потерей отдаёт хотя бы один блок (правило 0080), даже если
+         * выброшена только обвязка: она тоже не поместилась.
+         */
+        const keptBlocks = Math.min(page.bulletCount, Math.max(0, m.keptItems - page.fold.leading));
+        return Math.max(0, Math.min(page.bulletCount - 1, keptBlocks));
+      }
+      return m.droppedLines > 0 ? Math.max(0, page.bulletCount - 1) : undefined;
     });
 
     const counts = budgets.map(() => 0);
