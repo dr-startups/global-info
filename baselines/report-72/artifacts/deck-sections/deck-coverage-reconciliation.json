@@ -2,11 +2,11 @@
   "version": "deck-coverage-reconciliation-v1",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-09-18T22:41:08.474Z",
+  "generatedAt": "2026-09-18T23:12:02.085Z",
   "baseSlotCoverage": 37,
   "requiredBaseSlotCount": 37,
-  "physicalPageCount": 48,
-  "continuationCount": 11,
+  "physicalPageCount": 47,
+  "continuationCount": 10,
   "slots": [
     {
       "baseSlotId": "p01_cover",
@@ -220,8 +220,7 @@
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "newPageNumber": 32,
       "continuationPages": [
-        33,
-        34
+        33
       ]
     },
     {
@@ -229,7 +228,7 @@
       "canonicalPage": 26,
       "title": "ОАЭ — метрики покрытия",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 35,
+      "newPageNumber": 34,
       "continuationPages": []
     },
     {
@@ -237,9 +236,9 @@
       "canonicalPage": 27,
       "title": "ОАЭ — позиции в поисковой выдаче",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 36,
+      "newPageNumber": 35,
       "continuationPages": [
-        37
+        36
       ]
     },
     {
@@ -247,7 +246,7 @@
       "canonicalPage": 28,
       "title": "ОАЭ — снимок выдачи",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 38,
+      "newPageNumber": 37,
       "continuationPages": []
     },
     {
@@ -255,7 +254,7 @@
       "canonicalPage": 29,
       "title": "ОАЭ — подсказки поиска",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 39,
+      "newPageNumber": 38,
       "continuationPages": []
     },
     {
@@ -263,7 +262,7 @@
       "canonicalPage": 30,
       "title": "ОАЭ — Википедия",
       "status": "PRESERVED",
-      "newPageNumber": 41,
+      "newPageNumber": 40,
       "emptyEvidence": "explicit state: no-identity-data",
       "continuationPages": []
     },
@@ -272,7 +271,7 @@
       "canonicalPage": 31,
       "title": "ОАЭ — изображения в поиске",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 40,
+      "newPageNumber": 39,
       "continuationPages": []
     },
     {
@@ -280,7 +279,7 @@
       "canonicalPage": 32,
       "title": "ОАЭ — панель знаний и AI Overview",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 42,
+      "newPageNumber": 41,
       "continuationPages": []
     },
     {
@@ -288,7 +287,7 @@
       "canonicalPage": 33,
       "title": "ОАЭ — связанные запросы",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 43,
+      "newPageNumber": 42,
       "continuationPages": []
     },
     {
@@ -296,7 +295,7 @@
       "canonicalPage": 34,
       "title": "Комплаенс — сводка баз данных",
       "status": "PRESERVED",
-      "newPageNumber": 44,
+      "newPageNumber": 43,
       "continuationPages": []
     },
     {
@@ -304,7 +303,7 @@
       "canonicalPage": 35,
       "title": "Dow Jones — профиль",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
-      "newPageNumber": 45,
+      "newPageNumber": 44,
       "continuationPages": []
     },
     {
@@ -312,7 +311,7 @@
       "canonicalPage": 36,
       "title": "LexisNexis — страница профиля",
       "status": "PRESERVED",
-      "newPageNumber": 46,
+      "newPageNumber": 45,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE",
       "continuationPages": []
     },
@@ -321,7 +320,7 @@
       "canonicalPage": 37,
       "title": "LexisNexis — страница профиля (2)",
       "status": "MERGED_INTO",
-      "newPageNumber": 46,
+      "newPageNumber": 45,
       "mergedInto": "p35_lexis_visual",
       "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом.",
       "continuationPages": []
@@ -543,7 +542,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p25_uae_metrics",
-      "newPageNumber": 35
+      "newPageNumber": 34
     },
     {
       "v72Page": 28,
@@ -551,7 +550,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p26_uae_serp_table",
-      "newPageNumber": 36
+      "newPageNumber": 35
     },
     {
       "v72Page": 29,
@@ -559,7 +558,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p27_uae_serp_visual",
-      "newPageNumber": 38
+      "newPageNumber": 37
     },
     {
       "v72Page": 30,
@@ -567,7 +566,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p28_uae_suggestions",
-      "newPageNumber": 39
+      "newPageNumber": 38
     },
     {
       "v72Page": 31,
@@ -575,7 +574,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p29_uae_wikipedia",
-      "newPageNumber": 41,
+      "newPageNumber": 40,
       "emptyEvidence": "explicit state: no-identity-data"
     },
     {
@@ -584,7 +583,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p30_uae_images",
-      "newPageNumber": 40
+      "newPageNumber": 39
     },
     {
       "v72Page": 33,
@@ -592,7 +591,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p31_uae_knowledge",
-      "newPageNumber": 42
+      "newPageNumber": 41
     },
     {
       "v72Page": 34,
@@ -600,7 +599,7 @@
       "v72Role": "dynamic_insert",
       "status": "MERGED_INTO",
       "mappedTo": "p31_uae_knowledge",
-      "newPageNumber": 42
+      "newPageNumber": 41
     },
     {
       "v72Page": 35,
@@ -644,7 +643,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p32_uae_related",
-      "newPageNumber": 43
+      "newPageNumber": 42
     },
     {
       "v72Page": 40,
@@ -652,7 +651,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p33_compliance_toc",
-      "newPageNumber": 44
+      "newPageNumber": 43
     },
     {
       "v72Page": 41,
@@ -660,7 +659,7 @@
       "v72Role": "base",
       "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
       "mappedTo": "p34_dow_jones",
-      "newPageNumber": 45
+      "newPageNumber": 44
     },
     {
       "v72Page": 42,
@@ -668,7 +667,7 @@
       "v72Role": "base",
       "status": "PRESERVED",
       "mappedTo": "p35_lexis_visual",
-      "newPageNumber": 46,
+      "newPageNumber": 45,
       "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE"
     },
     {
@@ -677,7 +676,7 @@
       "v72Role": "base",
       "status": "MERGED_INTO",
       "mappedTo": "p36_lexis_visual_2",
-      "newPageNumber": 46,
+      "newPageNumber": 45,
       "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом."
     }
   ],

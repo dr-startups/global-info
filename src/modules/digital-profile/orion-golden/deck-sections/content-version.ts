@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v206" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v207" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,13 @@ export const DECK_CONTENT_VERSION = "deck-sections-v206" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 19.09 номер двинут до v207: остатки шага 0115 (шаг 0117) — текст ИИ-ответа
+ * и цитаты получают потерянные провайдером пробелы («9мая 1967года» →
+ * «9 мая 1967 года», «Бондарчук—советский» → с пробелами), хвост издания
+ * после «·»/«•» не печатается в заголовке-цитате, «никаких …» снимает
+ * совпадение темы и сигнал цитаты, «Почему выделено» цитирует основание
+ * рамки, а не лид принадлежности.
  *
  * 19.09 номер двинут до v206 (v205 пакетов не выпускал: отпечаток снят
  * дважды за один шаг — в него добавлен `client/client-quote.ts`): цитата под
@@ -732,7 +739,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v206" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "0b895e93a707b15f" as const;
+export const DECK_BUILDER_FINGERPRINT = "e4feae5a988d66c8" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -755,7 +762,7 @@ export const DECK_BUILDER_FINGERPRINT = "0b895e93a707b15f" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v206" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v207" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

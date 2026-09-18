@@ -19,6 +19,7 @@
  */
 
 import { getAdversePatterns, isAccusingTheme, type ThemeDef } from "../../config/finding-themes";
+import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import {
   allDictionaryHitsAreSubjectContext,
   type SubjectContextMask,
@@ -286,12 +287,55 @@ export function carriesThemeSignal(
 ): boolean {
   const value = String(text ?? "");
   if (!value.trim()) return false;
-  if (theme.keywords.test(value)) {
-    if (!allDictionaryHitsAreSubjectContext(value, theme.keywords, subjectContext)) return true;
+  // Совпадение в окне отрицания — не сигнал (шаг 0117): «никаких санкций»
+  // назначение темы уже не даёт, и цитата темы того же слова не покажет.
+  if (
+    theme.keywords.test(value) &&
+    !dictionaryHitIsNegated(value, theme.keywords) &&
+    !allDictionaryHitsAreSubjectContext(value, theme.keywords, subjectContext)
+  ) {
+    return true;
   }
   if (!isAccusingTheme(theme)) return false;
   const adverse = getAdversePatterns();
   return (
-    adverse.test(value) && !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
+    adverse.test(value) &&
+    !dictionaryHitIsNegated(value, adverse) &&
+    !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
   );
+}
+
+/**
+ * Лид принадлежности — первая цитата прочитанной страницы по промпту чтения:
+ * имя рядом с признаком субъекта («Фёдор Сергеевич Бондарчук (род. 9 мая 1967,
+ * Москва, СССР) — советский и российский актёр кино»). Узнаётся по словам
+ * рождения, дате рождения или определению через тире сразу после имени.
+ */
+export function looksLikeIdentityLead(text: string): boolean {
+  const t = withoutSourceMarkup(String(text ?? "")).replace(/\s+/gu, " ").trim();
+  if (!t) return false;
+  if (/(?:^|[\s(])(?:род\.|родил(?:ся|ась)|born)(?!\p{L})/iu.test(t)) return true;
+  if (/\b\d{1,2}\s+\p{L}{3,10}\s+\d{4}\b/u.test(t)) return true;
+  return /^\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+){1,2}(?:\s*\([^)]*\))?\s+[—–]\s+\p{Ll}/u.test(t);
+}
+
+/**
+ * Основание рамки на снимке выдачи — из цитат прочитанной страницы (шаг 0117).
+ *
+ * Стр. 28 отчёта Бондарчука печатала под «…с упоминанием скандалов» лид
+ * биографии — первую цитату страницы. Основание — первая цитата со словом
+ * негатива (не в окне отрицания), иначе первая, не являющаяся лидом
+ * принадлежности, иначе первая. Записи без `pageQuotes` (старый артефакт)
+ * ведут себя как прежде.
+ */
+export function highlightBasisQuote(
+  pageQuotes: readonly string[] | undefined,
+  pageQuote: string | undefined
+): string {
+  const quotes = (pageQuotes ?? []).map((q) => String(q ?? "").trim()).filter(Boolean);
+  if (quotes.length === 0) return String(pageQuote ?? "").trim();
+  const adverse = getAdversePatterns();
+  const withNegative = quotes.find((q) => adverse.test(q) && !dictionaryHitIsNegated(q, adverse));
+  if (withNegative) return withNegative;
+  return quotes.find((q) => !looksLikeIdentityLead(q)) ?? quotes[0]!;
 }

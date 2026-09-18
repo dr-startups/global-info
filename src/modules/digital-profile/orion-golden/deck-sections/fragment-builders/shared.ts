@@ -9,6 +9,7 @@ import type {
   SlideContentContract,
 } from "../contracts";
 import { subjectNameVariants } from "../../analytics/link-verdict-audit-agent";
+import { highlightBasisQuote } from "../../analytics/theme-quote";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { splitSentences } from "../sentence-split";
 import {
@@ -4096,7 +4097,11 @@ export function highlightPhrase(input: {
   const head = domain ? `На странице ${domain} — ${theme}` : `Выделенный результат — ${theme}`;
   // Оговорка — из словаря контракта: рендерер узнаёт её по нему и печатает серым (шаг 0105).
   const caveat = e?.verdictSubjectMatch === "likely" ? caveatText("subjectMatchLikely") : undefined;
-  const quoteSentences = splitSentences(String(e?.pageQuote ?? "").trim());
+  // Основание рамки — не первая цитата страницы, а та, что её объясняет
+  // (`highlightBasisQuote`, шаг 0117): первая по промпту чтения — лид
+  // принадлежности, и стр. 28 отчёта Бондарчука цитировала под «…с
+  // упоминанием скандалов» биографию.
+  const quoteSentences = splitSentences(highlightBasisQuote(e?.pageQuotes, e?.pageQuote));
   /*
    * Цитата с многоточием в боковую панель не идёт.
    *

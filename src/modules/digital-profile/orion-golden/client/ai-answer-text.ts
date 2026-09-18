@@ -19,6 +19,8 @@
  * построитель страницы и сборка картинки-панели. Один вопрос — один ответ.
  */
 
+import { withoutSourceMarkup } from "./client-quote";
+
 /**
  * Сноски вида `[1]`, `[2][3]`.
  *
@@ -57,5 +59,8 @@ export function plainAiAnswerText(raw: string | null | undefined): string {
      * двоеточие уже кончает строку.
      */
     .map((line) => (ENDS_SENTENCE.test(line) ? line : `${line}.`));
-  return lines.join(" ").trim();
+  // Та же чистка разметки, что у цитат: провайдер отдаёт ответ без пробелов
+  // после чисел и вокруг тире («9мая 1967года», «Бондарчук—советский»),
+  // и один ответ на «что в чужом тексте не слова» — `withoutSourceMarkup`.
+  return withoutSourceMarkup(lines.join(" ")).trim();
 }

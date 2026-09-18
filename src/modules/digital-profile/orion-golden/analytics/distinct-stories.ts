@@ -28,7 +28,7 @@ export function titleFingerprint(title: string): string {
   // же функцией — иначе две зеркальные страницы дают два ключа и одну
   // напечатанную цитату дважды (отчёт Дерипаски, стр. 21, шаг 0111).
   return withoutSourceMarkup(String(title ?? ""))
-    .split(/[•|]/u)[0]!
+    .split(/[•·|]/u)[0]!
     .replace(/[«»"'`]/gu, "")
     .replace(/\s+/gu, " ")
     .trim()
