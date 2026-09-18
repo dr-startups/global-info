@@ -3,6 +3,7 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
+import { withoutSourceMarkup } from "../../client/client-quote";
 import type { FragmentKey, SectionType } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import type { SurfaceAnalysisUnit } from "../../contracts/surface-analysis";
@@ -454,9 +455,12 @@ export function buildIdentityFragment(
   // знаков, он разъезжается на несколько буллетов, и второй без метки читался
   // бы как утверждение отчёта — рядом со строками «Риск смешения с другим
   // лицом» это прямая подмена авторства.
+  // «Дословно» — про слова, а не про надстрочные знаки: ударения Википедии и
+  // пробелы перед знаками из разметки снимаются той же функцией, что и у цитат
+  // (шаг 0113); слова статьи не меняются.
   const leadBullets =
     review && review.lead.trim()
-      ? packSentencesNoTruncate(review.lead, bulletBudget).map(
+      ? packSentencesNoTruncate(withoutSourceMarkup(review.lead), bulletBudget).map(
           (chunk, i) => `${i === 0 ? leadPrefix : WIKIPEDIA_ARTICLE_LEAD_PREFIX_CONTINUED}${chunk}`
         )
       : [];
