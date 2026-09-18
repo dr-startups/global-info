@@ -98,7 +98,7 @@ const TRAILING_ELLIPSIS_RE = /\s*(?:\.{3}|…)+\s*$/u;
  * разметки страницы, а не пунктуация источника; многоточие и тире не трогаются:
  * «…» — слова источника (шаг 0104).
  */
-function withoutSourceMarkup(text: string): string {
+export function withoutSourceMarkup(text: string): string {
   return text
     .normalize("NFC")
     .replace(/[\u0300-\u036f]/gu, "")
