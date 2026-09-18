@@ -163,11 +163,64 @@ export function looksLikeMachineDump(text: string | null | undefined): boolean {
   return MACHINE_IDENTIFIER.test(String(text ?? ""));
 }
 
+/**
+ * Интерфейс карточки агрегатора, а не высказывание источника (шаг 0112).
+ *
+ * Итоговые отчёты 18.09.2026 цитировали навигацию и поля карточек: «Сводка
+ * Руководитель Учредитель ИП Связи Факторы риска» (rusprofile), «Суды 1 на
+ * сумму X XXX ₽ Все За последние 5 лет … Ответчик 1» (saby.ru), «ФИО … Должность
+ * … Дата рождения 1967-05-09» (mk.ru). Правило — по форме текста, не по списку
+ * доменов: замаскированная сумма «X XXX» бывает только у интерфейса; три ярлыка
+ * карточки с заглавной буквы — поля, а не фраза; два ярлыка без единого конца
+ * предложения внутри — тоже. Проза с теми же словами («Руководитель компании
+ * заявил, что учредитель вышел…») несёт один ярлык с заглавной и остаётся.
+ */
+const CARD_LABELS = [
+  "Сводка",
+  "Руководитель",
+  "Учредитель",
+  "Связи",
+  "Факторы",
+  "ФИО",
+  "Должность",
+  "Суды",
+  "Ответчик",
+  "Истец",
+  "Рост",
+  "Партнёр",
+  "Партнер",
+  "Дети",
+  "Возраст",
+  "Гражданство",
+  "Дата рождения",
+  "Место рождения",
+  "Образование",
+  "Реквизиты",
+  "Контакты",
+];
+const CARD_LABEL_RE = new RegExp(
+  `(?:^|\\s)(?:${CARD_LABELS.map((l) => l.replace(/\s+/gu, "\\s+")).join("|")})(?=\\s|:|$)`,
+  "gu"
+);
+const MASKED_AMOUNT_RE = /(?:^|\s)X{1,3}(?:\s+X{3})+(?=\s|$)|\bX{3}\s*₽/u;
+// Конец предложения внутри текста — знак и заглавная буква за ним; точка
+// после одиночной буквы («г. Москва», «Ф. С.») — сокращение, не конец.
+const SENTENCE_END_INSIDE_RE = /(?<![\s(]\p{L})[.!?…]\s+\p{Lu}/u;
+
+export function looksLikeCardChrome(text: string | null | undefined): boolean {
+  const body = String(text ?? "").replace(/\s+/gu, " ").trim();
+  if (!body) return false;
+  if (MASKED_AMOUNT_RE.test(body)) return true;
+  const labels = body.match(CARD_LABEL_RE)?.length ?? 0;
+  if (labels >= 3) return true;
+  return labels >= 2 && !SENTENCE_END_INSIDE_RE.test(body);
+}
+
 export function pageQuoteForClient(text: string | null | undefined): string {
   const body = String(text ?? "").replace(/\s+/gu, " ").trim();
   if (body.length < MIN_PAGE_QUOTE_CHARS) return "";
   if (looksLikeSearchQuery(body) || looksLikeSurfaceBlockHeading(body)) return "";
-  if (looksLikeMachineDump(body)) return "";
+  if (looksLikeMachineDump(body) || looksLikeCardChrome(body)) return "";
   const tokens = body.split(" ").filter(Boolean);
   if (tokens.length < MIN_PAGE_QUOTE_WORDS) return "";
   const numeric = tokens.filter((t) => NUMERIC_TOKEN.test(t)).length;
