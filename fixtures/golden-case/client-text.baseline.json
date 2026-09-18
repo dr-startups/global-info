@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v4",
   "slideCount": 80,
-  "totalChars": 67751,
+  "totalChars": 67738,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -80,7 +80,7 @@
     {
       "slideKey": "p03_executive__cont1",
       "text": {
-        "title": "Резюме — темы риска (продолжение 1/2)"
+        "title": "Резюме (продолжение 1/2)"
       },
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",

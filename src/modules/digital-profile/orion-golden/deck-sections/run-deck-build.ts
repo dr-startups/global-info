@@ -442,6 +442,8 @@ export type BulletFitReport = {
     movedSlots: Array<{ baseSlotId: string; before: number[]; after: number[] }>;
     /** Страницы, чью колонку сайдбара ужали по потере меры, и новая доля бюджета. */
     shrunkSidebars?: Array<{ slideKey: string; scale: number }>;
+    /** Цепочки, уплотнённые по чистой мере: блоки вернулись на листы с местом (шаг 0102). */
+    compactedSlots?: Array<{ baseSlotId: string; before: number[]; after: number[] }>;
   }>;
 };
 
@@ -487,6 +489,7 @@ function slotChainsOf(
       slideId: slide.slideKey,
       bulletCount: (slide.bullets ?? []).length,
       fold,
+      bullets: slide.bullets ?? [],
     };
     const chain = chains[chains.length - 1];
     if (slide.isContinuation && chain && chain.baseSlotId === slide.baseSlotId) {
@@ -569,6 +572,13 @@ export async function runDeckBuildMeasured(
    */
   const plan = new Map<string, number[]>();
   let sidebarScales = new Map<string, number>();
+  /*
+   * Листы, на которых мера видела потерю, — на всё время цикла. Уплотнение
+   * (шаг 0102) на них не возвращает блоки: иначе блок, влезающий по
+   * арифметике и теряемый рендерером, ездил бы туда-сюда до предела итераций.
+   * Множество только растёт, поэтому цикл конечен по построению.
+   */
+  const sealed = new Set<string>();
   for (let iteration = 1; iteration <= limit; iteration += 1) {
     /*
      * Сборка не закрылась — мерить нечего, и спрашивать об этом рендерер
@@ -596,9 +606,39 @@ export async function runDeckBuildMeasured(
     });
     const verdict: BulletMeasureVerdict = await input.measure(payload);
     if (!measureVerdictHasLoss(verdict)) {
-      report.iterations.push({ iteration, lossyPages: [], movedSlots: [] });
-      report.outcome = "CONVERGED";
-      return finish(result);
+      /*
+       * Чистый вердикт — не конец цикла, а повод уплотнить (шаг 0102): лист с
+       * местом забирает блоки следующего. Уплотнённую деку обязательно мерят
+       * ещё раз, а если та мера найдёт потерю — ещё раз после отката. Поэтому
+       * уплотнение идёт только при двух итерациях в запасе; на пределе чистая
+       * дека принимается как есть — уплотнение никогда не доводит до
+       * `NOT_CONVERGED`.
+       */
+      const chains = slotChainsOf(result.assembly.rendererSlides, payload);
+      const compact = iteration + 2 <= limit ? planBulletRecut({ chains, verdict, sealed }) : new Map();
+      const compactedSlots = [...compact.entries()].map(([baseSlotId, after]) => ({
+        baseSlotId,
+        before: chains.find((c) => c.baseSlotId === baseSlotId)?.pages.map((p) => p.bulletCount) ?? [],
+        after,
+      }));
+      report.iterations.push({ iteration, lossyPages: [], movedSlots: [], compactedSlots });
+      if (compact.size === 0) {
+        report.outcome = "CONVERGED";
+        return finish(result);
+      }
+      for (const [baseSlotId, counts] of compact) plan.set(baseSlotId, counts);
+      result = runDeckBuild({
+        ...built,
+        prebuiltPacks: result.packs,
+        prebuiltBuildLog: result.buildLog,
+        bulletRecut: plan,
+        sidebarScales,
+      });
+      report.builds += 1;
+      continue;
+    }
+    for (const p of verdict.pages) {
+      if (p.droppedBullets > 0 || p.droppedLines > 0) sealed.add(p.slideKey);
     }
     const lossyPages = verdict.pages
       .filter((p) => p.droppedBullets > 0 || p.droppedLines > 0)
@@ -608,12 +648,20 @@ export async function runDeckBuildMeasured(
         droppedLines: p.droppedLines,
       }));
     const chains = slotChainsOf(result.assembly.rendererSlides, payload);
-    const fresh = planBulletRecut({ chains, verdict });
+    const fresh = planBulletRecut({ chains, verdict, sealed });
     const movedSlots = [...fresh.entries()].map(([baseSlotId, after]) => ({
       baseSlotId,
       before: chains.find((c) => c.baseSlotId === baseSlotId)?.pages.map((p) => p.bulletCount) ?? [],
       after,
     }));
+    // Лист, отдавший блок ходом вперёд, назад его не примет: иначе арифметика
+    // с одной стороны и мера с другой гоняли бы блок между листами.
+    for (const moved of movedSlots) {
+      const pages = chains.find((c) => c.baseSlotId === moved.baseSlotId)?.pages ?? [];
+      pages.forEach((page, i) => {
+        if ((moved.after[i] ?? 0) < moved.before[i]!) sealed.add(page.slideId);
+      });
+    }
     /*
      * Потеря сайдбара лечится тем же циклом: колонка потерявшей страницы
      * ужимается, и дека собирается заново. Страница → слайд по нумерации

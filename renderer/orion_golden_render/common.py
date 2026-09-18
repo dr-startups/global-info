@@ -221,8 +221,15 @@ def record_bullet_measure(
     kept_items: int,
     dropped_bullets: int,
     dropped_lines: int,
+    column_width: int | None = None,
 ) -> None:
     """Записать меру одной страницы пути буллетов.
+
+    `column_width` — ширина колонки списка. Высота блока зависит от неё, и
+    перекладка назад (шаг 0102) возвращает блок только на лист той же ширины:
+    высота, измеренная на продолжении во всю полосу, к основе с боковой
+    панелью не переносится — блок ездил бы туда-сюда до предела итераций.
+    Страница без названной ширины блоков назад не принимает.
 
     Высота элемента считается той же функцией, которой блок будет нарисован, —
     построитель складывает эти числа и сравнивает с `availableHeight`. Сумма
@@ -240,6 +247,7 @@ def record_bullet_measure(
             "keptItems": kept_items,
             "droppedBullets": dropped_bullets,
             "droppedLines": dropped_lines,
+            **({"columnWidth": int(column_width)} if column_width is not None else {}),
         }
     )
 
@@ -1876,6 +1884,7 @@ class _Ctx:
             kept_items=len(kept),
             dropped_bullets=dropped_bullets,
             dropped_lines=dropped_lines,
+            column_width=col_w,
         )
         if not kept:
             return y

@@ -55,6 +55,7 @@ import {
 import { legacyRiskWordPlate } from "../../client/risk-scale";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 import { continuationTitle } from "../continuation-slide";
+import { normalizeForCompare } from "../text-compare";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -483,14 +484,21 @@ export function buildExecutiveSummaryFromComposed(
 
   const slides: SlideContentContract[] = [base];
   const totalPages = plan.continuationPages.length;
+  // Вид блоков — свойство цепочки, а не листа (шаг 0102). Подпись по виду
+  // блоков **листа** («темы риска» там, где только темы) расходилась с
+  // составом после перекладки по мере: блоки переезжают между листами, а
+  // подпись остаётся за листом — «Резюме — темы риска (продолжение 1/3)»,
+  // «Резюме (продолжение 2/3)» с теми же темами, «темы риска 3/3». Набор
+  // блоков цепочки перекладка не меняет, поэтому подпись одна на все листы.
+  const themeOnly = plan.continuationPages.every((pageBlocks) =>
+    pageBlocks.every((b) => b.kind === "theme")
+  );
+  // «Резюме — продолжение (продолжение 3/4)» — слово дважды в одном
+  // заголовке (шаг 13, D5). Нумерация продолжений добавляется ниже, поэтому
+  // базовый заголовок её не повторяет.
+  const baseTitle = themeOnly ? "Резюме — темы риска" : "Резюме";
   for (let pageIdx = 0; pageIdx < totalPages; pageIdx += 1) {
     const pageBlocks = plan.continuationPages[pageIdx]!;
-    const kinds = new Set(pageBlocks.map((b) => b.kind));
-    const themeOnly = [...kinds].every((k) => k === "theme");
-    // «Резюме — продолжение (продолжение 3/4)» — слово дважды в одном
-    // заголовке (шаг 13, D5). Нумерация продолжений добавляется ниже, поэтому
-    // базовый заголовок её не повторяет.
-    const baseTitle = themeOnly ? "Резюме — темы риска" : "Резюме";
     slides.push({
       ...base,
       slideId: pageIdx === 0 ? `${base.slideId}__cont1` : `${base.slideId}__cont${pageIdx + 1}`,
@@ -662,12 +670,21 @@ export function buildExecutiveSummaryFragment(
     },
   });
   const slides: SlideContentContract[] = [base];
+  // Что уже напечатано на основе — абзацы вывода и карточки, — на продолжение
+  // не едет. Разреженное резюме клало абзац покрытия и картой на основу, и
+  // строкой на продолжение: одна и та же фраза дважды в одной цепочке, а
+  // после слияния листов перекладкой (шаг 0102) — дважды на одном листе.
+  const printedOnBase = new Set(
+    [...narrative.split("\n"), ...(base.content.bullets ?? [])].map((t) => normalizeForCompare(t)).filter(Boolean)
+  );
   const contBullets = sparse
     ? [
         ...structure.narrativeParagraphs.slice(1),
         ...(es.identityCaveats ?? []).slice(0, 3).map((c) => clampClientText(c, 380)),
         ...(es.dataLimitations ?? []).slice(0, 2).map((c) => clampClientText(`Ограничения: ${c}`, 380)),
-      ].filter((b, i, arr) => arr.indexOf(b) === i)
+      ]
+        .filter((b, i, arr) => arr.indexOf(b) === i)
+        .filter((b) => !printedOnBase.has(normalizeForCompare(b)))
     : bullets.slice(TOP_CARDS);
   // PDF-36 D.5 — §7.2 already lives in the p03 narrative card (see
   // ensureExecutiveFreshnessChangeInNarrative above); no duplicate bullet.

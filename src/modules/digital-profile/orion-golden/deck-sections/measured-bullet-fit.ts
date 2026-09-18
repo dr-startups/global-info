@@ -22,6 +22,25 @@ import {
   continuationTitle,
   stripContinuationSuffix,
 } from "./continuation-slide";
+import { normalizeForCompare } from "./text-compare";
+
+/**
+ * Блоки цепочки без повторов: второй экземпляр одного и того же текста в пул
+ * не идёт. Сравнение то же, что у починки повторов на странице — иначе план и
+ * напечатанное разошлись бы на блоке, который один считает повтором, а другой
+ * нет.
+ */
+function chainBulletsWithoutRepeats<T extends string>(bullets: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const bullet of bullets) {
+    const key = normalizeForCompare(bullet);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(bullet);
+  }
+  return out;
+}
 
 /** Мера одной страницы пути буллетов — как её отдал рендерер. */
 export type BulletMeasurePage = {
@@ -36,6 +55,12 @@ export type BulletMeasurePage = {
   keptItems: number;
   droppedBullets: number;
   droppedLines: number;
+  /**
+   * Ширина колонки списка. Назад блок едет только на лист той же ширины: высота
+   * измерена в колонке продолжения, и на основе с боковой панелью она другая
+   * (шаг 0102). Прежний рендерер поля не шлёт — тогда назад не едет ничего.
+   */
+  columnWidth?: number;
 };
 
 /**
@@ -122,6 +147,8 @@ export function parseBulletMeasureVerdict(raw: unknown): BulletMeasureVerdict {
       if (!Array.isArray(p.itemHeights) || p.itemHeights.some((h) => typeof h !== "number")) {
         throw new Error(`bullet measure page ${i} has no itemHeights`);
       }
+      const columnWidth =
+        typeof p.columnWidth === "number" && Number.isFinite(p.columnWidth) ? p.columnWidth : undefined;
       return {
         slideKey: p.slideKey,
         page: num("page"),
@@ -131,6 +158,7 @@ export function parseBulletMeasureVerdict(raw: unknown): BulletMeasureVerdict {
         keptItems: num("keptItems"),
         droppedBullets: num("droppedBullets"),
         droppedLines: num("droppedLines"),
+        ...(columnWidth !== undefined ? { columnWidth } : {}),
       };
     }),
   };
@@ -152,6 +180,18 @@ export type SlotChainPage = {
   slideId: string;
   bulletCount: number;
   fold: BulletItemFold;
+  /**
+   * Тексты блоков страницы — чтобы узнать повтор внутри цепочки.
+   *
+   * Построитель кладёт одну и ту же заметку на каждый лист (разреженное
+   * резюме — строку предмета аудита). Пока листы разные, это две страницы; как
+   * только перекладка сводит их на один, `repairRepeatedBlocks` снимает второй
+   * экземпляр с напечатанной страницы — и счёт блоков у рендерера расходится с
+   * пулом цепочки, а следующий план падает на инварианте «ни блока не
+   * потеряно». Повтор поэтому узнаётся здесь, тем же сравнением, что у починки,
+   * и в пул не идёт. Без текстов (старые вызывающие, тесты) повторы не ищутся.
+   */
+  bullets?: readonly string[];
 };
 
 export type SlotChain = {
@@ -217,20 +257,30 @@ type PageBudget = {
   bulletHeight: number;
   /** Сколько блоков разрешает ветка отрисовки. */
   bulletSlots: number;
+  /** Ширина колонки списка; неизвестна — назад на лист ничего не едет. */
+  columnWidth?: number;
 };
 
 export function planBulletRecut(input: {
   chains: ReadonlyArray<SlotChain>;
   verdict: BulletMeasureVerdict;
+  /**
+   * Листы, на которых мера когда-либо видела потерю, — назад на них ничего не
+   * возвращается. Иначе блок, влезающий по арифметике и теряемый рендерером
+   * (правило «мера выше арифметики»), ездил бы туда-сюда до предела итераций.
+   */
+  sealed?: ReadonlySet<string>;
 }): BulletRecutPlan {
   const measured = new Map(input.verdict.pages.map((p) => [p.slideKey, p]));
+  const sealed = input.sealed ?? new Set<string>();
   const plan = new Map<string, number[]>();
 
   for (const chain of input.chains) {
     const heights: number[] = [];
-    /** Лист, на котором блок лежит сейчас: назад блоки не едут. */
+    /** Лист, на котором блок лежит сейчас. */
     const seedPage: number[] = [];
     const budgets: PageBudget[] = [];
+    const seenBlocks = new Set<string>();
     let usable = true;
     for (const page of chain.pages) {
       const m = measured.get(page.slideId);
@@ -252,13 +302,20 @@ export function planBulletRecut(input: {
       budgets.push({
         bulletHeight: Math.max(0, m.availableHeight - chromeHeights.reduce((n, h) => n + h, 0)),
         bulletSlots: Math.max(0, m.maxItems - page.fold.leading - page.fold.trailing),
+        ...(m.columnWidth !== undefined ? { columnWidth: m.columnWidth } : {}),
       });
       const own = m.itemHeights.slice(
         page.fold.leading,
         m.itemHeights.length - page.fold.trailing
       );
-      heights.push(...own);
-      for (let k = 0; k < own.length; k += 1) seedPage.push(budgets.length - 1);
+      for (let k = 0; k < own.length; k += 1) {
+        const text = page.bullets?.[k];
+        const key = text === undefined ? "" : normalizeForCompare(text);
+        if (key && seenBlocks.has(key)) continue;
+        if (key) seenBlocks.add(key);
+        heights.push(own[k]!);
+        seedPage.push(budgets.length - 1);
+      }
     }
     if (!usable) continue;
 
@@ -327,7 +384,75 @@ export function planBulletRecut(input: {
       counts[i + 1] = countAt(i + 1) + overflow;
     }
 
-    const before = chain.pages.map((page) => page.bulletCount);
+    /*
+     * Уплотнение — блоки едут и назад (шаг 0102).
+     *
+     * Сид продолжения — три блока на лист, и половина продолжений золотого
+     * кейса была заполнена на 24–45 %: лист, на который блок не влез, отдавал
+     * его дальше, а лист с остатком назад ничего не брал. У существующего листа
+     * и остаток, и блоки измерены той же функцией, которая рисует, — забрать
+     * первый блок следующего листа по этим числам не допущение. Границы — из
+     * данных: лист без единого блока носителем списка не доказан (основа
+     * страницы снимка список в пейлоаде не несёт вовсе — блок на ней исчез бы
+     * до рендерера); запечатанный лист мера уже ловила на потере; за пределы
+     * цепочки блок не едет по построению.
+     */
+    const pageOfBlock = (index: number): number => {
+      let seen = 0;
+      for (let p = 0; p < counts.length; p += 1) {
+        seen += countAt(p);
+        if (index < seen) return p;
+      }
+      return counts.length - 1;
+    };
+    // Лист с потерей в этом же вердикте запечатан наравне с прежними: он
+    // только что отдал блоки, и возвращать их ему нельзя.
+    const lossyNow = new Set(
+      input.verdict.pages.filter((m) => m.droppedBullets > 0 || m.droppedLines > 0).map((m) => m.slideKey)
+    );
+    for (let p = 0; p + 1 < counts.length; p += 1) {
+      const original = chain.pages[p];
+      // Носитель списка — лист, на котором блоки уже лежали (по сиду, а не по
+      // текущему счёту: лист, только что опустевший в этом же плане, доказан
+      // не хуже). Новый лист, добавленный ходом вперёд, назад не заполняется.
+      if (!original || original.bulletCount === 0) continue;
+      if (sealed.has(original.slideId) || lossyNow.has(original.slideId)) continue;
+      const budget = budgetAt(p);
+      let usedHere = 0;
+      for (let idx = 0; idx < heights.length; idx += 1) {
+        if (pageOfBlock(idx) === p) usedHere += heights[idx]!;
+      }
+      if (budget.columnWidth === undefined) continue;
+      for (;;) {
+        const next = counts.slice(0, p + 1).reduce((n, c) => n + c, 0);
+        if (next >= heights.length) break;
+        const h = heights[next]!;
+        if (usedHere + h > budget.bulletHeight || countAt(p) >= budget.bulletSlots) break;
+        const holder = pageOfBlock(next);
+        // Высота блока измерена на листе-держателе; на лист другой ширины
+        // она не переносится, и брать блок туда нельзя.
+        if (budgetAt(holder).columnWidth !== budget.columnWidth) break;
+        counts[p] = countAt(p) + 1;
+        counts[holder] = countAt(holder) - 1;
+        usedHere += h;
+      }
+    }
+    // Опустевший хвост цепочки из плана исчезает: лист, отдавший все блоки,
+    // не нужен. Снимается только лист, у которого блоки **были**: страницы
+    // таблиц и визуалов блоков не несут по устройству, и их цепочка [0, 0]
+    // остаётся как есть.
+    while (
+      counts.length > 1 &&
+      countAt(counts.length - 1) === 0 &&
+      (chain.pages[counts.length - 1]?.bulletCount ?? 1) > 0
+    ) {
+      counts.pop();
+    }
+
+    // «Как было» — по числу блоков на листах без повторов: цепочка, в которой
+    // ничего не двигалось, плана не получает.
+    const before: number[] = chain.pages.map(() => 0);
+    for (let idx = 0; idx < seedPage.length; idx += 1) before[seedPage[idx]!] = (before[seedPage[idx]!] ?? 0) + 1;
     if (counts.length === before.length && counts.every((n, i) => n === before[i])) continue;
     plan.set(chain.baseSlotId, counts);
   }
@@ -369,8 +494,11 @@ export function applyBulletRecut(
 
 function recutChain(chain: SlideContentContract[], counts: number[]): SlideContentContract[] {
   const base = chain[0]!;
-  const pooled = chain.flatMap((s) => s.content.bullets ?? []);
-  const pageCount = Math.max(chain.length, counts.length);
+  const pooled = chainBulletsWithoutRepeats(chain.flatMap((s) => s.content.bullets ?? []));
+  // Листов столько, сколько в плане: цепочка растёт, когда блоки уезжают
+  // вперёд, и укорачивается, когда возвращаются назад (шаг 0102) — опустевшие
+  // хвостовые листы снимаются, а не остаются пустыми продолжениями.
+  const pageCount = Math.max(1, counts.length);
   /*
    * Образец нового листа — последнее **продолжение** цепочки, а не её основа.
    *
@@ -410,9 +538,13 @@ function recutChain(chain: SlideContentContract[], counts: number[]): SlideConte
     if (existing) {
       out.push({
         ...existing,
-        title: renumber
-          ? continuationTitle(stripContinuationSuffix(existing.title), page + offset, titleTotal)
-          : existing.title,
+        // Одно продолжение подписывается без номера — как у построителей:
+        // «(продолжение 1/1)» обещает счёт, которого нет.
+        title: !renumber
+          ? existing.title
+          : titleTotal <= 1
+            ? stripContinuationSuffix(existing.title)
+            : continuationTitle(stripContinuationSuffix(existing.title), page + offset, titleTotal),
         content: { ...existing.content, bullets },
       });
       continue;

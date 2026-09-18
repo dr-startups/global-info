@@ -39,6 +39,16 @@ function verdict(pages: BulletMeasurePage[]): BulletMeasureVerdict {
 }
 
 const fits = (n: number): number[] => Array.from({ length: n }, () => 300_000);
+/**
+ * Лист, заполненный своими блоками впритык (правка шага 0102).
+ *
+ * Прежде страницы вердикта несли запас в 4 000 000 EMU: перекладка ездила
+ * только вперёд, и запас ничего не значил. Теперь чистый лист с местом
+ * забирает блоки следующего, и правило «мера выше арифметики» проверяется на
+ * листах без места — иначе уплотнение перекроило бы ожидаемый план.
+ */
+const full = (slideKey: string, n: number, over: Partial<BulletMeasurePage> = {}): BulletMeasurePage =>
+  page({ slideKey, itemHeights: fits(n), keptItems: n, availableHeight: 300_000 * n, maxItems: n, ...over });
 
 /** Цепочка p29_uae_wikipedia прогона: [1, 5, 5]. */
 const CHAIN: SlotChain = {
@@ -55,9 +65,9 @@ describe("мера выше арифметики", () => {
     const plan = planBulletRecut({
       chains: [CHAIN],
       verdict: verdict([
-        page({ slideKey: "p29_uae_wikipedia", itemHeights: fits(1), keptItems: 1 }),
-        page({ slideKey: "p29_uae_wikipedia__cont1", itemHeights: fits(5), keptItems: 5 }),
-        page({ slideKey: "p29_uae_wikipedia__cont2", itemHeights: fits(5), keptItems: 4, droppedBullets: 1 }),
+        full("p29_uae_wikipedia", 1),
+        full("p29_uae_wikipedia__cont1", 5),
+        full("p29_uae_wikipedia__cont2", 5, { keptItems: 4, droppedBullets: 1 }),
       ]),
     });
     expect(plan.get("p29_uae_wikipedia")).toEqual([1, 5, 4, 1]);
@@ -67,21 +77,21 @@ describe("мера выше арифметики", () => {
     const plan = planBulletRecut({
       chains: [CHAIN],
       verdict: verdict([
-        page({ slideKey: "p29_uae_wikipedia", itemHeights: fits(1), keptItems: 1 }),
-        page({ slideKey: "p29_uae_wikipedia__cont1", itemHeights: fits(5), keptItems: 5, droppedLines: 2 }),
-        page({ slideKey: "p29_uae_wikipedia__cont2", itemHeights: fits(5), keptItems: 5 }),
+        full("p29_uae_wikipedia", 1),
+        full("p29_uae_wikipedia__cont1", 5, { droppedLines: 2 }),
+        full("p29_uae_wikipedia__cont2", 5),
       ]),
     });
     expect(plan.get("p29_uae_wikipedia")).toEqual([1, 4, 6]);
   });
 
-  it("без потери план не меняется — как прежде", () => {
+  it("без потери и без места план не меняется — как прежде", () => {
     const plan = planBulletRecut({
       chains: [CHAIN],
       verdict: verdict([
-        page({ slideKey: "p29_uae_wikipedia", itemHeights: fits(1), keptItems: 1 }),
-        page({ slideKey: "p29_uae_wikipedia__cont1", itemHeights: fits(5), keptItems: 5 }),
-        page({ slideKey: "p29_uae_wikipedia__cont2", itemHeights: fits(5), keptItems: 5 }),
+        full("p29_uae_wikipedia", 1),
+        full("p29_uae_wikipedia__cont1", 5),
+        full("p29_uae_wikipedia__cont2", 5),
       ]),
     });
     expect(plan.size).toBe(0);

@@ -51,9 +51,43 @@ const cleanMeasure = (payload: Record<string, unknown>): BulletMeasureVerdict =>
         keptItems: items.length,
         droppedBullets: 0,
         droppedLines: 0,
+        columnWidth: 10_000_000,
       };
     }),
 });
+
+/**
+ * Мера без потерь и без места: каждый лист заполнен ровно своими блоками.
+ *
+ * С шага 0102 чистый вердикт с местом под блоки продолжения — не конец цикла,
+ * а повод уплотнить цепочку и померить ещё раз. Тесты, которым нужен цикл из
+ * одной итерации, берут эту меру, а не «чистую с запасом».
+ */
+const tightMeasure = (payload: Record<string, unknown>): BulletMeasureVerdict => {
+  const clean = cleanMeasure(payload);
+  return {
+    ...clean,
+    pages: clean.pages.map((p) => ({
+      ...p,
+      availableHeight: p.itemHeights.reduce((sum, h) => sum + h, 0),
+      maxItems: p.itemHeights.length,
+    })),
+  };
+};
+
+/**
+ * Буллеты по слотам без повторов присказки.
+ *
+ * Уплотнение (шаг 0102) сводит листы, и объявленная присказка, стоявшая на
+ * двух листах цепочки, на одном листе печатается один раз — это вычистка
+ * повторов, а не потеря. Содержимое сравнивается по различимым строкам в
+ * порядке появления.
+ */
+function uniqueBulletsBySlot(result: Parameters<typeof bulletsBySlot>[0]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [slot, list] of Object.entries(bulletsBySlot(result))) out[slot] = [...new Set(list)];
+  return out;
+}
 
 /** Вход сборки на корпусе tiny — общий для прямого вызова и вызова через GPT-слой. */
 async function tinyBuildInput(): Promise<{
@@ -225,7 +259,8 @@ function bulletsBySlot(result: {
 
 /** Сборка эталонного корпуса под заданной мерой — офлайн, без рендерера. */
 async function report72DeckBuild(
-  measure: ((p: Record<string, unknown>) => BulletMeasureVerdict) | null
+  measure: ((p: Record<string, unknown>) => BulletMeasureVerdict) | null,
+  maxIterations?: number
 ) {
   const inputs = loadReport72DeckInputs();
   return runDeckBuildMeasured({
@@ -255,6 +290,7 @@ async function report72DeckBuild(
     serpObservations: inputs.serpObservations,
     subjectName: "Сергей Глинка",
     measure: measure ? async (payload) => measure(payload) : null,
+    maxIterations,
   });
 }
 
@@ -279,16 +315,20 @@ describe("сборка деки по мере рендерера", () => {
     expect(res.bulletFit.iterations).toHaveLength(0);
   });
 
-  it("чистая мера завершает цикл одной итерацией", async () => {
+  it("чистая мера без места завершает цикл одной итерацией", async () => {
+    // Правка шага 0102: прежде здесь стояла «чистая мера с запасом», и цикл
+    // кончался первой итерацией. Теперь запас — повод уплотнить, поэтому
+    // одна итерация обещана только мере без места.
     let calls = 0;
     const res = await tinyDeckBuild({
       measure: async (payload) => {
         calls += 1;
-        return cleanMeasure(payload);
+        return tightMeasure(payload);
       },
     });
     expect(calls).toBe(res.bulletFit.iterations.length + DRAFT_TABLE_MEASURE);
     expect(res.bulletFit.outcome).toBe("CONVERGED");
+    expect(res.bulletFit.iterations[0]!.compactedSlots ?? []).toEqual([]);
     expect(res.bulletFit.iterations).toHaveLength(1);
   });
 
@@ -334,8 +374,9 @@ describe("сборка деки по мере рендерера", () => {
         calls += 1;
         // Потерю объявляет **первая мера цикла**, а не первая вообще: до цикла
         // черновую деку меряют на раскрой таблиц, и та мера пути буллетов не
-        // касается.
-        if (calls !== DRAFT_TABLE_MEASURE + 1) return cleanMeasure(payload);
+        // касается. Дальше мера тесная (правка шага 0102): с запасом цикл
+        // уплотнял бы соседние цепочки, и итераций было бы три.
+        if (calls !== DRAFT_TABLE_MEASURE + 1) return tightMeasure(payload);
         const clean = cleanMeasure(payload);
         const first = clean.pages.find((p) => p.itemHeights.length > 1);
         if (!first) return clean;
@@ -430,7 +471,9 @@ describe("сборка деки по мере рендерера", () => {
     let calls = 0;
     const twice = await withMeasure(async (payload) => {
       calls += 1;
-      if (calls > 1) return cleanMeasure(payload);
+      // Чистая мера здесь тесная (правка шага 0102): с запасом цикл уплотнял
+      // бы деку третьей мерой, а считаются вызовы модели, не меры.
+      if (calls > 1) return tightMeasure(payload);
       const clean = cleanMeasure(payload);
       return {
         ...clean,
@@ -472,6 +515,80 @@ describe("сборка деки по мере рендерера", () => {
     await expect(tinyDeckBuild({ measure: stubborn })).rejects.toThrow(
       /CONTENT_DROPPED_BY_RENDERER/u
     );
+  });
+
+  it("Н8: чистая мера с местом уплотняет продолжения и мерит ещё раз", async () => {
+    // Корпус эталонный: у tiny цепочек с продолжениями нет, уплотнять нечего.
+    const seed = await report72DeckBuild(null);
+    let calls = 0;
+    const res = await report72DeckBuild((payload) => {
+      calls += 1;
+      return cleanMeasure(payload);
+    });
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
+    expect(calls).toBe(res.bulletFit.iterations.length + DRAFT_TABLE_MEASURE);
+    // Первая итерация нашла место и уплотнила, вторая подтвердила чистоту.
+    expect(res.bulletFit.iterations).toHaveLength(2);
+    expect(res.bulletFit.iterations[0]!.compactedSlots?.length ?? 0).toBeGreaterThan(0);
+    expect(res.assembly.deckManifest.pageCount).toBeLessThan(seed.assembly.deckManifest.pageCount);
+    expect(uniqueBulletsBySlot(res)).toEqual(uniqueBulletsBySlot(seed));
+  });
+
+  it("Н9: на пределе итераций чистая дека принимается, а не объявляется несошедшейся", async () => {
+    // Корпус эталонный — у него есть что уплотнять; предел в одну итерацию
+    // оставляет уплотнению ноль запаса, и чистая дека принимается как есть.
+    const seed = await report72DeckBuild(null);
+    const res = await report72DeckBuild((payload) => cleanMeasure(payload), 1);
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
+    expect(res.bulletFit.iterations).toHaveLength(1);
+    expect(res.bulletFit.iterations[0]!.compactedSlots ?? []).toEqual([]);
+    expect(res.assembly.deckManifest.pageCount).toBe(seed.assembly.deckManifest.pageCount);
+  });
+
+  it("Н10: лист, потерявший блок после уплотнения, запечатывается — цикл сходится", async () => {
+    // Первая мера цикла чистая с запасом → уплотнение: продолжение исчезает,
+    // его блоки переезжают на основу. Вторая мера объявляет потерю на каждой
+    // основе, чьё продолжение исчезло: рендерер с арифметикой не согласился.
+    // Дальше мера снова чистая с запасом — но запечатанные листы больше не
+    // заполняются, и цикл обязан кончиться, а не ходить по кругу.
+    const seed = await report72DeckBuild(null);
+    let calls = 0;
+    let previousKeys: Set<string> | null = null;
+    const res = await report72DeckBuild((payload) => {
+      calls += 1;
+      const clean = cleanMeasure(payload);
+      const cycleCall = calls - DRAFT_TABLE_MEASURE;
+      const keys = new Set(clean.pages.map((p) => p.slideKey));
+      if (cycleCall === 2 && previousKeys) {
+        // Потеря объявляется на каждом листе, чьё продолжение исчезло: блоки
+        // поглощённого продолжения переехали на предыдущий лист цепочки.
+        const absorbed = new Set(
+          [...previousKeys].filter((k) => !keys.has(k)).map((k) => k.replace(/__cont\d+$/u, ""))
+        );
+        previousKeys = keys;
+        return {
+          ...clean,
+          pages: clean.pages.map((p) =>
+            (absorbed.has(p.slideKey) || absorbed.has(p.slideKey.replace(/__cont\d+$/u, ""))) &&
+            p.itemHeights.length > 1
+              ? { ...p, keptItems: p.itemHeights.length - 1, droppedBullets: 1 }
+              : p
+          ),
+        };
+      }
+      previousKeys = keys;
+      return clean;
+    });
+    expect(res.bulletFit.outcome).toBe("CONVERGED");
+    // Итерации: уплотнение → потеря и откат вперёд → чистая мера без нового
+    // уплотнения на запечатанные листы.
+    expect(res.bulletFit.iterations).toHaveLength(3);
+    expect(res.bulletFit.iterations[0]!.compactedSlots?.length ?? 0).toBeGreaterThan(0);
+    expect(res.bulletFit.iterations[1]!.lossyPages.length).toBeGreaterThan(0);
+    expect(res.bulletFit.iterations[2]!.compactedSlots ?? []).toEqual([]);
+    expect(uniqueBulletsBySlot(res)).toEqual(uniqueBulletsBySlot(seed));
+    // Цепочки без потерь остаются уплотнёнными, поэтому листов не больше, чем у сида.
+    expect(res.assembly.deckManifest.pageCount).toBeLessThanOrEqual(seed.assembly.deckManifest.pageCount);
   });
 
   it("отказ меры доходит до вызывающего, а не пропускается молча", async () => {
