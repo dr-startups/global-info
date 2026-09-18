@@ -16,6 +16,7 @@ import type { RiskLevel } from "../contracts/common";
 import { clientSafeDomain, clientSafeDomains } from "../../services/composite-serp-merge";
 import { complianceProviderLabel } from "../../compliance-providers/provider-labels";
 import { caveatText } from "../client/caveats";
+import { dedupeQuotesByText } from "../client/client-quote";
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
@@ -629,20 +630,22 @@ function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
           (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) ||
           a.evidenceRef.localeCompare(b.evidenceRef)
       );
-    const quotes: ClientReadPlot["quotes"] = [];
+    const candidates: ClientReadPlot["quotes"] = [];
     for (const v of participants) {
-      if (quotes.length >= READ_PLOT_QUOTE_LIMIT) break;
       // Гигиена та же, что у остального клиентского текста: обрывок выдачи и
       // выгрузка таблицы не цитируются, и тогда блок живёт числами и доменами.
       const text = (v.quotes ?? []).map((q) => pageQuoteForClient(q.text)).find(Boolean);
       if (!text) continue;
-      quotes.push({
+      candidates.push({
         text,
         domain: clientSafeDomain(v.domain) ?? "",
         url: String(v.url ?? ""),
         evidenceRef: v.evidenceRef,
       });
     }
+    // Зеркальные страницы приносят одну фразу под разными адресами — печатается
+    // первая, следующий участник занимает место двойника (шаг 0109).
+    const quotes = dedupeQuotesByText(candidates).slice(0, READ_PLOT_QUOTE_LIMIT);
     return {
       plotId: readPlotId(row.theme),
       title: row.theme,

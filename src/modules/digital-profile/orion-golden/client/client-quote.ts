@@ -88,8 +88,26 @@ function stripWrapping(text: string): string {
  */
 const TRAILING_ELLIPSIS_RE = /\s*(?:\.{3}|…)+\s*$/u;
 
+/**
+ * Разметка источника, которая словами не является (шаг 0109).
+ *
+ * Википедия приносит комбинируемые знаки ударения («Серге́евич», «Дерипа́ска»):
+ * буква остаётся, надстрочный знак уходит. Сначала NFC — иначе «й» и «ё» в
+ * разложенной форме потеряли бы свой диакритик. Пробел перед знаком препинания
+ * и после открывающей скобки («( род. 2 января 1968 , Дзержинск )») — след
+ * разметки страницы, а не пунктуация источника; многоточие и тире не трогаются:
+ * «…» — слова источника (шаг 0104).
+ */
+function withoutSourceMarkup(text: string): string {
+  return text
+    .normalize("NFC")
+    .replace(/[\u0300-\u036f]/gu, "")
+    .replace(/\s+([,;:.!?)])/gu, "$1")
+    .replace(/\(\s+/gu, "(");
+}
+
 export function quoteBody(text: string): string {
-  const src = stripWrapping(String(text ?? "")).replace(TRAILING_ELLIPSIS_RE, "…");
+  const src = withoutSourceMarkup(stripWrapping(String(text ?? "")).replace(TRAILING_ELLIPSIS_RE, "…"));
   const out: string[] = [];
   const openStack: number[] = [];
   let straightOpen = false;
@@ -124,6 +142,30 @@ export function quoteBody(text: string): string {
     .join("")
     .replace(/\s{2,}/gu, " ")
     .trim();
+}
+
+/**
+ * Цитаты без двойников по тексту (шаг 0109).
+ *
+ * Зеркальные страницы (cyclowiki `Олег_Владимирович_Дерипаска` и
+ * `Дерипаска,_Олег_Владимирович`) приносят одну и ту же фразу под разными
+ * адресами, и резюме печатало её дважды подряд. Ключ — тело цитаты после
+ * `quoteBody`, без регистра и кавычек; остаётся первая по порядку.
+ */
+export function dedupeQuotesByText<T extends { text: string }>(quotes: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const q of quotes) {
+    const key = quoteBody(q.text)
+      .toLowerCase()
+      .replace(/[«»"“”„]/gu, "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(q);
+  }
+  return out;
 }
 
 /** Строка-цитата: `«тело»` плюс атрибуция (`sourceAttribution`, может быть пустой). */

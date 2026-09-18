@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v199" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v200" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,13 @@ export const DECK_CONTENT_VERSION = "deck-sections-v199" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 18.09 номер двинут до v200: цитата чистится от знаков ударения Википедии и
+ * пробелов перед знаками из разметки источника, цитаты-двойники по тексту не
+ * печатаются (шаг 0109). Составитель цитаты `client/client-quote.ts` вне
+ * отпечатка, но печатает из тех же входов — без подъёма паки взялись бы из
+ * кэша с прежним текстом. Паков v199 в проде нет: пересборок между деплоями
+ * 0108 и 0109 не было.
  *
  * 18.09 номер двинут до v199: ёмкость листа с потерей — сколько блоков на нём
  * осталось (`keptItems − fold.leading`), а не `bulletCount − droppedBullets`:
@@ -690,7 +697,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v199" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "ab348be5a229c914" as const;
+export const DECK_BUILDER_FINGERPRINT = "04f86d4c6d9d504d" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -713,7 +720,7 @@ export const DECK_BUILDER_FINGERPRINT = "ab348be5a229c914" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v199" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v200" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
