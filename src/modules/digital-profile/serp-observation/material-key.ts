@@ -58,6 +58,28 @@ function normalizedUrlForKey(url: string): string {
     .replace(/\/+$/u, "");
 }
 
+/**
+ * Адрес, приведённый к сравнению «та же это страница или нет».
+ *
+ * Приведение то же, что у ключа материала: схема, `www.` и хвостовой слэш
+ * снимаются. Разница ровно одна — снимается строка параметров и якорь: ключ
+ * материала так делать не вправе (по строке параметров распадается группа
+ * `youtube.com/watch?v=…`), а вопрос «одна ли это страница» без этого не
+ * решается: `https://www.x.ru/a` и `http://x.ru/a/` — одна страница.
+ *
+ * Ответ один на два потребителя: загрузчик деки (цитата едет только на свой
+ * адрес) и раскладка решений в аналитике (шаг 0115, то же правило).
+ */
+export function normalizedPageAddress(url: string | undefined | null): string {
+  return String(url ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//u, "")
+    .replace(/^www\./u, "")
+    .replace(/[?#].*$/u, "")
+    .replace(/\/+$/u, "");
+}
+
 export function serpMaterialKey(
   e: {
     url?: string | null;

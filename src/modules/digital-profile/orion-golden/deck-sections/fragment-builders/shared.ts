@@ -8,6 +8,7 @@ import type {
   SlideBody,
   SlideContentContract,
 } from "../contracts";
+import { subjectNameVariants } from "../../analytics/link-verdict-audit-agent";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { splitSentences } from "../sentence-split";
 import {
@@ -63,12 +64,10 @@ import {
   sourceAttribution,
 } from "../../client/client-address";
 import { normalizeForCompare } from "../text-compare";
-import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
 import {
-  cleanExampleTitle,
   clientThemeWhy,
-  isWeakExampleTitle,
-  quoteForClaim,
+  resolveExampleQuote,
+  themeEssenceWord,
   themeScaleLine,
 } from "../../analytics/finding-synthesizer";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -2216,6 +2215,13 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   if (exclusive) return themedClaim(withThemeScaleLine(f, scale));
 
   const themeDef = themeDefOfFinding(f);
+  const subjectContext = subjectContextOf(scoped);
+  // Те же написания имени, что у чтения ссылок: по ним фраза узнаётся как
+  // фраза о субъекте, а заголовок — как заголовок о другом человеке.
+  const subjectNames = subjectNameVariants({
+    fullName: scoped.subject?.displayName ?? "",
+    aliases: scoped.subject?.aliases ?? [],
+  });
 
   const domains: string[] = [];
   const titleCandidates: Array<{
@@ -2267,48 +2273,44 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
       continue;
     }
     /*
-     * Цитируется прочитанная страница, а не строка выдачи.
+     * Цитата под темой — фраза, из-за которой материал в теме (шаг 0115).
      *
-     * Поисковик режет заголовок по своей ширине, и в отчёт попадали обрывки:
-     * «Алишер Усманов: биография предпринимателя, бизнес, личная», «…в
-     * отношении него после», «lost his mansion in Germany due». Прочитанная
-     * страница даёт целое предложение, и аудитор уже сверил его с текстом
-     * дословно — это и лучшее доказательство, и законченная фраза.
+     * Выбор один на отчёт — `resolveExampleQuote` синтезатора находок: цитата
+     * прочитанной страницы, несущая сигнал темы (среди всех цитат страницы, а
+     * не первая — первая по промпту чтения это фраза принадлежности, лид
+     * биографии), иначе целый заголовок с сигналом и не о другом человеке,
+     * иначе целое предложение сниппета с сигналом. Пока сборка брала
+     * `pageQuote` и любой заголовок, стр. 15 отчёта Бондарчука печатала под
+     * политической темой лиды Википедии и Apple TV, а стр. 47 — «Paulina
+     * Andreeva - Biography» под деловым профилем.
      *
-     * Если страницу прочитать не удалось, берётся заголовок — но только целый.
-     * Правило отбора здесь то же, что и в синтезаторе находок
-     * (`quoteForClaim`): обрезанный поисковиком заголовок не цитируется вовсе.
-     * Раньше этот путь собирал цитаты сам и все защиты терял — в том числе
-     * потому, что проверку «заголовок обрезан» звали уже на очищенной строке,
-     * где многоточия не осталось.
+     * Тема без справочника (ярлык не из каталога) сигнала не знает и цитат не
+     * даёт: честная строка честнее случайной фразы.
      */
+    if (!themeDef) continue;
     const rawTitle = String(e.title ?? "");
-    const fromPage = pageQuoteForClient(e.pageQuote);
-    const t = fromPage || quoteForClaim(rawTitle, 220);
-    if (
-      !t ||
-      seenTitles.has(t.toLowerCase()) ||
-      /^potential\s+match$/i.test(t) ||
-      (!fromPage && isWeakExampleTitle(rawTitle, { theme: themeDef }))
-    ) {
-      continue;
-    }
+    const pageQuotes = e.pageQuotes ?? (e.pageQuote ? [e.pageQuote] : []);
+    const verdict: ObservationVerdict | undefined = e.readVerdictTone
+      ? {
+          tone: e.readVerdictTone,
+          quoted: pageQuotes.length > 0,
+          subjectMatch: (e.verdictSubjectMatch as ObservationVerdict["subjectMatch"]) ?? "unclear",
+          quotes: pageQuotes,
+        }
+      : undefined;
+    const ex = resolveExampleQuote(
+      { title: rawTitle, snippet: e.snippet, sourceUrl: e.url, evidenceType: e.kind ?? "" },
+      themeDef,
+      subjectContext,
+      { subjectNames, verdict }
+    );
+    const t = ex?.title ?? "";
+    if (!t || seenTitles.has(t.toLowerCase())) continue;
     seenTitles.add(t.toLowerCase());
-    /*
-     * Цитата со страницы сильнее любого заголовка.
-     *
-     * Вес 6 против «до 10» у заголовка с попаданием в ключевые слова темы
-     * означал, что заголовок обгоняет проверенное предложение. На прогоне 73
-     * блоки тем напечатали 7 цитат со страниц и 18 заголовков, и заголовки
-     * оказались негодные: «Leonid Mikhelson - OpenSanctions», «Л михельсон,
-     * кто его жена?» — имя с ярлыком площадки вместо утверждения. При этом у
-     * двадцати одной такой ссылки годная цитата со страницы была.
-     *
-     * Порог поднят выше потолка заголовка (2 + 8): страница выигрывает всегда,
-     * а ключевые слова лишь упорядочивают страницы между собой.
-     */
-    let score = fromPage ? 12 : t.split(/\s+/u).length >= 6 ? 2 : 1;
-    if (themeDef?.keywords.test(t)) score += 8;
+    // Страница сильнее заголовка, заголовок сильнее сниппета — тот же порядок,
+    // что внутри `resolveExampleQuote`: цитата страницы сверена аудитором
+    // дословно, заголовок — собственная формулировка публикации.
+    const score = ex?.source === "page" ? 12 : ex?.source === "title" ? 6 : 2;
     titleCandidates.push({
       title: t,
       domain: e.domain ?? domains[0] ?? "",
@@ -2390,8 +2392,10 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     // Площадок в регионе нет — значит, и числа нет: «источники не выделены» и
     // следом «всего по теме 2 материала» — два спорящих предложения, и второе
     // отправляет читателя искать материалы, которых страница назвать не может.
+    // Слово о том, чего не выделено, — то же, что у глобального утверждения
+    // (`themeEssenceWord`): у описательной темы нет «сути риска».
     const sourceSegment = safeDomains.length
-      ? `По теме в источниках ${enumerateRu(safeDomains)}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
+      ? `По теме в источниках ${enumerateRu(safeDomains)}; отдельный заголовок с сутью ${themeEssenceWord(themeDef)} в выдаче не выделен — сверить первоисточники.`
       : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
     claim = [sourceSegment, safeDomains.length ? scale : "", why]
       .filter(Boolean)

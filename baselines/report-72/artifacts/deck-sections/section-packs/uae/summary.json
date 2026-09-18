@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:002851c7e9f1a1b7d48a08a8b06cc4287bdd9175adcbda5efaff811b1cda2107",
-  "contentVersion": "deck-sections-v204",
+  "contentHash": "sha256:a367d8cf8a058788566feace697c5cc9389704a253f812b5839d646f51c14bd5",
+  "contentVersion": "deck-sections-v206",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -136,7 +136,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SUMMARY",
-  "generatedAt": "2026-09-18T20:02:29.722Z",
+  "generatedAt": "2026-09-18T22:40:28.683Z",
   "inputHash": "sha256:3a072b771f7a99b6508138087732397fbd46dc319f1cedf0779f3342a4dc89f0:0d968ee845dc2535",
   "inputs": {
     "evidenceRefs": [
@@ -406,7 +406,7 @@
       "baseSlotId": "p24_uae_summary",
       "content": {
         "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
           "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\nГде видно: sledst.org, m.sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
         ],
         "kpis": [
@@ -543,7 +543,7 @@
       "baseSlotId": "p24_uae_summary",
       "content": {
         "bullets": [
-          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io\n«PEP: Glinka Sergey Mikhaylovich» — источник rupep.org\nГде видно: vlasti.io, rupep.org. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«PEP: Glinka Sergey Mikhaylovich» — источник rupep.org\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io\nГде видно: rupep.org, vlasti.io. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
           "«Деловой профиль»\nНайдены публикации по теме:\n«Businessman Sergei Glinka: biography, family, photos, and his view on the future of transport» — источник bmmagazine.co.uk\n«Businessman Sergey Glinka: Biography, Family, Photos, and Today's Transport Challenges · BUSINESSFIRST» — источник businessfirstonline.co.uk\nГде видно: bmmagazine.co.uk, businessfirstonline.co.uk. [finding-business_profile-subject_match-a59d6fee]"
         ],
         "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 40."

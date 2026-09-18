@@ -70,7 +70,10 @@ const UAE_SCOPED = {
   evidenceIndex: {
     "ev-ru-1": { domain: "dzen.ru", region: "RU", title: "Биография предпринимателя" },
     "ev-ru-2": { domain: "secrets.tbank.ru", region: "RU", title: "Личная жизнь" },
-    "ev-uae-1": { domain: "gulfnews.com", region: "UAE", title: "Business profile in UAE" },
+    // Заголовок несёт слово темы (court): с шага 0115 цитата под темой обязана
+    // показывать тему, и нейтральный «Business profile in UAE» под криминальной
+    // темой цитатой быть не может.
+    "ev-uae-1": { domain: "gulfnews.com", region: "UAE", title: "Court filings in UAE name the subject" },
     "ev-neutral": { domain: "en.wikipedia.org", title: "Wikipedia article" },
   },
 };
@@ -93,10 +96,14 @@ describe("B.3 — regional source localization", () => {
       CROSS_REGIONAL_FINDING as never,
       UAE_SCOPED as never
     );
-    expect(localized).toMatch(/— источник gulfnews\.com|Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com/u);
+    // «Business profile in UAE» криминального сигнала не несёт: с шага 0115
+    // блок печатает честную строку с источником региона, а не этот заголовок.
+    expect(localized).toMatch(
+      /— источник gulfnews\.com|Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com|По теме в источниках gulfnews\.com/u
+    );
     expect(localized).not.toContain("dzen.ru");
     expect(localized).not.toContain("24smi.org");
-    expect(localized).toContain("Business profile in UAE");
+    expect(localized).toContain("Court filings in UAE name the subject");
     expect(localized).not.toContain("Биография предпринимателя");
   });
 

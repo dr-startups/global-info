@@ -28,7 +28,6 @@ import {
 } from "../contracts/verified-finding-bundle";
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
 import {
-  getAdversePatterns,
   getFindingThemes,
   isAccusingTheme,
   resolveFindingThemesConfig,
@@ -40,6 +39,7 @@ import {
   looksLikeMachineDump,
   looksLikeSearchQuery,
   looksLikeSurfaceBlockHeading,
+  pageQuoteForClient,
 } from "./client-quote-hygiene";
 import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
 import { sourceAttribution } from "../client/client-address";
@@ -51,9 +51,24 @@ import {
   type SubjectContextMask,
 } from "../../config/subject-context-words";
 import type { SubjectAnchors } from "./subject-anchors";
-import type { ObservationVerdictByRef } from "../../serp-observation/resolve-observation-highlights";
+import type {
+  ObservationVerdict,
+  ObservationVerdictByRef,
+} from "../../serp-observation/resolve-observation-highlights";
 import { pluralRu } from "../../report/i18n/plural-ru";
-import { splitSentences } from "../deck-sections/sentence-split";
+import {
+  carriesThemeSignal,
+  DANGLING_TAIL_RE,
+  hasDanglingTail,
+  looksLikeWholeStatement,
+  snippetSentencesAboutSubject,
+  subjectMaterialText,
+  subjectNameStems,
+  textNamesSubject,
+  titleNamesAnotherPerson,
+} from "./theme-quote";
+
+export { hasDanglingTail } from "./theme-quote";
 
 export type { ThemeDef };
 
@@ -131,7 +146,8 @@ function refOf(item: RawInventoryItem): string {
 }
 
 /**
- * Материал глазами словаря темы: заголовок и сниппет, как у предиката строки.
+ * Материал глазами словаря темы: заголовок и сниппет, как у предиката строки —
+ * но только те предложения сниппета, что о субъекте.
  *
  * Служебный `classification` сюда не входит по той же причине, по какой он не
  * входит в ответ «негативен ли материал»: у строк выдачи он записан самим
@@ -139,9 +155,16 @@ function refOf(item: RawInventoryItem): string {
  * у словаря есть левая граница и нет правой, поэтому раздел сайта в пути
  * (`…/court/…`, `…/investigations/…`) читался как текст публикации и давал
  * нейтральному заголовку криминальную тему.
+ *
+ * Сниппет читается тем же разбором, из которого берётся цитата
+ * (`snippetSentencesAboutSubject`, шаг 0115): после голого имени другого
+ * человека и после заголовка перекрёстных ссылок идёт навигация площадки.
+ * Материал 2x2.su получал политическую тему из «Другие биографии. Мишустин
+ * Михаил Владимирович. Председатель Правительства РФ.» — и её же цитировал.
+ * Текст, который даёт тему, и текст, из которого берётся цитата, — один.
  */
-function themeMatchText(item: RawInventoryItem): string {
-  return [item.title, readableSnippet(item)].filter(Boolean).join(" ");
+function themeMatchText(item: RawInventoryItem, stems: readonly string[]): string {
+  return subjectMaterialText(item.title, readableSnippet(item), stems);
 }
 
 /**
@@ -151,9 +174,13 @@ function themeMatchText(item: RawInventoryItem): string {
  * `positivePatterns` доменное слово стоит прямо в списке (`forbes`), и читать
  * им адрес — способ, которым они работают. У темы иначе: её площадки вынесены
  * в собственный список (`ThemeDef.domains`), и словарь темы адреса не видит.
+ * Сниппет здесь целиком: словари качества ищут «potential match» и «не
+ * подтверждено», и навигация площадки им не мешает.
  */
 function itemText(item: RawInventoryItem): string {
-  return [themeMatchText(item), item.classification, item.sourceUrl].filter(Boolean).join(" ");
+  return [item.title, readableSnippet(item), item.classification, item.sourceUrl]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -242,20 +269,35 @@ export function themeScaleLine(count: number, adverseCount: number): string {
 }
 
 /**
+ * Чего в выдаче не выделено, когда цитаты нет: сути риска у темы риска, сути
+ * темы у описательной. Строку печатают и глобальное утверждение, и
+ * региональная сборка — слово одно на обоих.
+ */
+export function themeEssenceWord(theme: ThemeDef | undefined): string {
+  return theme && theme.baseRisk === "none" ? "темы" : "риска";
+}
+
+/**
  * Пример-свидетельство для клиентского текста.
  *
  * `url` рядом с доменом — не дублирование: источник называется полным адресом
  * («источник (msk1.ru/text/world/2026/02/02/76244926)»), а домен остаётся
  * запасным ответом для материала, у которого адреса нет вовсе.
  */
-export type ClaimEvidenceExample = { title: string; domain: string; url?: string };
+export type ClaimEvidenceExample = {
+  title: string;
+  domain: string;
+  url?: string;
+  /** Откуда фраза: прочитанная страница, предложение сниппета или заголовок (шаг 0115). */
+  source?: "page" | "snippet" | "title";
+  /**
+   * Фраза длиннее бюджета ужата по границе оборота и закрыта нашим многоточием.
+   * Признак нужен сборке утверждения: чистка заголовка снимала бы многоточие, и
+   * обрывок печатался бы как целая фраза («На выборах он был единственным»).
+   */
+  truncated?: boolean;
+};
 
-/**
- * PDF-46 I.1 — JS `\b` does NOT treat Cyrillic as word chars, so «…Путина в»
- * / «…из-за» never matched. Use Unicode letter boundaries + multi-word tails.
- */
-const DANGLING_TAIL_RE =
-  /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|due|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при|после|перед)\s*$/iu;
 const SERP_TRUNCATED_RE = /(?:\.\.\.|…)\s*$/u;
 const BIO_SEO_RE = /биограф(?:ия|ии)?|личная жизнь|фото|новости|карьера|wiki(?:pedia)?/iu;
 const STRONG_DOMAIN_RE =
@@ -314,11 +356,6 @@ export function looksLikeEncyclopedicLead(title: string): boolean {
   const [, head, tail] = m;
   // До тире — голое имя; после — описание, а не событие.
   return looksLikeBarePersonName(head!) && /[а-яёa-z]/u.test(tail!);
-}
-
-/** True when a cleaned quote/title ends on a hanging preposition/conjunction. */
-export function hasDanglingTail(text: string): boolean {
-  return DANGLING_TAIL_RE.test(String(text ?? "").trim());
 }
 
 /**
@@ -501,9 +538,6 @@ export function scoreExampleForTheme(
 }
 
 /**
- * PDF-44 H.2 — pick a client-facing quote: strong title, else theme-relevant snippet.
- */
-/**
  * Поверхности, у которых нет заголовка публикации.
  *
  * ИИ-ответ, поисковая подсказка и связанный запрос — не статьи: цитировать у
@@ -530,131 +564,166 @@ const NON_QUOTABLE_EVIDENCE_TYPES = new Set([
   "wikipedia_check",
 ]);
 
+/** Бюджет одной цитаты в строке блока темы. */
+const CLAIM_QUOTE_BUDGET = 220;
+
+/** Короче этого ужатая фраза не несёт мысли. */
+const MIN_FITTED_QUOTE_CHARS = 40;
+
 /**
- * Несёт ли текст сигнал темы — не считая слов, которыми написан сам субъект.
- *
- * Слово «Судьи» в заголовке профиля на портале о судьях совпадает с темой
- * «Криминальные / судебные материалы», но о материале не говорит ничего: это
- * должность субъекта (`config/subject-context-words.ts`).
+ * Что нужно знать о материале сверх его текста, чтобы выбрать цитату (шаг 0115).
  */
-function carriesThemeSignal(
-  text: string,
-  theme: ThemeDef,
-  subjectContext?: SubjectContextMask | null
-): boolean {
-  const value = String(text ?? "");
-  if (!value.trim()) return false;
-  if (theme.keywords.test(value)) {
-    if (!allDictionaryHitsAreSubjectContext(value, theme.keywords, subjectContext)) return true;
+export type ExampleQuoteContext = {
+  /**
+   * Написания имени субъекта (`subjectNameVariants`): по ним фраза узнаётся
+   * как фраза о нём, а заголовок — как заголовок о другом человеке. Без имён
+   * оба правила молчат.
+   */
+  subjectNames?: readonly string[];
+  /** Решение по прочитанной странице материала — с её дословными цитатами. */
+  verdict?: ObservationVerdict;
+};
+
+/** Материал так, как его видит выбор цитаты: у региональной сборки нет всей записи. */
+export type QuotableMaterial = Pick<
+  RawInventoryItem,
+  "title" | "snippet" | "sourceUrl" | "evidenceType"
+>;
+
+const STEMS_CACHE = new WeakMap<readonly string[], string[]>();
+
+/** Основы имени — один раз на список имён: их спрашивают по каждому материалу темы. */
+function stemsOf(names: readonly string[] | undefined): string[] {
+  if (!names || names.length === 0) return [];
+  let stems = STEMS_CACHE.get(names);
+  if (!stems) {
+    stems = subjectNameStems(names);
+    STEMS_CACHE.set(names, stems);
   }
-  const adverse = getAdversePatterns();
-  return (
-    adverse.test(value) && !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
-  );
+  return stems;
 }
 
 /**
- * Предложение сниппета, в котором стоит сигнал темы.
+ * Предложение длиннее бюджета — ужимается по границе оборота и закрывается
+ * многоточием.
  *
- * Длиннее бюджета — ужимается по границе слова и закрывается многоточием.
  * Правилу «целое или ничего» это не противоречит: многоточие поисковика значит
  * «неизвестно, что отрезано», а наше — «фраза продолжается, адрес рядом».
+ * Признак `truncated` едет вместе с фразой: сборка утверждения не чистит её
+ * как заголовок и не снимает наше многоточие.
  */
-function signalSentenceOf(
-  snippet: string,
-  theme: ThemeDef,
-  subjectContext: SubjectContextMask | null | undefined,
-  budget: number
-): string {
-  const flat = String(snippet ?? "").replace(/\s+/gu, " ").trim();
-  if (!flat) return "";
-  const sentences = splitSentences(flat);
-  const signal = sentences.find((x) => carriesThemeSignal(x, theme, subjectContext));
-  if (!signal) return "";
-  if (signal.length <= budget) return signal;
-  const slice = signal.slice(0, budget - 1);
-  const cut = slice.slice(0, slice.lastIndexOf(" ")).replace(/[\s,;:—-]+$/u, "");
-  return cut.length >= 40 ? `${cut}…` : "";
+function fitSentence(text: string, budget: number): { text: string; truncated: boolean } | null {
+  if (text.length <= budget) return { text, truncated: false };
+  const slice = text.slice(0, budget - 1);
+  const clause = Math.max(
+    slice.lastIndexOf(", "),
+    slice.lastIndexOf("; "),
+    slice.lastIndexOf(" — "),
+    slice.lastIndexOf(" – "),
+    slice.lastIndexOf(": ")
+  );
+  const at = clause >= budget * 0.55 ? clause : slice.lastIndexOf(" ");
+  let cut = slice.slice(0, at).replace(/[\s,;:—–-]+$/u, "").trim();
+  if (hasDanglingTail(cut)) cut = cut.replace(DANGLING_TAIL_RE, "").trim().replace(/[\s,;:—–-]+$/u, "");
+  if (cut.length < MIN_FITTED_QUOTE_CHARS || hasDanglingTail(cut)) return null;
+  return { text: `${cut}…`, truncated: true };
 }
 
+/**
+ * Цитата материала под темой — фраза, из-за которой материал в теме (шаг 0115).
+ *
+ * Отчёт Бондарчука 19.09.2026 печатал под «Политические связи / публичная
+ * экспозиция» лид Википедии, навигацию сайта о Мишустине и заголовок интервью
+ * о «Сталинграде»; под «Деловой профиль» — биографию его жены. На вопрос
+ * «какой фразой показать тему» отчёт отвечал в двух местах и в обоих не на
+ * него: региональная сборка брала первую цитату страницы, а это фрагмент
+ * принадлежности (имя рядом с признаком, то есть лид); глобальное утверждение
+ * брало первое предложение сниппета с сигналом, даже если сниппет уже перешёл
+ * к навигации площадки, и не требовало сигнала у описательной темы.
+ *
+ * Правило: фраза **несёт сигнал темы** (для всех тем, описательных тоже: у
+ * темы, назначенной списком площадок, сигнал — сама площадка), фраза
+ * **целая** (`looksLikeWholeStatement`) и фраза **о субъекте**. Порядок:
+ * цитата прочитанной страницы (сверена аудитором дословно) → заголовок
+ * публикации (её собственная формулировка, если сигнал стоит в нём самом) →
+ * предложение сниппета. Нет ни одной — цитаты нет, и блок печатает честную
+ * строку без обещания.
+ *
+ * О субъекте: цитата страницы — если читающая модель признала страницу его
+ * страницей (`subjectMatch: subject`), иначе только если называет его;
+ * предложение сниппета — пока в сниппете не встретилось голое имя другого
+ * человека; заголовок — если не называет другого человека вместо субъекта.
+ * Страница, признанная страницей другого человека, не цитируется вовсе.
+ *
+ * Обрезанное поисковиком предложение сниппета не цитируется и не
+ * восстанавливается в «заголовок»: восстановление меняло слова источника
+ * («После публикации расследования…» → «Расследование…»), а обрывок без
+ * маркера печатался целой фразой («На выборах он был единственным»).
+ */
 export function resolveExampleQuote(
-  item: RawInventoryItem,
+  item: QuotableMaterial,
   theme: ThemeDef,
   /**
    * Слова признаков субъекта: совпадение по ним сигналом темы не считается.
    */
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  ctx?: ExampleQuoteContext
 ): ClaimEvidenceExample | null {
   if (NON_QUOTABLE_EVIDENCE_TYPES.has(String(item.evidenceType ?? "").toLowerCase())) {
     return null;
   }
   const domain = domainOf(item.sourceUrl);
-  const title = cleanExampleTitle(String(item.title ?? ""));
-  const rawTitle = String(item.title ?? "");
-  /*
-   * У обвиняющей темы цитата обязана нести её сигнал.
-   *
-   * Блок «Криминальные / судебные материалы» отчёта 86 процитировал заголовок
-   * «Судьи России — Егоров Алексей Евгеньевич — Краснодарский край», а темой
-   * материал стал из-за фразы сниппета про захват земли лесного фонда.
-   * Читатель видит имя на портале о судьях и делает единственный возможный
-   * вывод: криминальной темой объявили его должность.
-   *
-   * Описательной темы это не касается: там нейтральный заголовок и есть
-   * доказательство.
-   */
-  const mustCarrySignal = themeCarriesRisk(theme);
-  if (mustCarrySignal) {
-    const fromSnippet = carriesThemeSignal(rawTitle, theme, subjectContext)
-      ? ""
-      : signalSentenceOf(String(item.snippet ?? ""), theme, subjectContext, 220);
-    if (fromSnippet) return { title: fromSnippet, domain, url: item.sourceUrl };
-  }
-  if (
-    title &&
-    !isWeakExampleTitle(rawTitle, { theme }) &&
-    (!mustCarrySignal || carriesThemeSignal(rawTitle, theme, subjectContext))
-  ) {
-    const q = quoteForClaim(rawTitle, 220);
-    if (
-      q &&
-      !isWeakExampleTitle(q, { theme }) &&
-      !hasDanglingTail(q) &&
-      !isIncompleteClientQuote(q)
-    ) {
-      return { title: q, domain, url: item.sourceUrl };
+  const url = String(item.sourceUrl ?? "");
+  const stems = stemsOf(ctx?.subjectNames);
+  const platformSignal = Boolean(theme.domains?.test(url));
+  const carries = (text: string): boolean =>
+    platformSignal || carriesThemeSignal(text, theme, subjectContext);
+  const example = (
+    title: string,
+    source: NonNullable<ClaimEvidenceExample["source"]>,
+    truncated = false
+  ): ClaimEvidenceExample => ({
+    title,
+    domain,
+    url: item.sourceUrl,
+    source,
+    ...(truncated ? { truncated: true } : {}),
+  });
+
+  // 1. Цитаты прочитанной страницы: целые предложения, сверенные с текстом.
+  const verdict = ctx?.verdict;
+  if (verdict && verdict.subjectMatch !== "other") {
+    for (const raw of verdict.quotes ?? []) {
+      const text = pageQuoteForClient(raw);
+      if (!text) continue;
+      // Страница не признана страницей субъекта — цитата обязана назвать его
+      // сама. Имён субъекта нет — судить не по чему, правило молчит.
+      if (verdict.subjectMatch !== "subject" && stems.length > 0 && !textNamesSubject(text, stems)) {
+        continue;
+      }
+      // Целая фраза — и у страницы: читающая модель цитирует и тизеры с
+      // «...Read more», и куски с середины предложения.
+      if (!carries(text) || !looksLikeWholeStatement(text)) continue;
+      return example(text, "page");
     }
   }
 
-  const snip = String(item.snippet ?? "")
-    .replace(/\s+/gu, " ")
-    .trim();
-  // PDF-47/48 — SERP-truncated title still carries theme keywords («Рыбка»,
-  // «Навальный»): close the snippet into a complete headline, never «…,».
-  /*
-   * Совпадение словами признаков субъекта сигналом не считается и здесь:
-   * иначе запасная ветка вернула бы «Председатель Арбитражного суда
-   * Краснодарского края. Приём граждан по средам.» доказательством
-   * криминальной темы — ровно то, ради чего правка и заведена.
-   */
-  const titleCarriesTheme =
-    carriesThemeSignal(rawTitle, theme, subjectContext) ||
-    carriesThemeSignal(title, theme, subjectContext);
-  if (
-    snip.length >= 40 &&
-    (themeCarriesRisk(theme)
-      ? carriesThemeSignal(snip, theme, subjectContext) || titleCarriesTheme
-      : theme.keywords.test(snip) || getAdversePatterns().test(snip) || titleCarriesTheme)
-  ) {
-    const headline = snippetToClientHeadline(snip);
-    if (
-      headline.length >= 24 &&
-      !hasDanglingTail(headline) &&
-      !isIncompleteClientQuote(headline)
-    ) {
-      const q = quoteForClaim(headline, 220) || (headline.length <= 220 ? headline : "");
-      if (q && !isIncompleteClientQuote(q)) return { title: q, domain, url: item.sourceUrl };
-    }
+  // 2. Заголовок — целый, с сигналом, не о другом человеке. Заголовок о
+  // другом человеке закрывает материал целиком: его сниппет — о том же.
+  const rawTitle = String(item.title ?? "");
+  if (titleNamesAnotherPerson(rawTitle, stems)) return null;
+  if (!isWeakExampleTitle(rawTitle, { theme })) {
+    const q = quoteForClaim(rawTitle, CLAIM_QUOTE_BUDGET);
+    if (q && carries(q) && looksLikeWholeStatement(q)) return example(q, "title");
+  }
+
+  // 3. Предложение сниппета — о субъекте, целое, с сигналом.
+  for (const sentence of snippetSentencesAboutSubject(item.snippet, stems)) {
+    if (!sentence.aboutSubject || sentence.truncated) continue;
+    if (!carries(sentence.text) || !looksLikeWholeStatement(sentence.text)) continue;
+    const fitted = fitSentence(sentence.text, CLAIM_QUOTE_BUDGET);
+    if (!fitted) continue;
+    return example(fitted.text, "snippet", fitted.truncated);
   }
   return null;
 }
@@ -664,7 +733,8 @@ export function pickClaimExamples(
   items: RawInventoryItem[],
   theme: ThemeDef,
   adverseItems: RawInventoryItem[] = [],
-  subjectContext?: SubjectContextMask | null
+  subjectContext?: SubjectContextMask | null,
+  ctx?: { subjectNames?: readonly string[]; verdictByRef?: ObservationVerdictByRef }
 ): ClaimEvidenceExample[] {
   const adverseSet = new Set(adverseItems);
   const ranked = [...items].sort(
@@ -675,7 +745,10 @@ export function pickClaimExamples(
   const examples: ClaimEvidenceExample[] = [];
   const seen = new Set<string>();
   for (const i of ranked) {
-    const ex = resolveExampleQuote(i, theme, subjectContext);
+    const ex = resolveExampleQuote(i, theme, subjectContext, {
+      subjectNames: ctx?.subjectNames,
+      verdict: ctx?.verdictByRef?.[refOf(i)],
+    });
     if (!ex?.title) continue;
     const key = `${ex.title.toLowerCase()}|${ex.domain}`;
     if (seen.has(key)) continue;
@@ -708,18 +781,21 @@ export function buildClientFacingClaim(input: {
 
   let examples: ClaimEvidenceExample[] = (input.examples ?? [])
     .map((e) => ({
-      title: cleanExampleTitle(e.title),
+      // Ужатая нами фраза не чистится как заголовок: чистка сняла бы наше
+      // многоточие, и обрывок печатался бы целой фразой (шаг 0115).
+      title: e.truncated ? e.title : cleanExampleTitle(e.title),
       domain: String(e.domain ?? "")
         .replace(/^www\./iu, "")
         .trim(),
       url: e.url,
+      ...(e.truncated ? { truncated: true } : {}),
     }))
     .filter(
       (e) =>
         e.title.length >= 12 &&
         !/^potential\s+match$/i.test(e.title) &&
         !/^потенциальное совпадение$/i.test(e.title) &&
-        !isWeakExampleTitle(e.title, { theme: input.theme })
+        (e.truncated || !isWeakExampleTitle(e.title, { theme: input.theme }))
     );
   // Compat path: old callers still pass titles/domains separately.
   if (examples.length === 0 && (input.titles?.length || input.domains?.length)) {
@@ -744,8 +820,11 @@ export function buildClientFacingClaim(input: {
   //
   // Правило общее с построителем региональных резюме — оно одно на оба места.
   for (const e of pickDistinctTitles(examples, 2)) {
-    const q = quoteForClaim(e.title, 220);
-    if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
+    const q = e.truncated ? e.title : quoteForClaim(e.title, 220);
+    if (!q) continue;
+    if (!e.truncated && (isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q))) {
+      continue;
+    }
     // Источник называется полным адресом: домен читается как «где-то на сайте
     // есть, ищите сами» (замечание владельца к отчёту 20.08). Демо-имена не
     // называются ни адресом, ни доменом — это внутри `sourceAttribution`.
@@ -770,9 +849,12 @@ export function buildClientFacingClaim(input: {
 
   if (quoteLines.length === 0) {
     const domainHint = clientSafeDomains(input.domains ?? []).slice(0, 3).join(", ");
+    // У описательной темы нет «сути риска»: «Деловой профиль» с честной
+    // строкой про риск читался как претензия (шаг 0115).
+    const essence = themeEssenceWord(input.theme);
     const gap = domainHint
-      ? `По теме ${input.itemsCount} ${total} в источниках ${domainHint}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
-      : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`;
+      ? `По теме ${input.itemsCount} ${total} в источниках ${domainHint}; отдельный заголовок с сутью ${essence} в выдаче не выделен — сверить первоисточники.`
+      : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью ${essence} в выдаче не выделен — сверить первоисточники.`;
     return [`${framing}.`, gap, scale, why].join("\n");
   }
   const whereLine =
@@ -847,9 +929,11 @@ function themesFor(
   /** Страницу прочитали и признали благоприятной (и человек с этим не спорил). */
   favourablyRead: boolean,
   /** Слова признаков субъекта: тему по ним материал не получает. */
-  subjectContext?: SubjectContextMask | null
+  subjectContext: SubjectContextMask | null | undefined,
+  /** Основы имени субъекта: по ним сниппет читается до чужого голого имени. */
+  stems: readonly string[]
 ): ThemeDef[] {
-  const text = themeMatchText(item);
+  const text = themeMatchText(item, stems);
   const url = String(item.sourceUrl ?? "");
   return getFindingThemes().filter((theme) => {
     // Обвиняющая тема не берёт благоприятно прочитанную страницу — ни в состав,
@@ -988,8 +1072,17 @@ export function synthesizeFindings(input: {
    * ни негатива. Без признаков маски нет и поведение прежнее.
    */
   subjectAnchors?: SubjectAnchors | null;
+  /**
+   * Написания имени субъекта (`subjectNameVariants`).
+   *
+   * По ним сниппет читается до голого имени другого человека, а цитата темы
+   * узнаётся как фраза о субъекте (шаг 0115). Без имён оба правила молчат и
+   * поведение прежнее.
+   */
+  subjectNames?: readonly string[];
 }): FindingSynthesisResult {
   const subjectContext = buildSubjectContextMask(input.subjectAnchors);
+  const nameStems = subjectNameStems(input.subjectNames ?? []);
   const themeAssignments = new Map<string, string[]>();
   const byDecisionTheme = new Map<string, RawInventoryItem[]>(); // `${decision}|${themeId}`
   const seenClaimFingerprints = new Map<string, Set<string>>(); // `${decision}|${themeId}` -> fingerprints
@@ -1018,7 +1111,8 @@ export function synthesizeFindings(input: {
     let themes = themesFor(
       item,
       resolveItemReadFavourably(item, input.verdictByRef),
-      subjectContext
+      subjectContext,
+      nameStems
     );
     if (themes.length === 0) {
       if (decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") {
@@ -1129,7 +1223,10 @@ export function synthesizeFindings(input: {
           : 0.35;
 
     // PDF-44 H.1/H.2 — rank by theme substance; never quote bare FIO / SEO-bio.
-    const examples = pickClaimExamples(items, theme, adverseItems, subjectContext);
+    const examples = pickClaimExamples(items, theme, adverseItems, subjectContext, {
+      subjectNames: input.subjectNames,
+      verdictByRef: input.verdictByRef,
+    });
 
     // PDF-40 G.2b — concrete quotes + domains; theme prepended by consumers.
     const claim = buildClientFacingClaim({

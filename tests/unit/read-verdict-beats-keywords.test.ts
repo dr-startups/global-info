@@ -137,22 +137,27 @@ describe("описательная тема нейтральную страни�
    * «сути риска в выдаче не выделено» при двух годных цитатах.
    */
   it.each([
-    ["Деловой профиль", "business_profile"],
-    ["Политические связи / публичная экспозиция", "political_exposure"],
-  ])("«%s» оставляет цитату прочитанной страницы", (theme, themeId) => {
+    ["Деловой профиль", "business_profile", "Предприниматель Тимати дал интервью о новом альбоме и планах на тур"],
+    [
+      "Политические связи / публичная экспозиция",
+      "political_exposure",
+      "Депутат Тимати дал интервью о новом альбоме и планах на тур",
+    ],
+  ])("«%s» оставляет цитату прочитанной страницы", (theme, themeId, title) => {
     // Идентификатор находки несёт тему, и подменять один ярлык уже нельзя:
-    // тему находки дека узнаёт по идентификатору.
+    // тему находки дека узнаёт по идентификатору. Заголовок несёт слово своей
+    // темы: с шага 0115 цитата под темой обязана показывать тему, и у
+    // описательной темы тоже.
     const descriptive = {
       ...FINDING,
       findingId: `finding-${themeId}-subject_match-test`,
       theme,
       riskLevel: "low",
     } as Finding;
-    const claim = localizedThemedClaim(
-      descriptive,
-      scoped({ "inventory:read-neutral": "neutral", "inventory:read-adverse": "neutral" })
-    );
+    const input = scoped({ "inventory:read-neutral": "neutral", "inventory:read-adverse": "neutral" });
+    input.evidenceIndex["inventory:read-neutral"]!.title = title;
+    const claim = localizedThemedClaim(descriptive, input);
     expect(claim).toContain("дал интервью о новом альбоме");
-    expect(claim).not.toContain("отдельный заголовок с сутью риска в выдаче не выделен");
+    expect(claim).not.toContain("отдельный заголовок с сутью");
   });
 });

@@ -130,6 +130,18 @@ export type ObservationVerdict = {
   subjectMatch: "subject" | "likely" | "other" | "unclear";
   /** Кластерный ярлык сюжета — язык резюме; без него легенда берёт словарь. */
   themeLabel?: string;
+  /**
+   * Дословные цитаты прочитанной страницы, сверенные аудитором, — все, а не
+   * первая (шаг 0115).
+   *
+   * Первая цитата по промпту чтения — фрагмент принадлежности: имя рядом с
+   * признаком субъекта, то есть лид биографии. Фраза, из-за которой материал
+   * в теме, у той же страницы стоит второй или третьей, и пока карта решений
+   * несла только `quoted`, синтезатор находок цитировать её не мог.
+   * Принадлежат цитаты странице, а не материалу: раскладка по наблюдениям
+   * (`spreadVerdictsOverMaterials`) несёт их только на тот же адрес.
+   */
+  quotes?: string[];
 };
 
 /** `evidenceRef → решение по прочитанной странице`. */
@@ -192,11 +204,15 @@ export function observationVerdictsForVisuals(artifact: {
     // о ней есть.
     if (!ref || v.readFailure) continue;
     const label = themeLabelByRef.get(ref);
+    const quotes = (v.quotes ?? [])
+      .map((q) => String(q?.text ?? "").trim())
+      .filter((q) => q.length > 0);
     out[ref] = {
       tone: (v.tone as ObservationVerdict["tone"]) ?? "neutral",
-      quoted: (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0),
+      quoted: quotes.length > 0,
       subjectMatch: (v.subjectMatch as ObservationVerdict["subjectMatch"]) ?? "unclear",
       ...(label ? { themeLabel: label } : {}),
+      ...(quotes.length > 0 ? { quotes } : {}),
     };
   }
   return out;

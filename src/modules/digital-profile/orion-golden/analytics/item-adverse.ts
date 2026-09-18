@@ -26,7 +26,7 @@ import {
   type ObservationVerdict,
   type ObservationVerdictByRef,
 } from "../../serp-observation/resolve-observation-highlights";
-import { serpMaterialKey } from "../../serp-observation/material-key";
+import { normalizedPageAddress, serpMaterialKey } from "../../serp-observation/material-key";
 import type { SubjectContextMask } from "../../config/subject-context-words";
 import { evidenceRefOf } from "./analysis-scope";
 import { sourceTypeFromDomain, type SourceType } from "./source-type";
@@ -124,18 +124,31 @@ export function spreadVerdictsOverMaterials(
   items: RawInventoryItem[],
   verdictByRef: ObservationVerdictByRef
 ): ObservationVerdictByRef {
-  const strongest = new Map<string, ObservationVerdict>();
+  const strongest = new Map<string, { verdict: ObservationVerdict; address: string }>();
   for (const item of items) {
     const own = verdictByRef[evidenceRefOf(item)];
     if (!own) continue;
     const key = materialKeyOf(item);
     const prev = strongest.get(key);
-    if (!prev || verdictStrength(own) > verdictStrength(prev)) strongest.set(key, own);
+    if (!prev || verdictStrength(own) > verdictStrength(prev.verdict)) {
+      strongest.set(key, { verdict: own, address: normalizedPageAddress(item.sourceUrl) });
+    }
   }
   const out: ObservationVerdictByRef = {};
   for (const item of items) {
-    const verdict = strongest.get(materialKeyOf(item));
-    if (verdict) out[evidenceRefOf(item)] = verdict;
+    const chosen = strongest.get(materialKeyOf(item));
+    if (!chosen) continue;
+    /*
+     * Оценка принадлежит материалу, дословная цитата — прочитанной странице.
+     *
+     * Группу без настоящего адреса держит пара «домен и заголовок», и в ней
+     * законно лежат разные адреса — подсказки с псевдоадресом. Оценку они
+     * делят, цитату нет: утверждение обязано прослеживаться до наблюдения со
+     * своим URL. То же правило у загрузчика деки (`applyLinkVerdictsToEvidence`).
+     */
+    const sameAddress = normalizedPageAddress(item.sourceUrl) === chosen.address;
+    const { quotes, ...verdict } = chosen.verdict;
+    out[evidenceRefOf(item)] = sameAddress && quotes ? { ...verdict, quotes } : verdict;
   }
   return out;
 }

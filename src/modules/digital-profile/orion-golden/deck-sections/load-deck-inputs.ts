@@ -10,6 +10,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { normalizedPageAddress } from "../../serp-observation/material-key";
 import type { SubjectContextAnchors } from "../../config/subject-context-words";
 import { join } from "node:path";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
@@ -552,13 +553,9 @@ export function applyLinkVerdictsToEvidence(
  * материал.
  */
 function normalizedAddress(url: string | undefined): string {
-  return String(url ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//u, "")
-    .replace(/^www\./u, "")
-    .replace(/[?#].*$/u, "")
-    .replace(/\/+$/u, "");
+  // Тот же ответ, что у раскладки решений в аналитике (шаг 0115): правило
+  // «цитата едет только на свой адрес» одно на обе стороны.
+  return normalizedPageAddress(url);
 }
 
 /** Одно решение — на одну запись индекса; цитата едет только на свой адрес. */
@@ -606,15 +603,15 @@ function applyLinkVerdictToEntry(
   // странице. Иноязычная цитата печатается дословно, а эта строка идёт рядом.
   const theme = String(v.theme ?? "").trim();
   if (theme) entry.verdictTheme = theme;
-  // Первая годная цитата со страницы: она и станет цитатой в отчёте вместо
-  // обрезанного заголовка выдачи.
+  // Годные цитаты со страницы — все, в порядке модели: первая станет фразой
+  // принадлежности («Почему выделено»), а блок темы выберет среди всех ту,
+  // что несёт сигнал темы (шаг 0115). Пока оставалась одна, лист темы печатал
+  // лид биографии, а фраза о партии со второй позиции терялась.
   if (!carryQuote) return;
-  for (const q of v.quotes ?? []) {
-    const quote = pageQuoteForClient(q?.text);
-    if (quote) {
-      entry.pageQuote = quote;
-      break;
-    }
+  const quotes = (v.quotes ?? []).map((q) => pageQuoteForClient(q?.text)).filter(Boolean);
+  if (quotes.length > 0) {
+    entry.pageQuote = quotes[0];
+    entry.pageQuotes = quotes;
   }
 }
 

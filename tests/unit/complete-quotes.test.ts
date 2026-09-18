@@ -220,13 +220,16 @@ describe("цитата со страницы сильнее любого заг�
         domain: "opensanctions.org",
         region: "RU",
       },
-      // Страница прочитана, предложение целое и по делу.
+      // Страница прочитана, предложение целое и по делу — со словом темы:
+      // с шага 0115 цитата под темой обязана нести её сигнал.
       "inventory:page-quote": {
         title: "Leonid Mikhelson",
         domain: "fr.wikipedia.org",
         region: "RU",
+        readVerdictTone: "adverse",
+        verdictSubjectMatch: "subject",
         pageQuote:
-          "Son nom est cite en novembre 2017 dans les revelations des Paradise Papers concernant des avoirs offshore",
+          "Son nom figure sur la liste des sanctions de l'Union europeenne depuis les revelations des Paradise Papers",
       },
     },
     scope: { regions: ["RU"] },
@@ -236,7 +239,7 @@ describe("цитата со страницы сильнее любого заг�
   it("страница цитируется первой, даже когда заголовок бьёт в ключевые слова", () => {
     const claim = localizedThemedClaim(FINDING, scoped);
     const first = claim.split("\n").find((l) => l.startsWith("«") && l.includes("источник"));
-    expect(first).toContain("Paradise Papers");
+    expect(first).toContain("liste des sanctions");
   });
 
   it("голое имя с ярлыком площадки цитатой не становится вперёд страницы", () => {

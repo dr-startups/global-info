@@ -57,6 +57,7 @@ import {
   type WikipediaArticleReviewCheck,
 } from "./run-wikipedia-article-review";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
+import { subjectNameVariants } from "./link-verdict-audit-agent";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
   EXECUTIVE_SUMMARY_STAGE_INPUT_SCHEMA_VERSION,
@@ -841,6 +842,12 @@ export async function runOrionAnalyticsPipeline(
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
     verdictByRef,
     subjectAnchors,
+    // Те же написания имени, что у чтения ссылок и разбора статьи Википедии:
+    // по ним цитата темы узнаётся как фраза о субъекте (шаг 0115).
+    subjectNames: subjectNameVariants({
+      fullName: subject.displayName,
+      aliases: subject.aliases ?? [],
+    }),
   });
   synthesis = {
     ...synthesis,

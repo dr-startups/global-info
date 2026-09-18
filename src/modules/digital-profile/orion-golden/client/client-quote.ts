@@ -99,11 +99,18 @@ const TRAILING_ELLIPSIS_RE = /\s*(?:\.{3}|…)+\s*$/u;
  * «…» — слова источника (шаг 0104).
  */
 export function withoutSourceMarkup(text: string): string {
-  return text
-    .normalize("NFC")
-    .replace(/[\u0300-\u036f]/gu, "")
-    .replace(/\s+([,;:.!?)])/gu, "$1")
-    .replace(/\(\s+/gu, "(");
+  return (
+    text
+      .normalize("NFC")
+      .replace(/[\u0300-\u036f]/gu, "")
+      .replace(/\s+([,;:.!?)])/gu, "$1")
+      .replace(/\(\s+/gu, "(")
+      // Пробел внутри ёлочек и лапок — та же разметка страницы: Википедия
+      // отдаёт «« Единая Россия »» (шаг 0115). Прямые кавычки не трогаются:
+      // у них не видно, открывающая это или закрывающая.
+      .replace(/([«„])\s+/gu, "$1")
+      .replace(/\s+([»“])/gu, "$1")
+  );
 }
 
 export function quoteBody(text: string): string {

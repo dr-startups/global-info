@@ -200,12 +200,11 @@ describe("PDF-47/48 — recover risk evidence without mid-cut commas", () => {
       snippet: snip,
       sourceUrl: "https://www.currenttime.tv/a/29028978.html",
     } as RawInventoryItem;
-    const ex = resolveExampleQuote(row, politicalTheme);
-    expect(ex).not.toBeNull();
-    expect(ex!.title).toMatch(/ФБК|Приходько|Дерипаск/iu);
-    expect(ex!.title).not.toMatch(/,\s*$/u);
-    expect(ex!.title).not.toMatch(/^После\b/u);
-    expect(ex!.domain).toContain("currenttime.tv");
+    // Шаг 0115: обрезанное поисковиком предложение сниппета цитатой не
+    // становится и в «заголовок» не восстанавливается — восстановление
+    // меняло слова источника, а обрывок без маркера печатался целой фразой.
+    // `snippetToClientHeadline` остаётся проверенной выше сама по себе.
+    expect(resolveExampleQuote(row, politicalTheme)).toBeNull();
   });
 
   it("rejects trailing-comma and unbalanced-quote stubs", () => {

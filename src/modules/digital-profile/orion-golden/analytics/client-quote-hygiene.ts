@@ -216,8 +216,23 @@ export function looksLikeCardChrome(text: string | null | undefined): boolean {
   return labels >= 2 && !SENTENCE_END_INSIDE_RE.test(body);
 }
 
+/**
+ * Приклеенная обвязка страницы: строчная кириллица и сразу за ней заглавная
+ * («…Бондарчука-старшегоИсточник: Starface.ru.»), — подпись элемента страницы,
+ * склеенная с текстом при чтении без пробела. Слов источника в ней нет, и
+ * всё от места склейки — не фраза. Только кириллица: в латинице так пишут
+ * имена продуктов (iPhone, YouTube).
+ */
+const GLUED_CYRILLIC_CHROME = /[а-яё](?=[А-ЯЁ])/u;
+
+/** Текст до приклеенной обвязки страницы — или он же, если склейки нет. */
+export function cutGluedChrome(text: string): string {
+  const m = GLUED_CYRILLIC_CHROME.exec(text);
+  return m && m.index !== undefined ? text.slice(0, m.index + 1).trim() : text;
+}
+
 export function pageQuoteForClient(text: string | null | undefined): string {
-  const body = String(text ?? "").replace(/\s+/gu, " ").trim();
+  const body = cutGluedChrome(String(text ?? "").replace(/\s+/gu, " ").trim());
   if (body.length < MIN_PAGE_QUOTE_CHARS) return "";
   if (looksLikeSearchQuery(body) || looksLikeSurfaceBlockHeading(body)) return "";
   if (looksLikeMachineDump(body) || looksLikeCardChrome(body)) return "";

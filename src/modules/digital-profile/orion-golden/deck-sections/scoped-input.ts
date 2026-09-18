@@ -394,6 +394,13 @@ export type ScopedEvidenceIndex = Record<
      */
     pageQuote?: string;
     /**
+     * Все годные дословные цитаты прочитанной страницы, в порядке модели
+     * (шаг 0115). `pageQuote` — первая из них, фраза принадлежности; блок темы
+     * ищет среди всех ту, что несёт сигнал темы: у Википедии и Apple TV фраза
+     * о партии стояла второй, и лист печатал лид.
+     */
+    pageQuotes?: string[];
+    /**
      * Почему страницу не удалось прочитать: `blocked`, `not_found`, `timeout`,
      * `empty_text`, `not_fetched`, `analysis_failed`.
      *
