@@ -53,6 +53,7 @@ python3 renderer/smoke_search_table_layout.py         # ширины колон�
 python3 renderer/smoke_line_typography.py             # строки блока, роли, выделения, мера против вёрстки
 python3 renderer/smoke_metric_tiles.py                # плитки метрик: один ряд, высота по содержимому, подпись внутри
 python3 renderer/smoke_sidebar_provenance.py          # подпись происхождения боковой панели — внутри панели
+python3 renderer/smoke_page_density.py           # плотность листа: полоса заголовка по факту, нижний запас 800 000
 ```
 
 Правки вёрстки проверяются этими командами, а не глазами: типографическая

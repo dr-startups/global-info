@@ -24,16 +24,20 @@ import {
 } from "../fixtures/compliance-fragment";
 import type { SlideContentContract } from "@/modules/digital-profile/orion-golden/deck-sections/contracts";
 
-/** Двенадцать записей без содержательных полей: своих карточек они не дают. */
-const TWELVE_BARE = Array.from({ length: 12 }, (_, i) => minimalRecord("WORLD_CHECK", i + 1));
+/**
+ * Четырнадцать записей без содержательных полей: своих карточек они не дают.
+ * Потолок листа — SUMMARY_PAGE_ROWS = 6 (шаг 0114, было 5): четырнадцать дают
+ * три листа [6, 6, 2], как прежде двенадцать давали [5, 5, 2].
+ */
+const FOURTEEN_BARE = Array.from({ length: 14 }, (_, i) => minimalRecord("WORLD_CHECK", i + 1));
 
 const summaryPages = (records: Array<Record<string, unknown>>): SlideContentContract[] =>
   complianceSlides(records).filter(isSummaryPage);
 
 describe("сводная таблица комплаенса разбивается на листы", () => {
-  it("двенадцать записей не печатаются одной таблицей", () => {
-    const pages = summaryPages(TWELVE_BARE);
-    expect(pages.map((p) => p.content.table?.rows.length ?? 0)).toEqual([5, 5, 2]);
+  it("четырнадцать записей не печатаются одной таблицей", () => {
+    const pages = summaryPages(FOURTEEN_BARE);
+    expect(pages.map((p) => p.content.table?.rows.length ?? 0)).toEqual([6, 6, 2]);
     expect(pages[0]!.slideId).toBe("p33_compliance_toc");
     expect(pages.slice(1).map((p) => p.slideId)).toEqual([
       "p33_compliance_toc__cont1",
@@ -42,42 +46,42 @@ describe("сводная таблица комплаенса разбивает�
   });
 
   it("ни одна запись не теряется и не повторяется при разбивке", () => {
-    const names = summaryPages(TWELVE_BARE).flatMap((p) =>
+    const names = summaryPages(FOURTEEN_BARE).flatMap((p) =>
       (p.content.table?.rows ?? []).map((r) => r[2])
     );
-    expect(names).toEqual(Array.from({ length: 12 }, (_, i) => `Кирилл Кулебакин ${i + 1}`));
+    expect(names).toEqual(Array.from({ length: 14 }, (_, i) => `Кирилл Кулебакин ${i + 1}`));
   });
 
   it("продолжение сводки называет свой диапазон записей", () => {
-    const pages = summaryPages(TWELVE_BARE);
-    expect(pages[1]!.content.narrative).toContain("записи 6–10 из 12");
-    expect(pages[2]!.content.narrative).toContain("записи 11–12 из 12");
+    const pages = summaryPages(FOURTEEN_BARE);
+    expect(pages[1]!.content.narrative).toContain("записи 7–12 из 14");
+    expect(pages[2]!.content.narrative).toContain("записи 13–14 из 14");
   });
 
   it("лист с одной записью печатает её номер, а не диапазон из одного конца", () => {
-    // Шесть записей дают последний лист на одну строку, и «записи 6–6 из 6» —
+    // Семь записей дают последний лист на одну строку, и «записи 7–7 из 7» —
     // это то, что прочитал бы клиент банка. Граница достижима на любом корпусе
-    // с остатком 1 при делении на потолок: 6, 11, 16, 21…
+    // с остатком 1 при делении на потолок (6): 7, 13, 19…
     const pages = summaryPages(
-      Array.from({ length: 6 }, (_, i) => minimalRecord("WORLD_CHECK", i + 1))
+      Array.from({ length: 7 }, (_, i) => minimalRecord("WORLD_CHECK", i + 1))
     );
-    expect(pages.map((p) => p.content.table?.rows.length ?? 0)).toEqual([5, 1]);
-    expect(pages[1]!.content.narrative).toContain("запись 6 из 6");
-    expect(pages[1]!.content.narrative).not.toContain("6–6");
+    expect(pages.map((p) => p.content.table?.rows.length ?? 0)).toEqual([6, 1]);
+    expect(pages[1]!.content.narrative).toContain("запись 7 из 7");
+    expect(pages[1]!.content.narrative).not.toContain("7–7");
   });
 
   it("продолжение говорит, где искать рекомендацию", () => {
     // Рекомендацию с продолжений снимает общий конструктор, и это правильно;
     // но читатель третьего листа обязан узнать, что она есть и относится к его
     // строкам тоже, — иначе лист выглядит как строки без вывода.
-    const pages = summaryPages(TWELVE_BARE);
+    const pages = summaryPages(FOURTEEN_BARE);
     expect(pages[1]!.content.narrative).toContain("рекомендаци");
   });
 
   it("рекомендация печатается один раз — на первой странице сводки", () => {
     // Иначе «верифицировать каждое совпадение вручную» повторяется на каждом
     // листе и съедает высоту, которой считается ёмкость.
-    const pages = summaryPages(TWELVE_BARE);
+    const pages = summaryPages(FOURTEEN_BARE);
     expect(pages[0]!.content.whatToCheck).toContain("Верифицировать");
     expect(pages.slice(1).map((p) => p.content.whatToCheck)).toEqual([undefined, undefined]);
   });

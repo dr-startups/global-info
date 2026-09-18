@@ -110,14 +110,16 @@ function cutFor(counts: number[]): TableCutPlan {
 }
 
 describe("раскрой листа берётся у меры, а не у худшего случая", () => {
+  // Шаг 0114: бюджет листа 3 510 000 → 4 060 000 (полоса заголовка по факту и
+  // нижний запас 800 000), ожидания раскроя пересчитаны под него.
   it("шестнадцать медианных строк ложатся на два листа, а не на шесть", () => {
     const heights = Array.from({ length: 16 }, () => MEDIAN_ROW_EMU);
-    expect(cutRowsByHeight(heights, SERP_TABLE_ROW_BUDGET_EMU)).toEqual([10, 6]);
+    expect(cutRowsByHeight(heights, SERP_TABLE_ROW_BUDGET_EMU)).toEqual([11, 5]);
   });
 
-  it("строки ростом в 300 000 дают одиннадцать на лист", () => {
+  it("строки ростом в 300 000 дают тринадцать на лист", () => {
     const heights = Array.from({ length: 16 }, () => 300_000);
-    expect(cutRowsByHeight(heights, SERP_TABLE_ROW_BUDGET_EMU)).toEqual([11, 5]);
+    expect(cutRowsByHeight(heights, SERP_TABLE_ROW_BUDGET_EMU)).toEqual([13, 3]);
   });
 
   it("строка выше бюджета целиком ложится на свой лист одна, а не режется", () => {

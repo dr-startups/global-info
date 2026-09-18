@@ -127,15 +127,9 @@ def next_smaller_scale_pt(value: float) -> float | None:
     smaller = [s for s in TYPE_SCALE_PT if s < value]
     return smaller[-1] if smaller else None
 
-# Master slide 16:10 (12.8" × 8.0") — matches ORION reference aspect.
-SLIDE_W = 11_704_320
-SLIDE_H = 7_315_200
-MARGIN_X = 480_000
-CONTENT_W = SLIDE_W - 2 * MARGIN_X
-FOOTER_Y = SLIDE_H - 440_000
-# PDF-46 I.2 — hard clearance above confidential footer (measure underestimates
-# multi-line theme cards; keep a wide safety band).
-CONTENT_BOTTOM = SLIDE_H - 1_100_000
+# Геометрия мастер-слайда — один ответ на рендерер и растровую проверку
+# (`geometry.py`, шаг 0114): здесь числа только реэкспортируются.
+from .geometry import CONTENT_BOTTOM, CONTENT_W, FOOTER_Y, MARGIN_X, SLIDE_H, SLIDE_W  # noqa: E402,F401
 
 # Визуальная система cleeq (https://cleeq.ru) — только краска.
 #
@@ -1236,7 +1230,16 @@ class _Ctx:
                 pass
             text_x = MARGIN_X + 200_000
             text_w = CONTENT_W - 200_000
-        box = self.slide.shapes.add_textbox(Emu(text_x), Emu(y), Emu(text_w), Emu(900000))
+        # Полоса заголовка — по факту (шаг 0114, решение 4(б)): однострочный
+        # заголовок отдаёт содержимому 250 000 EMU, которые прежде пустовали под
+        # ним; двухстрочный оставляет прежние 950 000. Строки меряются тем же
+        # `_wrapped_line_count`, что и весь текст, — и замер, и вывод видят одно.
+        # Рамка текста кончается внутри полосы: рамка в 900 000 при полосе в
+        # 700 000 давала пересечение с содержимым на каждой странице (ворота
+        # приёмки считают пересечения фигур по телеметрии).
+        lines = _wrapped_line_count(_safe(text), text_w, size, bold=True)
+        band = 700_000 if lines <= 1 else 950_000
+        box = self.slide.shapes.add_textbox(Emu(text_x), Emu(y), Emu(text_w), Emu(band - 50_000))
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -1246,7 +1249,7 @@ class _Ctx:
         r.font.bold = True
         r.font.size = Pt(size)
         r.font.color.rgb = color
-        return y + 950000
+        return y + band
 
     def card(
         self,

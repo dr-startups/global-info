@@ -158,6 +158,13 @@ export const SMOKES: Smoke[] = [
       "плитки метрик одним рядом, высота ряда по содержимому, подпись внутри плитки по вёрстке LibreOffice (нужны Python-пакеты)",
   },
   {
+    name: "page-density",
+    argv: ["PYTHON", "renderer/smoke_page_density.py"],
+    tier: "full",
+    about:
+      "плотность листа: полоса заголовка по факту (700 000 / 950 000) и нижний запас 800 000; список получает место, подвал не задет",
+  },
+  {
     name: "sidebar-provenance",
     argv: ["PYTHON", "renderer/smoke_sidebar_provenance.py"],
     tier: "full",

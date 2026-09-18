@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:c6fc9630ae9d0fbab4df4fb0763b539498eafe6c6844ff87eaba79239f5d17fc",
-  "contentVersion": "deck-sections-v203",
+  "contentHash": "sha256:4815ee6657c58b469f9960f73d6a311698d4be2a7722659ac857af6226ef7df6",
+  "contentVersion": "deck-sections-v204",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -149,8 +149,8 @@
     "serp_observation:cmrjsczbc0025vd9gob9ld7u8"
   ],
   "fragmentKey": "RU_SERP",
-  "generatedAt": "2026-09-18T19:48:24.243Z",
-  "inputHash": "sha256:42b9bb176abbae5bc27c7085897640ad0a6a7f2caa043d858d2f304d2642e2c1:4826c8a58abdf219",
+  "generatedAt": "2026-09-18T20:02:29.712Z",
+  "inputHash": "sha256:42b9bb176abbae5bc27c7085897640ad0a6a7f2caa043d858d2f304d2642e2c1:7d5e2a7a6e5e2556",
   "inputs": {
     "evidenceRefs": [
       "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -386,8 +386,8 @@
     {
       "baseSlotId": "p09_ru_serp_table",
       "content": {
-        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4, 6–9).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 5.",
+        "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Деловой профиль» — низкий уровень внимания (строки 1–4, 6–10).",
+        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 6.",
         "statusNote": "Тема подтверждена, уровень внимания — низкий; оценка достоверна.",
         "table": {
           "headers": [
@@ -460,11 +460,18 @@
               "Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband",
               "—",
               "Не проверено"
+            ],
+            [
+              "10",
+              "nakanune.ru/preview/024d26a998052bf8",
+              "Бизнесмен Сергей Глинка: личная жизнь, фото и мнение об...",
+              "—",
+              "Не проверено"
             ]
           ]
         },
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–4, 6–9).",
+        "whatWasFound": "«Деловой профиль» — низкий уровень внимания (строки 1–4, 6–10).",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта."
       },
       "continuationIndex": null,
@@ -501,7 +508,9 @@
         "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
         "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
         "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
-        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12"
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71"
       ],
       "findingIds": [
         "finding-business_profile-subject_match-a59d6fee",
@@ -511,7 +520,7 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 30,
-        "displayedCount": 9,
+        "displayedCount": 10,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
         "pageCount": 2,
@@ -519,7 +528,7 @@
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 15,
-        "unverifiedDisplayed": 9
+        "unverifiedDisplayed": 10
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
@@ -532,7 +541,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Яндекса; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 12).",
-        "sourceNote": "Источники — nakanune.ru, shkolazhizni.ru, audit-it.ru, ru.wikipedia.org и ещё 2.",
+        "sourceNote": "Источники — shkolazhizni.ru, audit-it.ru, ru.wikipedia.org, zachestnyibiznes.ru и ещё 1.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
@@ -543,13 +552,6 @@
             "Оценка"
           ],
           "rows": [
-            [
-              "10",
-              "nakanune.ru/preview/024d26a998052bf8",
-              "Бизнесмен Сергей Глинка: личная жизнь, фото и мнение об...",
-              "—",
-              "Не проверено"
-            ],
             [
               "11",
               "shkolazhizni.ru/job/articles/112308",
@@ -594,8 +596,6 @@
       "continuationIndex": 1,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
-        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
         "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
         "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -613,7 +613,7 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 30,
-        "displayedCount": 6,
+        "displayedCount": 5,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
         "pageCount": 2,
@@ -621,7 +621,7 @@
         "serpEngine": "YANDEX",
         "serpPositional": 0,
         "uniqueMaterials": 15,
-        "unverifiedDisplayed": 6
+        "unverifiedDisplayed": 5
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
@@ -634,7 +634,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 7).",
-        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 5.",
+        "sourceNote": "Источники — runews24.ru, forbes.ru, osnmedia.ru, tadviser.ru и ещё 7.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
@@ -707,6 +707,20 @@
               "Биография бизнесмена Сергея Глинки: фото, история ...",
               "—",
               "Не проверено"
+            ],
+            [
+              "10",
+              "moskva.bezformata.com/listnews/sergey-glinka/148682615",
+              "Заголовок не отдан поисковой системой",
+              "—",
+              "Не проверено"
+            ],
+            [
+              "11",
+              "labyrinth.ru/content/card.asp?cardid=92628",
+              "ГЛИНКА Сергей Михайлович - Биография",
+              "—",
+              "Не проверено"
             ]
           ]
         },
@@ -749,7 +763,9 @@
         "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
         "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76",
         "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
-        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746"
+        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
+        "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
+        "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp"
       ],
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175",
@@ -760,7 +776,7 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 20,
-        "displayedCount": 9,
+        "displayedCount": 11,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
         "pageCount": 2,
@@ -768,7 +784,7 @@
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 14,
-        "unverifiedDisplayed": 9
+        "unverifiedDisplayed": 11
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
@@ -781,7 +797,7 @@
       "baseSlotId": "p09_ru_serp_table",
       "content": {
         "narrative": "Показана выдача Google; запрос, по которому она собрана, в наборе не записан. Номера строк — порядок в собранной сводке, а не места в выдаче. «Криминальные / судебные материалы» — высокий уровень внимания (строка 13).",
-        "sourceNote": "Источники — moskva.bezformata.com, labyrinth.ru, utro.ru, x.com и ещё 1.",
+        "sourceNote": "Источники — utro.ru, x.com и rupep.org.",
         "statusNote": "Тема подтверждена, уровень внимания — высокий; оценка достоверна.",
         "table": {
           "headers": [
@@ -792,20 +808,6 @@
             "Оценка"
           ],
           "rows": [
-            [
-              "10",
-              "moskva.bezformata.com/listnews/sergey-glinka/148682615",
-              "Заголовок не отдан поисковой системой",
-              "—",
-              "Не проверено"
-            ],
-            [
-              "11",
-              "labyrinth.ru/content/card.asp?cardid=92628",
-              "ГЛИНКА Сергей Михайлович - Биография",
-              "—",
-              "Не проверено"
-            ],
             [
               "12",
               "utro.ru/release/2025/08/01/1563439.shtml",
@@ -836,8 +838,6 @@
       "continuationIndex": 3,
       "continuationOf": "p09_ru_serp_table",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
-        "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
         "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
         "inventory:serp-obs-cmrjsczcl002xvd9gn4tmpo53",
         "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
@@ -852,7 +852,7 @@
       "metrics": {
         "adverseDisplayed": 0,
         "datasetCount": 20,
-        "displayedCount": 5,
+        "displayedCount": 3,
         "likelyDisplayed": 0,
         "otherSubjectDisplayed": 0,
         "pageCount": 2,
@@ -860,7 +860,7 @@
         "serpEngine": "GOOGLE",
         "serpPositional": 0,
         "uniqueMaterials": 14,
-        "unverifiedDisplayed": 3
+        "unverifiedDisplayed": 1
       },
       "schemaVersion": "slide-content-v1",
       "sectionId": "RU_PROFILE",
