@@ -174,7 +174,16 @@ export function ResultDemo({ children }: { children: ReactNode }) {
         </ul>
       </div>
 
-      <div className="site-demo__result site-demo__reveal">{children}</div>
+      <div className="site-demo__result site-demo__reveal">
+        {children}
+        {/* Почему заголовки закрыты, сказано словами: иначе размытая строка читается как недогрузка */}
+        <p className="site-demo__hint">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <use href="#ic-hidden" />
+          </svg>
+          {EXAMPLE.hiddenNote}
+        </p>
+      </div>
     </div>
   );
 }

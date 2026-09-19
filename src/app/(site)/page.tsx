@@ -1,63 +1,33 @@
 import type { Metadata } from "next";
-import Image from "next/image";
-import { ButtonLink } from "@/modules/site/components/Button";
+import Link from "next/link";
 import { CheckForm } from "@/modules/site/components/CheckForm";
 import { Faq } from "@/modules/site/components/Faq";
+import { Blurred } from "@/modules/site/components/Hidden";
+import { CtaBand } from "@/modules/site/components/content/CtaBand";
+import { Cover } from "@/modules/site/components/content/Cover";
 import { HeroSeek } from "@/modules/site/components/landing/HeroSeek";
+import { KeepScene } from "@/modules/site/components/landing/KeepScene";
 import { ResultDemo } from "@/modules/site/components/landing/ResultDemo";
+import { SourcesFlow } from "@/modules/site/components/landing/SourcesFlow";
+import { MEDIUM_METER_LABEL, MediumMeter } from "@/modules/site/components/landing/parts";
 import { vars } from "@/modules/site/components/css-vars";
 import { JsonLd } from "@/modules/site/components/JsonLd";
-import { EXAMPLE, FAQ, FINAL, HERO, HOW, SAFETY, SOURCES, TOPICS } from "@/modules/site/content/landing";
+import { ARTICLES, BLOG, BLOG_TOPICS, readingTimeText } from "@/modules/site/content/articles";
+import { EXAMPLE, FAQ, FINAL, HERO, HOW, SAFETY, SOURCES, TOPICS, USEFUL } from "@/modules/site/content/landing";
 import { siteOrigin } from "@/modules/site/seo/indexing";
 import { faqLd, websiteLd } from "@/modules/site/seo/json-ld";
 import { pageMetadata } from "@/modules/site/seo/metadata";
 
 export const metadata: Metadata = pageMetadata("/");
 
-/** Делений шкалы у мини-макета третьего шага и примера: «средний» — второй из трёх. */
-function MediumMeter({ fill }: { fill?: boolean }) {
-  const seg = (on: boolean) => `site-meter__seg${on ? " is-on" : ""}${on && fill ? " site-steps__fill" : ""}`;
-  return (
-    <>
-      <span className={seg(true)} />
-      <span className={seg(true)} />
-      <span className={seg(false)} />
-    </>
-  );
-}
-
-const TERM_TICKS = Array.from({ length: 31 }, (_, i) => i);
-
-function TermRecord({ closed }: { closed?: boolean }) {
-  return (
-    <div className={`site-term__record${closed ? " site-term__record--closed" : ""} site-ticks`} aria-hidden="true">
-      <p className="site-term__head">
-        <span className="site-tag">{closed ? "Запись · день 30" : "Запись · день 0"}</span>
-        {closed ? <span className="site-term__status">обезличена</span> : null}
-      </p>
-      <dl>
-        <div>
-          <dt>Имя</dt>
-          <dd>
-            <i style={vars({ "--w": "82%" })} />
-          </dd>
-        </div>
-        <div>
-          <dt>Дата рождения</dt>
-          <dd>
-            <i style={vars({ "--w": "48%" })} />
-          </dd>
-        </div>
-        <div>
-          <dt>Контакты</dt>
-          <dd>
-            <i style={vars({ "--w": "66%" })} />
-          </dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
+/** Первые статьи блога — одним рядом на любой ширине; ниже 1024 ряд листается. */
+const USEFUL_POSTS = ARTICLES.slice(0, USEFUL.count).map((article) => ({
+  path: article.path,
+  title: article.h1,
+  topicLabel: BLOG_TOPICS.find((topic) => topic.id === article.topic)!.label,
+  readingTime: readingTimeText(article),
+  cover: article.cover,
+}));
 
 export default function LandingPage() {
   return (
@@ -81,14 +51,19 @@ export default function LandingPage() {
             <CheckForm />
           </div>
 
+          {/* Строка поиска и список «Будет проверено»: сетка ставит их в свои ряды */}
           <HeroSeek words={HERO.seekWords} />
         </div>
       </section>
 
-      {/* Лист 1: как проходит проверка, что получится на выходе и где мы смотрим */}
+      {/* Один лист на всё содержимое: главы отбиты линейкой и воздухом, а не новой кромкой */}
       <div className="site-sheet">
-        <section className="site-section site-how" id="how" data-anchor="how" aria-labelledby="how-title">
+        <section className="site-section site-how" aria-labelledby="how-title">
           <div className="site-how__track">
+            {/* Якорь — метка в дорожке, а не секция: там, где ряд закреплён, переход по ссылке сажает
+                страницу в конец хода, и человек видит три заполненные карточки, а не пустые места под
+                них. Где стоит метка, решает site.css — рядом с диапазонами карточек */}
+            <span className="site-how__anchor" id="how" data-anchor="how" />
             <div className="site-how__pin">
               <div className="site-container">
                 <div className="site-section__head site-reveal">
@@ -151,15 +126,11 @@ export default function LandingPage() {
                                 <span>4 материала в 2 темах</span>
                               </p>
                               <ul className="site-mini__lines">
-                                <li>
-                                  <span className="site-mark" style={vars({ "--w": "15ch" })} />
-                                </li>
-                                <li>
-                                  <span className="site-mark" style={vars({ "--w": "10ch" })} />
-                                </li>
-                                <li>
-                                  <span className="site-mark" style={vars({ "--w": "17ch" })} />
-                                </li>
+                                {HOW.resultLines.map((line) => (
+                                  <li key={line}>
+                                    <Blurred text={line} />
+                                  </li>
+                                ))}
                               </ul>
                             </div>
                           )}
@@ -191,11 +162,7 @@ export default function LandingPage() {
               <ResultDemo>
                 <div className="site-verdict site-verdict--medium" style={{ padding: 0 }}>
                   <div className="site-verdict__scale">
-                    <div
-                      className="site-meter site-meter--medium"
-                      role="img"
-                      aria-label="Уровень риска: средний, второй из трёх"
-                    >
+                    <div className="site-meter site-meter--medium" role="img" aria-label={MEDIUM_METER_LABEL}>
                       <MediumMeter />
                     </div>
                     <span className="site-tag">Уровень риска</span>
@@ -211,20 +178,15 @@ export default function LandingPage() {
                   {EXAMPLE.themes.map((theme) => (
                     <div className="site-finding" key={theme.label}>
                       <h3 className="site-finding__theme">
-                        <span className="site-finding__label">
-                          <span className="site-topics__name">{theme.label}</span>
-                        </span>
+                        {/* Без выделителя под названием: сирень на сайте значит «найдено» и «выбрано»,
+                            а здесь тема — заголовок группы, а не находка (владелец 18.09.2026) */}
+                        <span className="site-finding__label">{theme.label}</span>
                         <span className="site-finding__count">{theme.count}</span>
                       </h3>
                       <ul className="site-finding__list">
-                        {theme.widths.map((width, i) => (
-                          <li key={i}>
-                            <span
-                              className="site-mark"
-                              style={vars({ "--w": width })}
-                              role="img"
-                              aria-label="Материал, заголовок скрыт"
-                            />
+                        {theme.items.map((item) => (
+                          <li key={item}>
+                            <Blurred text={item} label="Материал, заголовок скрыт" />
                           </li>
                         ))}
                       </ul>
@@ -265,71 +227,30 @@ export default function LandingPage() {
               </h2>
               <p className="site-lead">{SOURCES.lead}</p>
             </div>
-            <ul className="site-sources-grid site-reveal--stagger">
-              {SOURCES.items.map((item) => (
-                <li key={item.title}>
-                  <svg viewBox="0 0 32 32" aria-hidden="true">
-                    <use href={`#${item.icon}`} />
-                  </svg>
-                  <strong>{item.title}</strong>
-                  <span>{item.text}</span>
-                </li>
-              ))}
-            </ul>
+            <SourcesFlow />
           </div>
         </section>
-      </div>
 
-      {/* Лист 2: срок записи проверки — запись в день запуска и та же запись в день 30 */}
-      <div className="site-sheet">
         <section className="site-section" id="safety" data-anchor="safety" aria-labelledby="safety-title">
-          <div className="site-container">
-            <div className="site-section__head site-reveal">
+          <div className="site-container site-split">
+            <div className="site-section__head site-reveal" style={{ margin: 0 }}>
               <h2 className="site-h2 site-lines" id="safety-title">
                 {SAFETY.title}
               </h2>
               <p className="site-lead">{SAFETY.lead}</p>
+              <dl className="site-keep__list">
+                {SAFETY.promises.map((promise) => (
+                  <div key={promise.title}>
+                    <dt>{promise.title}</dt>
+                    <dd>{promise.text}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
-
-            <ol className="site-term site-reveal--stagger">
-              <li className="site-term__stage">
-                <TermRecord />
-                <div className="site-term__text">
-                  <h3 className="site-h3">{SAFETY.stages[0].title}</h3>
-                  <p>{SAFETY.stages[0].text}</p>
-                </div>
-              </li>
-              <li className="site-term__stage">
-                <div className="site-term__scale" aria-hidden="true">
-                  <span className="site-term__fill" />
-                  <span className="site-term__ticks">
-                    {TERM_TICKS.map((i) => (
-                      <i key={i} />
-                    ))}
-                  </span>
-                  <span className="site-term__cursor" />
-                  <span className="site-term__end">0</span>
-                  <span className="site-term__end site-term__end--stop">30 дней</span>
-                </div>
-                <div className="site-term__text">
-                  <h3 className="site-h3">{SAFETY.stages[1].title}</h3>
-                  <p>{SAFETY.stages[1].text}</p>
-                </div>
-              </li>
-              <li className="site-term__stage">
-                <TermRecord closed />
-                <div className="site-term__text">
-                  <h3 className="site-h3">{SAFETY.stages[2].title}</h3>
-                  <p>{SAFETY.stages[2].text}</p>
-                </div>
-              </li>
-            </ol>
+            <KeepScene />
           </div>
         </section>
-      </div>
 
-      {/* Лист 3: вопросы */}
-      <div className="site-sheet">
         <section className="site-section" id="faq" data-anchor="faq" aria-labelledby="faq-title">
           <div className="site-container site-split">
             <div className="site-section__head site-reveal" style={{ margin: 0 }}>
@@ -338,35 +259,73 @@ export default function LandingPage() {
               </h2>
               <p className="site-lead">{FAQ.lead}</p>
             </div>
-            <Faq items={FAQ.items} className="site-reveal" />
+            {/* Появление по одному — через observer: список меняет высоту при раскрытии ответа,
+                и по scroll-таймлайну последний вопрос возвращался в свою анимацию размытым */}
+            <Faq items={FAQ.items} className="site-reveal--stagger" />
+          </div>
+        </section>
+
+        {/* Последняя глава листа — статьи, а не вопросы: вопросы раскрываются и двигают кромку
+            листа, и закрывающий блок под ней открывался раньше, чем список дочитан
+            (владелец 19.09.2026) */}
+        <section className="site-section" id="blog" data-anchor="blog" aria-labelledby="blog-title">
+          <div className="site-container">
+            <div className="site-more__head site-reveal">
+              <div className="site-section__head">
+                <h2 className="site-h2" id="blog-title">
+                  <Link className="site-more__link" href={BLOG.path} aria-label={USEFUL.label}>
+                    {USEFUL.title}
+                    <i aria-hidden="true">
+                      <svg viewBox="0 0 16 16">
+                        <use href="#ic-arrow" />
+                      </svg>
+                    </i>
+                  </Link>
+                </h2>
+                <p className="site-lead">{USEFUL.lead}</p>
+              </div>
+            </div>
+
+            <div className="site-more__pane">
+              <div className="site-blog">
+                {USEFUL_POSTS.map((post) => (
+                  <article className="site-post" key={post.path}>
+                    <Cover name={post.cover} sizes="(min-width: 1024px) 262px, (min-width: 640px) 42vw, 78vw" />
+                    <div className="site-post__body">
+                      <p className="site-post__meta">
+                        <span>{post.topicLabel}</span>
+                        <span>{post.readingTime}</span>
+                      </p>
+                      <h3 className="site-post__title">
+                        <Link className="site-post__link" href={post.path}>
+                          {post.title}
+                        </Link>
+                      </h3>
+                      <span className="site-post__more" aria-hidden="true">
+                        <i>
+                          <svg viewBox="0 0 16 16">
+                            <use href="#ic-arrow" />
+                          </svg>
+                        </i>
+                        {USEFUL.more}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       </div>
 
-      {/* Закрывающий лист: кадр F1 серии «Бумажные предметы» — папка на стопке листов */}
-      <section className="site-sheet site-final" aria-labelledby="final-title">
-        <div className="site-container site-final__copy">
-          <h2 className="site-final__title site-lines" id="final-title">
-            {FINAL.title}
-          </h2>
-          <p className="site-final__lead">{FINAL.lead}</p>
-          <ButtonLink variant="accent" large arrow href="#form">
-            {FINAL.cta}
-          </ButtonLink>
-        </div>
-        <div className="site-final__media" aria-hidden="true">
-          {/* Из public, а не импортом: объявления типов картинок даёт next-env.d.ts, которого
-              в CI на шаге «Типы» ещё нет */}
-          <Image
-            src="/site/final-paper.webp"
-            width={1200}
-            height={1490}
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            alt=""
-            loading="lazy"
-          />
-        </div>
-      </section>
+      {/* Закрывающий блок — последним: открывается из-под листа, дальше только подвал. Разбег держит
+          его липким только на последнем экране листа. Это раскладка главной, поэтому обёртка здесь,
+          а не в самом блоке */}
+      <div className="site-final-wrap">
+        <div className="site-final-wrap__runway" aria-hidden="true" />
+        <CtaBand title={FINAL.title} text={FINAL.lead} self />
+      </div>
+
       <JsonLd data={[websiteLd(siteOrigin()), faqLd(FAQ.items)]} />
     </main>
   );

@@ -27,6 +27,12 @@ export function SiteIcons() {
         <g id="ic-check" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="m3.5 8.5 2.8 2.8L12.5 5" />
         </g>
+        {/* Закрытый глаз: почему заголовков находок не видно */}
+        <g id="ic-hidden" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1.8 8S4 3.9 8 3.9 14.2 8 14.2 8 12 12.1 8 12.1 1.8 8 1.8 8Z" />
+          <circle cx="8" cy="8" r="1.9" />
+          <path d="m2.8 13.2 10.4-10.4" />
+        </g>
         <g id="ic-arrow" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 8h10M9 4l4 4-4 4" />
         </g>

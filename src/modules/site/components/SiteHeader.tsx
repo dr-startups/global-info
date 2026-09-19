@@ -47,18 +47,15 @@ function NavLinks({
   pathname,
   hash,
   onNavigate,
-  labelClass,
 }: {
   pathname: string;
   hash: string;
   onNavigate?: (href: string) => void;
-  /** Обёртка подписи: под словом в меню телефона проводится штрих выделителя. */
-  labelClass?: string;
 }) {
   return HEADER_NAV.map((item) => (
     <li key={item.href}>
       <Link href={item.href} aria-current={currentOf(item, pathname, hash)} onClick={() => onNavigate?.(item.href)}>
-        {labelClass ? <span className={labelClass}>{item.label}</span> : item.label}
+        {item.label}
       </Link>
     </li>
   ));
@@ -80,19 +77,11 @@ export function SiteHeader() {
     return () => window.removeEventListener("hashchange", onHash);
   }, [pathname]);
 
+  // Шапка только уплотняется. До шага 0077 здесь на каждый кадр писалась --site-scroll
+  // в :root — то есть пересчёт стилей всего документа ровно на первых 900 px, где лист
+  // и без того наползает на первый экран. Параллакс сетки снят вместе с этой записью.
   useEffect(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    let queued = false;
-    const onScroll = () => {
-      setScrolled(window.scrollY > 24);
-      if (queued || reduced) return;
-      queued = true;
-      requestAnimationFrame(() => {
-        queued = false;
-        // Сетка героя сдвигается медленнее страницы: глубина без отдельной картинки.
-        document.documentElement.style.setProperty("--site-scroll", `${Math.min(window.scrollY, 900)}px`);
-      });
-    };
+    const onScroll = () => setScrolled(window.scrollY > 24);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -237,7 +226,7 @@ export function SiteHeader() {
         </div>
         <nav aria-label="Разделы сайта">
           <ul className="site-drawer__nav">
-            <NavLinks pathname={pathname} hash={hash} onNavigate={navigated} labelClass="site-drawer__label" />
+            <NavLinks pathname={pathname} hash={hash} onNavigate={navigated} />
           </ul>
         </nav>
         {/* Главное действие сайта — под большим пальцем, а не где-то вверху страницы за закрытым меню */}

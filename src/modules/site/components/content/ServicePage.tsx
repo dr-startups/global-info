@@ -14,52 +14,55 @@ import { RichText } from "./RichText";
 export function ServicePage({ service }: { service: ServiceContent }) {
   const origin = siteOrigin();
   return (
-    <main className="site-container site-page" id="main">
-      <Breadcrumbs path={service.path} />
-      <div className="site-layout-2">
-        <article>
-          <div className="site-stack" style={{ gap: "var(--site-s-4)", marginBottom: "var(--site-s-6)" }}>
-            <h1 className="site-h1">{service.h1}</h1>
-            <p className="site-lead">{service.lead}</p>
-          </div>
+    <>
+      <main className="site-container site-page" id="main">
+        <Breadcrumbs path={service.path} />
+        <div className="site-layout-2">
+          <article>
+            <div className="site-stack" style={{ gap: "var(--site-s-4)", marginBottom: "var(--site-s-6)" }}>
+              <h1 className="site-h1">{service.h1}</h1>
+              <p className="site-lead">{service.lead}</p>
+            </div>
 
-          <dl className="site-stat-row">
-            {service.stats.map(([term, value]) => (
-              <div key={term}>
-                <dt>{term}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
+            <dl className="site-stat-row">
+              {service.stats.map(([term, value]) => (
+                <div key={term}>
+                  <dt>{term}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
 
-          <Cover
-            name={service.cover}
-            page
-            sizes="(min-width: 1024px) 736px, 100vw"
-            style={{ margin: "var(--site-s-6) 0 0" }}
-          />
+            <Cover
+              name={service.cover}
+              page
+              sizes="(min-width: 1024px) 736px, 100vw"
+              style={{ margin: "var(--site-s-6) 0 0" }}
+            />
 
-          <Blocks blocks={service.blocks} />
-          <CtaBand title={service.cta.title} text={service.cta.text} />
-        </article>
+            <Blocks blocks={service.blocks} />
+          </article>
 
-        <aside className="site-aside">
-          <div className="site-price">
-            <p>
-              <strong className="site-h3">{service.aside.title}</strong>
-            </p>
-            {service.aside.paragraphs.map((text) => (
-              <p key={text}>
-                <RichText text={text} />
+          <aside className="site-aside">
+            <div className="site-price">
+              <p>
+                <strong className="site-h3">{service.aside.title}</strong>
               </p>
-            ))}
-            <ButtonLink variant="accent" block href="/#form">
-              {CHECK_FORM_TEXT.submit}
-            </ButtonLink>
-          </div>
-        </aside>
-      </div>
-      <JsonLd data={[serviceLd(service, origin), breadcrumbLd(service.path, origin)]} />
-    </main>
+              {service.aside.paragraphs.map((text) => (
+                <p key={text}>
+                  <RichText text={text} />
+                </p>
+              ))}
+              <ButtonLink variant="accent" block href="/#form">
+                {CHECK_FORM_TEXT.submit}
+              </ButtonLink>
+            </div>
+          </aside>
+        </div>
+        <JsonLd data={[serviceLd(service, origin), breadcrumbLd(service.path, origin)]} />
+      </main>
+      {/* Закрывающий блок идёт во всю ширину окна, поэтому стоит за колонками страницы */}
+      <CtaBand title={service.cta.title} text={service.cta.text} />
+    </>
   );
 }

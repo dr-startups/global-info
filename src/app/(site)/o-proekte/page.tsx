@@ -13,15 +13,18 @@ export const metadata: Metadata = pageMetadata("/o-proekte");
 
 export default function AboutPage() {
   return (
-    <main className="site-narrow site-page" id="main">
-      <Breadcrumbs path={ABOUT.path} />
-      <div className="site-stack" style={{ gap: "var(--site-s-4)" }}>
-        <h1 className="site-h1">{ABOUT.h1}</h1>
-        <p className="site-lead">{ABOUT.lead}</p>
-      </div>
-      <Blocks blocks={ABOUT.blocks} firstProseStyle={{ marginTop: "var(--site-s-6)" }} />
+    <>
+      <main className="site-narrow site-page" id="main">
+        <Breadcrumbs path={ABOUT.path} />
+        <div className="site-stack" style={{ gap: "var(--site-s-4)" }}>
+          <h1 className="site-h1">{ABOUT.h1}</h1>
+          <p className="site-lead">{ABOUT.lead}</p>
+        </div>
+        <Blocks blocks={ABOUT.blocks} firstProseStyle={{ marginTop: "var(--site-s-6)" }} />
+        <JsonLd data={[breadcrumbLd(ABOUT.path, siteOrigin())]} />
+      </main>
+      {/* Закрывающий блок идёт во всю ширину окна, поэтому стоит за узкой колонкой страницы */}
       <CtaBand title={FINAL.title} text={FINAL.lead} />
-      <JsonLd data={[breadcrumbLd(ABOUT.path, siteOrigin())]} />
-    </main>
+    </>
   );
 }

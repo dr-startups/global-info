@@ -379,18 +379,6 @@ export function CheckForm() {
           {CHECK_FORM_TEXT.submit}
         </Button>
       </div>
-
-      <div className="site-panel__foot">
-        <p className="site-tag">{CHECK_FORM_TEXT.scanTitle}</p>
-        <ul className="site-scan" aria-label="Что будет проверено">
-          {CHECK_FORM_TEXT.scan.map((item) => (
-            <li key={item}>
-              <span className="site-mark" style={vars({ "--w": "3ch" })} aria-hidden="true" />
-              {item}
-            </li>
-          ))}
-        </ul>
-      </div>
     </form>
   );
 }

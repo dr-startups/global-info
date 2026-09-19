@@ -152,7 +152,6 @@
   --site-dur-fast: 120ms;
   --site-dur-base: 200ms;
   --site-dur-slow: 280ms;
-  --site-scroll: 0px; /* сдвиг фоновой сетки героя; пишется скриптом при прокрутке */
 
   /* Сетка и размеры контролов */
   --site-container: 1120px;
@@ -228,36 +227,27 @@ body {
    заказчика 13.09). Теперь новый лист виден кромкой и наездом, а не сменой цвета. Лист другого
    тона — это уже второе правило, и оно ломает первое. */
 
+/* Лист. Наезд оставлен только там, где он оправдан: лист ложится на первый экран и уезжает с
+   закрывающего блока. Всё содержимое между героем и закрывающим блоком — один белый лист; главы
+   отбиты линейкой по ширине контейнера и воздухом, а не новой кромкой: стопка одинаковых кромок
+   читалась как «ещё один такой же экран», а не как новая глава.
+
+   Лист въезжает со сдвигом 88 px, поэтому первый экран продолжается под него ровно на столько же
+   (см. .site-hero): иначе в щель между листом и его скруглёнными углами виден блок под ним. */
 .site-sheet {
   position: relative;
+  z-index: 2;
   border-radius: var(--site-sheet-r) var(--site-sheet-r) 0 0;
-  margin-top: calc(var(--site-sheet-r) * -1);
+  margin-top: calc((var(--site-sheet-r) + 88px) * -1);
   padding-top: var(--site-sheet-r);
   padding-bottom: var(--site-s-9);
   background-color: var(--site-paper);
   background-image: var(--site-grain);
   background-size: 160px 160px;
-  box-shadow: var(--site-shadow-sheet);
+  box-shadow:
+    var(--site-shadow-sheet),
+    0 18px 40px -20px rgba(0, 0, 0, 0.45); /* тень листа на чернила закрывающего блока под ним */
   --site-surface: var(--site-paper);
-}
-
-/* Продолжение листа вниз, под следующий лист. Следующий лист доезжает снизу (translateY 88 → 0),
-   и без продолжения между двумя белыми листами на миг открывался стол — полоса тёплой бумаги, та
-   самая лишняя смена фона, только на ходу. В покое продолжение целиком лежит под следующим листом.
-   У закрывающего листа его нет: под ним подвал. */
-.site-sheet::before {
-  content: "";
-  position: absolute;
-  inset: 100% 0 auto;
-  height: 88px;
-  background-color: var(--site-paper);
-  background-image: var(--site-grain);
-  background-size: 160px 160px;
-  pointer-events: none;
-}
-
-.site-sheet.site-final::before {
-  content: none;
 }
 
 /* Первая секция листа уже отбита его собственным полем — свой отступ ей не нужен */
@@ -266,9 +256,81 @@ body {
   padding-block-start: var(--site-s-7);
 }
 
+/* Линейка главы: линия по ширине контейнера над каждой главой, кроме первой */
+.site-sheet > .site-section + .site-section {
+  padding-block-start: var(--site-s-8);
+}
+
+.site-sheet > .site-section + .site-section::before {
+  content: "";
+  display: block;
+  width: min(100% - 2 * var(--site-gutter), var(--site-container));
+  height: 1px;
+  margin: 0 auto var(--site-s-8);
+  background: var(--site-line);
+}
+
+@media (min-width: 768px) {
+  .site-sheet > .site-section + .site-section {
+    padding-block-start: var(--site-s-9);
+  }
+
+  .site-sheet > .site-section + .site-section::before {
+    margin-bottom: var(--site-s-9);
+  }
+}
+
+/* Свет из окна идёт по листу: то же пятно, что в первом экране, у каждой главы своё, и едет оно
+   медленнее страницы. Это и есть параллакс при смене блоков: не сдвиг кромок, а смена освещения.
+   Бледное намеренно — читается как атмосфера, а не как «градиентная подложка». */
+.site-sheet > .site-section {
+  position: relative;
+}
+
+.site-sheet > .site-section::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(38% 46% at 82% 24%, var(--site-glow-2), transparent 72%),
+    radial-gradient(30% 40% at 12% 78%, rgba(120, 134, 170, 0.09), transparent 72%);
+  pointer-events: none;
+}
+
+.site-sheet > .site-section:nth-of-type(even)::after {
+  background:
+    radial-gradient(38% 46% at 16% 30%, var(--site-glow-2), transparent 72%),
+    radial-gradient(30% 40% at 86% 80%, rgba(120, 134, 170, 0.09), transparent 72%);
+}
+
+/* Под листом — закрывающий блок, и открывается он сразу, как только нижняя кромка листа вошла в
+   окно. С обычным полем чернила появлялись, пока последняя глава ещё стояла у самого низа окна:
+   её не успевали дочитать (владелец 19.09.2026). Поле считается от окна — глава встаёт целиком
+   выше его середины раньше, чем показался блок. */
+.site-sheet:has(+ .site-final-wrap) {
+  padding-bottom: clamp(var(--site-s-9), 24vh, 260px);
+}
+
 /* Ссылки в шапке ведут к секциям: якорь не должен уезжать под плавающую шапку */
 [data-anchor] {
   scroll-margin-top: 88px;
+}
+
+/* Якорь «Как проходит проверка» — метка в дорожке шагов, а не секция. Здесь она стоит в начале
+   дорожки; там, где ряд закреплён, её сдвигает ветка scroll-driven анимаций — см. «Шаги: карточка
+   поднимается со стола». Размер 1 px, а не 0: Next пропускает цель перехода с нулевым прямоугольником. */
+.site-how__track {
+  position: relative;
+}
+
+.site-how__anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
 }
 
 img,
@@ -293,10 +355,11 @@ a:hover {
   color: var(--site-accent-hover);
 }
 
-/* Ссылка в тексте того же цвета, что текст, поэтому отклик на наведение — полоса маркера под
-   словами, как выделение в документе, а не смена цвета */
-:where(p, li, dd) > a:not([class]):hover {
-  background: var(--site-marker-soft);
+/* Ссылка в тексте того же цвета, что текст, поэтому отклик на наведение — линия под словом
+   потолще. Полосы маркера под словами здесь больше нет: сирень на сайте значит «найдено» и
+   «выбрано», а «здесь мышь» — чернила (владелец 18.09.2026). */
+:where(p, dd, span) > a:not([class]):hover {
+  text-decoration-thickness: 2px;
 }
 
 ::selection {
@@ -636,7 +699,7 @@ p {
    высоту (заказчик 13.09: бургер и выдвижное меню). 16.09 заказчик попросил вид ближе к
    мобильному приложению, но выдвижение сбоку оставить. Теперь это лист бумаги, который висит над
    страницей с полем 8 px, а не приклеен к краю: входит длинной «пружинящей» кривой и уходит
-   короче, пункты набраны крупно и входят по очереди, текущий раздел отмечен штрихом выделителя.
+   короче, пункты набраны крупно и входят по очереди, текущий раздел — чернильная пластина с точкой маркера.
    Панель — модальный <dialog> вне шапки (почему — комментарий в разметке). */
 .site-burger {
   -webkit-appearance: none;
@@ -901,36 +964,98 @@ html:has(.site-drawer[open]) {
   }
 }
 
-/* Текущий раздел: под словом проведён штрих выделителя — тот же жест, которым в продукте
-   отмечено найденное. Штрих лежит по нижней половине строчных и проводится слева направо, когда
-   лист уже почти доехал. Анимация, а не переход: закрытый <dialog> не рисуется, и при каждом
-   открытии она запускается заново; конечное состояние — проведённый штрих, без движения тоже. */
-.site-drawer__label {
+/* Текущий раздел — чернильный предмет на бумажном листе, из того же материала, что решающая
+   кнопка: тот же градиент, блик по верхней кромке и слоёная тень. На месте шеврона — точка
+   маркера с ореолом: шеврон говорит «строка ведёт дальше», а эта строка никуда не ведёт, она
+   говорит «вы здесь». Чернила и сирень в паре — это и знак логотипа, и кнопка проверки.
+
+   Как сюда пришли (владелец 19.09.2026, три раза): штрих выделителя под словом читался
+   наведением, которое не уходит; плашка бумаги на бумаге терялась; плоская чёрная заливка была
+   заметной, но чужой сайту — прямоугольник без материала.
+
+   Пластина лежит на ::before, а не фоном ссылки: так она проходит по строке слева направо, когда
+   лист уже доехал, — тем же жестом, каким в мастере проверки отмечается выбранная карточка.
+   Анимации, а не переходы: закрытый <dialog> не рисуется, и при каждом открытии они запускаются
+   заново; конечное состояние — готовая пластина с точкой, без движения тоже. */
+.site-drawer__nav a[aria-current] {
   position: relative;
   isolation: isolate;
+  color: var(--site-paper);
+  /* Тень — у строки, а не у пластины: clip-path, которым пластина проходит по строке, обрезал бы
+     и тень, и в конце прохода она появлялась бы рывком */
+  box-shadow:
+    0 1px 1px rgba(22, 24, 29, 0.12),
+    0 14px 26px -16px rgba(22, 24, 29, 0.55);
 }
 
-.site-drawer__label::before {
+.site-drawer__nav a[aria-current]::before {
   content: "";
   position: absolute;
+  inset: 0;
   z-index: -1;
-  inset: 48% -6px 2% -5px;
-  border-radius: 3px 6px 4px 5px;
-  background: var(--site-marker);
-  transform: scaleX(0);
-  transform-origin: left center;
+  border-radius: inherit;
+  background-color: var(--site-cta-to);
+  background-image: linear-gradient(180deg, var(--site-cta-from), var(--site-cta-to));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
-.site-drawer__nav a[aria-current] .site-drawer__label::before {
-  transform: none;
+/* Точка 10 px стоит по центру места шеврона (20 px), ореол — тем же маркером в четверть силы */
+.site-drawer__nav a[aria-current]::after {
+  width: 10px;
+  height: 10px;
+  margin-inline-end: 5px;
+  border-radius: 50%;
+  background-color: var(--site-marker);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--site-marker) 26%, transparent);
+  -webkit-mask: none;
+  mask: none;
 }
 
-.site-drawer[open] .site-drawer__nav a[aria-current] .site-drawer__label::before {
-  animation: site-drawer-stroke 460ms var(--site-ease-out) 360ms backwards;
+/* Наведение и нажатие красят шеврон чернилами и сдвигают его — точке на чернилах это нельзя */
+.site-drawer__nav a[aria-current]:hover::after,
+.site-drawer__nav a[aria-current]:active::after {
+  translate: none;
+  background-color: var(--site-marker);
 }
 
-@keyframes site-drawer-stroke {
-  from { transform: scaleX(0); }
+.site-drawer[open] .site-drawer__nav a[aria-current] {
+  animation:
+    site-drawer-current-ink 200ms linear 380ms backwards,
+    site-drawer-current-shadow 420ms var(--site-ease-out) 520ms backwards;
+}
+
+.site-drawer[open] .site-drawer__nav a[aria-current]::before {
+  animation: site-drawer-current-plate 420ms var(--site-ease-out) 360ms backwards;
+}
+
+.site-drawer[open] .site-drawer__nav a[aria-current]::after {
+  animation: site-drawer-current-dot 300ms var(--site-ease-out) 640ms backwards;
+}
+
+/* Подпись белеет, пока пластина проходит под словом: слово стоит слева, и его она накрывает первым */
+@keyframes site-drawer-current-ink {
+  from { color: var(--site-ink); }
+}
+
+@keyframes site-drawer-current-shadow {
+  from {
+    box-shadow:
+      0 1px 1px rgba(22, 24, 29, 0),
+      0 14px 26px -16px rgba(22, 24, 29, 0);
+  }
+}
+
+@keyframes site-drawer-current-plate {
+  from { clip-path: inset(0 100% 0 0 round 14px); }
+  to { clip-path: inset(0 0 0 0 round 14px); }
+}
+
+@keyframes site-drawer-current-dot {
+  from {
+    opacity: 0;
+    scale: 0.25;
+    filter: blur(4px);
+  }
 }
 
 /* Разделы и низ листа входят следом за листом по одному: список читается сверху вниз */
@@ -1472,15 +1597,6 @@ html:has(.site-drawer[open]) {
   padding: var(--site-s-5);
 }
 
-.site-panel__foot {
-  display: grid;
-  gap: 10px;
-  padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
-  border-top: 1px solid var(--site-line);
-  background: var(--site-paper-2);
-  border-radius: 0 0 calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px);
-}
-
 @media (min-width: 640px) {
   .site-panel__head {
     padding: var(--site-s-6) var(--site-s-6) 0;
@@ -1489,16 +1605,13 @@ html:has(.site-drawer[open]) {
   .site-panel__body {
     padding: var(--site-s-5) var(--site-s-6) var(--site-s-6);
   }
-
-  .site-panel__foot {
-    padding: var(--site-s-5) var(--site-s-6);
-  }
 }
 
 /* ---------- Форма проверки ----------
    Главный объект первого экрана, поэтому он единственный на сайте оформлен как вещь, а не
-   как поверхность: паспарту вокруг панели, шкала заполнения по верхнему срезу и отрывной
-   корешок со списком источников внизу.
+   как поверхность: паспарту вокруг панели и шкала заполнения по верхнему срезу. Корешок со
+   списком источников уехал из формы под строку поиска (шаг 0077): в форме он ничего не делал
+   и удлинял главный объект экрана.
 
    Радиусы концентричны: 24 = 17 + 7 (поле паспарту). Разъедутся — паспарту сразу читается
    как вторая рамка, а не как оправа. */
@@ -1563,27 +1676,6 @@ html:has(.site-drawer[open]) {
   background-position: right 14px center;
 }
 
-/* Отрывной корешок: линия отрыва перфорирована, ниже — что именно уйдёт в проверку */
-.site-panel--form .site-panel__foot {
-  border-top: 1px dashed var(--site-field-line-hover);
-  background: #F7F7F5;
-  border-radius: 0;
-}
-
-/* Источники в корешке стоят колонками, а не «резиновой» строкой: пять разных по длине
-   подписей во flex-wrap выстраивались рвано и читались как обрывки */
-@media (min-width: 380px) {
-  .site-panel--form .site-panel__foot .site-scan {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px var(--site-s-4);
-  }
-
-  .site-panel--form .site-panel__foot .site-scan li:last-child {
-    grid-column: 1 / -1;
-  }
-}
-
 /* ---------- Прогресс и стадии ---------- */
 
 .site-progress {
@@ -1612,38 +1704,27 @@ html:has(.site-drawer[open]) {
   border-radius: 2px;
 }
 
-/* Строка «будет проверено»: плашки перебираются, как будто источники опрашиваются по очереди */
-.site-scan {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* ---------- Скрытый текст ----------
+   Два способа показать, что данные есть, а читать их не дают. Плашка (site-mark выше) осталась
+   там, где закрашено само место строки; в примере результата она читалась столбиком диаграммы,
+   и заголовки находок теперь видны как текст не в фокусе (владелец 18.09.2026). Введённые
+   человеком значения — точками, как в поле пароля. */
+.site-blur {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  filter: blur(0.2em);
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
 }
 
-.site-scan li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.site-masked {
+  font-family: var(--site-font-mono);
   font-size: var(--site-text-xs);
-  color: var(--site-ink-3);
-}
-
-.site-scan .site-mark {
-  height: 8px;
-  opacity: 0.25;
-  animation: site-scan 2.6s var(--site-ease-out) infinite;
-}
-
-.site-scan li:nth-child(2) .site-mark { animation-delay: 0.22s; }
-.site-scan li:nth-child(3) .site-mark { animation-delay: 0.44s; }
-.site-scan li:nth-child(4) .site-mark { animation-delay: 0.66s; }
-.site-scan li:nth-child(5) .site-mark { animation-delay: 0.88s; }
-
-@keyframes site-scan {
-  0%, 70%, 100% { opacity: 0.22; }
-  20%, 40% { opacity: 0.85; }
+  letter-spacing: 0.06em;
+  color: var(--site-ink-2);
+  white-space: nowrap;
 }
 
 /* ---------- Шкала риска ----------
@@ -2733,6 +2814,29 @@ html:has(.site-drawer[open]) {
   height: 9px;
 }
 
+/* Заголовок не в фокусе занимает строку текста, а не плашку в 12 px: строке нужна своя высота,
+   и она обрезается по ширине колонки, а не переносится — размытая строка в два ряда читается
+   как мусор. Поля по бокам прячут края размытия под обрезку. */
+.site-finding__list li,
+.site-findings--compact .site-finding__list li {
+  min-height: 0;
+  overflow: hidden;
+  padding-inline: 5px;
+  margin-inline: -5px;
+}
+
+.site-finding__list .site-blur {
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--site-ink);
+  filter: blur(0.18em);
+}
+
+.site-findings--compact .site-finding__list {
+  gap: 2px;
+}
+
 /* Заметка на полях: частичный сбор и другие оговорки при готовом результате. Не цветная плашка —
    результат есть, и тревога ему не нужна; смысл несут значок и первое предложение. */
 .site-note {
@@ -3312,12 +3416,19 @@ html:has(.site-drawer[open]) {
 
 .site-hero {
   position: relative;
+  z-index: 2;
   /* clip, а не hidden: hidden делает герой прокручиваемым контейнером, и view()-таймлайн
      внутри него привязывается к нему же — то есть не идёт никогда. clip обрезает так же,
      но контейнером прокрутки не становится. */
   overflow: clip;
   margin-top: -72px;                                    /* шапка лежит поверх свечения */
-  padding-block: calc(72px + var(--site-s-6)) var(--site-s-7);
+  /* Снизу поле с запасом на 88 px: на столько лист въезжает снизу, и первый экран обязан
+     продолжаться под ним, иначе в щель виден закрывающий блок. Под героем теперь не стол,
+     а чернила закрывающего блока — фон нужен свой. */
+  padding-block: calc(72px + var(--site-s-6)) calc(var(--site-s-7) + 88px);
+  background-color: var(--site-ground);
+  background-image: var(--site-grain);
+  background-size: 160px 160px;
 }
 
 /* Свет из окна: светлое пятно, размытая холодная тень рамы крест-накрест и слабый отблеск
@@ -3355,7 +3466,7 @@ html:has(.site-drawer[open]) {
     linear-gradient(var(--site-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--site-grid) 1px, transparent 1px);
   background-size: 56px 56px;
-  background-position: center calc(var(--site-scroll) * -0.12);  /* лёгкий параллакс сетки */
+  background-position: center 0;
   -webkit-mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
   mask-image: radial-gradient(75% 90% at 50% 0%, #000 15%, transparent 100%);
   pointer-events: none;
@@ -3413,35 +3524,68 @@ html:has(.site-drawer[open]) {
 /* Узкий экран: строка поиска — иллюстрация к заголовку, поэтому стоит между подводкой и
    формой, а не после формы, где она читалась оторванным элементом (заказчик 16.09). В разметке
    она остаётся после формы — порядок задаёт сетка. Форма отбита сильнее, чем строка от текста:
-   строка принадлежит тексту, форма — отдельный объект. */
+   строка принадлежит тексту, форма — отдельный объект.
+
+   Ось одна, центральная: прежде чипы, заголовок, подводка и строка стояли по левому краю, а форма
+   под ними шла во всю ширину — две разные оси на одном экране (владелец 18.09.2026). */
 @media (max-width: 1023.98px) {
   .site-hero__grid {
     gap: var(--site-s-6);
   }
 
-  .site-hero__copy { order: 0; }
-  .site-hero .site-seek { order: 1; }
+  .site-hero__copy {
+    order: 0;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .site-hero .site-chips { justify-content: center; }
+  .site-hero .site-display { text-wrap: balance; }
+
+  .site-hero .site-lead {
+    max-width: 36em;
+    text-wrap: pretty;
+  }
+
+  .site-hero .site-seek {
+    order: 1;
+    justify-self: center;
+    width: 100%;
+  }
 
   .site-hero .site-formcase {
     order: 2;
     margin-top: var(--site-s-4);
   }
+
+  /* Список источников стоит после формы: отмечать его по набору запроса здесь нечем — строка
+     поиска от него далеко, — и он просто отмечен целиком */
+  .site-hero .site-checks {
+    order: 3;
+    max-width: none;
+    justify-items: center;
+  }
+
+  .site-hero .site-checks__list { justify-content: center; }
 }
 
 @media (min-width: 1024px) {
   .site-hero {
-    padding-block: calc(72px + var(--site-s-7)) var(--site-s-8);
+    padding-block: calc(72px + var(--site-s-7)) calc(var(--site-s-8) + 88px);
   }
 
-  /* Поисковая строка встаёт под текст, в ту же колонку, как и на узком экране. */
+  /* Левая колонка — три группы: сообщение, строка поиска, список источников. Верх первой стоит на
+     линии заголовка формы, низ последней — на нижней кромке панели формы. Форма выше левой колонки
+     на полсотни пикселей, и три ряда авто-высоты раздают эту слабину поровну: группы стоят в своих
+     рядах сверху, по центру и снизу, оба зазора выходят равными (замер макета на 1440: 53 и 53 px).
+     Один зазор под текстом вместо двух отрывал строку поиска от заголовка на 89 px. */
   .site-hero__grid {
     grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
-    /* Вторая строка тянется (1fr), первая — по тексту: иначе форма, занимающая обе строки,
-       раздаёт свою высоту поровну и строка поиска уезжает от текста на пол-экрана. */
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto auto;
     grid-template-areas:
       "copy form"
-      "seek form";
+      "seek form"
+      "checks form";
     column-gap: var(--site-s-8);
     row-gap: var(--site-s-6);
     align-items: start;
@@ -3449,7 +3593,28 @@ html:has(.site-drawer[open]) {
 
   .site-hero__copy { grid-area: copy; }
   .site-formcase { grid-area: form; }
-  .site-hero .site-seek { grid-area: seek; }
+
+  .site-hero .site-seek {
+    grid-area: seek;
+    align-self: center;
+  }
+
+  .site-hero .site-checks {
+    grid-area: checks;
+    align-self: end;
+    padding-bottom: 8px; /* паспарту формы с рамкой: низ списка встаёт на нижнюю кромку панели */
+  }
+
+  /* «Уточнить поиск» раскрыт: форма вырастает на 300 px, и зазоры выросли бы вместе с ней. Тогда
+     вся лишняя высота уходит в последний ряд, а группы стоят подряд с обычным шагом сетки. */
+  .site-hero__grid:has(#form-details[open]) {
+    grid-template-rows: auto auto 1fr;
+  }
+
+  .site-hero__grid:has(#form-details[open]) .site-seek,
+  .site-hero__grid:has(#form-details[open]) .site-checks {
+    align-self: start;
+  }
 
   /* Заголовок встаёт на одну линию с заголовком формы: 7 px паспарту + 24 px поля панели */
   .site-hero__copy {
@@ -3468,22 +3633,63 @@ html:has(.site-drawer[open]) {
 
 .site-seek {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   max-width: 430px;
+  isolation: isolate;
+}
+
+.site-seek__field {
+  position: relative;
+}
+
+/* За строкой — ровное свечение по её форме: цвет медленно идёт по кругу и усиливается, пока
+   набирается запрос. Это единственное место, где сирень работает светом, а не меткой. */
+.site-seek__aura {
+  position: absolute;
+  inset: -8px -10px;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: var(--site-r-pill);
+  filter: blur(12px);
+  opacity: 0.62;
+  pointer-events: none;
+  transition: opacity 700ms var(--site-ease-out), transform 700ms var(--site-ease-out);
+}
+
+.site-seek__aura i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 124%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(from 0deg, #E6DDFD, #C6B5F4 20%, #B7C6EE 42%, #F4F0FF 60%, #CDBEF7 80%, #E6DDFD);
+  animation: site-aura-spin 18s linear infinite;
+}
+
+@keyframes site-aura-spin {
+  to { rotate: 360deg; }
+}
+
+.site-seek.is-typing .site-seek__aura {
+  opacity: 0.95;
+  transform: scale(1.02, 1.14);
 }
 
 .site-seek__bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 52px;
   padding: 0 18px;
   border-radius: var(--site-r-pill);
-  border: 1px solid var(--site-field-line);
+  /* Пилюля лежит на свечении: рамка чуть темнее бумаги, тень с сиреневым оттенком */
+  border: 1px solid color-mix(in srgb, var(--site-ink) 14%, transparent);
   background: var(--site-paper);
   box-shadow:
-    0 1px 2px rgba(22, 27, 38, 0.05),
-    0 12px 26px -18px rgba(22, 27, 38, 0.40);
+    0 1px 2px rgba(22, 27, 38, 0.06),
+    0 10px 24px -14px rgba(92, 72, 160, 0.45);
 }
 
 .site-seek__icon {
@@ -3518,6 +3724,67 @@ html:has(.site-drawer[open]) {
 
 @keyframes site-seek-caret {
   50% { opacity: 0; }
+}
+
+/* ---------- «Будет проверено» ----------
+   Список продолжает строку поиска: пока набирается запрос, источники отмечаются один за другим —
+   видно, куда этот запрос уйдёт. Прежде он был корешком формы, где ничего не делал и удлинял
+   главный объект экрана на 190 px (владелец 18.09.2026). Отдельный элемент сетки, а не часть
+   строки: строка скрыта от экранного диктора, список — нет. */
+.site-checks {
+  display: grid;
+  gap: 12px;
+  max-width: 540px;
+}
+
+.site-checks__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-checks__list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-3);
+  transition: color 240ms var(--site-ease-out);
+}
+
+.site-checks__list i {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 50%;
+  color: transparent;
+  transition:
+    background-color 240ms var(--site-ease-out),
+    border-color 240ms var(--site-ease-out),
+    color 240ms var(--site-ease-out),
+    scale 240ms var(--site-ease-out);
+}
+
+.site-checks__list svg {
+  width: 10px;
+  height: 10px;
+}
+
+.site-checks__list li.is-on {
+  color: var(--site-ink);
+}
+
+.site-checks__list li.is-on i {
+  background: var(--site-ink);
+  border-color: var(--site-ink);
+  color: var(--site-paper);
+  scale: 1.06;
 }
 
 /* Чипы преимуществ */
@@ -3775,6 +4042,15 @@ html:has(.site-drawer[open]) {
         top: 88px; /* шапка 72 px + 16 px воздуха */
       }
 
+      /* Переход по ссылке «Как проходит проверка» сажает страницу не в начало хода, а в его конец:
+         в начале закреплённый ряд — заголовок и пунктирные места под карточки, и человеку, которого
+         сюда перебросило, неоткуда узнать, что карточки встают от прокрутки (владелец 19.09.2026).
+         92vh от верха дорожки — третья карточка заполнена на 90vh хода, до конца закрепления ещё
+         8vh. Число связано с диапазонами ниже: двигаешь их — двигай и его. */
+      .site-how__anchor {
+        top: 92vh;
+      }
+
       .site-steps {
         --steps-tl: --how;
       }
@@ -3818,12 +4094,6 @@ html:has(.site-drawer[open]) {
       view-timeline-name: --sources;
     }
 
-    .js .site-sources-grid.site-reveal--stagger > * {
-      opacity: 1;
-      transform: none;
-      transition: none;
-    }
-
     .site-sources-grid li {
       animation-name: site-step-in;
       animation-timing-function: var(--site-ease-out);
@@ -3853,80 +4123,17 @@ html:has(.site-drawer[open]) {
       to { opacity: 1; scale: 1; filter: blur(0); }
     }
 
-    /* Вопросы выходят по одному: список из шести строк, появляющийся целиком, читается
-       как таблица, а по одному — как разговор. */
-    .site-faq {
-      view-timeline-name: --faq;
-    }
-
-    .site-faq details {
-      animation: site-step-in var(--site-ease-out) both;
-      animation-timeline: --faq;
-    }
-
-    .site-faq details:nth-child(1) { animation-range: cover 16% cover 34%; }
-    .site-faq details:nth-child(2) { animation-range: cover 20% cover 38%; }
-    .site-faq details:nth-child(3) { animation-range: cover 24% cover 42%; }
-    .site-faq details:nth-child(4) { animation-range: cover 28% cover 46%; }
-    .site-faq details:nth-child(5) { animation-range: cover 32% cover 50%; }
-    .site-faq details:nth-child(6) { animation-range: cover 36% cover 54%; }
-
-    /* Снимок закрывающего листа оседает из крупного плана, пока лист входит в окно, — как камера,
-       которая останавливается. Снимок там от края до края, и его вход совпадает с входом листа. */
-    .site-final {
-      view-timeline-name: --final;
-    }
-
-    .site-final__media img {
-      animation: site-photo-settle linear both;
-      animation-timeline: --final;
-      animation-range: entry 0% entry 100%;
-    }
-
-    @keyframes site-photo-settle {
-      from { transform: scale(1.06); }
-      to { transform: none; }
-    }
-
-    /* Срок записи: шкала наливается, пока лента идёт от нижней трети окна к середине; графы записи
-       дня 30 закрываются по одной, когда шкала дошла до конца. У шкалы и записи свои таймлайны: на
-       телефоне запись стоит ниже шкалы и закрывается, когда до неё долистали, а не заранее. */
-    .site-term__scale {
-      animation: site-term-run linear both;
+    /* Свет из окна идёт по главе медленнее страницы: параллакс при смене блоков — не сдвиг
+       кромок, а смена освещения. Без scroll-driven анимаций пятно просто стоит на месте. */
+    .site-sheet > .site-section::after {
+      animation: site-chapter-light linear both;
       animation-timeline: view();
-      animation-range: cover 28% cover 52%;
+      animation-range: entry 0% exit 100%;
     }
 
-    @keyframes site-term-run {
-      from { --site-term-p: 0; --site-term-day: 0; }
-      to { --site-term-p: 1; --site-term-day: 30; }
-    }
-
-    .site-term__record--closed {
-      view-timeline-name: --site-term-closed;
-    }
-
-    .site-term__record--closed i::after {
-      animation: site-term-redact var(--site-ease-out) both;
-      animation-timeline: --site-term-closed;
-    }
-
-    .site-term__record--closed div:nth-child(1) i::after { animation-range: cover 50% cover 56%; }
-    .site-term__record--closed div:nth-child(2) i::after { animation-range: cover 53% cover 59%; }
-    .site-term__record--closed div:nth-child(3) i::after { animation-range: cover 56% cover 62%; }
-
-    .site-term__status {
-      animation: site-term-status var(--site-ease-out) both;
-      animation-timeline: --site-term-closed;
-      animation-range: cover 60% cover 64%;
-    }
-
-    @keyframes site-term-redact {
-      from { transform: scaleX(0); }
-    }
-
-    @keyframes site-term-status {
-      from { opacity: 0; scale: 0.9; }
+    @keyframes site-chapter-light {
+      from { transform: translateY(120px); }
+      to { transform: translateY(-120px); }
     }
   }
 
@@ -4174,10 +4381,22 @@ html:has(.site-drawer[open]) {
 .site-mini__lines {
   list-style: none;
   margin: 0;
-  padding: 10px 0 0; /* padding-top оставлял списку отступ по умолчанию: плашки съезжали на 40 px */
+  padding: 10px 0 0; /* padding-top оставлял списку отступ по умолчанию: строки съезжали на 40 px */
   display: grid;
-  gap: 9px;
+  gap: 3px;
   border-top: 1px solid var(--site-line);
+}
+
+.site-mini__lines li {
+  overflow: hidden;
+  padding-inline: 4px;
+  margin-inline: -4px;
+}
+
+.site-mini__lines .site-blur {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--site-ink);
 }
 
 /* ---------- Источники: четыре карточки ---------- */
@@ -4233,6 +4452,315 @@ html:has(.site-drawer[open]) {
   .site-sources-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
+/* ---------- «Где мы ищем»: схема ----------
+   Ваши данные → четыре группы источников → результат. Узлы — те же карточки, что были сеткой,
+   только связанные проводами: сетка отвечала «вот четыре источника», но не отвечала на вопрос
+   блока — что с ними происходит. Появление: провода прорисовываются, по ним идут импульсы, у
+   источника появляется отметка «проверено», в узле результата наливается шкала. Раз за вход в
+   окно, как у примера результата. Без скрипта узлы стоят на своих местах, линий нет. */
+.site-flow {
+  position: relative;
+  display: grid;
+  gap: var(--site-s-4);
+}
+
+.site-flow__wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.site-flow__wires path {
+  fill: none;
+  stroke: var(--site-line-strong);
+  stroke-width: 1.5;
+}
+
+.site-flow__wires circle {
+  fill: var(--site-ink);
+  opacity: 0;
+}
+
+/* Стык узкой раскладки: кружок на месте, где соединитель упирается в карточку */
+.site-flow__wires .site-flow__joint {
+  fill: var(--site-paper);
+  stroke: var(--site-line-strong);
+  stroke-width: 1.5;
+  opacity: 1;
+}
+
+.site-flow__node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--site-s-3);
+  align-content: start;
+  padding: var(--site-s-5);
+  background: var(--site-paper-2);
+  border: 1px solid var(--site-line);
+  border-radius: var(--site-r-4);
+  transition: border-color var(--site-dur-base) var(--site-ease-out), box-shadow var(--site-dur-base) var(--site-ease-out);
+}
+
+.site-flow__node svg {
+  width: 30px;
+  height: 30px;
+  color: var(--site-accent);
+}
+
+.site-flow__node strong {
+  font-weight: 600;
+  font-size: var(--site-text-lg);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.site-flow__node > span {
+  color: var(--site-ink-2);
+  font-size: var(--site-text-sm);
+}
+
+/* Отметка «проверено» — сирень под чернилами, как чип «AI-анализ» в первом экране */
+.site-flow__node .site-flow__badge {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: var(--site-r-pill);
+  background: var(--site-marker);
+  color: var(--site-ink);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: opacity 260ms var(--site-ease-out), transform 260ms var(--site-ease-out);
+}
+
+.site-flow__node .site-flow__badge svg {
+  width: 12px;
+  height: 12px;
+  color: inherit;
+}
+
+/* Пока схема проигрывается, отметки и итог спрятаны и появляются по ходу; в покое всё на месте */
+.site-flow.is-playing .site-flow__source:not(.is-done) .site-flow__badge {
+  opacity: 0;
+  transform: scale(0.85);
+}
+
+.site-flow.is-playing .site-flow__source:not(.is-done) {
+  box-shadow: none;
+}
+
+.site-flow__source.is-done {
+  border-color: var(--site-line-hover);
+  box-shadow: var(--site-shadow-card);
+}
+
+/* Корневой узел: две графы, которые человек вводит, — заполненными полями, значения точками */
+.site-flow__root dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.site-flow__root dl > div {
+  display: grid;
+  gap: 4px;
+}
+
+.site-flow__root dt {
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-flow__root dd {
+  overflow: hidden;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--site-field-line);
+  border-radius: 8px;
+  background: var(--site-field);
+  line-height: 1.3;
+}
+
+/* Узел результата: шкала и слова, которые человек увидит */
+.site-flow__result .site-meter {
+  max-width: 200px;
+}
+
+.site-flow__result .site-meter__seg::after {
+  transition: transform 240ms var(--site-ease-out);
+}
+
+.site-flow__result .site-verdict {
+  gap: 8px;
+}
+
+.site-flow__result .site-verdict__row {
+  gap: 6px var(--site-s-4);
+}
+
+.site-flow__result .site-verdict__level {
+  font-size: var(--site-text-xl);
+}
+
+.site-flow__result .site-verdict__row,
+.site-flow__result .site-flow__themes {
+  transition: opacity 300ms var(--site-ease-out), transform 300ms var(--site-ease-out);
+}
+
+.site-flow.is-playing:not(.is-done) .site-flow__result .site-verdict__row,
+.site-flow.is-playing:not(.is-done) .site-flow__result .site-flow__themes {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.site-flow__sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.site-flow__themes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Тема — обычная пилюля с контуром: сиреневая заливка значила бы «найдено» */
+.site-flow__themes li {
+  padding: 2px 9px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: var(--site-r-pill);
+  background: var(--site-paper);
+  font-size: var(--site-text-xs);
+  color: var(--site-ink);
+}
+
+/* Ниже 1024 этапов три, и они разные по форме: карточка данных → одна панель с четырьмя
+   источниками строками → карточка результата. Шесть одинаковых карточек столбиком не читались
+   как схема вовсе (владелец 18.09.2026). Между этапами воздух и соединитель с импульсами. */
+@media (max-width: 1023.98px) {
+  .site-flow {
+    gap: 44px;
+  }
+
+  .site-flow__sources {
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+    background: var(--site-paper-2);
+    border: 1px solid var(--site-line-hover);
+    border-radius: var(--site-r-4);
+    box-shadow: var(--site-shadow-card);
+  }
+
+  .site-flow__sources .site-flow__source {
+    grid-template-columns: 30px minmax(0, 1fr) 22px;
+    column-gap: 14px;
+    row-gap: 2px;
+    padding: var(--site-s-4) var(--site-s-5);
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .site-flow__sources .site-flow__source + .site-flow__source {
+    border-top: 1px solid var(--site-line);
+  }
+
+  .site-flow__source > svg {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    width: 26px;
+    height: 26px;
+    margin-top: 2px;
+  }
+
+  .site-flow__source > strong {
+    grid-column: 2;
+    font-size: var(--site-text-base);
+  }
+
+  .site-flow__source > span:not(.site-flow__badge) {
+    grid-column: 2;
+  }
+
+  /* Отметка в строке — круглая, как в списке под строкой поиска */
+  .site-flow__source .site-flow__badge {
+    position: static;
+    grid-column: 3;
+    grid-row: 1;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+    background: var(--site-ink);
+    color: var(--site-paper);
+  }
+
+  .site-flow__source .site-flow__badge svg {
+    width: 11px;
+    height: 11px;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  /* Планшет: четыре источника — два на два внутри той же панели */
+  .site-flow__sources {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-flow__sources .site-flow__source + .site-flow__source {
+    border-top: 0;
+  }
+
+  .site-flow__sources .site-flow__source:nth-child(n + 3) {
+    border-top: 1px solid var(--site-line);
+  }
+
+  .site-flow__sources .site-flow__source:nth-child(even) {
+    border-left: 1px solid var(--site-line);
+  }
+
+  .site-flow__root,
+  .site-flow__result {
+    justify-self: center;
+    width: min(100%, 420px);
+  }
+}
+
+/* Широкий экран: данные слева, четыре источника посередине, результат справа */
+@media (min-width: 1024px) {
+  .site-flow {
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr) minmax(0, 250px);
+    column-gap: 72px;
+    align-items: center;
+  }
+
+  .site-flow__sources {
+    display: grid;
+    gap: var(--site-s-4);
+  }
+
+  .site-flow__root,
+  .site-flow__result {
+    align-self: center;
+  }
+}
+
 /* ---------- Продуктовая панель: проигрывание проверки ----------
    Панель на бумаге, как и вся страница; от фона её отделяют рамка, тень и уголки приводки.
    Внутри — не просто полоса загрузки: видно, сколько запросов ушло, какие источники ответили
@@ -4255,18 +4783,22 @@ html:has(.site-drawer[open]) {
   border-radius: calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px) 0 0;
 }
 
+/* Подпись стадии и кнопка — две колонки сетки, а не строка с переносом: длинная подпись
+   переносила кнопку «Показать ещё раз» на вторую строку, панель росла на 40 px, и блок под ней
+   прыгал (замер 17.09.2026: 85 → 125 px). Подписи отведено две строки на любой стадии. */
 .site-demo__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--site-s-4);
-  flex-wrap: wrap;
 }
 
 .site-demo__stage {
   color: var(--site-ink);
   font-weight: 500;
   font-size: var(--site-text-sm);
+  min-height: calc(2 * 1.4em);
+  line-height: 1.4;
 }
 
 .site-demo__stats {
@@ -4357,19 +4889,33 @@ html:has(.site-drawer[open]) {
   opacity: 1;
 }
 
-/* Находка в логе выделена маркером — как строка, которую отметили в распечатке */
+/* Находка в логе отмечена точкой сигнального цвета слева и чернилами пожирнее: сиреневая заливка
+   под словами значила бы «выбрано», а сирень на сайте — свет и метка выбора (владелец 18.09.2026) */
 .site-demo__feed li.is-hit b {
-  padding-inline: 4px;
-  margin-inline: -4px;
-  border-radius: 2px;
-  background: var(--site-marker-soft);
   color: var(--site-ink);
+  font-weight: 600;
 }
 
 .site-demo__result {
   padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
   display: grid;
   gap: var(--site-s-4);
+}
+
+/* Почему заголовки закрыты — словами: иначе размытая строка читается как недогруженная страница */
+.site-demo__hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--site-text-xs);
+  color: var(--site-ink-3);
+}
+
+.site-demo__hint svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .site-demo__reveal > * {
@@ -4448,17 +4994,16 @@ html:has(.site-drawer[open]) {
   }
 }
 
-/* ---------- «Проверка остаётся вашим делом»: срок записи проверки (версия 16) ----------
-   Обещания блока — про время: запись живёт 30 дней и обезличивается. Слева запись в день запуска,
-   справа та же запись в день 30 с закрытыми графами, между ними шкала дней. Кадр с человеком
-   (версии 13–15) заказчик отклонил: блок оставался скучным с любой картинкой (13.09).
+/* ---------- «Проверка остаётся вашим делом»: срок записи проверки ----------
+   Обещания блока — про время: запись живёт 30 дней и обезличивается. Слева три обещания списком,
+   справа одна запись проверки во всю ширину колонки. До шага 0077 записей было две — день 0 и
+   день 30, — и один и тот же бланк был нарисован дважды; теперь запись одна и она меняется.
 
    Шкала — мерный инструмент, поэтому деления на ней настоящие: 31, по одному на день, крупные на
    0, 10, 20 и 30. Заполнение и отметка «день N» читают одно регистрируемое свойство --site-term-p
    (0…1), счёт дней — второе, целое, --site-term-day: у <integer> интерполяция идёт целыми, и счётчик
-   в content не показывает дробей. По умолчанию оба в конечном значении: где scroll-driven анимаций
-   нет или движение выключено, шкала стоит заполненной, а графы закрыты — блок говорит то же без
-   движения. */
+   в content не показывает дробей. По умолчанию оба в конечном значении: без скрипта и при
+   выключенном движении шкала стоит заполненной, а графы закрыты — блок говорит то же без движения. */
 @property --site-term-p {
   syntax: "<number>";
   inherits: true;
@@ -4471,56 +5016,202 @@ html:has(.site-drawer[open]) {
   initial-value: 30;
 }
 
-.site-term {
-  list-style: none;
+/* Обещания слева — графы документа: название и пояснение строкой под строкой */
+.site-keep__list {
+  display: grid;
   margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--site-s-7);
+  border-bottom: 1px solid var(--site-line);
 }
 
-.site-term__stage {
+.site-keep__list > div {
   display: grid;
-  gap: var(--site-s-5);
-  align-content: start;
+  gap: 4px;
+  padding-block: var(--site-s-4);
+  border-top: 1px solid var(--site-line);
 }
 
-.site-term__text {
-  display: grid;
-  gap: var(--site-s-2);
-  align-content: start;
-  max-width: 34em;
+.site-keep__list dt {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
 }
 
-.site-term__text p {
+.site-keep__list dd {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--site-text-sm);
+  line-height: 1.5;
   color: var(--site-ink-2);
 }
 
-/* Запись — бланк на вложенной поверхности листа, как карточки источников: рамка и уголки приводки,
-   без тени. Графы — линии, а не текст: имени на главной нет нигде */
-.site-term__record {
+/* Сцена справа: одна запись проверки, у неё шапка со счётчиком дня, графы и шкала срока */
+.site-keep__scene {
+  position: relative;
   display: grid;
-  gap: var(--site-s-2);
-  max-width: 420px;
-  padding: var(--site-s-4) var(--site-s-5) var(--site-s-2);
-  background: var(--site-paper-2);
+  background: var(--site-paper);
   border: 1px solid var(--site-line);
   border-radius: var(--site-r-4);
+  box-shadow: var(--site-shadow-panel);
+  --site-term-p: 1;
+  --site-term-day: 30;
 }
 
-.site-term__head {
+.site-keep__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--site-s-3);
+  min-height: 56px;
+  padding: var(--site-s-3) var(--site-s-5);
+  border-bottom: 1px solid var(--site-line);
+  background: var(--site-paper-2);
+  border-radius: calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px) 0 0;
+}
+
+.site-keep__title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--site-s-3);
-  min-height: 24px;
+  flex-wrap: wrap;
   margin: 0;
+}
+
+/* Счётчик дня в шапке записи — то же, что подпись отметки на шкале */
+.site-keep__day {
+  padding: 3px 8px;
+  border-radius: var(--site-r-1);
+  background: var(--site-ink);
+  color: var(--site-paper);
+  font-family: var(--site-font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.site-keep__day::after {
+  content: "день " counter(site-keep-day);
+  counter-reset: site-keep-day var(--site-term-day);
+}
+
+/* Отметка «обезличена» появляется, когда графы закрылись, а не стоит с самого начала */
+.site-keep__scene .site-term__status {
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 240ms var(--site-ease-out), transform 240ms var(--site-ease-out);
+}
+
+.site-keep__scene.is-closed .site-term__status {
+  opacity: 1;
+  transform: none;
+}
+
+.site-keep__rows {
+  display: grid;
+  margin: 0;
+  padding: var(--site-s-2) var(--site-s-5) var(--site-s-3);
+}
+
+.site-keep__rows > div {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--site-s-4);
+  min-height: 52px;
+  border-top: 1px solid var(--site-line);
+}
+
+.site-keep__rows > div:first-child {
+  border-top: 0;
+}
+
+.site-keep__rows dt {
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-3);
+}
+
+.site-keep__rows dd {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Закрытая графа: значение гаснет в размытие, на его месте — слово «удалено» */
+.site-keep__val {
+  transition: opacity 320ms var(--site-ease-out), filter 320ms var(--site-ease-out);
+}
+
+.site-keep__gone {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  font-size: var(--site-text-sm);
+  color: var(--site-ink-3);
+  opacity: 0;
+  transition: opacity 320ms var(--site-ease-out) 140ms;
+}
+
+.site-keep__rows > div.is-closed .site-keep__val {
+  opacity: 0;
+  filter: blur(4px);
+}
+
+.site-keep__rows > div.is-closed .site-keep__gone {
+  opacity: 1;
+}
+
+/* Шкала дней во всю ширину сцены и кнопка повтора: сцену нельзя проскочить прокруткой */
+.site-keep__foot {
+  display: grid;
+  gap: var(--site-s-3);
+  padding: var(--site-s-4) var(--site-s-5) var(--site-s-5);
+  border-top: 1px dashed var(--site-field-line-hover);
+  background: #F7F7F5;
+  border-radius: 0 0 calc(var(--site-r-4) - 1px) calc(var(--site-r-4) - 1px);
+}
+
+.site-keep__foot .site-term__scale {
+  height: 68px;
+}
+
+/* Ход шкалы задаёт таймер сцены кадр за кадром — сглаживать переходом нечего */
+.site-keep__foot .site-term__fill,
+.site-keep__foot .site-term__cursor {
+  transition: none;
+}
+
+/* Подпись дня стоит в шапке записи, второй раз на отметке она не нужна */
+.site-keep__foot .site-term__cursor::after {
+  display: none;
+}
+
+.site-keep__replay {
+  justify-self: end;
+  padding-inline: 10px;
+  font-size: var(--site-text-xs);
+}
+
+@media (min-width: 1024px) {
+  .site-keep__replay { --h: 36px; }
+
+  /* Сцена остаётся на экране, пока читаются обещания слева */
+  .site-keep__panel {
+    position: sticky;
+    top: calc(72px + var(--site-s-4));
+  }
 }
 
 /* Состояние записи — чернила на выделителе: выделитель только фоном под чернилами */
 .site-term__status {
-  padding: 3px 8px;
-  border-radius: var(--site-r-1);
+  padding: 3px 10px;
+  border-radius: var(--site-r-pill);
   background: var(--site-marker);
   color: var(--site-ink);
   font-family: var(--site-font-mono);
@@ -4529,49 +5220,6 @@ html:has(.site-drawer[open]) {
   line-height: 1.2;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.site-term__record dl {
-  display: grid;
-  margin: 0;
-}
-
-.site-term__record dl > div {
-  display: grid;
-  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
-  align-items: center;
-  gap: var(--site-s-3);
-  min-height: 40px;
-  border-top: 1px solid var(--site-line);
-}
-
-.site-term__record dt {
-  font-size: var(--site-text-xs);
-  color: var(--site-ink-3);
-}
-
-.site-term__record dd {
-  margin: 0;
-}
-
-.site-term__record i {
-  position: relative;
-  display: block;
-  width: var(--w, 60%);
-  height: 8px;
-  border-radius: 3px;
-  background: var(--site-line-strong);
-}
-
-/* Закрытая графа — плашка, тот же знак, что у скрытого заголовка в результате: здесь было, и этого
-   больше нет. Прокрашивается слева направо, как выделитель */
-.site-term__record--closed i::after {
-  content: "";
-  position: absolute;
-  inset: -4px -3px;
-  border-radius: 2px;
-  background: var(--site-mark);
-  transform-origin: 0 50%;
 }
 
 /* Шкала. container-type даёт отметке ход в cqi: сдвиг в процентах считался бы от ширины самой
@@ -4671,38 +5319,6 @@ html:has(.site-drawer[open]) {
   right: 0;
 }
 
-/* Планшет: запись и текст рядом, моменты срока друг под другом */
-@media (min-width: 640px) and (max-width: 1023.98px) {
-  .site-term__stage {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: center;
-    gap: var(--site-s-6);
-  }
-}
-
-/* Три момента срока — три колонки одной сетки: записи и шкала в первой строке, тексты во второй.
-   Строки у колонок общие (subgrid), поэтому тексты начинаются на одной линии при любой длине */
-@media (min-width: 1024px) {
-  .site-term {
-    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr) minmax(0, 4fr);
-    grid-template-rows: auto auto;
-    gap: var(--site-s-6);
-  }
-
-  .site-term__stage {
-    grid-row: span 2;
-    grid-template-rows: subgrid;
-    gap: var(--site-s-6);
-  }
-
-  .site-term__scale {
-    align-self: center;
-  }
-
-  .site-term__record {
-    max-width: none;
-  }
-}
 
 /* Заголовок слева, содержимое справа: вопросы и темы находок. Колонка содержимого уже узкой
    строки, и лист не выглядит полупустым. Одна раскладка на оба блока — чтобы они не разошлись в
@@ -4836,9 +5452,12 @@ html:has(.site-drawer[open]) {
 
 /* ---------- Подвал ---------- */
 
-/* Подвал на лендинге и в мастере стоит сразу под листом: поле и линия над ним давали полосу
-   стола между листом и подвалом — лишнюю смену фона. В макете правило жило в хроме прототипа. */
-:is(main:has(> .site-hero), .site-wizard) + .site-footer {
+/* Подвал под листом лендинга, под мастером и под закрывающим блоком стоит вплотную: поле и линия
+   над ним давали полосу стола — лишнюю смену фона, а под чернилами ещё и светлую щель.
+
+   Соседство общее (~), а не непосредственное (+): между разметкой страницы и подвалом стоит
+   <script> с JSON-LD из layout, и правило с + молча переставало работать. */
+:is(main:has(> .site-hero), .site-wizard, .site-final) ~ .site-footer {
   margin-top: 0;
   border-top: 0;
 }
@@ -4876,14 +5495,19 @@ html:has(.site-drawer[open]) {
 
 .site-footer__links a {
   color: var(--site-ink-2);
-  text-decoration: none;
   display: inline-flex;
   min-height: 44px;
   align-items: center;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.32em;
+  text-decoration-color: transparent;
+  transition: color var(--site-dur-fast) var(--site-ease-out), text-decoration-color var(--site-dur-base) var(--site-ease-out);
 }
 
 .site-footer__links a:hover {
   color: var(--site-ink);
+  text-decoration-color: currentColor;
 }
 
 .site-footer__legal {
@@ -5123,68 +5747,37 @@ html:has(.site-drawer[open]) {
 }
 
 /* Призыв внутри страницы (услуга, статья): бумага, свечение, уголки приводки */
-.site-cta-band {
-  position: relative;
-  overflow: hidden;
-  background: var(--site-paper);
-  border: 1px solid var(--site-line);
-  border-radius: var(--site-r-4);
-  box-shadow: var(--site-shadow-panel);
-  padding: var(--site-s-6) var(--site-s-5);
-  display: grid;
-  gap: var(--site-s-4);
-  text-align: center;
-  justify-items: center;
-}
+/* ---------- Закрывающий блок ----------
+   Последнее слово страницы напечатано чернилами: единственная тёмная поверхность сайта. Кадр серии 5
+   лежит фоном на всю полосу — левые 40 % у него ровная темнота, и заголовок читается поверх неё, а
+   фигура в луче стоит в правой трети. Отдельной картинки рядом с текстом не нужно: картинка — сам
+   продукт. Фон полосы — тон левого края кадра (замер по файлу: #1B1C21), чтобы до загрузки картинки
+   полоса была того же цвета.
 
-.site-cta-band::before {
-  content: "";
-  position: absolute;
-  inset: -40% -10% auto;
-  height: 160%;
-  background: radial-gradient(45% 50% at 50% 0%, var(--site-glow-1), transparent 70%);
-  pointer-events: none;
-}
-
-.site-cta-band > * {
-  position: relative;
-  z-index: 1;
-}
-
-.site-cta-band p {
-  color: var(--site-ink-2);
-  font-size: var(--site-text-md);
-  max-width: 46ch;
-}
-
-@media (min-width: 768px) {
-  .site-cta-band { padding: var(--site-s-8) var(--site-s-6); }
-}
-
-/* ---------- Закрывающий лист лендинга ----------
-   Тезис, кнопка и кадр F1 (серия «Бумажные предметы», с версии 16). Версия 11 растворяла левую
-   треть снимка в поле его цвета и подрезала кадр — вместе с краем уходило и то, что на нём снято
-   (замечание заказчика 13.09). С тех пор снимок стоит целиком, без маски. Лист — того же материала, что
-   остальные: материал даёт .site-sheet, здесь снимаются только его поля.
-
-   Раскладка: от 1024 px две половины — текст на бумаге слева, снимок справа от края до края.
-   Ниже 1024 px текст над снимком. */
+   Блок один на весь сайт (владелец 18.09.2026): главная, услуги, статьи, «О проекте» и «Вопросы»
+   закрываются одним и тем же, и после него везде только подвал (на главной — с 19.09.2026). Разбег
+   из-под листа — только на главной, он в .site-final-wrap. */
 
 .site-final {
+  position: relative;
   display: grid;
-  padding: 0;
   overflow: clip;
   isolation: isolate;
+  background-color: #1B1C21;
+  color: var(--site-paper);
+  --site-surface: var(--site-ink);
 }
 
 /* width: 100% обязателен: у контейнера авто-поля, а в grid такой элемент сжимается до ширины
    текста и встаёт по центру */
 .site-final__copy {
+  position: relative;
+  z-index: 1;
   display: grid;
   justify-items: start;
   gap: var(--site-s-5);
   width: 100%;
-  padding-block: var(--site-s-8) var(--site-s-6);
+  padding-block: var(--site-s-8) var(--site-s-7);
 }
 
 .site-final__title {
@@ -5196,64 +5789,231 @@ html:has(.site-drawer[open]) {
   text-wrap: balance;
   max-width: 11em;
   margin: 0;
+  color: var(--site-paper);
 }
 
 .site-final__lead {
   font-size: var(--site-text-lg);
   line-height: 1.45;
-  color: var(--site-ink-2);
+  color: rgba(255, 255, 255, 0.72);
   max-width: 26em;
 }
 
-.site-final__media {
-  position: relative;
-  aspect-ratio: 4 / 5;
-  max-height: 88svh;
-  overflow: clip;
+/* Две кнопки — одной ширины: высота, кегль и поля у них общие, а ширины по подписи выходили 246 и
+   238 px — почти равные, и читалось это ошибкой, а не иерархией (владелец 19.09.2026). Колонки
+   равные, ряд шириной в две большие кнопки; главную от второй отличает заливка, а не размер.
+
+   Промежуток 16, а не 24 px: с 1200 px текстовая колонка блока — ровно 512 px (половина полосы
+   минус поля), и двум кнопкам по 246 с промежутком 24 не хватало 4 px — подпись переносилась, и
+   кнопки вырастали до 64. Перенос запрещён: при другом шрифте ряд лучше зайдёт на правое поле
+   колонки (там 48 px пустой темноты кадра), чем сломает подпись. */
+.site-final__actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  align-items: stretch;
+  gap: var(--site-s-3) var(--site-s-4);
 }
 
-.site-final__media img {
+.site-final__actions .site-btn {
+  white-space: nowrap;
+}
+
+/* Решающая кнопка на чернилах — бумага с чернильной подписью */
+.site-final .site-btn--accent {
+  background: var(--site-paper);
+  border-color: var(--site-paper);
+  color: var(--site-ink);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.3), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+}
+
+.site-final .site-btn--accent:hover {
+  background: #FFFFFF;
+  color: var(--site-ink);
+}
+
+/* Второе действие — вторичная кнопка в тёмном варианте: текстом без контура оно читалось на
+   чернилах подписью, а не действием */
+.site-final .site-btn--secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.34);
+  color: #FFFFFF;
+}
+
+.site-final .site-btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #FFFFFF;
+}
+
+.site-final .site-btn--secondary:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.site-final__art {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  display: block;
+}
+
+.site-final__art img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 50% 50%;
+  /* По вертикали — ближе к низу кадра: на широком окне важнее пол с тенью фигуры, чем верх луча */
+  object-position: right 60%;
 }
 
-@media (min-width: 640px) and (max-width: 1023.98px) {
-  .site-final__media {
-    aspect-ratio: 4 / 3;
-    max-height: none;
+/* Разбег: на главной блок лежит под листом и открывается, когда лист уезжает вверх. Липнет он
+   только на последнем экране листа, поэтому обёртка с дорожкой в высоту окна, а не sticky на всю
+   страницу. */
+.site-final-wrap {
+  position: relative;
+  z-index: 1;
+  margin-top: -100vh;
+  margin-top: -100lvh;
+  pointer-events: none;
+}
+
+.site-final-wrap__runway {
+  height: 100vh;
+  height: 100lvh;
+}
+
+.site-final-wrap .site-final {
+  position: sticky;
+  bottom: 0;
+  min-height: min(100svh, 720px);
+  pointer-events: auto;
+}
+
+/* Низкое окно: блок выше окна из-под листа целиком не откроется — стоит обычным блоком */
+@media (max-height: 560px) {
+  .site-final-wrap {
+    margin-top: 0;
   }
 
-  /* Папка со стопкой стоит чуть ниже середины кадра: при обрезке до 4:3 срезаются пустой верх и низ,
-     а не сиреневая закладка */
-  .site-final__media img {
-    object-position: 50% 58%;
+  .site-final-wrap__runway {
+    display: none;
+  }
+
+  .site-final-wrap .site-final {
+    position: relative;
+    bottom: auto;
+    min-height: 0;
   }
 }
 
-@media (min-width: 1024px) {
+/* Телефон и планшет: одна ось — центральная, кадр полосой под кнопками, луч выходит из темноты
+   сверху. Кадр вертикальный (4:5): широкий в такой полосе показывал бы обрезок луча. Высота полосы
+   считается от окна — блок обязан остаться не выше окна, иначе из-под листа он не откроется. */
+@media (max-width: 1199.98px) {
+  .site-final {
+    --site-art-h: clamp(176px, calc(100svh - 480px), min(96vw, 440px));
+  }
+
+  .site-final .site-final__copy {
+    justify-items: center;
+    text-align: center;
+    padding-block-end: calc(var(--site-art-h) + var(--site-s-5));
+  }
+
+  .site-final__title {
+    text-wrap: balance;
+  }
+
+  .site-final__lead {
+    max-width: 34em;
+    text-wrap: pretty;
+  }
+
+  .site-final__actions {
+    justify-content: center;
+  }
+
+  .site-final__art {
+    inset: auto 0 0;
+    height: var(--site-art-h);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34%);
+    mask-image: linear-gradient(180deg, transparent 0, #000 34%);
+  }
+
+  .site-final__art img {
+    object-position: 50% 80%;
+  }
+
+  .site-final-wrap .site-final {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 639.98px) {
+  /* Колонка во всю ширину: justify-content: center от планшетного ряда сжал бы её до ширины кнопки */
+  .site-final__actions {
+    grid-auto-flow: row;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    justify-self: stretch;
+    gap: var(--site-s-3);
+  }
+
+  .site-final__actions .site-btn {
+    width: 100%;
+  }
+}
+
+/* Две колонки — с 1200, а не с 1024: уже этого кадр встаёт по высоте, и луч заходит под заголовок */
+@media (min-width: 1024px) and (max-width: 1199.98px) {
+  .site-final .site-final__copy {
+    align-self: start;
+    max-width: var(--site-container);
+    margin-inline: auto;
+    padding-inline: var(--site-gutter);
+  }
+}
+
+/* 1200–1439: кадр встаёт по высоте и шире окна. Прижатый вправо, он заводил луч под заголовок,
+   поэтому сдвинут: справа срезается пустая стена, левый край луча остаётся правее текста */
+@media (min-width: 1200px) and (max-width: 1439.98px) {
+  .site-final__art img {
+    object-position: 70% 60%;
+  }
+}
+
+@media (min-width: 1200px) {
   .site-final {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    min-height: max(640px, 100svh);
+    min-height: min(100svh, 720px);
   }
 
-  /* Левая половина: текст начинается по линии контейнера страницы, а не от края листа */
-  .site-final__copy {
+  /* Ряд кнопок не шире текста над ним. В этой раскладке подводка занимает около 464 px, а две
+     кнопки по 246 с промежутком давали 508 — ряд торчал правее заголовка и подводки, и блок
+     выглядел кривым (владелец 19.09.2026). Кегль 15, поля 16 и промежуток 12 дают ряд
+     466 px по замеру. У кнопки со стрелкой правое поле остаётся 24: на нём стоит круг стрелки,
+     13 px от края со всех сторон. Ниже 1200 блок центрован, подводка шире ряда, и там кнопки обычного размера. */
+  .site-final__actions {
+    column-gap: var(--site-s-3);
+  }
+
+  .site-final__actions .site-btn {
+    padding-inline: 16px;
+    font-size: var(--site-text-sm);
+  }
+
+  .site-final__actions .site-btn--accent {
+    padding-inline-end: 24px;
+  }
+
+  /* Текст начинается по линии контейнера страницы, а не от края полосы */
+  .site-final .site-final__copy {
     align-self: center;
     max-width: none;
     margin: 0;
     padding-block: var(--site-s-9);
     padding-inline: max(var(--site-gutter), calc((100vw - var(--site-container)) / 2)) var(--site-s-7);
-  }
-
-  /* Правая половина от края до края: на 1440×900 это ровно 4:5, и снимок виден целиком; на
-     других окнах подрезается на несколько процентов, а папка со стопкой остаётся в середине кадра */
-  .site-final__media {
-    aspect-ratio: auto;
-    max-height: none;
   }
 }
 
@@ -5673,19 +6433,22 @@ html:has(.site-drawer[open]) {
   letter-spacing: -0.02em;
 }
 
-/* Отклик на наведение — выделитель под заголовком, как у ссылки в тексте: толстое подчёркивание,
-   поднятое под нижнюю половину строки, из прозрачного в выделитель */
+/* Отклик на наведение — тонкая чернильная линия под заголовком, тот же жест, что у ссылок подвала;
+   обложка при этом подрастает. Выделителя под заголовком здесь больше нет: сирень на сайте значит
+   «найдено» и «выбрано», а «здесь мышь» — чернила (владелец 18.09.2026, в блоге — 19.09.2026).
+   Толщина и отступ в em: у крупной статьи линия толще, у обычной тоньше, как и сам набор. */
 .site-post__link {
   text-decoration-line: underline;
-  text-decoration-thickness: 0.45em;
-  text-underline-offset: -0.3em;
-  text-decoration-skip-ink: none;
+  text-decoration-thickness: max(1px, 0.06em);
+  text-underline-offset: 0.2em;
   text-decoration-color: transparent;
   transition: text-decoration-color var(--site-dur-base) var(--site-ease-out);
 }
 
-.site-post:hover .site-post__link {
-  text-decoration-color: var(--site-marker);
+@media (hover: hover) {
+  .site-post:hover .site-post__link {
+    text-decoration-color: currentColor;
+  }
 }
 
 .site-post__excerpt {
@@ -5717,6 +6480,157 @@ html:has(.site-drawer[open]) {
   color: var(--site-line-hover);
 }
 
+/* ---------- «Полезно знать»: блог последним блоком главной ----------
+   Сетка и карточка — те же .site-blog / .site-post, что на странице блога. В блог ведёт сам
+   заголовок: кнопка «Все статьи» справа от него на телефоне падала под подводку и висела
+   отдельно (владелец 18.09.2026). Ряд один на любой ширине — ниже 1024 он листается, и
+   следующая карточка видна краем, иначе четыре карточки столбиком это четыре экрана прокрутки. */
+.site-more__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--site-s-5);
+  margin-block-end: var(--site-s-7);
+}
+
+.site-more__head .site-section__head {
+  margin: 0;
+}
+
+.site-more__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  color: inherit;
+  text-decoration: none;
+}
+
+.site-more__link i {
+  display: grid;
+  place-items: center;
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 50%;
+  transition-property: background-color, border-color, color;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-more__link svg {
+  width: 0.45em;
+  height: 0.45em;
+  transition: translate var(--site-dur-base) var(--site-ease-out);
+}
+
+@media (hover: hover) {
+  .site-more__link:hover i {
+    background: var(--site-ink);
+    border-color: var(--site-ink);
+    color: var(--site-paper);
+  }
+
+  .site-more__link:hover svg {
+    translate: 2px 0;
+  }
+}
+
+.site-more__link:active i {
+  background: var(--site-ink);
+  border-color: var(--site-ink);
+  color: var(--site-paper);
+}
+
+/* Заголовки статей разной длины, поэтому «Читать» прижато к низу карточки: иначе знак ссылки
+   у четырёх карточек ряда стоит на четырёх разных высотах и ряд читается рваным */
+.site-more__pane .site-post {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* Подпись, заголовок, «Читать»: последняя строка забирает остаток высоты карточки */
+.site-more__pane .site-post__body {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.site-more__pane .site-post__more {
+  align-self: end;
+}
+
+/* «Читать» со стрелкой в круге — тот же знак, что у заголовка блока */
+.site-post__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-block-start: 6px;
+  font-size: var(--site-text-sm);
+  font-weight: 500;
+  color: var(--site-ink);
+}
+
+.site-post__more i {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 50%;
+  transition-property: background-color, border-color, color;
+  transition-duration: var(--site-dur-base);
+  transition-timing-function: var(--site-ease-out);
+}
+
+.site-post__more svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) {
+  .site-post:hover .site-post__more i {
+    background: var(--site-ink);
+    border-color: var(--site-ink);
+    color: var(--site-paper);
+  }
+}
+
+/* Знак наведения у карточки главной — залитый круг «Читать», поэтому линии под заголовком здесь
+   нет; в списке блога круга нет, и отклик там — линия */
+.site-more__pane .site-post:hover .site-post__link {
+  text-decoration-color: transparent;
+}
+
+/* Лента прокручивается внутри себя, страница вбок не едет */
+@media (max-width: 1023.98px) {
+  .site-more__pane .site-blog {
+    display: flex;
+    gap: var(--site-s-5);
+    margin-inline: calc(var(--site-gutter) * -1);
+    padding-inline: var(--site-gutter);
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: var(--site-gutter);
+    scrollbar-width: none;
+  }
+
+  .site-more__pane .site-blog::-webkit-scrollbar {
+    display: none;
+  }
+
+  .site-more__pane .site-post {
+    flex: 0 0 calc((100% - var(--site-s-5) * 2) / 2.4);
+    scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 639.98px) {
+  .site-more__pane .site-blog {
+    gap: var(--site-s-4);
+  }
+
+  .site-more__pane .site-post {
+    flex: 0 0 78%;
+  }
+}
+
 /* ---------- Движение: уважение к настройкам ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -5734,11 +6648,6 @@ html:has(.site-drawer[open]) {
     opacity: 0.6;
   }
 
-  .site-scan .site-mark {
-    animation: none;
-    opacity: 0.5;
-  }
-
   .js .site-reveal,
   .js .site-reveal--stagger > *,
   .site-demo__reveal > *,
@@ -5750,7 +6659,6 @@ html:has(.site-drawer[open]) {
   .site-steps__fill,
   .site-steps__pop,
   .site-demo,
-  .site-final__media img,
   .site-faq details,
   .site-header__progress,
   .site-sheet {
@@ -5762,7 +6670,26 @@ html:has(.site-drawer[open]) {
     filter: none;
   }
 
-  .site-seek__caret { animation: none; }
+  .site-seek__caret,
+  .site-seek__aura i {
+    animation: none;
+  }
+
+  /* Отметки списка источников и графы записи проверки стоят в конечном состоянии */
+  .site-checks__list li,
+  .site-checks__list i {
+    transition: none;
+  }
+
+  .site-keep__scene .site-term__status {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Импульсы по проводам схемы не идут — провода нарисованы, отметки на месте */
+  .site-flow__wires circle {
+    display: none;
+  }
 
   /* Полоса прочитанного без прокрутки не имеет смысла — её просто нет */
   .site-header__progress { display: none; }
