@@ -39,6 +39,7 @@ import {
   pageQuoteForClient,
   stripPromotionalTail,
 } from "./client-quote-hygiene";
+import { highlightBasisQuote } from "./theme-quote";
 import type { VerifiedFact } from "../gpt/fact-extraction";
 
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
@@ -616,6 +617,25 @@ function readPlotId(title: string): string {
  * Порядок участников — нежелательные впереди, внутри по позиции в выдаче: он
  * же задаёт и порядок доменов, и выбор цитат, поэтому расходиться им негде.
  */
+/**
+ * Цитата сюжета — основание вывода по странице, а не первая цитата (шаг 0118).
+ *
+ * Первая по промпту чтения — фрагмент принадлежности, лид биографии: стр. 4
+ * отчёта Бондарчука печатала под «Личная жизнь, разводы и семейные события»
+ * «Федор Сергеевич Бондарчук — российский кинорежиссер… Родился 9 мая 1967
+ * года в Москве». Порядок тот же, что у основания рамки на снимке выдачи
+ * (`highlightBasisQuote`): слово негатива → не лид → первая; затем — та же
+ * гигиена, что у остального клиентского текста, и следующая по порядку, если
+ * основание её не проходит.
+ */
+export function readPlotQuote(quotes: readonly { text: string }[]): string {
+  const texts = quotes.map((q) => String(q?.text ?? "")).filter((t) => t.trim());
+  if (texts.length === 0) return "";
+  const basis = highlightBasisQuote(texts, undefined);
+  const ordered = [basis, ...texts.filter((t) => t !== basis)];
+  return ordered.map((t) => pageQuoteForClient(t)).find(Boolean) ?? "";
+}
+
 function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
   const subjectByRef = new Map(
     input.verdicts.filter((v) => v.subjectMatch === "subject").map((v) => [v.evidenceRef, v])
@@ -634,7 +654,7 @@ function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
     for (const v of participants) {
       // Гигиена та же, что у остального клиентского текста: обрывок выдачи и
       // выгрузка таблицы не цитируются, и тогда блок живёт числами и доменами.
-      const text = (v.quotes ?? []).map((q) => pageQuoteForClient(q.text)).find(Boolean);
+      const text = readPlotQuote(v.quotes ?? []);
       if (!text) continue;
       candidates.push({
         text,

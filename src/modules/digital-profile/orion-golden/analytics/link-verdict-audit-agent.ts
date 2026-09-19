@@ -40,7 +40,12 @@ export type VerdictAuditChange = {
   evidenceRef: string;
   url: string;
   /** Что именно сделали с решением. */
-  action: "quote_dropped" | "adverse_downgraded" | "subject_downgraded" | "anchor_missing";
+  action:
+    | "quote_dropped"
+    | "adverse_downgraded"
+    | "subject_downgraded"
+    | "anchor_missing"
+    | "anchor_quote_dropped";
   reason: string;
 };
 
@@ -174,6 +179,19 @@ export function auditLinkVerdicts(input: {
         reason: `цитат не найдено в тексте страницы: ${dropped}`,
       });
       next = { ...next, quotes: kept };
+    }
+
+    // Фрагмент принадлежности сверяется так же, как цитаты (шаг 0118): он
+    // тоже слова источника, и придуманный не должен дожить до отчёта.
+    if (next.anchorQuote && !quoteFoundInText(next.anchorQuote.text, text)) {
+      changes.push({
+        evidenceRef: verdict.evidenceRef,
+        url: verdict.url,
+        action: "anchor_quote_dropped",
+        reason: "фрагмент принадлежности не найден в тексте страницы",
+      });
+      const { anchorQuote: _dropped, ...rest } = next;
+      next = rest;
     }
 
     const afterQuotes = requireQuotedAdverse(next);
