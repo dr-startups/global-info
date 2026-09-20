@@ -33,8 +33,19 @@ import {
   GPT_PRICE_TABLE_DATE,
   GPT_STAGE_MODELS,
   priceForModel,
+  type GptServiceTier,
   type GptStage,
 } from "../../config/defaults";
+
+/**
+ * Во сколько раз медленный тариф дешевле обычного.
+ *
+ * Провайдер считает его по цене пакетной обработки — это половина стандартной
+ * цены и входа, и выхода. Без этого множителя артефакт показывал бы полную
+ * цену там, где заплачена половина, и проверить, сработал ли тариф, было бы
+ * нечем.
+ */
+const FLEX_PRICE_FACTOR = 0.5;
 
 /** `usage` ответа OpenAI — ровно те поля, из которых складывается счёт. */
 export type OpenAiUsageShape = {
@@ -49,6 +60,8 @@ export type GptStageUsage = {
   /** Русское название стадии: артефакт читает владелец, а не только код. */
   label: string;
   model: string;
+  /** Тариф, по которому вызовы прошли на самом деле; `undefined` — обычный. */
+  tier?: GptServiceTier;
   calls: number;
   /**
    * Вызовы, на которые провайдер не прислал счёт токенов. Считаются отдельно:
@@ -143,11 +156,13 @@ function costOf(model: string, row: Row): number | null {
   const price = priceForModel(model);
   if (!price) return null;
   const plainInput = Math.max(0, row.inputTokens - row.cachedInputTokens - row.cacheWriteTokens);
+  const tierFactor = row.tier === "flex" ? FLEX_PRICE_FACTOR : 1;
   return (
-    (plainInput * price.input +
+    ((plainInput * price.input +
       row.cachedInputTokens * price.cachedInput +
       row.cacheWriteTokens * price.input * CACHE_WRITE_MULTIPLIER +
-      row.outputTokens * price.output) /
+      row.outputTokens * price.output) *
+      tierFactor) /
     1e6
   );
 }
@@ -160,16 +175,21 @@ function costOf(model: string, row: Row): number | null {
 export function recordGptUsage(input: {
   stage: GptStage;
   model: string;
+  /** Тариф, которым вызов прошёл: у медленного своя цена (шаг 0124). */
+  tier?: GptServiceTier;
   usage?: OpenAiUsageShape | null;
 }): void {
   const rows = currentRows();
-  const key = `${input.stage}|${input.model}`;
+  // Тариф в ключе: откат с медленного на обычный обязан быть виден строкой, а
+  // не спрятан в среднем по стадии.
+  const key = `${input.stage}|${input.model}|${input.tier ?? "default"}`;
   const row =
     rows.get(key) ??
     ({
       stage: input.stage,
       label: GPT_STAGE_MODELS[input.stage]?.label ?? input.stage,
       model: input.model,
+      ...(input.tier ? { tier: input.tier } : {}),
       calls: 0,
       callsWithoutUsage: 0,
       inputTokens: 0,
@@ -253,7 +273,7 @@ export function gptUsageLogLine(ledger: GptUsageLedger): string {
       ? `≈ $${ledger.costUsd.toFixed(2)} (без цены: ${ledger.modelsWithoutPrice.join(", ")})`
       : `≈ $${ledger.costUsd.toFixed(2)}`;
   const stages = ledger.byStage
-    .map((s) => `${s.stage} ${s.calls}`)
+    .map((s) => `${s.stage}${s.tier ? `/${s.tier}` : ""} ${s.calls}`)
     .join(", ");
   return (
     `[digital-profile][расход] вызовов ${ledger.calls}, вход ${ledger.inputTokens}, ` +

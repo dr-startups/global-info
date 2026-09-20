@@ -213,7 +213,12 @@ async function requestOpenAiJson(input: {
     const json = (await res.json()) as OpenAiResponseShape;
     // Запись расхода стоит здесь, а не у вызывающего: повтор при обрезанном
     // ответе — второй оплаченный вызов, и в счёте он обязан быть вторым.
-    recordGptUsage({ stage: input.stage, model: input.model, usage: json.usage });
+    recordGptUsage({
+      stage: input.stage,
+      model: input.model,
+      tier: input.tier,
+      usage: json.usage,
+    });
     const text = extractText(json) ?? "";
     if (!text) {
       const truncatedEmpty = looksLikeTruncatedOpenAiJson({

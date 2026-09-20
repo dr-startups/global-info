@@ -248,6 +248,28 @@ describe("счёт расхода по стадиям", () => {
     expect(usage.costUsd).toBeGreaterThan(0);
   });
 
+  it("У11: счёт знает тариф — медленный стоит вдвое дешевле и назван в строке", () => {
+    // Без этого артефакт показывал бы полную цену там, где заплачено
+    // половина, и проверить, сработал ли медленный тариф, было бы нечем.
+    recordGptUsage({
+      stage: "link_verdict",
+      model: "gpt-5.6-sol",
+      tier: "flex",
+      usage: { input_tokens: 10_000, output_tokens: 1_000 },
+    });
+    recordGptUsage({
+      stage: "slide_copy",
+      model: "gpt-5.6-sol",
+      usage: { input_tokens: 10_000, output_tokens: 1_000 },
+    });
+    const ledger = consumeGptUsage();
+    const flex = ledger.byStage.find((x) => x.stage === "link_verdict")!;
+    const plain = ledger.byStage.find((x) => x.stage === "slide_copy")!;
+    expect(flex.tier).toBe("flex");
+    expect(plain.tier).toBeUndefined();
+    expect(flex.costUsd!).toBeCloseTo(plain.costUsd! / 2, 8);
+  });
+
   it("У5: неизвестная модель не роняет счёт и называется в артефакте", () => {
     // Модель могли сменить в таблице и забыть цену: числа токенов остаются,
     // стоимость честно неизвестна, а не молча ноль.
