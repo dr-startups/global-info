@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { golosText, literata } from "@/app/(site)/fonts/fonts";
+import { golosText } from "@/app/(site)/fonts/fonts";
 import { SiteFooter } from "./SiteFooter";
 import { SiteHeader } from "./SiteHeader";
 import { SiteIcons } from "./SiteIcons";
@@ -12,7 +12,7 @@ import { SiteRuntime } from "./SiteRuntime";
  */
 export function SiteChrome({ children }: { children: ReactNode }) {
   return (
-    <div className={`site-body ${golosText.variable} ${literata.variable}`}>
+    <div className={`site-body ${golosText.variable}`}>
       <a className="site-skip" href="#main">
         К содержанию
       </a>

@@ -1,16 +1,18 @@
 /**
- * Детали экранов мастера: шапка проверки со степпером, шкала риска, ответы
- * источников, рамка листа. Без состояния — их рисуют и страницы, собранные на
- * сервере (`/check/limit`, `/check/disabled`).
+ * Детали экранов мастера: шапка проверки со степпером, доска с ходом, строки
+ * источников, след поиска, кадр серии 5, рамка листа. Без состояния — их рисуют и
+ * страницы, собранные на сервере (`/check/limit`, `/check/disabled`).
  */
 
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode, Ref } from "react";
 import { formatBirthDate } from "@/modules/site/check/format";
-import type { RiskTone, ScaleView } from "@/modules/site/check/result-view";
+import type { PersonaTrailRow } from "@/modules/site/check/persona-view";
 import { STEP_LABELS, type ServiceAction, type ServiceScreenContent } from "@/modules/site/content/check";
 import { Button, ButtonLink } from "../Button";
 import { vars } from "../css-vars";
+import { SourceSign } from "../SiteIcons";
 
 export function WizardBand({
   subject,
@@ -75,63 +77,34 @@ export function WizardFrame({ band, children }: { band?: ReactNode; children: Re
  * `site-css-declares-only-classes-the-site-uses`, а полноту таблицы проверяет TypeScript.
  */
 
-export const METER_TONE_CLASS: Record<RiskTone, string> = {
-  low: "site-meter--low",
-  medium: "site-meter--medium",
-  high: "site-meter--high",
-  none: "site-meter--none",
-};
-
-export const VERDICT_TONE_CLASS: Record<RiskTone, string> = {
-  low: "site-verdict--low",
-  medium: "site-verdict--medium",
-  high: "site-verdict--high",
-  none: "site-verdict--none",
-};
+export { VERDICT_TONE_CLASS } from "../Dial";
 
 /** Ответ источника: у результата — есть ответ или нет, у панели персоны ещё «не подключён». */
 const LEDGER_TONE_CLASS = { ok: "is-ok", warn: "is-warn", off: "is-off" } as const;
+
+/**
+ * Строка источника в панели поиска и в следе: «спрашиваем», «есть совпадения»,
+ * «совпадений нет», «не ответил», «не подключён».
+ */
+const SOURCE_TONE_CLASS = {
+  asking: "is-asking",
+  hit: "is-hit",
+  none: "",
+  warn: "is-warn",
+  off: "is-off",
+} as const;
 
 const STATUS_TONE_CLASS: Record<NonNullable<ServiceScreenContent["tone"]>, string> = {
   warn: "site-status--warn",
   danger: "site-status--danger",
 };
 
-export function MeterSegments({ filled, animate }: { filled: number; animate?: boolean }) {
-  return (
-    <>
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className={`site-meter__seg${i < filled ? " is-on" : ""}`}
-          style={animate ? vars({ "--i": i }) : undefined}
-        />
-      ))}
-    </>
-  );
-}
-
-export function RiskScale({ scale, decorative }: { scale: ScaleView; decorative?: boolean }) {
-  return (
-    <div className="site-scale">
-      <div
-        className={`site-meter ${METER_TONE_CLASS[scale.tone]} site-meter--lg`}
-        role={decorative ? undefined : "img"}
-        aria-label={decorative ? undefined : scale.ariaLabel}
-        aria-hidden={decorative || undefined}
-      >
-        <MeterSegments filled={scale.filled} animate />
-      </div>
-      <ol className="site-scale__labels" aria-hidden="true">
-        {scale.labels.map((label, i) => (
-          <li key={label} className={i === scale.filled - 1 ? "is-level" : undefined}>
-            {label}
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
+/** Знак источника панели персоны: тот же предмет, что в схеме «Где мы ищем». */
+export const PERSONA_SOURCE_SIGN = {
+  wikipedia: "sg-open",
+  knowledge_graph: "sg-panel",
+  opensanctions: "sg-list",
+} as const;
 
 export function Ledger({
   rows,
@@ -155,9 +128,195 @@ export function Ledger({
 }
 
 /**
- * Служебный экран: слева — что случилось и что делать, справа — что стало с
- * данными. Без цветной плашки ошибки: человеку, который проверяет свою
- * репутацию, достаточно объяснения, а не красной тревоги.
+ * Доска: панель с ходом по верхней кромке. Общий предмет для «где искали», «что
+ * проверено» и «что будет дальше» — ход по кромке тот же приём, что шкала
+ * заполнения формы на главной.
+ */
+export function Board({
+  meter,
+  title,
+  count,
+  head,
+  children,
+  foot,
+}: {
+  meter?: number;
+  title?: string;
+  count?: ReactNode;
+  /** Шапка доски до её тела — например, строка поиска. */
+  head?: ReactNode;
+  children?: ReactNode;
+  foot?: ReactNode;
+}) {
+  return (
+    <div className="site-board site-ticks">
+      {meter === undefined ? null : (
+        <div className="site-board__meter" aria-hidden="true">
+          <i style={vars({ "--p": meter })} />
+        </div>
+      )}
+      {head}
+      {title ? (
+        <div className="site-board__head">
+          <h2 className="site-board__title">{title}</h2>
+          {count ? <p className="site-board__count">{count}</p> : null}
+        </div>
+      ) : null}
+      {children}
+      {foot}
+    </div>
+  );
+}
+
+export interface SourceRow {
+  source: keyof typeof PERSONA_SOURCE_SIGN;
+  name: string;
+  state: string;
+  mark: string;
+  tone: keyof typeof SOURCE_TONE_CLASS;
+}
+
+/** Строки источников панели поиска: знак, имя, состояние словами, отметка справа. */
+export function SourceRows({ rows, label }: { rows: readonly SourceRow[]; label?: string }) {
+  return (
+    <ul className="site-sources" aria-label={label}>
+      {rows.map((row) => (
+        <li key={row.source} className={SOURCE_TONE_CLASS[row.tone] || undefined}>
+          <SourceSign id={PERSONA_SOURCE_SIGN[row.source]} />
+          <span className="site-sources__name">{row.name}</span>
+          <span className="site-sources__state">{row.state}</span>
+          <span className="site-sources__mark" aria-hidden="true">
+            {row.tone === "asking" ? <span className="site-spinner" /> : row.mark}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Строка поиска панели: имя со свечением. Это показание работы, а не поле ввода,
+ * поэтому она скрыта от экранного диктора — соседние строки источников говорят
+ * то же самое словами.
+ */
+export function SeekBar({ query, typing }: { query: string; typing?: boolean }) {
+  return (
+    <div className={typing ? "site-seek is-typing" : "site-seek"} aria-hidden="true">
+      <div className="site-seek__field">
+        <div className="site-seek__aura">
+          <i />
+        </div>
+        <div className="site-seek__bar">
+          <svg className="site-seek__icon" viewBox="0 0 18 18" aria-hidden="true">
+            <use href="#ic-search" />
+          </svg>
+          <span className="site-seek__query">
+            <span className="site-seek__word">{query}</span>
+            {typing ? <span className="site-seek__caret" /> : null}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** След поиска: запрос и три источника одной полосой — малая схема «Где мы ищем». */
+export function Trail({ query, rows }: { query: string; rows: readonly PersonaTrailRow[] }) {
+  return (
+    <div className="site-trail" role="group" aria-label="Где искали совпадения">
+      <p className="site-trail__query">
+        <svg viewBox="0 0 18 18" aria-hidden="true">
+          <use href="#ic-search" />
+        </svg>
+        <span>{query}</span>
+      </p>
+      <ol className="site-trail__nodes">
+        {rows.map((row, i) => (
+          <li key={row.source} className={SOURCE_TONE_CLASS[row.tone] || undefined} style={vars({ "--i": i })}>
+            <SourceSign id={PERSONA_SOURCE_SIGN[row.source]} />
+            <span className="site-trail__name">{row.name}</span>
+            <span className="site-trail__state">{row.state}</span>
+            <span className="site-sources__mark" aria-hidden="true">
+              {row.mark}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** Кадры серии 5 на экранах мастера: имя файла в `public/site/check`. */
+export const CHECK_ART = {
+  persona: { name: "check-persona", width: 1600, height: 679 },
+  waiting: { name: "check-waiting", width: 1600, height: 1073 },
+  found: { name: "check-found", width: 1600, height: 679 },
+  clean: { name: "check-clean", width: 1600, height: 679 },
+  unknown: { name: "check-unknown", width: 1600, height: 679 },
+  thanks: { name: "check-thanks", width: 1600, height: 1073 },
+  pause: { name: "check-pause", width: 1600, height: 1073 },
+} as const;
+
+/**
+ * Кадр серии 5 на бумаге. Декоративный: `alt` пустой — всё, что кадр говорит,
+ * сказано словами рядом.
+ */
+export function Art({
+  frame,
+  wideOnly,
+  fill,
+  priority,
+}: {
+  frame: keyof typeof CHECK_ART;
+  /** На узком экране кадр не нужен: там важнее само действие. */
+  wideOnly?: boolean;
+  /** Высоту задаёт соседняя колонка, а не пропорция картинки. */
+  fill?: boolean;
+  priority?: boolean;
+}) {
+  const art = CHECK_ART[frame];
+  const className = ["site-art", wideOnly ? "site-art--wide-only" : null, fill ? "site-art--fill" : null]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <figure className={className} aria-hidden="true">
+      <Image
+        src={`/site/check/${art.name}.webp`}
+        width={art.width}
+        height={art.height}
+        sizes="(min-width: 1024px) 520px, 100vw"
+        alt=""
+        {...(priority ? { priority: true } : { loading: "lazy" as const })}
+      />
+    </figure>
+  );
+}
+
+/**
+ * Кадр шапкой листа действия: широкая полоса, уходящая в чернила маской. Кадр
+ * стоит внутри тёмной панели, поэтому у него своё место по горизонтали — лицо
+ * кадра не должно уезжать под текст.
+ */
+export function SlipArt({ frame, position }: { frame: keyof typeof CHECK_ART; position: string }) {
+  const art = CHECK_ART[frame];
+  return (
+    <figure className="site-slip__art" style={vars({ "--pos": position })} aria-hidden="true">
+      <Image
+        src={`/site/check/${art.name}.webp`}
+        width={art.width}
+        height={art.height}
+        sizes="(min-width: 1024px) 420px, 100vw"
+        alt=""
+        loading="lazy"
+      />
+    </figure>
+  );
+}
+
+/**
+ * Служебный экран: слева — что случилось и что делать, справа — кадр и доска с
+ * тем, что стало с данными. Без цветной плашки ошибки: человеку, который
+ * проверяет свою репутацию, достаточно объяснения, а не красной тревоги.
  *
  * Кнопки — отдельный блок после фактов, а не часть заголовка: на телефоне человек
  * сначала дочитывает, что стало с данными, и действие ждёт его внизу, под пальцем.
@@ -174,7 +333,7 @@ export function ServiceScreen({
 }) {
   return (
     <section
-      className="site-screen site-screen--split site-screen--service is-active site-enter"
+      className="site-screen site-screen--split site-screen--service site-screen--even is-active site-enter"
       aria-labelledby="service-title"
     >
       <div className="site-screen__head">
@@ -186,25 +345,25 @@ export function ServiceScreen({
       </div>
       {content.facts ? (
         <div className="site-screen__aside">
-          <h2 className="site-screen__subtitle">{content.asideTitle}</h2>
-          <dl className="site-facts">
-            {content.facts.map(([term, value]) => (
-              <div key={term}>
-                <dt>{term}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <Art frame="pause" fill />
+          <Board title={content.asideTitle}>
+            <div className="site-board__body">
+              <dl className="site-facts">
+                {content.facts.map(([term, value]) => (
+                  <div key={term}>
+                    <dt>{term}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          </Board>
         </div>
       ) : null}
       {content.actions.length > 0 ? (
         <div className="site-actions site-screen__actions">
           {content.actions.map((action) => {
-            const look = {
-              variant: action.variant,
-              large: action.variant !== "ghost",
-              arrow: action.variant === "accent",
-            };
+            const look = { variant: action.variant, large: true, arrow: action.variant === "accent" };
             return action.href ? (
               <ButtonLink key={action.label} {...look} href={action.href}>
                 {action.label}

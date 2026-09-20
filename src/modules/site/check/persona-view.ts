@@ -61,6 +61,69 @@ export function personaLedger(
   });
 }
 
+/**
+ * Три источника панели, названные до первого ответа: пока панель собирается,
+ * экран поиска показывает, куда ушли запросы. Состояния по отдельным источникам
+ * ручка при сборке не отдаёт, поэтому у всех трёх сказано одно — «запрос
+ * отправлен», и выдумывать «ответил» нечем.
+ */
+export const PERSONA_SOURCE_ROWS: ReadonlyArray<{ source: PersonaSourceName; name: string }> = SOURCE_ORDER.map(
+  (source) => ({ source, name: SOURCE_NAMES[source] })
+);
+
+export interface PersonaTrailRow {
+  source: PersonaSourceName;
+  name: string;
+  state: string;
+  /** Отметка в строке следа: число совпадений, «0», «!» или прочерк. */
+  mark: string;
+  tone: "hit" | "none" | "warn" | "off";
+}
+
+const TRAIL_MARK: Readonly<Record<Exclude<PersonaTrailRow["tone"], "hit">, string>> = {
+  none: "0",
+  warn: "!",
+  off: "—",
+};
+
+/**
+ * След поиска: те же слова, что в панели ответов, плюс отметка справа.
+ *
+ * Не подключённый источник получает прочерк, а не ноль: ноль значил бы «искали и
+ * не нашли», а искать было нечем.
+ */
+export function personaTrailRows(
+  sources: readonly PersonaSourceJson[],
+  cards: readonly PersonaCardJson[]
+): PersonaTrailRow[] {
+  return SOURCE_ORDER.flatMap((name) => {
+    const source = sources.find((s) => s.source === name);
+    if (!source) return [];
+    const { value, tone } = ledgerValue(source, cards);
+    const hits = cards.filter((card) => card.source === name).length;
+    const trailTone: PersonaTrailRow["tone"] = tone === "ok" ? (hits > 0 ? "hit" : "none") : tone;
+    return [
+      {
+        source: name,
+        name: SOURCE_NAMES[name],
+        state: value,
+        mark: trailTone === "hit" ? String(hits) : TRAIL_MARK[trailTone],
+        tone: trailTone,
+      },
+    ];
+  });
+}
+
+/**
+ * Сколько источников ответило — корешок панели поиска. Не подключённый источник
+ * в знаменатель не идёт: спрашивать его было нечем, и «2 из 3» превратило бы
+ * настройку стенда в неудачу проверки.
+ */
+export function personaAnswered(rows: readonly PersonaTrailRow[]): { answered: number; total: number } {
+  const asked = rows.filter((row) => row.tone !== "off");
+  return { answered: asked.filter((row) => row.tone !== "warn").length, total: asked.length };
+}
+
 const sentence = (text: string) => (/[.!?…]$/u.test(text) ? text : `${text}.`);
 
 /**

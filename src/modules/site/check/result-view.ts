@@ -9,8 +9,9 @@
  * пока счёты тем покрывают все материалы.
  */
 
-import { CLIENT_RISK_LABELS, riskLabel } from "@/modules/digital-profile/orion-golden/client/risk-scale";
-import { formatCheckDate, materialsText, themesInText } from "./format";
+import { CLIENT_RISK_LABELS, riskLabel, riskWord } from "@/modules/digital-profile/orion-golden/client/risk-scale";
+import { RESULT_TEXT } from "@/modules/site/content/check";
+import { formatCheckDate, materialsText, plural, themesInText } from "./format";
 import type { ResultJson, RiskStep } from "./types";
 
 export type { ResultJson } from "./types";
@@ -76,6 +77,120 @@ export function scaleView(level: RiskStep | null): ScaleView {
     labels: SCALE_LABELS,
     ariaLabel: `Шкала риска: ${ORDINALS[index]} уровень из трёх`,
   };
+}
+
+/**
+ * Показание дугой — та же шкала из трёх ступеней, согнутая в дугу прибора.
+ *
+ * Стрелка стоит против середины закрашенной ступени. Углы взяты из дуг макета
+ * (`240×134`, центр 120×126): ступень занимает по 57.34°, между ними просветы,
+ * и середины приходятся на 151.33°, 90° и 28.67° — стрелка отсчитывает от левого
+ * конца, поэтому угол поворота дополняет их до 180°.
+ */
+export const DIAL_POINTER_ANGLES = [28.67, 90, 151.33] as const;
+
+export interface DialView {
+  tone: RiskTone;
+  /** Сколько дуг из трёх горит. */
+  filled: number;
+  /** Поворот стрелки в градусах; `null` — уровня нет, стрелки тоже. */
+  pointerAngle: number | null;
+  /** Число внутри дуги: материалы или прочерк. */
+  num: string;
+  unit: string;
+  labels: readonly string[];
+  /** Какая подпись ступени — текущая; `-1` — никакая. */
+  levelIndex: number;
+  ariaLabel: string;
+}
+
+export function dialView(result: ResultJson): DialView {
+  const scale = scaleView(result.riskLevel);
+  const known = result.verdict === "NEGATIVE_FOUND" || result.verdict === "CLEAN";
+  const found = result.verdict === "NEGATIVE_FOUND";
+  return {
+    tone: scale.tone,
+    filled: scale.filled,
+    pointerAngle: scale.filled > 0 ? DIAL_POINTER_ANGLES[scale.filled - 1]! : null,
+    num: known ? String(result.materialsFound) : "—",
+    unit: known ? plural(result.materialsFound, ["материал", "материала", "материалов"]) : "нет данных",
+    labels: scale.labels,
+    levelIndex: scale.filled - 1,
+    ariaLabel: known
+      ? `${scale.ariaLabel}. ${found ? `Найдено ${materialsText(result.materialsFound)}` : "Негативных материалов не найдено"}`
+      : scale.ariaLabel,
+  };
+}
+
+export interface ThemeRow {
+  id: string;
+  label: string;
+  /** «высокий уровень»; `null` — уровня у темы нет. */
+  levelText: string | null;
+  tone: RiskTone;
+  countText: string;
+  /** Доля полосы: тема против самой большой темы результата. */
+  fraction: number;
+  /** Строки скрытых заголовков — ровно то, что честно сказать о материале. */
+  hidden: string[];
+}
+
+/**
+ * Темы результата строками. Заголовков находок ручка не отдаёт, поэтому в
+ * раскрытой теме стоят не выдуманные заголовки, а прямая фраза о том, что
+ * заголовок скрыт; фразы разные, чтобы строки не читались одной повторённой.
+ */
+export function themeRows(result: ResultJson): ThemeRow[] {
+  if (result.verdict !== "NEGATIVE_FOUND") return [];
+  const groups =
+    result.themes.length > 0
+      ? result.themes.map((theme) => ({
+          id: theme.id,
+          label: theme.label,
+          level: theme.level,
+          count: theme.count,
+        }))
+      : [{ id: "no-theme", label: RESULT_TEXT.noTheme, level: null, count: result.materialsFound }];
+  const max = Math.max(...groups.map((group) => group.count), 1);
+  let line = 0;
+  return groups.map((group) => ({
+    id: group.id,
+    label: group.label,
+    levelText: group.level ? `${riskWord(group.level)} уровень` : null,
+    tone: group.level ?? "none",
+    countText: materialsText(group.count),
+    fraction: group.count / max,
+    hidden: Array.from(
+      { length: Math.min(group.count, MAX_BARS) },
+      () => RESULT_TEXT.hiddenTitles[line++ % RESULT_TEXT.hiddenTitles.length]!
+    ),
+  }));
+}
+
+export interface AnsweredView {
+  answered: number;
+  total: number;
+  fraction: number;
+}
+
+/**
+ * Группы источников списком без подробностей — под показанием на «найдено»:
+ * там важно, кого спросили, а что именно ответил каждый, говорят темы.
+ */
+export function answeredLedger(sourcesChecked: readonly string[]): LedgerRow[] {
+  const checked = new Set(sourcesChecked);
+  return SOURCE_GROUPS.map((group) => ({
+    name: group.name,
+    value: null,
+    tone: checked.has(group.id) ? ("ok" as const) : ("warn" as const),
+  }));
+}
+
+/** «Ответили 2 из 4» — и столько же хода по верхней кромке доски. */
+export function sourcesAnswered(sourcesChecked: readonly string[]): AnsweredView {
+  const checked = new Set(sourcesChecked);
+  const answered = SOURCE_GROUPS.filter((group) => checked.has(group.id)).length;
+  return { answered, total: SOURCE_GROUPS.length, fraction: answered / SOURCE_GROUPS.length };
 }
 
 const SOURCE_GROUPS = [

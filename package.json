@@ -24,6 +24,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "admin:create": "tsx scripts/create-admin.ts",
+    "demo:self-check-verdict": "tsx --env-file=.env scripts/dev/self-check-demo-verdict.ts",
     "smoke:unified-orion-collection": "tsx --test scripts/smoke-unified-orion-collection.ts",
     "smoke:render-http-retry": "tsx --test scripts/smoke-render-http-retry.ts",
     "smoke:gpt-call-queue": "tsx --test scripts/smoke-gpt-call-queue.ts",

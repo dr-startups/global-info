@@ -6,9 +6,28 @@
  * взять адрес.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { COPY_TEXT } from "@/modules/site/content/check";
 import { Button } from "../Button";
+
+/**
+ * Ссылка на проверку адресом, а не обещанием: рядом с кнопкой видно, что именно
+ * ляжет в буфер. Имя площадки известно только браузеру, поэтому до гидратации
+ * стоит один путь — на сервере адреса страницы нет.
+ */
+export function LinkBox({ publicId, children }: { publicId: string; children: ReactNode }) {
+  const [host, setHost] = useState("");
+  useEffect(() => setHost(window.location.host), []);
+  return (
+    <div className="site-linkbox">
+      <span className="site-linkbox__url">
+        <span>{host}</span>
+        <b>/check/{publicId}</b>
+      </span>
+      {children}
+    </div>
+  );
+}
 
 export function useCopyLink() {
   const [copied, setCopied] = useState(false);

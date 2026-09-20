@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import type { Block, Phase } from "@/modules/site/content/blocks";
 import { HOW, SOURCES, TOPICS } from "@/modules/site/content/landing";
 import { Faq } from "../Faq";
+import { SourceSign } from "../SiteIcons";
 import { RichText } from "./RichText";
 
 /**
@@ -121,9 +122,7 @@ function expand(blocks: readonly Block[]): Item[] {
               <ul key={i} className="site-sources-grid site-sources-grid--2" style={gap(5)}>
                 {SOURCES.items.map((item) => (
                   <li key={item.title}>
-                    <svg viewBox="0 0 32 32" aria-hidden="true">
-                      <use href={`#${item.icon}`} />
-                    </svg>
+                    <SourceSign id={item.icon} />
                     <strong>{item.title}</strong>
                     <span>{item.text}</span>
                   </li>

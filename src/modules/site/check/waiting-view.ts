@@ -15,7 +15,8 @@ export type { RunJson } from "./types";
 export interface WaitingStage {
   key: RunStage;
   label: string;
-  what: string;
+  /** Состав стадии ярлыками: по отдельным источникам ручка хода не отдаёт. */
+  tags: readonly string[];
   state: "done" | "current" | "pending";
   stateWord: string;
 }
@@ -27,10 +28,14 @@ export interface WaitingView {
   stages: WaitingStage[];
 }
 
-const STAGE_WHAT: Readonly<Record<RunStage, string>> = {
-  collecting:
-    "Первые страницы выдачи, картинки, видео и подсказки, энциклопедии, справочники, санкционные и PEP‑списки",
-  verdict: "Темы находок и уровень риска",
+export const STAGE_TAGS: Readonly<Record<RunStage, readonly string[]>> = {
+  collecting: [
+    "Первые страницы выдачи",
+    "Картинки, видео и подсказки",
+    "Энциклопедии и справочники",
+    "Санкционные и PEP-списки",
+  ],
+  verdict: ["Темы находок", "Уровень риска"],
 };
 
 const STATE_WORDS = { done: "готово", current: "идёт", pending: "ожидает" } as const;
@@ -51,7 +56,7 @@ export function waitingView(run: RunJson, nowMs: number): WaitingView {
     currentLabel: RUN_STAGE_LABELS[run.stage],
     stages: RUN_STAGES.map((key, index) => {
       const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "pending";
-      return { key, label: RUN_STAGE_LABELS[key], what: STAGE_WHAT[key], state, stateWord: STATE_WORDS[state] };
+      return { key, label: RUN_STAGE_LABELS[key], tags: STAGE_TAGS[key], state, stateWord: STATE_WORDS[state] };
     }),
   };
 }

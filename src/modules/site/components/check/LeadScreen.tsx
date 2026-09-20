@@ -19,18 +19,14 @@ import {
   type LeadFormValues,
 } from "@/modules/site/check/form";
 import { formatDay } from "@/modules/site/check/format";
-import { resultView } from "@/modules/site/check/result-view";
+import { nextStepsFor } from "@/modules/site/check/next-view";
+import { dialView, resultView } from "@/modules/site/check/result-view";
 import type { PublicStatusJson } from "@/modules/site/check/types";
-import { LEAD_TEXT, NEXT_STEPS } from "@/modules/site/content/check";
+import { LEAD_TEXT, RESULT_TEXT } from "@/modules/site/content/check";
 import { Button } from "../Button";
+import { Dial } from "../Dial";
 import { FieldError, TextField } from "../Field";
-import { METER_TONE_CLASS, MeterSegments, VERDICT_TONE_CLASS } from "./parts";
-
-export function nextStepsFor(status: PublicStatusJson) {
-  if (status.status === "DONE" && status.result?.verdict === "NEGATIVE_FOUND") return NEXT_STEPS.NEGATIVE_FOUND;
-  if (status.status === "DONE" && status.result?.verdict === "CLEAN") return NEXT_STEPS.CLEAN;
-  return NEXT_STEPS.MANUAL;
-}
+import { VERDICT_TONE_CLASS } from "./parts";
 
 function Attached({ status }: { status: PublicStatusJson }) {
   const result = status.result;
@@ -45,28 +41,33 @@ function Attached({ status }: { status: PublicStatusJson }) {
     );
   }
   const view = resultView(result);
+  const dial = dialView(result);
   const themes =
     result.themes.length > 0
       ? result.themes.map((theme) => [theme.label, theme.count] as const)
       : result.verdict === "NEGATIVE_FOUND"
-        ? [["Материалы без темы", result.materialsFound] as const]
+        ? [[RESULT_TEXT.noTheme, result.materialsFound] as const]
         : [];
   return (
     <div className={`site-slip__body ${VERDICT_TONE_CLASS[view.scale.tone]}`}>
       <h2 className="site-slip__subtitle" id="lead-attached">
         {LEAD_TEXT.attached}
       </h2>
-      <p className="site-attached__level">
-        {view.title.word ? (
-          <>
-            <span className="site-result__word">{view.title.word}</span> {view.title.text}
-          </>
-        ) : (
-          view.title.text
-        )}
-      </p>
-      <div className={`site-meter ${METER_TONE_CLASS[view.scale.tone]}`} aria-hidden="true">
-        <MeterSegments filled={view.scale.filled} />
+      {/* Показание в малом размере: к заявке приложено ровно то, что человек видел на результате */}
+      <div className="site-attached">
+        <Dial filled={dial.filled} size="sm" ghost={dial.filled === 0} />
+        <div>
+          <p className="site-attached__level">
+            {view.title.word ? (
+              <>
+                <span className="site-result__word">{view.title.word}</span> {view.title.text}
+              </>
+            ) : (
+              view.title.text
+            )}
+          </p>
+          {result.checkedAt ? <p className="site-caption">Проверка от {formatDay(result.checkedAt)}</p> : null}
+        </div>
       </div>
       {themes.length > 0 ? (
         <ul className="site-attached__themes">
@@ -78,7 +79,6 @@ function Attached({ status }: { status: PublicStatusJson }) {
           ))}
         </ul>
       ) : null}
-      {result.checkedAt ? <p className="site-caption">Проверка от {formatDay(result.checkedAt)}</p> : null}
     </div>
   );
 }
@@ -162,7 +162,7 @@ export function LeadScreen({
   const contactError = errors.contact ?? errors[values.channel];
 
   return (
-    <section className="site-screen site-screen--split is-active site-enter" aria-labelledby="lead-title">
+    <section className="site-screen site-screen--split site-screen--even is-active site-enter" aria-labelledby="lead-title">
       <div className="site-screen__main">
         <header className="site-screen__head">
           <h1 className="site-screen__title" id="lead-title" tabIndex={-1} ref={headingRef}>
@@ -237,7 +237,9 @@ export function LeadScreen({
 
           <fieldset className="site-fieldset">
             <legend className="site-label">{LEAD_TEXT.time}</legend>
-            <div className="site-choice">
+            {/* На узком экране варианты — сетка 2×2 из равных ячеек: пилюли разной длины
+                вставали лесенкой 3 + 1 и читались перекосом (владелец 20.09.2026) */}
+            <div className="site-choice site-choice--even">
               {LEAD_TEXT.times.map((time) => (
                 <label key={time.value}>
                   <input
@@ -253,8 +255,13 @@ export function LeadScreen({
             </div>
           </fieldset>
 
-          <details className="site-details">
-            <summary>{LEAD_TEXT.comment}</summary>
+          {/* Раскрытие — место под поле: та же ширина, высота и радиус, что у полей формы,
+              пунктир — язык пустого места на сайте. Раскрытое становится обычным полем */}
+          <details className="site-details site-details--slot">
+            <summary>
+              <span className="site-details__closed">{LEAD_TEXT.comment}</span>
+              <span className="site-details__opened">{LEAD_TEXT.commentLabel}</span>
+            </summary>
             <div className="site-details__body">
               <label className="site-visually-hidden" htmlFor="lead-message">
                 {LEAD_TEXT.commentLabel}
@@ -275,7 +282,8 @@ export function LeadScreen({
             <Button variant="accent" large arrow id="lead-submit" type="submit" busy={busy}>
               {LEAD_TEXT.submit}
             </Button>
-            <Button variant="ghost" onClick={onBack}>
+            {/* Контурная кнопка того же размера: без контура второе действие теряется */}
+            <Button variant="secondary" large onClick={onBack}>
               {failed ? LEAD_TEXT.backFailed : LEAD_TEXT.back}
             </Button>
           </div>

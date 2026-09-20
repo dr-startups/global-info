@@ -238,7 +238,7 @@ export function CheckWizard({ publicId }: { publicId: string }) {
           </section>
         );
       case "persona-loading":
-        return <PersonaLoadingScreen headingRef={heading} />;
+        return <PersonaLoadingScreen fullName={status?.subject?.fullName ?? ""} headingRef={heading} />;
       case "persona":
         return (
           <PersonaScreen
@@ -251,11 +251,19 @@ export function CheckWizard({ publicId }: { publicId: string }) {
           />
         );
       case "persona-empty":
-        return <PersonaEmptyScreen panel={panel!} busy={busy} onNone={() => void decide(null)} headingRef={heading} />;
+        return (
+          <PersonaEmptyScreen
+            panel={panel!}
+            fullName={status?.subject?.fullName ?? ""}
+            busy={busy}
+            onNone={() => void decide(null)}
+            headingRef={heading}
+          />
+        );
       case "start":
-        return <StartScreen busy={busy !== null} onStart={() => void start()} headingRef={heading} />;
+        return <StartScreen panel={panel} busy={busy !== null} onStart={() => void start()} headingRef={heading} />;
       case "waiting":
-        return <WaitingScreen run={status?.run ?? NO_RUN} headingRef={heading} />;
+        return <WaitingScreen run={status?.run ?? NO_RUN} publicId={publicId} headingRef={heading} />;
       case "result-negative":
       case "result-clean":
       case "result-insufficient":

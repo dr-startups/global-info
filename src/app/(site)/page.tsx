@@ -9,7 +9,10 @@ import { HeroSeek } from "@/modules/site/components/landing/HeroSeek";
 import { KeepScene } from "@/modules/site/components/landing/KeepScene";
 import { ResultDemo } from "@/modules/site/components/landing/ResultDemo";
 import { SourcesFlow } from "@/modules/site/components/landing/SourcesFlow";
-import { MEDIUM_METER_LABEL, MediumMeter } from "@/modules/site/components/landing/parts";
+import { MEDIUM_METER_LABEL } from "@/modules/site/components/landing/parts";
+import { Dial, VERDICT_TONE_CLASS } from "@/modules/site/components/Dial";
+import { DIAL_POINTER_ANGLES } from "@/modules/site/check/result-view";
+import { RESULT_TEXT } from "@/modules/site/content/check";
 import { vars } from "@/modules/site/components/css-vars";
 import { JsonLd } from "@/modules/site/components/JsonLd";
 import { ARTICLES, BLOG, BLOG_TOPICS, readingTimeText } from "@/modules/site/content/articles";
@@ -102,25 +105,35 @@ export default function LandingPage() {
                               <div className="site-mini__btn">Проверить бесплатно</div>
                             </div>
                           ) : index === 1 ? (
-                            <div className="site-mini site-mini--cards">
-                              <div className="site-mini__card is-on">
-                                <span className="site-tag">Совпадение 01</span>
-                                <i className="site-mini__bar" style={vars({ "--w": "76%" })} />
-                                <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "54%" })} />
-                                <span className="site-mini__pick site-steps__pop">Это я</span>
+                            // Картотека, как на экране «Кто из них вы?»: выбранная карточка вынута,
+                            // вторая уходит из фокуса — тем же приёмом, каким на сайте скрыто всё скрытое
+                            <div className="site-mini site-mini--idcards">
+                              <div className="site-mini__idcard is-on">
+                                <span className="site-mini__tab" />
+                                <div className="site-mini__sheet">
+                                  <i className="site-mini__bar" style={vars({ "--w": "74%" })} />
+                                  <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "92%" })} />
+                                  <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "58%" })} />
+                                  <span className="site-mini__foot">
+                                    <span className="site-mini__pick site-steps__pop">Это я</span>
+                                  </span>
+                                </div>
                               </div>
-                              <div className="site-mini__card">
-                                <span className="site-tag">Совпадение 02</span>
-                                <i className="site-mini__bar" style={vars({ "--w": "62%" })} />
-                                <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "40%" })} />
+                              <div className="site-mini__idcard is-off">
+                                <span className="site-mini__tab" />
+                                <div className="site-mini__sheet">
+                                  <i className="site-mini__bar" style={vars({ "--w": "62%" })} />
+                                  <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "84%" })} />
+                                  <i className="site-mini__bar site-mini__bar--thin" style={vars({ "--w": "40%" })} />
+                                  <span className="site-mini__foot">
+                                    <i />
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           ) : (
-                            <div className="site-mini site-mini--result">
-                              <span className="site-tag">Уровень риска</span>
-                              <div className="site-meter site-meter--medium">
-                                <MediumMeter fill />
-                              </div>
+                            <div className="site-mini site-mini--result site-verdict--medium">
+                              <Dial filled={2} />
                               <p className="site-mini__level site-steps__pop">
                                 <b>Средний</b>
                                 <span>4 материала в 2 темах</span>
@@ -160,33 +173,38 @@ export default function LandingPage() {
 
             <div className="site-example__panel site-reveal">
               <ResultDemo>
-                <div className="site-verdict site-verdict--medium" style={{ padding: 0 }}>
-                  <div className="site-verdict__scale">
-                    <div className="site-meter site-meter--medium" role="img" aria-label={MEDIUM_METER_LABEL}>
-                      <MediumMeter />
-                    </div>
+                {/* Показание дугой — то же, что на настоящем результате: число материалов внутри */}
+                <div className="site-demo__readout site-verdict--medium">
+                  <Dial
+                    filled={2}
+                    pointerAngle={DIAL_POINTER_ANGLES[1]}
+                    size="md"
+                    ticks
+                    num="4"
+                    unit="материала с негативом"
+                    ariaLabel={MEDIUM_METER_LABEL}
+                  />
+                  <div>
                     <span className="site-tag">Уровень риска</span>
-                  </div>
-                  <div className="site-verdict__row">
                     <span className="site-verdict__level">Средний</span>
-                    <span className="site-verdict__count">
-                      <b>4</b> материала с негативом
-                    </span>
                   </div>
                 </div>
                 <div className="site-findings site-findings--compact">
                   {EXAMPLE.themes.map((theme) => (
-                    <div className="site-finding" key={theme.label}>
+                    <div className={`site-finding ${VERDICT_TONE_CLASS[theme.tone]}`} key={theme.label}>
                       <h3 className="site-finding__theme">
                         {/* Без выделителя под названием: сирень на сайте значит «найдено» и «выбрано»,
                             а здесь тема — заголовок группы, а не находка (владелец 18.09.2026) */}
                         <span className="site-finding__label">{theme.label}</span>
                         <span className="site-finding__count">{theme.count}</span>
                       </h3>
+                      <span className="site-theme__bar" aria-hidden="true">
+                        <i style={vars({ "--p": theme.bar })} />
+                      </span>
                       <ul className="site-finding__list">
                         {theme.items.map((item) => (
                           <li key={item}>
-                            <Blurred text={item} label="Материал, заголовок скрыт" />
+                            <Blurred text={item} label={RESULT_TEXT.hiddenMaterial} />
                           </li>
                         ))}
                       </ul>

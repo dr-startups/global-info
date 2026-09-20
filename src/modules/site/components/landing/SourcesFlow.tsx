@@ -21,8 +21,10 @@
 
 import { useEffect, useRef } from "react";
 import { SOURCES } from "@/modules/site/content/landing";
+import { Dial } from "../Dial";
 import { Masked } from "../Hidden";
-import { MEDIUM_METER_LABEL, MediumMeter } from "./parts";
+import { SourceSign } from "../SiteIcons";
+import { MEDIUM_METER_LABEL } from "./parts";
 
 const NS = "http://www.w3.org/2000/svg";
 
@@ -40,7 +42,8 @@ export function SourcesFlow() {
     const list = root.querySelector<HTMLElement>(".site-flow__sources");
     if (!svg || !start || !result || !list) return;
     const sources = Array.from(root.querySelectorAll<HTMLElement>(".site-flow__source"));
-    const segs = Array.from(result.querySelectorAll<HTMLElement>(".site-meter__seg"));
+    // Дуги показания наливаются по очереди, когда пришёл последний источник
+    const arcs = Array.from(result.querySelectorAll<SVGPathElement>(".site-dial__on"));
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const wide = () => window.matchMedia("(min-width: 1024px)").matches;
 
@@ -140,7 +143,7 @@ export function SourcesFlow() {
     const finalState = () => {
       wires.forEach((w) => (w.style.strokeDasharray = ""));
       sources.forEach((s) => s.classList.add("is-done"));
-      segs.slice(0, 2).forEach((s) => s.classList.add("is-on"));
+      arcs.forEach((arc) => arc.classList.add("is-on"));
       root.classList.remove("is-playing");
       root.classList.add("is-done");
     };
@@ -177,7 +180,7 @@ export function SourcesFlow() {
       root.classList.add("is-playing");
       root.classList.remove("is-done");
       sources.forEach((s) => s.classList.remove("is-done"));
-      segs.forEach((s) => s.classList.remove("is-on"));
+      arcs.forEach((arc) => arc.classList.remove("is-on"));
       pulses.dots.forEach((d) => (d.style.opacity = "0"));
       const n = sources.length;
       wires.forEach((w, i) => drawWire(w, wide() ? (i < n ? i * 80 : 700 + (i - n) * 80) : i * 900, 420));
@@ -190,8 +193,8 @@ export function SourcesFlow() {
           window.setTimeout(() => {
             travel(pulses!.out[i]!, dot, 620, () => {
               if (i !== n - 1) return;
-              segs.slice(0, 2).forEach((seg, j) => {
-                timers.push(window.setTimeout(() => seg.classList.add("is-on"), j * 140));
+              arcs.forEach((arc, j) => {
+                timers.push(window.setTimeout(() => arc.classList.add("is-on"), j * 140));
               });
               timers.push(
                 window.setTimeout(() => {
@@ -272,9 +275,7 @@ export function SourcesFlow() {
       <ol className="site-flow__sources" aria-label="Группы источников">
         {SOURCES.items.map((item) => (
           <li className="site-flow__node site-flow__source" key={item.title}>
-            <svg viewBox="0 0 32 32" aria-hidden="true">
-              <use href={`#${item.icon}`} />
-            </svg>
+            <SourceSign id={item.icon} />
             <strong>{item.title}</strong>
             <span>{item.text}</span>
             <span className="site-flow__badge">
@@ -287,12 +288,10 @@ export function SourcesFlow() {
         ))}
       </ol>
 
-      <div className="site-flow__node site-flow__result">
+      <div className="site-flow__node site-flow__result site-verdict--medium">
         <strong>{SOURCES.result.title}</strong>
-        <div className="site-meter site-meter--medium" role="img" aria-label={MEDIUM_METER_LABEL}>
-          <MediumMeter />
-        </div>
-        <div className="site-verdict site-verdict--medium">
+        <Dial filled={2} ariaLabel={MEDIUM_METER_LABEL} />
+        <div className="site-verdict">
           <div className="site-verdict__row">
             <span className="site-verdict__level">{SOURCES.result.level}</span>
             <span className="site-verdict__count">

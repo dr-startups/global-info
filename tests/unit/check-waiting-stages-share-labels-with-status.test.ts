@@ -82,7 +82,7 @@ describe("экран ожидания", () => {
       ["collecting", "current", "идёт"],
       ["verdict", "pending", "ожидает"],
     ]);
-    expect(view.stages.every((s) => s.what.length > 0)).toBe(true);
+    expect(view.stages.every((s) => s.tags.length > 0)).toBe(true);
   });
 
   it("вердикт идёт — сбор готов", () => {
