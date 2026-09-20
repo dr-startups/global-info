@@ -260,6 +260,9 @@ export function clientThemeWhy(themeId: string | undefined): string {
   );
 }
 
+/** Охват глобального утверждения: весь корпус отчёта. */
+export const REPORT_SCOPE_WORDS = "по отчёту";
+
 /**
  * Строка счёта темы — одна формулировка на отчёт.
  *
@@ -268,11 +271,25 @@ export function clientThemeWhy(themeId: string | undefined): string {
  * предложение обязано быть одним: соседние листы одного раздела, называющие
  * одно и то же двумя разными фразами, читаются как разные сущности.
  */
-export function themeScaleLine(count: number, adverseCount: number): string {
+export function themeScaleLine(count: number, adverseCount: number, scope?: string): string {
   const total = pluralRu(count, "материал", "материала", "материалов");
+  /*
+   * Охват стоит рядом с числом (шаг 0133).
+   *
+   * Стр. 9 отчёта Мордашова 20.09.2026: «Корпоративное владение. Всего по
+   * теме: 39 материалов». Стр. 15, та же тема: «Всего по теме: 31 материал».
+   * Оба числа верны — матрица считает по отчёту, региональная страница по
+   * своему региону, — но охват не назван ни там, ни там, и читатель видит
+   * спор. Форма предложения остаётся одной: меняется не она, а то, что в ней
+   * сказано.
+   *
+   * Охват необязателен: артефакт прошлого прогона его не несёт, и строка у
+   * него остаётся прежней.
+   */
+  const where = scope ? ` ${scope}` : "";
   return adverseCount > 0
-    ? `Всего по теме: ${count} ${total}, с негативным контекстом — ${adverseCount}.`
-    : `Всего по теме: ${count} ${total}.`;
+    ? `Всего по теме: ${count} ${total}${where}, с негативным контекстом — ${adverseCount}.`
+    : `Всего по теме: ${count} ${total}${where}.`;
 }
 
 /**
@@ -908,7 +925,7 @@ export function buildClientFacingClaim(input: {
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
-  const scale = themeScaleLine(input.itemsCount, input.adverseCount);
+  const scale = themeScaleLine(input.itemsCount, input.adverseCount, REPORT_SCOPE_WORDS);
 
   // Domain anchors stay on quote lines («…» — источник domain) — do NOT append
   // «(в т.ч. материалы на …)» to framing: long parentheticals get mid-clipped by

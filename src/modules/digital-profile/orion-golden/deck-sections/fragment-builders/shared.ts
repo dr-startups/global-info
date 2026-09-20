@@ -2139,9 +2139,18 @@ function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string
     );
   }
   if (adverseByMaterial.size === 0) return "";
+  /*
+   * Охват региональной строки — её регионы (шаг 0133): «по России», «по ОАЭ».
+   * Регионов у среза может быть несколько (международный контур собирается из
+   * трёх кодов), и тогда называются все — молчать о части нельзя.
+   */
+  const scope = regions.length > 0
+    ? `по ${[...new Set(regions.map((r) => regionClientLabelGenitive(String(r))))].join(" и ")}`
+    : undefined;
   return themeScaleLine(
     adverseByMaterial.size,
-    [...adverseByMaterial.values()].filter(Boolean).length
+    [...adverseByMaterial.values()].filter(Boolean).length,
+    scope
   );
 }
 
@@ -2488,6 +2497,24 @@ export const REGION_CLIENT_LABELS: Record<string, string> = {
  * Незнакомый контур — это не «нет региона»: назвать его нечем, но умолчать о
  * нём значило бы потерять материалы, которые в нём собраны.
  */
+/**
+ * Название региона в родительном падеже: «по России», «по ОАЭ» (шаг 0133).
+ *
+ * Список короткий и закрытый, поэтому формы записаны, а не выведены правилом:
+ * склонение «международного контура» правилом получается неверным.
+ */
+const REGION_CLIENT_LABELS_GENITIVE: Record<string, string> = {
+  RU: "России",
+  UAE: "ОАЭ",
+  INTERNATIONAL: "международному контуру",
+  GLOBAL: "глобальному контуру",
+};
+
+export function regionClientLabelGenitive(region: string): string {
+  const raw = String(region ?? "").trim();
+  return REGION_CLIENT_LABELS_GENITIVE[raw.toUpperCase()] ?? regionClientLabel(raw);
+}
+
 export function regionClientLabel(region: string): string {
   const raw = String(region ?? "").trim();
   return REGION_CLIENT_LABELS[raw.toUpperCase()] ?? raw;

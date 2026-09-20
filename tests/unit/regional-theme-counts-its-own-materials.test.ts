@@ -1,4 +1,9 @@
 /**
+ * Правка теста шага 0133: ожидания строки счёта получили охват («по России»,
+ * «по ОАЭ»). Предмет теста прежний — что региональная строка считает свои
+ * материалы, а не переносит число глобального утверждения.
+ */
+/**
  * Счёт материалов темы на региональной странице сходится с её цитатами.
  *
  * Блок темы на региональной странице пересобирается из свидетельств этого
@@ -64,7 +69,7 @@ describe("строка счёта на региональной странице
         },
       })
     );
-    expect(claim).toContain("Всего по теме: 1 материал, с негативным контекстом — 1.");
+    expect(claim).toContain("Всего по теме: 1 материал по ОАЭ, с негативным контекстом — 1.");
     expect(claim).not.toContain("2 материала");
   });
 
@@ -87,7 +92,7 @@ describe("строка счёта на региональной странице
         "ev-uae-q2": { ...material, url: "http://www.gulfnews.com/a/" },
       })
     );
-    expect(claim).toContain("Всего по теме: 1 материал, с негативным контекстом — 1.");
+    expect(claim).toContain("Всего по теме: 1 материал по ОАЭ, с негативным контекстом — 1.");
   });
 
   it("два разных материала региона — «2 материала»", () => {
@@ -119,7 +124,7 @@ describe("строка счёта на региональной странице
         },
       })
     );
-    expect(claim).toContain("Всего по теме: 2 материала, с негативным контекстом — 2.");
+    expect(claim).toContain("Всего по теме: 2 материала по ОАЭ, с негативным контекстом — 2.");
   });
 
   it("хвост негатива считает решение аналитика", () => {
@@ -161,7 +166,7 @@ describe("строка счёта на региональной странице
         },
       })
     );
-    expect(claim).toContain("Всего по теме: 3 материала, с негативным контекстом — 1.");
+    expect(claim).toContain("Всего по теме: 3 материала по ОАЭ, с негативным контекстом — 1.");
   });
 
   it("материал без региона не считается ни в одном регионе", () => {
@@ -203,8 +208,8 @@ describe("строка счёта на региональной странице
     };
     const ru = localizedThemedClaim(withDatabaseHits, scopedFor("RU", index));
     const uae = localizedThemedClaim(withDatabaseHits, uaeScoped(index));
-    expect(ru).toContain("Всего по теме: 1 материал, с негативным контекстом — 1.");
-    expect(uae).toContain("Всего по теме: 1 материал, с негативным контекстом — 1.");
+    expect(ru).toContain("Всего по теме: 1 материал по России, с негативным контекстом — 1.");
+    expect(uae).toContain("Всего по теме: 1 материал по ОАЭ, с негативным контекстом — 1.");
     expect(ru).not.toContain("Совпадение в базе Dow Jones");
     expect(uae).not.toContain("Совпадение в базе LexisNexis");
   });
@@ -273,7 +278,7 @@ describe("соседние пункты одного раздела считаю
   it("регион-эксклюзивный пункт пересчитывает счёт по материалам региона", () => {
     const claim = localizedThemedClaim(EXCLUSIVE, scopedFor("RU", INDEX));
     // Две ссылки одной страницы — один материал, и негативен он один.
-    expect(claim).toContain("Всего по теме: 2 материала, с негативным контекстом — 1.");
+    expect(claim).toContain("Всего по теме: 2 материала по России, с негативным контекстом — 1.");
     expect(claim).not.toContain("3 материала");
   });
 
@@ -282,7 +287,7 @@ describe("соседние пункты одного раздела считаю
     const cross = localizedThemedClaim(CROSS, scopedFor("RU", INDEX));
     const scaleOf = (claim: string): string =>
       claim.split("\n").find((l) => l.startsWith("Всего по теме:")) ?? "";
-    expect(scaleOf(exclusive)).toBe("Всего по теме: 2 материала, с негативным контекстом — 1.");
+    expect(scaleOf(exclusive)).toBe("Всего по теме: 2 материала по России, с негативным контекстом — 1.");
     expect(scaleOf(cross)).toBe(scaleOf(exclusive));
   });
 
@@ -294,7 +299,7 @@ describe("соседние пункты одного раздела считаю
       evidenceRefs: ["ev-ru-2"],
     } as unknown as Finding;
     const claim = localizedThemedClaim(onlyClean, scopedFor("RU", INDEX));
-    expect(claim).toContain("Всего по теме: 1 материал.");
+    expect(claim).toContain("Всего по теме: 1 материал по России.");
     expect(claim).not.toContain("негативным контекстом");
   });
 });
@@ -345,7 +350,7 @@ describe("тема без пригодной цитаты в регионе пе
   it("площадка названа, счёт — региональный", () => {
     const claim = localizedThemedClaim(FINDING, SCOPED);
     expect(claim).toContain("По теме в источниках instagram.com");
-    expect(claim).toContain("Всего по теме: 1 материал.");
+    expect(claim).toContain("Всего по теме: 1 материал по ОАЭ.");
     expect(claim).not.toContain("2 материала");
   });
 
