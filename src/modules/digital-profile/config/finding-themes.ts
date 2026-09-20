@@ -35,6 +35,18 @@ export type ThemeDef = {
    * всегда.
    */
   accusing: boolean;
+  /**
+   * Показывает ли тему лид принадлежности — первая фраза материала, которая
+   * называет, кто такой субъект (шаг 0125).
+   *
+   * У всех тем, кроме биографической, это анкета материала, а не факт, из-за
+   * которого материал в теме: «Roman Arkadyevich Abramovich (born 24 October
+   * 1966) is a Russian businessman and politician.» совпадает с политическим
+   * словарём словом «politician» и не говорит о политических связях ничего.
+   * У «Делового профиля» биография и есть предмет темы, и там лид — цитата
+   * по существу.
+   */
+  quotesIdentityLead: boolean;
 };
 
 const RiskLevelSchema = z.enum(["none", "low", "medium", "high", "critical"]);
@@ -58,6 +70,12 @@ const ThemeDefJsonSchema = z.object({
    * без умолчания схема отказывает им целиком, а не одному признаку.
    */
   accusing: z.boolean().default(true),
+  /**
+   * Показывает ли тему лид принадлежности. Умолчание строгое: тема, про
+   * которую каталог молчит, лид не цитирует — иначе правило включалось бы
+   * само на каждой новой теме.
+   */
+  quotesIdentityLead: z.boolean().default(false),
 });
 
 export const FindingThemesConfigJsonSchema = z.object({
@@ -457,6 +475,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
     themes: [
       {
         themeId: "security_scrutiny",
+        quotesIdentityLead: false,
         accusing: true,
         label: "Внимание по линии безопасности / оборонный контур",
         keywords:
@@ -470,6 +489,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "criminal_legal",
+        quotesIdentityLead: false,
         accusing: true,
         label: "Криминальные / судебные материалы",
         keywords:
@@ -483,6 +503,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "pep_rca_watchlist",
+        quotesIdentityLead: false,
         accusing: true,
         label: "PEP / RCA / watchlist-сигналы",
         keywords: "\\bpep\\b|\\brca\\b|watch.?list|санкц|sanction|комплаенс|compliance",
@@ -494,6 +515,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "political_exposure",
+        quotesIdentityLead: false,
         label: "Политические связи / публичная экспозиция",
         // Публичная должность и связи — то, что описывают, а не в чём обвиняют:
         // нейтрально прочитанная публикация здесь законное доказательство темы.
@@ -519,6 +541,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "offshore_structures",
+        quotesIdentityLead: false,
         accusing: true,
         label: "Офшорные структуры",
         keywords: "офшор|offshore|кипр|cyprus|\\bbvi\\b|панам|panama",
@@ -530,6 +553,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "corporate_ownership",
+        quotesIdentityLead: false,
         // Покупка компании — то, что описывают, а не то, в чём обвиняют.
         // Слово «владел» стояло в одной теме с офшором, и «стал владельцем
         // "Рольфа"» выходило к читателю обвинением среднего уровня под ярлыком,
@@ -556,6 +580,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "family_associates",
+        quotesIdentityLead: false,
         accusing: true,
         label: "Семья и деловые связи",
         keywords:
@@ -567,6 +592,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
       {
         themeId: "financial_claims",
+        quotesIdentityLead: false,
         accusing: true,
         label: "Финансовые претензии / долговые споры",
         keywords:
@@ -580,6 +606,9 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         themeId: "business_profile",
         label: "Деловой профиль",
         accusing: false,
+        // Биография и есть предмет темы: лид принадлежности здесь цитата по
+        // существу, а не анкета (шаг 0125). Единственная такая тема каталога.
+        quotesIdentityLead: true,
         // Industry terms stay here as a soft universal bucket; override JSON can
         // move them into a dedicated industry_contour theme when needed.
         keywords:
@@ -797,6 +826,7 @@ export function compileFindingThemesConfig(
     baseRisk: t.baseRisk,
     recommendedAction: t.recommendedAction,
     accusing: t.accusing,
+    quotesIdentityLead: t.quotesIdentityLead,
   }));
 
   const defaults = getDefaultFindingThemesConfigJson();

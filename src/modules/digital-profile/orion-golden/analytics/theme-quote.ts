@@ -32,6 +32,7 @@ import {
   looksLikeSearchQuery,
   looksLikeSurfaceBlockHeading,
   looksLikePlatformNavigation,
+  looksLikeHeadlineStrip,
   looksLikeUiCallToAction,
   PLATFORM_READ_MORE,
 } from "./client-quote-hygiene";
@@ -174,7 +175,8 @@ export function looksLikeWholeStatement(text: string): boolean {
     looksLikeSearchQuery(t) ||
     looksLikeSurfaceBlockHeading(t) ||
     looksLikeUiCallToAction(t) ||
-    looksLikePlatformNavigation(t)
+    looksLikePlatformNavigation(t) ||
+    looksLikeHeadlineStrip(t)
   ) {
     return false;
   }
@@ -372,6 +374,31 @@ export function carriesThemeSignal(
     !allHitsAreForeign(value, adverse, foreign) &&
     !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
   );
+}
+
+/**
+ * Обобщение о классе лиц, а не о субъекте (шаг 0125).
+ *
+ * Стр. 67 и 68 отчёта Абрамовича 20.09.2026 печатали под «Политическими
+ * связями» и под «Семьёй и деловыми связями» одну и ту же фразу eg.ru: «В
+ * основном крупные современные политики и бизнесмены – дети советских
+ * партийных и хозяйственных функционеров.» Слово темы в ней есть
+ * («политики»), целой фразой она является, и о проверяемом лице она не
+ * говорит ничего: подлежащее — класс людей.
+ *
+ * Признак — обобщающий оборот в начале **и** отсутствие имени субъекта в
+ * самой фразе. Второе условие обязательно: «Как правило, Абрамович голосовал
+ * вместе с фракцией» — то же начало, но это высказывание о нём. Имён субъекта
+ * нет вовсе — судить не по чему, и правило молчит.
+ */
+const GENERALIZATION_OPENER_RE =
+  /^[«"„(\s]*(?:в\s+основном|в\s+большинстве\s+случаев|как\s+правило|обычно|чаще\s+всего|зачастую|нередко|большинство|многие)(?!\p{L})/iu;
+
+export function looksLikeGeneralization(text: string, stems: readonly string[]): boolean {
+  if (stems.length === 0) return false;
+  const t = withoutSourceMarkup(String(text ?? "")).replace(/\s+/gu, " ").trim();
+  if (!GENERALIZATION_OPENER_RE.test(t)) return false;
+  return !textNamesSubject(t, stems);
 }
 
 /**

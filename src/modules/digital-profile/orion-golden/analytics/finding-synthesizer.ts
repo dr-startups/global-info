@@ -63,6 +63,8 @@ import {
   carriesThemeSignal,
   DANGLING_TAIL_RE,
   hasDanglingTail,
+  looksLikeGeneralization,
+  looksLikeIdentityLead,
   looksLikePlatformNavigation,
   looksLikeWholeStatement,
   snippetSentencesAboutSubject,
@@ -672,6 +674,27 @@ function fitSentence(text: string, budget: number): { text: string; truncated: b
  * («После публикации расследования…» → «Расследование…»), а обрывок без
  * маркера печатался целой фразой («На выборах он был единственным»).
  */
+/**
+ * Заголовок, годный в цитату: целая фраза и не о другом человеке (шаг 0125).
+ *
+ * Один ответ на вопрос «можно ли цитировать этот заголовок». Его зовут
+ * страницы региона (`resolveExampleQuote`) и сиротская претензия резюме
+ * (`canonical-claim-builder`): вторая брала заголовок как есть, и на стр. 6
+ * отчёта Абрамовича под политической темой стояло голое имя «Абрамович Роман
+ * Аркадьевич». Сигнал темы здесь не проверяется — он у двух вызывающих разный
+ * (у претензии тема уже выведена по тексту), а вопрос «фраза ли это» один.
+ */
+export function quotableTitle(
+  title: string,
+  stems: readonly string[] = [],
+  budget = CLAIM_QUOTE_BUDGET
+): string | null {
+  const raw = String(title ?? "");
+  if (titleNamesAnotherPerson(raw, stems)) return null;
+  const q = quoteForClaim(raw, budget);
+  return q && looksLikeWholeStatement(q) ? q : null;
+}
+
 export function resolveExampleQuote(
   item: QuotableMaterial,
   theme: ThemeDef,
@@ -688,8 +711,21 @@ export function resolveExampleQuote(
   const url = String(item.sourceUrl ?? "");
   const stems = stemsOf(ctx?.subjectNames);
   const platformSignal = Boolean(theme.domains?.test(url));
-  const carries = (text: string): boolean =>
-    platformSignal || carriesThemeSignal(text, theme, subjectContext);
+  /*
+   * Фраза годится под эту тему, когда она несёт её сигнал и говорит о
+   * субъекте (шаг 0125).
+   *
+   * Лид принадлежности показывает тему только там, где предмет темы — сама
+   * биография (`quotesIdentityLead`): в остальных темах слово словаря стоит в
+   * перечне занятий («…is a Russian businessman and politician»), то есть
+   * называет человека, а не факт. Обобщение о классе лиц не о субъекте вовсе.
+   */
+  const fits = (text: string): boolean => {
+    if (!platformSignal && !carriesThemeSignal(text, theme, subjectContext)) return false;
+    if (!theme.quotesIdentityLead && looksLikeIdentityLead(text)) return false;
+    return !looksLikeGeneralization(text, stems);
+  };
+  const carries = fits;
   const example = (
     title: string,
     source: NonNullable<ClaimEvidenceExample["source"]>,
@@ -725,8 +761,8 @@ export function resolveExampleQuote(
   const rawTitle = String(item.title ?? "");
   if (titleNamesAnotherPerson(rawTitle, stems)) return null;
   if (!isWeakExampleTitle(rawTitle, { theme })) {
-    const q = quoteForClaim(rawTitle, CLAIM_QUOTE_BUDGET);
-    if (q && carries(q) && looksLikeWholeStatement(q)) return example(q, "title");
+    const q = quotableTitle(rawTitle, stems);
+    if (q && carries(q)) return example(q, "title");
   }
 
   // 3. Предложение сниппета — о субъекте, целое, с сигналом.

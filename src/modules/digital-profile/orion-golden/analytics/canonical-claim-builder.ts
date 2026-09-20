@@ -23,6 +23,8 @@ import {
   type ClaimKind,
 } from "../contracts/canonical-claim";
 import type { FindingSynthesisResult } from "./finding-synthesizer";
+import { quotableTitle } from "./finding-synthesizer";
+import { subjectNameStems } from "./theme-quote";
 import {
   classifyCanonicalThemes,
   mapLegacyThemeId,
@@ -346,6 +348,14 @@ function buildFromFinding(input: {
  * Material adverse evidence kept in disposition but not yet a finding claim —
  * emit a supporting CanonicalClaim so it cannot vanish without theme/trace.
  */
+/**
+ * Цитаты нет — строка говорит об этом теми же словами, что и региональный блок
+ * (`buildClientFacingClaim`). Сиротская претензия живёт только у материала с
+ * негативом или признаками существенности, поэтому суть здесь всегда «риска».
+ */
+const NO_HEADLINE_LINE =
+  "Отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.";
+
 function buildOrphanMaterialClaims(input: {
   subjectId: string;
   itemsByRef: Map<string, RawInventoryItem>;
@@ -353,6 +363,7 @@ function buildOrphanMaterialClaims(input: {
   coveredRefs: Set<string>;
 }): CanonicalClaim[] {
   const out: CanonicalClaim[] = [];
+  const subjectStems = subjectNameStems([input.subjectId]);
   for (const entry of input.dispositionLedger.entries) {
     if (input.coveredRefs.has(entry.rawObservationId)) continue;
     if (
@@ -405,11 +416,23 @@ function buildOrphanMaterialClaims(input: {
       dispositionKeep: true,
     });
 
+    /*
+     * Цитата сироты судится тем же предикатом, что цитата страницы региона
+     * (шаг 0125).
+     *
+     * Здесь стоял `entry.originalTitle` как есть, и на стр. 6 отчёта
+     * Абрамовича 20.09.2026 под темой «Политические связи и публичная
+     * экспозиция» это дало «Абрамович Роман Аркадьевич» — анкетное имя вместо
+     * фразы. Заголовок фразой не является — цитаты нет, и строка говорит об
+     * этом словами: выдумывать её нельзя, а сниппет, отрезанный по счётчику
+     * знаков, — та же выдумка.
+     */
+    const quote = quotableTitle(entry.originalTitle, subjectStems);
     const fullClaimText = [
       themeLabelRu(ensuredThemes[0]!),
-      entry.originalTitle
-        ? sourceQuote(entry.originalTitle, sourceAttribution({ url: item?.sourceUrl, domain: domains[0] }))
-        : entry.originalSnippet.slice(0, 240),
+      quote
+        ? sourceQuote(quote, sourceAttribution({ url: item?.sourceUrl, domain: domains[0] }))
+        : NO_HEADLINE_LINE,
     ]
       .filter(Boolean)
       .join("\n");

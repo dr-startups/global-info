@@ -163,14 +163,43 @@ const NAV_SEPARATOR_RE = /\s*[·•]\s*/u;
 const MAX_NAV_LABEL_WORDS = 3;
 
 export function looksLikePlatformNavigation(text: string): boolean {
-  const parts = String(text ?? "")
+  const parts = separatedParts(text);
+  if (parts.length < 2) return false;
+  return parts.every((p) => wordCount(p) <= MAX_NAV_LABEL_WORDS);
+}
+
+function separatedParts(text: string): string[] {
+  return String(text ?? "")
     .split(NAV_SEPARATOR_RE)
     .map((p) => p.trim())
     .filter(Boolean);
+}
+
+function wordCount(text: string): number {
+  return text.split(/\s+/u).filter((w) => /\p{L}/u.test(w)).length;
+}
+
+/**
+ * Полоса из нескольких заголовков, а не одна фраза (шаг 0125).
+ *
+ * Стр. 69 отчёта Абрамовича 20.09.2026 печатала под темой «PEP / RCA /
+ * watchlist-сигналы»: «Новости · Франция добивается снятия санкций ЕС с
+ * Алишера Усманова · Суд ЕС отклонил третий иск Абрамовича против санкций.»
+ * Площадка сложила в одну строку ярлык раздела и два разных сюжета, и первый
+ * из них — о другом человеке. Клиент читает это как одно высказывание.
+ *
+ * Признак — **два и более куска, каждый длиной с фразу**. Он дополняет
+ * правило навигации, а не спорит с ним: там все куски короткие (ярлыки меню),
+ * здесь длинные (заголовки). Заголовок с подписью издания («…с Абрамовича ·
+ * ТАСС») ни под то, ни под другое не попадает: подпись — один кусок из одного
+ * слова, и снимает её чистка заголовка.
+ */
+const MIN_HEADLINE_WORDS = 4;
+
+export function looksLikeHeadlineStrip(text: string): boolean {
+  const parts = separatedParts(text);
   if (parts.length < 2) return false;
-  return parts.every(
-    (p) => p.split(/\s+/u).filter((w) => /\p{L}/u.test(w)).length <= MAX_NAV_LABEL_WORDS
-  );
+  return parts.filter((p) => wordCount(p) >= MIN_HEADLINE_WORDS).length >= 2;
 }
 
 /**
