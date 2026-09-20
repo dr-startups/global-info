@@ -153,17 +153,51 @@ export function packSentencesNoTruncate(
   );
   if (units.length === 0) return [];
   const chunks: string[] = [];
-  let buf = "";
-  for (const { sentence, startsLine } of units) {
-    const trial = buf ? `${buf}${startsLine ? "\n" : " "}${sentence}` : sentence;
-    if (buf && trial.length > maxChars) {
-      chunks.push(buf);
-      buf = sentence;
+  /*
+   * Куски собираются из единиц, а не из строки (шаг 0134).
+   *
+   * Стр. 7 отчёта Мордашова 20.09.2026 кончалась строкой «OFAC / sanctions
+   * list.», а стр. 8 начиналась её телом: «По открытым/импортированным данным
+   * есть сигнал…». Название источника без своего утверждения не значит
+   * ничего, и читатель видит обрыв. Чтобы хвост можно было передвинуть, кусок
+   * обязан помнить, из чего он собран.
+   */
+  type Unit = { sentence: string; startsLine: boolean };
+  let buf: Unit[] = [];
+  const glue = (rows: Unit[]): string =>
+    rows.reduce((acc, u, i) => (i === 0 ? u.sentence : `${acc}${u.startsLine ? "\n" : " "}${u.sentence}`), "");
+  /**
+   * Короткий хвост куска — ярлык: он уезжает вместе с тем, что за ним идёт.
+   *
+   * Сдвигается только когда в куске остаётся что печатать: кусок из одного
+   * ярлыка пустым не делается, иначе укладка зациклится, а строка исчезнет.
+   */
+  const LABEL_TAIL_CHARS = 40;
+  const pushChunk = (carry: Unit): Unit[] => {
+    if (buf.length >= 2) {
+      const tail = buf[buf.length - 1]!;
+      // Сдвиг разрешён, только если ярлык и его тело вместе влезают в бюджет:
+      // иначе кусок уехал бы за поле, и потеря содержимого была бы ценой
+      // косметики.
+      const moved = glue([tail, carry]);
+      if (tail.sentence.length <= LABEL_TAIL_CHARS && moved.length <= maxChars) {
+        buf = buf.slice(0, -1);
+        chunks.push(glue(buf));
+        return [tail, carry];
+      }
+    }
+    chunks.push(glue(buf));
+    return [carry];
+  };
+  for (const unit of units) {
+    const trial = buf.length > 0 ? `${glue(buf)}${unit.startsLine ? "\n" : " "}${unit.sentence}` : unit.sentence;
+    if (buf.length > 0 && trial.length > maxChars) {
+      buf = pushChunk(unit);
     } else {
-      buf = trial;
+      buf.push(unit);
     }
   }
-  if (buf) chunks.push(buf);
+  if (buf.length > 0) chunks.push(glue(buf));
   return chunks;
 }
 
