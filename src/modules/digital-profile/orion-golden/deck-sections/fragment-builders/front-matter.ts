@@ -4,6 +4,7 @@
  */
 
 import type { SectionType } from "../contracts";
+import { quoteBody } from "../../client/client-quote";
 import type { PersonaDecisionRecord, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -143,17 +144,41 @@ const ANCHORED_CHECK =
  * Малоизвестного человека внешние карточки не находят, и «персоны нет» — не
  * ответ: по нему прогон DPA-2026-0049 собрал четырёх разных людей.
  */
-function anchorNarrativeLines(record: PersonaDecisionRecord | undefined): string[] {
+export function anchorNarrativeLines(record: PersonaDecisionRecord | undefined): string[] {
   const a = record?.anchors;
   if (!a) return [];
+  /*
+   * Признак печатается тем же способом, что и цитата (шаг 0131).
+   *
+   * Стр. 3 отчёта Мордашова 20.09.2026: ««Северсталь»» и «председатель совета
+   * директоров «Северстали»» — обёртка стояла поверх того, что уже в ёлочках.
+   * Оператор пишет признак как ему удобно, и у вопроса «как печатается чужой
+   * текст в кавычках» ответ один — `quoteBody`.
+   *
+   * Одинаковые после снятия обёртки признаки — один признак: «Северсталь» и
+   * ««Северсталь»» различались только ею.
+   */
+  const phrase = (text: string): string => `«${quoteBody(text)}»`;
+  const uniquePhrases = (rows: typeof a.phrases): string[] => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const p of rows) {
+      const printed = phrase(p.text);
+      const key = printed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(printed);
+    }
+    return out;
+  };
   const named = [
     a.birthDate ? `дата рождения ${a.birthDate}` : "",
-    ...a.phrases.filter((p) => p.strong).map((p) => `«${p.text}»`),
+    ...uniquePhrases(a.phrases.filter((p) => p.strong)),
     ...a.inn.map((i) => `ИНН ${i}`),
     ...a.domains.map((d) => `сайт ${d}`),
   ].filter(Boolean);
   if (named.length === 0) return [];
-  const weak = a.phrases.filter((p) => !p.strong).map((p) => `«${p.text}»`);
+  const weak = uniquePhrases(a.phrases.filter((p) => !p.strong));
   const confirmedOn = (a.confirmedOn ?? []).slice(0, 3);
   return [
     `Перед началом сбора оператор назвал признаки проверяемого лица: ${enumerateRu(

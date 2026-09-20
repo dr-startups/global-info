@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v214" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v215" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -750,7 +750,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v214" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "29e2173c60b6d41f" as const;
+export const DECK_BUILDER_FINGERPRINT = "aeb4fd1817fd9c58" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -773,7 +773,7 @@ export const DECK_BUILDER_FINGERPRINT = "29e2173c60b6d41f" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v214" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v215" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
