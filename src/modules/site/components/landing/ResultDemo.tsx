@@ -12,7 +12,6 @@
 
 import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { EXAMPLE } from "@/modules/site/content/landing";
-import { Button } from "../Button";
 
 type FeedItem = (typeof EXAMPLE.feed)[number];
 
@@ -120,12 +119,15 @@ export function ResultDemo({ children }: { children: ReactNode }) {
           if (entry.intersectionRatio >= 0.35 && !visible) {
             visible = true;
             run();
-          } else if (entry.intersectionRatio === 0) {
+          } else if (entry.intersectionRatio < 0.1) {
+            // Пролистал мимо — при следующем возвращении проигрывание начнётся заново.
+            // Порог именно 0.1, а не «ушла целиком»: высокая панель на большом экране
+            // полностью не уходит, и кнопка «показать ещё раз» была единственным способом.
             visible = false;
           }
         }
       },
-      { threshold: [0, 0.35] }
+      { threshold: [0, 0.1, 0.35] }
     );
     observer.observe(root);
     return () => {
@@ -141,9 +143,6 @@ export function ResultDemo({ children }: { children: ReactNode }) {
           <span className="site-demo__stage" ref={stage} aria-live="polite">
             {FINAL_STAGE}
           </span>
-          <Button variant="ghost" className="site-demo__replay" onClick={run}>
-            Показать ещё раз
-          </Button>
         </div>
         <div
           className="site-progress"

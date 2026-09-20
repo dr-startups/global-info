@@ -81,20 +81,24 @@ describe("«Проверка остаётся вашим делом» — одн
     expect(page).not.toMatch(/site-term__record/u);
   });
 
-  it("сцену проигрывает свой клиентский компонент, и её можно показать ещё раз", () => {
+  it("сцену проигрывает свой клиентский компонент, и она начинается заново при возвращении в окно", () => {
     expect(existsSync(join(root, KEEP_SCENE)), KEEP_SCENE).toBe(true);
     const keep = code(KEEP_SCENE);
     expect(keep).toMatch(/^"use client";/u);
     expect(keep).toMatch(/site-keep__scene/u);
-    expect(keep).toMatch(/site-keep__replay/u);
+    // Кнопки «показать ещё раз» нет с 20.09.2026: сцена играет сама, когда блок
+    // снова виден, — поэтому у неё наблюдатель, а не только обработчик нажатия.
+    expect(keep).not.toMatch(/site-keep__replay/u);
+    expect(keep).toMatch(/IntersectionObserver/u);
   });
 });
 
 describe("Пример результата: строка стадии не меняет высоту панели", () => {
-  it("подпись и кнопка — две колонки сетки, подписи отведено две строки", () => {
+  it("подписи отведено две строки, и она не меняет высоту панели", () => {
     const css = read(CSS);
     expect(css).toMatch(/\.site-demo__row\s*\{[^}]*display:\s*grid/u);
     expect(css).toMatch(/\.site-demo__stage\s*\{[^}]*min-height:/u);
+    expect(code(RESULT_DEMO)).not.toMatch(/site-demo__replay/u);
   });
 
   it("длинная стадия есть в контенте — иначе проверять нечего", () => {

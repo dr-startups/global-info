@@ -23,9 +23,10 @@ import { nextStepsFor } from "@/modules/site/check/next-view";
 import { dialView, resultView } from "@/modules/site/check/result-view";
 import type { PublicStatusJson } from "@/modules/site/check/types";
 import { LEAD_TEXT, RESULT_TEXT } from "@/modules/site/content/check";
+import { PHONE_COUNTRIES, phoneComplete, phoneCountry, phoneDigits, phoneMasked } from "@/modules/site/check/phone";
 import { Button } from "../Button";
 import { Dial } from "../Dial";
-import { FieldError, TextField } from "../Field";
+import { FieldError, Select, TextField } from "../Field";
 import { VERDICT_TONE_CLASS } from "./parts";
 
 function Attached({ status }: { status: PublicStatusJson }) {
@@ -121,6 +122,13 @@ export function LeadScreen({
     }
   }
 
+  /** Смена страны переписывает номер под её маску: лишние цифры отсекаются сразу. */
+  function setCountry(id: string) {
+    const next = { ...values, phoneCountry: id, phone: phoneDigits(phoneMasked(id, values.phone)) };
+    setValues(next);
+    if (errors.phone) setErrors((prev) => ({ ...prev, phone: leadFormErrors(next).phone ?? "" }));
+  }
+
   function show(text: string) {
     setSummary(null);
     requestAnimationFrame(() => setSummary(text));
@@ -212,6 +220,44 @@ export function LeadScreen({
             {LEAD_TEXT.channels.map((channel) => {
               const key = channel.value as LeadChannel;
               const on = values.channel === key;
+              if (key === "phone") {
+                const country = phoneCountry(values.phoneCountry);
+                return (
+                  <TextField
+                    key={key}
+                    id="lead-phone"
+                    label={channel.label}
+                    labelHidden
+                    hidden={!on}
+                    error={on && contactError ? { id: "lead-contact-error" } : undefined}
+                    /* Галочка заполненности значит «номер набран целиком», а не «в поле что-то есть» */
+                    filled={phoneComplete(values.phoneCountry, values.phone)}
+                    before={
+                      <Select
+                        id="lead-phone-country"
+                        label={LEAD_TEXT.country}
+                        value={values.phoneCountry}
+                        onChange={(id) => setCountry(id)}
+                      >
+                        {PHONE_COUNTRIES.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.dial ? `${item.name} +${item.dial}` : item.name}
+                          </option>
+                        ))}
+                      </Select>
+                    }
+                    input={{
+                      name: key,
+                      type: channel.type,
+                      inputMode: channel.inputMode,
+                      autoComplete: channel.autoComplete,
+                      placeholder: country.example,
+                      value: phoneMasked(values.phoneCountry, values.phone),
+                      onChange: (e) => update("phone", phoneDigits(phoneMasked(values.phoneCountry, e.target.value))),
+                    }}
+                  />
+                );
+              }
               return (
                 <TextField
                   key={key}

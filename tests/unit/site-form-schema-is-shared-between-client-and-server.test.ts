@@ -88,9 +88,10 @@ describe("форма проверки", () => {
 
 describe("заявка", () => {
   it("уходит только контакт выбранного способа — поле скрытого способа не отправляется", () => {
-    const values = lead({ name: "Тест", channel: "phone", phone: "+7 900 000-00-00", telegram: "@hidden_name" });
+    // В поле телефона лежат цифры национального номера, код даёт выбранная страна
+    const values = lead({ name: "Тест", channel: "phone", phone: "9000000000", telegram: "@hidden_name" });
     const payload = leadFormPayload(values);
-    expect(payload).toEqual({ name: "Тест", phone: "+7 900 000-00-00", preferredTime: "any" });
+    expect(payload).toEqual({ name: "Тест", phone: "+79000000000", preferredTime: "any" });
     expect(SelfCheckLeadSchema.safeParse(payload).success).toBe(true);
   });
 

@@ -9,20 +9,20 @@
  * она меняется: день идёт по шкале, на тридцатый графы гаснут одна за другой и
  * запись получает отметку «обезличена».
  *
- * Сцена играет по таймеру при входе в окно, а не по прокрутке: прокруткой её
- * можно было проскочить, и вернуться назад было нечем — поэтому есть «Показать
- * ещё раз». Состояние покоя — день 30: без скрипта и при выключенном движении
- * блок говорит то же самое.
+ * Сцена играет по таймеру при входе в окно, а не по прокрутке: прокруткой её можно
+ * проскочить, поэтому она начинается заново каждый раз, когда блок возвращается в
+ * окно, — кнопка «показать ещё раз» для этого больше не нужна (владелец 20.09.2026).
+ * Состояние покоя — день 30: без скрипта и при выключенном движении блок говорит
+ * то же самое.
  */
 
 import { useCallback, useEffect, useRef } from "react";
 import { SAFETY } from "@/modules/site/content/landing";
-import { Button } from "../Button";
 import { Masked } from "../Hidden";
 
 /** 31 деление: по одному на день срока. */
 const TICKS = Array.from({ length: 31 }, (_, i) => i);
-const RUN_MS = 3400;
+const RUN_MS = 1900;
 
 export function KeepScene() {
   const scene = useRef<HTMLDivElement>(null);
@@ -61,9 +61,9 @@ export function KeepScene() {
       }
       frame.current = null;
       rows.forEach((row, i) => {
-        timers.current.push(window.setTimeout(() => row.classList.add("is-closed"), 200 + i * 160));
+        timers.current.push(window.setTimeout(() => row.classList.add("is-closed"), 120 + i * 110));
       });
-      timers.current.push(window.setTimeout(() => root.classList.add("is-closed"), 200 + rows.length * 160 + 120));
+      timers.current.push(window.setTimeout(() => root.classList.add("is-closed"), 120 + rows.length * 110 + 90));
     };
     frame.current = window.requestAnimationFrame(tick);
   }, [clear]);
@@ -78,12 +78,12 @@ export function KeepScene() {
           if (entry.intersectionRatio >= 0.5 && !visible) {
             visible = true;
             play();
-          } else if (entry.intersectionRatio === 0) {
+          } else if (entry.intersectionRatio < 0.1) {
             visible = false;
           }
         }
       },
-      { threshold: [0, 0.5] }
+      { threshold: [0, 0.1, 0.5] }
     );
     observer.observe(root);
     return () => {
@@ -129,9 +129,6 @@ export function KeepScene() {
             <span className="site-term__end">0</span>
             <span className="site-term__end site-term__end--stop">{SAFETY.record.days}</span>
           </div>
-          <Button variant="ghost" className="site-keep__replay" onClick={play}>
-            {SAFETY.record.replay}
-          </Button>
         </div>
       </div>
     </div>

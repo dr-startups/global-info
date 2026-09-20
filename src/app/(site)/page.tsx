@@ -178,7 +178,6 @@ export default function LandingPage() {
                   <Dial
                     filled={2}
                     pointerAngle={DIAL_POINTER_ANGLES[1]}
-                    size="md"
                     ticks
                     num="4"
                     unit="материала с негативом"

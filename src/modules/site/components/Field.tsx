@@ -19,6 +19,36 @@ export function FieldError({ id, text }: { id: string; text: string | undefined 
   );
 }
 
+/**
+ * Выбор из списка — обычный `select`: свой выпадающий список пришлось бы учить
+ * клавиатуре и диктору заново, а у родного всё это уже есть, включая привычный
+ * выбор на телефоне.
+ */
+export function Select(props: {
+  id: string;
+  /** Подпись только для диктора: видимую роль играет соседнее поле. */
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <>
+      <label className="site-visually-hidden" htmlFor={props.id}>
+        {props.label}
+      </label>
+      <select
+        className="site-select"
+        id={props.id}
+        value={props.value}
+        onChange={(event) => props.onChange(event.target.value)}
+      >
+        {props.children}
+      </select>
+    </>
+  );
+}
+
 export function TextField(props: {
   id: string;
   label: string;
@@ -36,6 +66,8 @@ export function TextField(props: {
   hidden?: boolean;
   input: Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "className">;
   inputRef?: Ref<HTMLInputElement>;
+  /** Что стоит слева от поля в одной строке с ним — например, выбор страны у телефона. */
+  before?: ReactNode;
   /** Когда поле считается заполненным, если «не пусто» не подходит (дата — только полная). */
   filled?: boolean;
 }) {
@@ -44,6 +76,17 @@ export function TextField(props: {
   const errorId = ownError ? `${props.id}-error` : typeof props.error === "object" ? props.error.id : null;
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined;
   const filled = props.filled ?? String(props.input.value ?? "").trim() !== "";
+  const field = (
+    <input
+      {...props.input}
+      ref={props.inputRef}
+      className={`site-input${filled ? " is-filled" : ""}`}
+      id={props.id}
+      aria-required={props.required || undefined}
+      aria-invalid={errorId ? true : undefined}
+      aria-describedby={describedBy}
+    />
+  );
   return (
     <div className="site-field" hidden={props.hidden}>
       <label
@@ -53,15 +96,14 @@ export function TextField(props: {
         {props.label}
         {props.required ? <span className="site-visually-hidden">, обязательное поле</span> : null}
       </label>
-      <input
-        {...props.input}
-        ref={props.inputRef}
-        className={`site-input${filled ? " is-filled" : ""}`}
-        id={props.id}
-        aria-required={props.required || undefined}
-        aria-invalid={errorId ? true : undefined}
-        aria-describedby={describedBy}
-      />
+      {props.before ? (
+        <div className="site-field__row">
+          {props.before}
+          {field}
+        </div>
+      ) : (
+        field
+      )}
       {props.hint ? (
         <p className="site-hint" id={hintId!}>
           {props.hint}

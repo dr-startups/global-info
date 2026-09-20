@@ -13,6 +13,7 @@ import {
   SelfCheckLeadSchema,
 } from "@/modules/self-check/schemas";
 import { BIRTH_DATE_INCOMPLETE_MESSAGE, birthDateToIso } from "./birth-date";
+import { DEFAULT_PHONE_COUNTRY, phoneComplete, phoneCountry, phoneE164 } from "./phone";
 
 /** Поле → первый текст отказа. */
 export type FieldErrors = Record<string, string>;
@@ -101,6 +102,9 @@ export interface LeadFormValues {
   name: string;
   /** Способ связи переключателем: поле одно, остальные скрыты. */
   channel: LeadChannel;
+  /** Страна номера: она задаёт код, маску и длину. */
+  phoneCountry: string;
+  /** Только цифры национального номера; по маске их печатает поле. */
   phone: string;
   telegram: string;
   email: string;
@@ -111,6 +115,7 @@ export interface LeadFormValues {
 export const EMPTY_LEAD_FORM: LeadFormValues = {
   name: "",
   channel: "phone",
+  phoneCountry: DEFAULT_PHONE_COUNTRY,
   phone: "",
   telegram: "",
   email: "",
@@ -125,7 +130,8 @@ export const EMPTY_LEAD_FORM: LeadFormValues = {
 export function leadFormPayload(values: LeadFormValues): Record<string, string> {
   const body: Record<string, string> = {
     name: values.name,
-    [values.channel]: values[values.channel],
+    // Телефон уходит с кодом страны: в поле видно только национальную часть
+    [values.channel]: values.channel === "phone" ? phoneE164(values.phoneCountry, values.phone) : values[values.channel],
     preferredTime: values.preferredTime,
   };
   if (values.message.trim()) body.message = values.message;
@@ -134,5 +140,11 @@ export function leadFormPayload(values: LeadFormValues): Record<string, string> 
 
 export function leadFormErrors(values: LeadFormValues): FieldErrors {
   const parsed = SelfCheckLeadSchema.safeParse(leadFormPayload(values));
-  return parsed.success ? {} : serverFieldErrors(parsed.error.flatten().fieldErrors);
+  const errors = parsed.success ? {} : serverFieldErrors(parsed.error.flatten().fieldErrors);
+  // Недобранный номер схема пропускает (в нём хватает цифр), а страна — нет:
+  // «+7 900 12345» это не телефон, и сказать об этом надо у поля, а не после отправки.
+  if (values.channel === "phone" && values.phone.trim() !== "" && !phoneComplete(values.phoneCountry, values.phone)) {
+    errors.phone = `Номер неполный. Для страны «${phoneCountry(values.phoneCountry).name}» — например, ${phoneCountry(values.phoneCountry).example}.`;
+  }
+  return errors;
 }
