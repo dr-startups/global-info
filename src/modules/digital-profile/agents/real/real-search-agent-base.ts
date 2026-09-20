@@ -43,13 +43,42 @@ function allowsNegativeQueries(subject: CaseSubjectInfo): boolean {
   return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
 }
 
-/** Запрос плана аудита: фраза, регион поисковика, язык и глубина. */
+/** Запрос плана аудита: фраза, регион поисковика, язык, глубина и контур. */
 export type AuditSearchSpec = {
   query: string;
   region: string;
   language: string;
   limit: number;
+  /** Контур отчёта («RU», «UAE») — не то же, что код региона поисковика. */
+  contour: string;
 };
+
+/**
+ * Строка результата помнит, чем и где её нашли (шаг 0138).
+ *
+ * Склейка берёт запрос и контур из `rawMetadata` строки
+ * (`composite-serp-merge`: `rm.query ?? rm.orionQuery`, `rm.orionRegion ??
+ * rm.region`, иначе литерал «RU»), а базовый агент туда их не клал. На
+ * прогоне Вексельберга 20.09.2026 это дало 81 органическую строку Serper без
+ * записанного запроса и всю с регионом «RU», хотя план ходил и по ОАЭ: строки
+ * ОАЭ становились российскими и склеивались с ними по адресу.
+ *
+ * Контур ставится только когда он известен: у личного набора запросов его нет,
+ * и выдумывать «RU» здесь значило бы повторить тот же дефект с другой стороны.
+ */
+export function taggedSearchRows(
+  results: readonly SearchProviderResult[],
+  spec: { query: string; contour?: string }
+): SearchProviderResult[] {
+  return results.map((r) => ({
+    ...r,
+    rawMetadata: {
+      ...((r.rawMetadata ?? {}) as Record<string, unknown>),
+      query: spec.query,
+      ...(spec.contour ? { orionRegion: spec.contour } : {}),
+    },
+  }));
+}
 
 export abstract class RealSearchAgentBase implements CaseAgent {
   abstract readonly name: string;
@@ -183,7 +212,13 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         targetRegions: subject.targetRegions,
         location: subject.location,
       };
-      const specs: Array<{ query: string; language: string; region?: string; limit?: number }> =
+      const specs: Array<{
+        query: string;
+        language: string;
+        region?: string;
+        limit?: number;
+        contour?: string;
+      }> =
         this.auditSearchSpecs(planSubject as OfflinePlanSubject) ??
         buildPersonSearchQueries(planSubject, {
           maxQueries: this.maxQueriesPerAudit(),
@@ -209,7 +244,9 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         });
         if (run.status === "SUCCESS") {
           anySuccess = true;
-          allResults.push(...run.results);
+          allResults.push(
+            ...taggedSearchRows(run.results, { query: spec.query, contour: spec.contour })
+          );
         } else {
           lastError = run.error ? `${run.error.code}: ${run.error.message}` : run.status;
           lastErrorCode = run.error?.code ?? run.status;

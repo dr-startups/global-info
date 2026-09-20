@@ -44,6 +44,9 @@ export function googleAuditSearchSpecs(subject: OfflinePlanSubject): AuditSearch
       region: profile.googleGl,
       language: profile.googleHl,
       limit: SERP_AUDIT_DEPTH,
+      // Контур отчёта, а не код региона поисковика: склейка различает строки
+      // по нему, и «ae» ей ни о чём не говорит (шаг 0138).
+      contour: spec.region,
     };
   });
 }
