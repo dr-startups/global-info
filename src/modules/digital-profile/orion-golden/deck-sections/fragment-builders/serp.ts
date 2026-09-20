@@ -1660,6 +1660,9 @@ export function buildSerpFragment(
             adverseTotal,
             topN: SERP_TABLE_TOP_N,
             unread: themesPage.unread,
+            // База таблицы — сумма её собственных строк, а не отдельный
+            // счётчик: второй ответ на тот же вопрос разошёлся бы с первым.
+            themedTotal: linkThemes.reduce((n, t) => n + t.count, 0),
           }),
           table: {
             headers: ["Тема", "Публикаций", "Из них нежелательных"],

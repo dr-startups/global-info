@@ -189,3 +189,51 @@ describe("страница тем на числах живого прогона"
     expect(slide.metrics.read).toBeUndefined();
   });
 });
+
+/**
+ * Числа шапки и числа таблицы — про одно и то же (шаг 0126).
+ *
+ * Стр. 20 отчёта Абрамовича 20.09.2026: шапка обещала «прочитано 82; каждая
+ * прочитанная отнесена к теме по её содержанию», а таблица считала девять
+ * публикаций. В тему попадают только страницы, чью принадлежность субъекту
+ * подтвердил их текст (`subjectMatch: subject` — 11 из 82 в
+ * `analytics/link-verdicts.json`), и читатель видел противоречие без
+ * объяснения.
+ */
+describe("шапка страницы тем называет базу таблицы", () => {
+  /** Числа живого прогона Абрамовича: 120 отобрано, 82 прочитано, 9 в таблице. */
+  const ABRAMOVICH: LinkReadingReport = {
+    status: "PARTIAL",
+    requested: 120,
+    read: 82,
+    failed: 38,
+    retried: 5,
+    byReason: { blocked: 17, empty_text: 16, not_fetched: 5 },
+  };
+
+  it("Т9: прочитанных больше, чем в таблице — шапка называет и число, и причину", () => {
+    const intro = linkReadingThemesIntro({
+      report: ABRAMOVICH,
+      adverseTotal: 4,
+      topN: 20,
+      unread: 38,
+      themedTotal: 9,
+    });
+    expect(intro).toContain("прочитано 82");
+    expect(intro).toContain("9");
+    expect(intro).toMatch(/принадлежность/iu);
+    // Обещания «каждая прочитанная» больше нет: таблица его не выполняет.
+    expect(intro).not.toContain("каждая прочитанная отнесена");
+  });
+
+  it("Т10: в таблице все прочитанные — прежняя формулировка остаётся", () => {
+    const intro = linkReadingThemesIntro({
+      report: ABRAMOVICH,
+      adverseTotal: 4,
+      topN: 20,
+      unread: 38,
+      themedTotal: 82,
+    });
+    expect(intro).toContain("каждая прочитанная отнесена к теме");
+  });
+});

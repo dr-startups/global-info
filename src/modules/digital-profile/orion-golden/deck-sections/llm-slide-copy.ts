@@ -684,6 +684,19 @@ function applyOverrides(input: {
       measured?: (text: string) => string
     ) => {
       if (value === undefined) return;
+      /*
+       * Поля нет у черновика — переписывать нечего (шаг 0126).
+       *
+       * Модель переписывает уже собранное и не добавляет своего. Построитель
+       * региональной сводки намеренно не кладёт `whatWasFound`, а стадия
+       * текста дописывала его поверх отсутствия: на стр. 12 отчёта Абрамовича
+       * 20.09.2026 это дало второй абзац с теми же числами, что и лид. Решение
+       * построителя отменялось молча, поэтому отказ называется строкой.
+       */
+      if (slide.content[field] === undefined) {
+        rejectedFields.push(`${slide.slideId}.${field}:field-not-in-draft`);
+        return;
+      }
       const normalized = fixName(
         field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
       );

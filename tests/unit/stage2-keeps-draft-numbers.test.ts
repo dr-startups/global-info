@@ -225,7 +225,15 @@ describe("гейт чисел стадии 2", () => {
     expect(report.rejectedFields).toContain("p07_ru_summary.narrative:dropped-number:30");
   });
 
-  it("поле, которого в черновике не было, гейт не проверяет — сравнивать не с чем", async () => {
+  /**
+   * Правка теста шага 0126: прежде он утверждал, что поле, которого нет у
+   * черновика, применяется — гейту чисел сравнивать не с чем. Это и осталось
+   * верным, но отклоняет теперь такое поле другое правило: модель переписывает
+   * собранное и не заводит своего (`slide-copy-rewrites-but-does-not-invent-a-field`).
+   * Утверждение о гейте чисел сохранено: он по-прежнему молчит, а нарратив
+   * того же ответа применяется.
+   */
+  it("поле, которого в черновике не было, отклоняет не гейт чисел, а правило «не заводить поля»", async () => {
     const { slide, report } = await runStage2(
       summaryPack({ narrative: DRAFT_NARRATIVE } as SlideBody),
       {
@@ -238,8 +246,9 @@ describe("гейт чисел стадии 2", () => {
         ],
       }
     );
-    expect(slide.content.whatWasFound).toBe("В выдаче видны судебные сюжеты о проверяемом лице.");
-    expect(report.rejectedFields).toEqual([]);
+    expect(slide.content.whatWasFound).toBeUndefined();
+    expect(report.rejectedFields).toEqual(["p07_ru_summary.whatWasFound:field-not-in-draft"]);
+    expect(slide.content.narrative).toBe(REWRITE_WITH_BASE);
   });
 });
 
