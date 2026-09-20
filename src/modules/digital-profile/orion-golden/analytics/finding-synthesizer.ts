@@ -65,6 +65,7 @@ import {
   hasDanglingTail,
   looksLikeBareName,
   looksLikeGeneralization,
+  subjectNameMatchScore,
   looksLikeIdentityLead,
   looksLikePlatformNavigation,
   looksLikeWholeStatement,
@@ -840,10 +841,23 @@ export function pickClaimExamples(
   ctx?: { subjectNames?: readonly string[]; verdictByRef?: ObservationVerdictByRef }
 ): ClaimEvidenceExample[] {
   const adverseSet = new Set(adverseItems);
+  /*
+   * При равном счёте выигрывает тот, кто совпал с именем субъекта полнее
+   * (шаг 0143).
+   *
+   * Однофамилец совпадает фамилией, сам субъект — фамилией и именем. Стр. 76
+   * отчёта Фридмана выбрала примерами «Делового профиля» две статьи про
+   * Милтона Фридмана: отбор спрашивал «названо ли имя», а на этот вопрос
+   * однофамилец отвечает «да».
+   */
+  const stemsForRank = stemsOf(ctx?.subjectNames);
+  const nameScore = (i: RawInventoryItem): number =>
+    subjectNameMatchScore(`${i.title ?? ""} ${i.snippet ?? ""}`, stemsForRank);
   const ranked = [...items].sort(
     (a, b) =>
       scoreExampleForTheme(b, theme, adverseSet.has(b)) -
-      scoreExampleForTheme(a, theme, adverseSet.has(a))
+        scoreExampleForTheme(a, theme, adverseSet.has(a)) ||
+      nameScore(b) - nameScore(a)
   );
   const examples: ClaimEvidenceExample[] = [];
   const seen = new Set<string>();

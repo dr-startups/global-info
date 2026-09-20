@@ -3709,6 +3709,11 @@ export function panelCompositionLine(input: {
   nounOne: string;
   nounFew: string;
   nounMany: string;
+  /**
+   * Заголовок листа, если он уже называет вывод о негативе (шаг 0143).
+   * Тогда строка состава его не повторяет и оставляет себе числа.
+   */
+  verdictTitle?: string;
   /** Где показаны строки: на снимке панели или просто на странице. */
   place?: string;
 }): string {
@@ -3749,12 +3754,25 @@ export function panelCompositionLine(input: {
   const collectedAdverse = Math.max(input.collectedAdverse ?? 0, c.adverse);
   const inCollected =
     collectedAdverse > c.adverse ? ` В собранном наборе — ${collectedAdverse}.` : "";
+  /*
+   * Вывод говорится один раз на листе (шаг 0143).
+   *
+   * Заголовок страницы панели — это вывод, а не название раздела, и он уже
+   * называет, есть ли негатив: «Россия — подсказки Яндекса: негативных
+   * формулировок нет». Строка состава повторяла его теми же словами, и стр.
+   * 35–36 отчёта Фридмана говорили одно дважды. Числа остаются здесь, вывод —
+   * в заголовке. Разрыв между заголовком и панелью по-прежнему объясняется:
+   * эта оговорка не про вывод, а про разные наборы.
+   */
+  const verdictInTitle = /негативн/iu.test(String(input.verdictTitle ?? ""));
   const adverse =
     c.adverse > 0
       ? ` С негативной формулировкой — ${c.adverse}.${inCollected}`
       : collectedAdverse > 0
         ? ` Негативных формулировок среди показанных нет; в собранном наборе — ${collectedAdverse}.`
-        : " Негативных формулировок нет.";
+        : verdictInTitle
+          ? ""
+          : " Негативных формулировок нет.";
   return `${head}${breakdown}.${adverse}`;
 }
 

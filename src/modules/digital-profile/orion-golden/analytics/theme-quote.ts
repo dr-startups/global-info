@@ -142,6 +142,24 @@ export function subjectNameStems(names: readonly string[]): string[] {
   return [...out];
 }
 
+/**
+ * Насколько полно текст совпал с именем субъекта (шаг 0143).
+ *
+ * Однофамилец совпадает фамилией, сам субъект — фамилией и именем. Стр. 76
+ * отчёта Фридмана выбрала примерами «Делового профиля» две статьи про
+ * **Милтона** Фридмана, хотя среди кандидатов был материал о самом субъекте:
+ * отбор спрашивал «названо ли имя», а это вопрос «да/нет», и однофамилец
+ * отвечает на него «да».
+ *
+ * Число основ, а не доля: длина имени у субъекта своя, и делить на неё значит
+ * сравнивать кандидатов по разной шкале.
+ */
+export function subjectNameMatchScore(text: string, stems: readonly string[]): number {
+  if (stems.length === 0) return 0;
+  const hay = normalizeForNames(String(text ?? ""));
+  return stems.filter((stem) => new RegExp(`(?<!\\p{L})${escapeRe(stem)}`, "u").test(hay)).length;
+}
+
 /** Назван ли субъект в тексте — любой основой имени в начале слова. */
 export function textNamesSubject(text: string, stems: readonly string[]): boolean {
   if (stems.length === 0) return false;

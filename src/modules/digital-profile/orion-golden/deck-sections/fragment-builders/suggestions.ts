@@ -120,6 +120,17 @@ export function buildSuggestionsFragment(
     // есть, но на панель не попал, статусная строка скажет об этом отдельно —
     // молча потерять его нельзя, а выдать за увиденное читателем тем более.
     const collectedAdverse = composePageRowComposition(scoped, view.refs).adverseHeadlines;
+    /*
+     * Заголовок считается до блоков панели (шаг 0143): он — вывод листа, и
+     * строка состава не должна повторять его теми же словами.
+     */
+    const shownCountForTitle = shown.length || sidebar.visibleRows.length || suggestionLines.length;
+    const verdictTitle = panelVerdictTitle({
+      title: slot.title,
+      shownCount: shownCountForTitle,
+      shownAdverse: shown.length > 0 ? panelStats.adverse : sidebar.adverseRows.length,
+      collectedAdverse,
+    });
     const panelBlocks: Partial<SlideBody> =
       shown.length > 0
         ? {
@@ -139,6 +150,7 @@ export function buildSuggestionsFragment(
                 nounOne: "подсказка",
                 nounFew: "подсказки",
                 nounMany: "подсказок",
+                verdictTitle,
               }),
               400
             ),
@@ -160,14 +172,8 @@ export function buildSuggestionsFragment(
               : {}),
           }
         : {};
-    const shownCount = shown.length || sidebar.visibleRows.length || suggestionLines.length;
+    const shownCount = shownCountForTitle;
     const shownAdverse = shown.length > 0 ? panelStats.adverse : sidebar.adverseRows.length;
-    const verdictTitle = panelVerdictTitle({
-      title: slot.title,
-      shownCount,
-      shownAdverse,
-      collectedAdverse,
-    });
     slides.push(
       visualSlide({
         slot,
