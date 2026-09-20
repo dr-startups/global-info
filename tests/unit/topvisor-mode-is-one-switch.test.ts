@@ -117,14 +117,20 @@ describe("состав сборщиков в режиме topvisor", () => {
     useMode("topvisor", KEYS);
     const strategy = resolveRuntimeStrategy({ mode: "real_only", requestedBy: "test" });
 
+    /*
+     * Правка теста шага 0136: Google Topvisor'у больше не делегируется — его
+     * снимок не несёт адреса страницы, и органику Google собирает Serper
+     * (`POSITIONAL_SERP_SOURCE`). Предмет теста прежний: режим не зовёт того,
+     * кого делегировал, и говорит почему. Теперь это только Яндекс.
+     */
     expect(strategy.steps.map((s) => s.providerId)).not.toContain("yandex");
-    expect(strategy.steps.map((s) => s.providerId)).not.toContain("google");
 
-    for (const providerId of ["yandex", "google"]) {
-      const decision = strategy.decisions.find((d) => d.providerId === providerId);
-      expect(decision?.status).toBe("skipped_by_mode");
-      expect(String(decision?.reason)).toMatch(/Topvisor/i);
-    }
+    const yandex = strategy.decisions.find((d) => d.providerId === "yandex");
+    expect(yandex?.status).toBe("skipped_by_mode");
+    expect(String(yandex?.reason)).toMatch(/Topvisor/i);
+
+    const google = strategy.decisions.find((d) => d.providerId === "google");
+    expect(String(google?.reason ?? "")).not.toMatch(/органическую выдачу собирает Topvisor/i);
     // Профиль ORION и поверхности Topvisor не заменяет — их решения прежние.
     const orion = strategy.decisions.find((d) => d.providerId === "orion_profile");
     expect(String(orion?.reason ?? "")).not.toMatch(/Topvisor/i);

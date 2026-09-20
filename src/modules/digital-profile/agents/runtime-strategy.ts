@@ -1,4 +1,5 @@
 import { getAgent } from "./registry";
+import { POSITIONAL_SERP_SOURCE } from "../config/defaults";
 import { serpCollectionMode } from "../providers/config";
 import type { AgentAvailability } from "./types";
 import type {
@@ -196,9 +197,21 @@ export function resolveRuntimeStrategy(input: RuntimeStrategyRequest = {}): Reso
      * попадает в решения стратегии — по ней в артефактах видно, что провайдера
      * не звали намеренно, а не потеряли.
      */
+    /*
+     * Движку делегируется тот источник, который объявлен для него в
+     * `POSITIONAL_SERP_SOURCE` (шаг 0136). Google больше не уходит Topvisor'у:
+     * его снимок не несёт адреса страницы, а клиенту в колонке «Ссылка» нужен
+     * адрес, по которому он откроет материал сам.
+     */
+    const engineOfProvider: Record<string, "YANDEX" | "GOOGLE"> = {
+      yandex: "YANDEX",
+      google: "GOOGLE",
+    };
+    const engine = engineOfProvider[pair.providerId];
     const delegatedToTopvisor =
       pair.phase === "collection" &&
-      (pair.providerId === "yandex" || pair.providerId === "google") &&
+      engine !== undefined &&
+      POSITIONAL_SERP_SOURCE[engine] === "topvisor" &&
       serpCollectionMode() === "topvisor";
     if (delegatedToTopvisor) {
       pushSkipped(strategy, pair, {

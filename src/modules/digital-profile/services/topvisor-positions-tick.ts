@@ -17,6 +17,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import { POSITIONAL_SERP_SOURCE } from "../config/defaults";
 import { topvisorSecrets } from "../providers/config";
 import { topvisorCall, type TopvisorCallFn } from "../providers/topvisor/client";
 import {
@@ -119,6 +120,20 @@ export type TopvisorKeywords = {
 };
 
 type EnvLike = Record<string, string | undefined>;
+
+/**
+ * Регионы, чьи органические строки Topvisor становятся позициями (шаг 0136).
+ *
+ * Снимок снимается по всем регионам каталога: из снимка Google берётся
+ * ИИ-ответ, а его отсутствие — результат проверки, который отчёт обязан
+ * назвать. Но органика Google адреса страницы не несёт, и позициями она не
+ * работает: их собирает Serper.
+ */
+export function topvisorPositionRegions(): readonly TopvisorAuditRegion[] {
+  return TOPVISOR_AUDIT_REGIONS.filter(
+    (r) => POSITIONAL_SERP_SOURCE[r.engine] === "topvisor"
+  );
+}
 
 export function topvisorReportRunId(unifiedJobId: string): string {
   return `topvisor-positions-${unifiedJobId}`;
@@ -282,8 +297,19 @@ function rebuildObservations(input: {
       depth: SERP_AUDIT_DEPTH,
       provenance,
     });
-    observations.push(...built.observations);
-    rowsByRegion[region.key] = built.observations.length;
+    /*
+     * Органика берётся только у движка, чей источник позиций — Topvisor
+     * (шаг 0136). Снимок Google читается всё равно: из него берётся ИИ-ответ,
+     * и его отсутствие — тоже результат проверки, который отчёт называет
+     * словами. А вот его органические строки адреса страницы не несут, и
+     * позициями Google они больше не работают.
+     */
+    const organic =
+      POSITIONAL_SERP_SOURCE[region.engine] === "topvisor"
+        ? built.observations
+        : built.observations.filter((o) => o.surface !== "organic");
+    observations.push(...organic);
+    rowsByRegion[region.key] = organic.length;
     warnings.push(...built.warnings.map((w) => `topvisor:${w}`));
 
     if (input.positions == null) {

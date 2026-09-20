@@ -70,8 +70,20 @@ describe("тик позиций Topvisor", () => {
     expect(third.blockPipeline).toBe(false);
     expect(third.state.phase).toBe("DONE");
     expect(third.advanced).toBe(true);
-    const combos = new Set(third.observations.map((o) => `${o.region}/${o.engine}/${o.provider}`));
-    expect(combos).toEqual(new Set(["RU/YANDEX/topvisor-yandex", "RU/GOOGLE/topvisor-google", "UAE/GOOGLE/topvisor-google"]));
+    /*
+     * Правка теста шага 0136: судятся органические строки, а не все подряд.
+     * Снимок Google читается по-прежнему — из него берётся ИИ-ответ, и его
+     * отсутствие отчёт называет словами, — но органика Google позициями не
+     * работает: адреса страницы она не несёт, её собирает Serper.
+     */
+    const organicCombos = new Set(
+      third.observations
+        .filter((o) => o.surface === "organic")
+        .map((o) => `${o.region}/${o.engine}/${o.provider}`)
+    );
+    expect(organicCombos).toEqual(new Set(["RU/YANDEX/topvisor-yandex"]));
+    // Снимок трёх регионов всё равно снят: Google остаётся ИИ-ответами.
+    expect(third.observations.some((o) => o.provider === "topvisor-google")).toBe(true);
     expect(third.state.regions.map((r) => r.index)).toEqual([1, 2, 2520]);
     const task = await taskStore.findByReportRun(topvisorReportRunId("job-1"));
     expect(task?.state).toBe("DONE");

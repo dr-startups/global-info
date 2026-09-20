@@ -638,18 +638,26 @@ describe("unified orion arsenkin collection", () => {
       const rows = merge!.observations.filter((o) => o.providers.some((p) => /^topvisor-/.test(p)));
       assert.ok(rows.length > 0, "в слиянии нет строк Topvisor");
       // Номер есть у строки выдачи; у AI-ответа места в выдаче нет по существу.
+      /*
+       * Правка смока шага 0136. Критерий T1b требовал трёх позиционных таблиц
+       * из снимков Topvisor. Снимок Google адреса страницы не несёт — проверено
+       * живым запросом 20.09.2026, — и органику Google теперь собирает Serper.
+       * Из Topvisor позициями работает один Яндекс; снимок Google по-прежнему
+       * читается ради ИИ-ответа, и его строки на листе остаются.
+       */
       const organic = rows.filter((o) => o.surface === "organic");
       const tables = [...new Set(organic.map((o) => `${o.region}/${o.engine}`))].sort();
-      assert.deepEqual(tables, ["RU/GOOGLE", "RU/YANDEX", "UAE/GOOGLE"]);
+      assert.deepEqual(tables, ["RU/YANDEX"]);
       for (const row of organic) {
         assert.equal(typeof row.rank, "number", `строка без номера: ${row.url}`);
-        assert.match(String(row.rankSource), /^topvisor-(yandex|google)$/);
-        assert.ok(
-          (row.engine === "YANDEX" && row.rankSource === "topvisor-yandex") ||
-            (row.engine === "GOOGLE" && row.rankSource === "topvisor-google"),
-          `чужой номер: ${row.engine} ← ${row.rankSource}`
-        );
+        assert.equal(row.rankSource, "topvisor-yandex", `чужой номер: ${row.engine} ← ${row.rankSource}`);
       }
+      // Google из снимка не пропал целиком: ИИ-ответ по нему остаётся, и его
+      // отсутствие отчёт называет словами.
+      assert.ok(
+        rows.some((o) => (o.providers ?? []).includes("topvisor-google")),
+        "строки Google исчезли из снимка вовсе"
+      );
       assert.ok((merge!.providerCounts.topvisor ?? 0) >= organic.length);
       assert.equal(merge!.providerCounts.arsenkin, 0);
 
