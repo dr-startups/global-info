@@ -2345,8 +2345,8 @@
       "isContinuation": false,
       "narrative": "По региону «ОАЭ / международный» собрано 97 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
       "bullets": [
-        "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати» — источник m.sledst.org\nГде видно: m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
-        "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA» — источник sledst.org\nГде видно: sledst.org, m.sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
+        "«Криминальные / судебные материалы»\nПо теме в источниках x.com, cybercriminal.com, instagram.com и ещё 2; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. [finding-criminal_legal-subject_match-16447175]",
+        "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA» — источник sledst.org\nГде видно: sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",

@@ -288,6 +288,62 @@ export function subjectMaterialText(
  * («Политические связи», «Деловой профиль», «Корпоративное владение»)
  * показывается только своими словами — негатив о ней ничего не говорит.
  */
+/**
+ * Юридическая приписка в скобках: слова внутри сказаны не о субъекте (шаг 0122).
+ *
+ * «Снимки с премии появились в Instagram (владелец компания Meta признана в
+ * России экстремистской и запрещена)» стояло под «Корпоративным владением»:
+ * единственное слово словаря — «владелец» — про Meta, а не про субъекта.
+ * Такую приписку по закону дописывают к каждому упоминанию площадки, и в
+ * русских материалах она встречается тысячами.
+ */
+const LEGAL_DISCLAIMER_RE =
+  /призна[а-яё]*\s+(?:в\s+России\s+)?(?:экстремистск|террористическ|нежелательн)|запрещ[а-яё]+\s+(?:в\s+России|на\s+территории)|иностранн[а-яё]*\s+агент|нежелательн[а-яё]*\s+организаци/iu;
+
+/**
+ * Ссылка на говорящего в начале фразы: «По словам депутата, женился Потанин
+ * рано…». Депутат здесь тот, кто говорит, а тема назначается субъекту.
+ */
+const SPEAKER_ATTRIBUTION_RE =
+  /^\s*(?:по\s+(?:словам|мнению|данным|версии|оценке|сведениям)|как\s+(?:заявил|сказал|отметил|сообщил|рассказал|пояснил)[а-яё]*)(?![\p{L}])[^,]{0,80},/iu;
+
+/** Отрезки текста, в которых слово словаря сказано не о субъекте. */
+function foreignSignalSpans(text: string): Array<[number, number]> {
+  const spans: Array<[number, number]> = [];
+  for (const m of text.matchAll(/\([^)]*\)/gu)) {
+    if (m.index !== undefined && LEGAL_DISCLAIMER_RE.test(m[0])) {
+      spans.push([m.index, m.index + m[0].length]);
+    }
+  }
+  const attribution = SPEAKER_ATTRIBUTION_RE.exec(text);
+  if (attribution) spans.push([0, attribution[0].length]);
+  return spans;
+}
+
+/**
+ * Все ли совпадения словаря лежат в чужих словах.
+ *
+ * `false`, когда совпадений нет вовсе: «нечего проверять» и «всё чужое» —
+ * разные ответы, как и у маски признаков субъекта рядом.
+ */
+function allHitsAreForeign(
+  text: string,
+  dictionary: RegExp,
+  spans: ReadonlyArray<[number, number]>
+): boolean {
+  if (spans.length === 0) return false;
+  const scan = dictionary.global
+    ? new RegExp(dictionary.source, dictionary.flags)
+    : new RegExp(dictionary.source, `${dictionary.flags}g`);
+  let found = false;
+  for (const m of text.matchAll(scan)) {
+    if (m.index === undefined) continue;
+    found = true;
+    if (!spans.some(([from, to]) => m.index! >= from && m.index! < to)) return false;
+  }
+  return found;
+}
+
 export function carriesThemeSignal(
   text: string,
   theme: ThemeDef,
@@ -295,11 +351,15 @@ export function carriesThemeSignal(
 ): boolean {
   const value = String(text ?? "");
   if (!value.trim()) return false;
+  // Слово, сказанное не о субъекте, сигналом не является (шаг 0122): приписка
+  // о площадке в скобках и ссылка на говорящего в начале фразы.
+  const foreign = foreignSignalSpans(value);
   // Совпадение в окне отрицания — не сигнал (шаг 0117): «никаких санкций»
   // назначение темы уже не даёт, и цитата темы того же слова не покажет.
   if (
     theme.keywords.test(value) &&
     !dictionaryHitIsNegated(value, theme.keywords) &&
+    !allHitsAreForeign(value, theme.keywords, foreign) &&
     !allDictionaryHitsAreSubjectContext(value, theme.keywords, subjectContext)
   ) {
     return true;
@@ -309,6 +369,7 @@ export function carriesThemeSignal(
   return (
     adverse.test(value) &&
     !dictionaryHitIsNegated(value, adverse) &&
+    !allHitsAreForeign(value, adverse, foreign) &&
     !allDictionaryHitsAreSubjectContext(value, adverse, subjectContext)
   );
 }

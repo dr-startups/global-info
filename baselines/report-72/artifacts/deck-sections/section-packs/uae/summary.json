@@ -1,7 +1,7 @@
 {
   "caseId": "cmreamy2t0002o30f29urzcog",
-  "contentHash": "sha256:6a673d234e835764624007370a0dff8bca128530acb46b66552ec63634eb22c4",
-  "contentVersion": "deck-sections-v208",
+  "contentHash": "sha256:c601ba6e58616de79b7cc890014eca61c6b3a0058847733ecb46045c83fef323",
+  "contentVersion": "deck-sections-v209",
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "evidenceRefs": [
     "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -136,7 +136,7 @@
     "serp_observation:cmrjsczk8007pvd9gxygp3xqr"
   ],
   "fragmentKey": "UAE_SUMMARY",
-  "generatedAt": "2026-09-20T12:38:51.198Z",
+  "generatedAt": "2026-09-20T14:05:41.451Z",
   "inputHash": "sha256:3a072b771f7a99b6508138087732397fbd46dc319f1cedf0779f3342a4dc89f0:0d968ee845dc2535",
   "inputs": {
     "evidenceRefs": [
@@ -406,8 +406,8 @@
       "baseSlotId": "p24_uae_summary",
       "content": {
         "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати» — источник m.sledst.org\nГде видно: m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
-          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA» — источник sledst.org\nГде видно: sledst.org, m.sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
+          "«Криминальные / судебные материалы»\nПо теме в источниках x.com, cybercriminal.com, instagram.com и ещё 2; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. [finding-criminal_legal-subject_match-16447175]",
+          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA» — источник sledst.org\nГде видно: sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
         ],
         "kpis": [
           {

@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v208" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v209" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,11 @@ export const DECK_CONTENT_VERSION = "deck-sections-v208" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 20.09 номер двинут до v209: словарь политической темы больше не ловит
+ * «политехнический институт» и отраслевую политику (шаг 0122). Словарь красит
+ * колонку «Оценка» и рамки снимка, то есть меняет собранную деку, а не только
+ * утверждения находок.
  *
  * 20.09 номер двинут до v208: текст слайдов, композицию и редактора деки
  * пишет другая модель — `gpt-5.6-sol` вместо `gpt-5.5` (шаг 0119, таблица
@@ -745,7 +750,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v208" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "a76a4703c3c36872" as const;
+export const DECK_BUILDER_FINGERPRINT = "2394efd8b3e2f8b7" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -768,7 +773,7 @@ export const DECK_BUILDER_FINGERPRINT = "a76a4703c3c36872" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v208" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v209" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {
