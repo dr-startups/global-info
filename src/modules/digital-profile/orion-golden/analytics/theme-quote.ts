@@ -213,6 +213,34 @@ export function looksLikeWholeStatement(text: string): boolean {
 }
 
 /**
+ * Названо ли в тексте чужое лицо (шаг 0141).
+ *
+ * Отличается от `titleNamesAnotherPerson` двумя вещами, и обе нужны записи
+ * комплаенс-базы. Во-первых, имя ищется **везде**, а не в сегментах до
+ * последнего: «ООО УК „РОСВОДОКАНАЛ“ — Москва — Гендиректор Михальков Сергей
+ * Петрович» кладёт чужое имя в хвост, который правило заголовка не судит,
+ * считая подписью издания. Во-вторых, судится каждая найденная
+ * последовательность имени, а не сегмент целиком.
+ *
+ * Имён субъекта нет — судить не по чему, правило молчит.
+ *
+ * Ищется **трёхсловная** последовательность: фамилия, имя и отчество. Пары
+ * слов с заглавной для этого не годятся — «Sanctions List» и «UK Sanctions»
+ * встречаются в названиях записей постоянно, и правило по паре объявило бы
+ * чужим лицом любую такую запись.
+ */
+const NAME_SEQUENCE_RE =
+  /(?<![\p{L}])(?:[А-ЯЁ][а-яё]{2,}(?:\s+[А-ЯЁ][а-яё]{2,}){2}|[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,}){2})(?![\p{L}])/gu;
+
+export function namesForeignPerson(text: string, stems: readonly string[]): boolean {
+  if (stems.length === 0) return false;
+  const value = withoutSourceMarkup(String(text ?? ""));
+  const found = [...value.matchAll(NAME_SEQUENCE_RE)].map((m) => m[0]);
+  if (found.length === 0) return false;
+  return !found.some((name) => textNamesSubject(name, stems));
+}
+
+/**
  * Называет ли заголовок другого человека вместо субъекта.
  *
  * «Paulina Andreeva - Biography - IMDb» стояла цитатой делового профиля

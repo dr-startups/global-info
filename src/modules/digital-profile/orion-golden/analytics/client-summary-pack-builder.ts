@@ -10,6 +10,8 @@
  */
 
 import { createHash } from "node:crypto";
+import { namesForeignPerson, subjectNameStems } from "./theme-quote";
+import { subjectNameVariants } from "./link-verdict-audit-agent";
 import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
 import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import type { RiskLevel } from "../contracts/common";
@@ -698,8 +700,10 @@ function countReadPlotsWithoutEvidence(
   ).length;
 }
 
-function buildInternationalDatabases(
-  claims: CanonicalClaim[]
+export function buildInternationalDatabases(
+  claims: CanonicalClaim[],
+  /** Написания имени субъекта — по ним запись узнаётся как запись о нём. */
+  subjectNames: readonly string[] = []
 ): InternationalDatabaseEntry[] {
   const dbClaims = claims.filter(
     (c) =>
@@ -707,6 +711,11 @@ function buildInternationalDatabases(
       (c.claimKind === "DATABASE_STATUS" ||
         c.sourceDomains.some((d) => DATABASE_DOMAIN.test(d)) ||
         c.themeIds.includes("sanctions_pep_rca_compliance"))
+  );
+  // Написания имени вместе с транслитерацией: запись базы называет субъекта
+  // латиницей чаще, чем кириллицей.
+  const stems = subjectNameStems(
+    subjectNames.flatMap((n) => subjectNameVariants({ fullName: n }))
   );
   const byDomain = new Map<string, CanonicalClaim[]>();
   for (const c of dbClaims) {
@@ -753,10 +762,25 @@ function buildInternationalDatabases(
                   (clientSafeDomain(domain) ?? "Международная база");
     out.push({
       databaseName: name,
+      /*
+       * Запись, называющая другого человека, сигналом о субъекте не бывает
+       * (шаг 0141).
+       *
+       * Стр. 8 отчёта Фридмана 20.09.2026: «opensanctions.org. По
+       * открытым/импортированным данным есть сигнал, связанный с записью
+       * „ООО УК «РОСВОДОКАНАЛ» — Москва — Гендиректор Михальков…“». В записи
+       * стоит Михальков, а лист подаёт её как сигнал по Фридману — утверждение
+       * о человеке, которое до него не прослеживается.
+       *
+       * Предикат тот же, что у цитат (`titleNamesAnotherPerson`): голое имя в
+       * сегменте заголовка, не содержащее основы имени субъекта. Запись без
+       * имени вовсе («Designation — UK Sanctions List») остаётся: она не
+       * называет чужого.
+       */
       statusSummary: stripInternalLeak(
-        top.originalTitle
+        top.originalTitle && !namesForeignPerson(top.originalTitle, stems)
           ? `По открытым/импортированным данным есть сигнал, связанный с записью «${top.originalTitle}».`
-          : "Зафиксирован предварительный сигнал международной или комплаенс-базы."
+          : "Зафиксирован предварительный сигнал международной или комплаенс-базы; запись требует сверки по идентификаторам."
       ),
       qualification: stripInternalLeak(top.clientQualification || caveatText("databaseSignalCheck")),
       evidenceRefs: [...new Set(list.flatMap((c) => c.evidenceRefs))],
@@ -907,7 +931,10 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
   }
 
   const internationalDatabases = buildInternationalDatabases(
-    input.claimsBundle.claims.filter((c) => c.subjectMatch !== "OTHER_SUBJECT")
+    input.claimsBundle.claims.filter((c) => c.subjectMatch !== "OTHER_SUBJECT"),
+    // Имя субъекта у пакета одно — `subjectId`; по нему запись базы узнаётся
+    // как запись о нём, а не о другом человеке (шаг 0141).
+    [input.subjectId]
   );
 
   const readPlots = input.linkVerdicts ? buildReadPlots(input.linkVerdicts) : [];
