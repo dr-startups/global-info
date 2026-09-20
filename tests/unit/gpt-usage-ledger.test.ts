@@ -16,8 +16,9 @@ import {
   consumeGptUsage,
   recordGptUsage,
   resetGptUsage,
+  runWithGptUsage,
 } from "@/modules/digital-profile/orion-golden/gpt/gpt-usage";
-import { GPT_PRICE_TABLE_DATE } from "@/modules/digital-profile/config/defaults";
+import { GPT_PRICE_TABLE_DATE, modelForStage } from "@/modules/digital-profile/config/defaults";
 import { callOpenAiStrictJsonOnce } from "@/modules/digital-profile/orion-golden/gpt/openai-json-client";
 
 /** Ответы провайдера по очереди: счёт токенов и признак обрезки. */
@@ -147,7 +148,9 @@ describe("счёт расхода по стадиям", () => {
     const ledger = consumeGptUsage();
     expect(ledger.calls).toBe(1);
     expect(ledger.byStage[0]!.stage).toBe("link_verdict");
-    expect(ledger.byStage[0]!.model).toBe("gpt-5.6-terra");
+    // Модель берётся из таблицы, а не переписывается здесь: после переезда
+    // чтения на Sol (шаг 0120) приколоченное имя сделало бы тест ложным.
+    expect(ledger.byStage[0]!.model).toBe(modelForStage("link_verdict"));
     expect(ledger.inputTokens).toBe(7_000);
     expect(ledger.outputTokens).toBe(300);
   });
@@ -168,6 +171,66 @@ describe("счёт расхода по стадиям", () => {
     const ledger = consumeGptUsage();
     expect(ledger.calls).toBe(2);
     expect(ledger.outputTokens).toBe(2_400);
+  });
+
+  it("У8: два прогона, идущие одновременно, не смешивают счёт", async () => {
+    // Три прогона 20.09.2026 шли в одном процессе, и артефакты вышли такими:
+    // у первого 259 вызовов всех трёх дел, у второго 6, у третьего 0.
+    const started: Array<() => void> = [];
+    const hold = () => new Promise<void>((resolve) => started.push(resolve));
+
+    const runA = runWithGptUsage(async () => {
+      recordGptUsage({
+        stage: "link_verdict",
+        model: "gpt-5.6-sol",
+        usage: { input_tokens: 1_000, output_tokens: 100 },
+      });
+      await hold();
+      recordGptUsage({
+        stage: "link_verdict",
+        model: "gpt-5.6-sol",
+        usage: { input_tokens: 1_000, output_tokens: 100 },
+      });
+    });
+    const runB = runWithGptUsage(async () => {
+      recordGptUsage({
+        stage: "slide_copy",
+        model: "gpt-5.6-sol",
+        usage: { input_tokens: 5_000, output_tokens: 500 },
+      });
+      await hold();
+    });
+    // Оба прогона начались и ждут; отпускаем их вперемешку.
+    await new Promise((r) => setTimeout(r, 10));
+    for (const resume of started) resume();
+
+    const a = await runA;
+    const b = await runB;
+    expect(a.usage.calls).toBe(2);
+    expect(a.usage.byStage.map((s) => s.stage)).toEqual(["link_verdict"]);
+    expect(a.usage.inputTokens).toBe(2_000);
+    expect(b.usage.calls).toBe(1);
+    expect(b.usage.byStage.map((s) => s.stage)).toEqual(["slide_copy"]);
+    expect(b.usage.inputTokens).toBe(5_000);
+  });
+
+  it("У9: вызов вне области прогона в его счёт не попадает", async () => {
+    // Авто-аналитик очереди идёт другим входом; его вызовы не должны оседать
+    // в счёте дела, которое готовится в это же время.
+    recordGptUsage({
+      stage: "auto_analyst",
+      model: "gpt-5.6-terra",
+      usage: { input_tokens: 9_000, output_tokens: 900 },
+    });
+    const { usage } = await runWithGptUsage(async () => {
+      recordGptUsage({
+        stage: "case_analysis",
+        model: "gpt-5.6-sol",
+        usage: { input_tokens: 1_000, output_tokens: 100 },
+      });
+    });
+    expect(usage.calls).toBe(1);
+    expect(usage.byStage[0]!.stage).toBe("case_analysis");
   });
 
   it("У5: неизвестная модель не роняет счёт и называется в артефакте", () => {

@@ -49,7 +49,7 @@ import {
   type GptCaseAnalysisDiagnostics,
   type GptJsonCaller,
 } from "../orion-golden/gpt/gpt-case-analysis";
-import { consumeGptUsage, gptUsageLogLine, resetGptUsage } from "../orion-golden/gpt/gpt-usage";
+import { gptUsageLogLine, runWithGptUsage } from "../orion-golden/gpt/gpt-usage";
 import { digitalProfileConfig } from "../config";
 import {
   CANONICAL_SLOT_IDS,
@@ -1031,7 +1031,33 @@ function writePersonaDecisionArtifact(
   );
 }
 
+/**
+ * Подготовка отчёта в своей области счёта расхода (шаг 0120).
+ *
+ * Прогоны идут в одном процессе одновременно, и модульный счёт они смешивали:
+ * артефакт первого забирал вызовы всех. Область даёт каждому прогону свой
+ * счёт, а `onUsage` вызывается и при падении — деньги за упавший прогон уже
+ * потрачены, и назвать их честнее, чем промолчать.
+ */
 export async function runCanonicalReportPrepare(
+  input: CanonicalPrepareInput
+): Promise<CanonicalPrepareResult> {
+  const { value } = await runWithGptUsage(
+    () => canonicalPrepareBody(input),
+    (usage) => {
+      mkdirSync(input.artifactsDir, { recursive: true });
+      writeFileSync(
+        join(input.artifactsDir, "gpt-usage.json"),
+        `${JSON.stringify({ caseId: input.caseId, unifiedJobId: input.unifiedJobId, ...usage }, null, 2)}\n`,
+        "utf8"
+      );
+      console.log(gptUsageLogLine(usage));
+    }
+  );
+  return value;
+}
+
+async function canonicalPrepareBody(
   input: CanonicalPrepareInput
 ): Promise<CanonicalPrepareResult> {
   if (!isCanonicalPrepareEnabled()) {
@@ -1042,14 +1068,6 @@ export async function runCanonicalReportPrepare(
   }
 
   assertLineage(input);
-  /*
-   * Счёт расхода обнуляется до первого вызова модели (шаг 0119).
-   *
-   * Счёт живёт в процессе, а процесс переживает несколько дел: без сброса
-   * подготовка следующего отчёта записала бы себе чужие токены — и цифра,
-   * ради которой всё и заведено, врала бы в большую сторону.
-   */
-  resetGptUsage();
   const subjectProfile = resolveSubjectProfile(input);
   const subjectDisplayName = input.subjectDisplayName ?? subjectProfile.displayName;
 
@@ -1979,22 +1997,6 @@ export async function runCanonicalReportPrepare(
     `${JSON.stringify(summary, null, 2)}\n`,
     "utf8"
   );
-
-  /*
-   * Расход модели — артефактом рядом с остальными.
-   *
-   * Пишется всегда, в том числе с нулями: «вызовов не было» — такой же
-   * результат, как и число, а отсутствие файла читалось бы как «учёт не
-   * работает». Офлайновые прогоны и тесты подставляют свой вызов, он до
-   * клиента модели не доходит, и в артефакте честно стоит ноль.
-   */
-  const gptUsage = consumeGptUsage();
-  writeFileSync(
-    join(input.artifactsDir, "gpt-usage.json"),
-    `${JSON.stringify({ caseId: input.caseId, unifiedJobId: input.unifiedJobId, ...gptUsage }, null, 2)}\n`,
-    "utf8"
-  );
-  console.log(gptUsageLogLine(gptUsage));
 
   const quality = await writeReportQualityArtifact(input, { visualAssetWarning });
 

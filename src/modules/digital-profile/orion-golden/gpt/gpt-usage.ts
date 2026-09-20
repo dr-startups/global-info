@@ -9,13 +9,24 @@
  *
  * Модуль — лист: ни сети, ни базы, ни модели. Клиент записывает сюда каждый
  * ответ, подготовка отчёта снимает счёт и кладёт его артефактом рядом с
- * остальными. Счёт живёт в процессе, поэтому подготовка **обнуляет его в
- * начале**: иначе следующее дело унаследовало бы чужие числа.
+ * остальными.
+ *
+ * **Счёт принадлежит прогону, а не процессу** (шаг 0120). Первая редакция
+ * держала его модульной переменной и обнуляла в начале подготовки — защита от
+ * «следующее дело унаследует чужие числа», написанная под последовательные
+ * прогоны. Три прогона 20.09.2026 пошли в одном процессе одновременно, и
+ * артефакты вышли такими: у первого 259 вызовов всех трёх дел, у второго 6, у
+ * третьего 0, часть вызовов потеряна чужим сбросом. Теперь у каждой подготовки
+ * своя область (`AsyncLocalStorage`), и смешаться им негде. Вызовы вне области
+ * (админская проверка очереди) идут в запасной счёт процесса: он никуда не
+ * течёт и ничей чужой счёт не портит.
  *
  * Деньги здесь — **оценка**, и она об этом говорит: рядом с суммой едет дата
  * прайса (`GPT_PRICE_TABLE_DATE`), а модель без цены не превращается в ноль,
  * а называется в `modelsWithoutPrice` — итог тогда неполон, и это видно.
  */
+
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
   CACHE_WRITE_MULTIPLIER,
@@ -76,7 +87,44 @@ export type GptUsageLedger = {
 type Row = Omit<GptStageUsage, "costUsd">;
 
 /** Ключ строки — пара «стадия и модель»: смена модели на стадии обязана быть видна. */
-const rows = new Map<string, Row>();
+type Rows = Map<string, Row>;
+
+const scope = new AsyncLocalStorage<Rows>();
+
+/**
+ * Счёт вызовов, сделанных вне области прогона.
+ *
+ * Такие вызовы есть: авто-аналитик очереди работает из админской проверки, а
+ * не из подготовки отчёта. Их некуда отнести, и запасной счёт нужен ровно для
+ * того, чтобы они **не оседали** в счёте дела, которое готовится в это же
+ * время.
+ */
+const outsideAnyRun: Rows = new Map();
+
+function currentRows(): Rows {
+  return scope.getStore() ?? outsideAnyRun;
+}
+
+/**
+ * Выполнить работу в своей области счёта.
+ *
+ * `onUsage` вызывается **всегда**, в том числе когда работа упала: деньги за
+ * упавший прогон уже потрачены, и назвать их — единственный честный ответ.
+ */
+export async function runWithGptUsage<T>(
+  fn: () => Promise<T>,
+  onUsage?: (usage: GptUsageLedger) => void
+): Promise<{ value: T; usage: GptUsageLedger }> {
+  const rows: Rows = new Map();
+  let usage: GptUsageLedger | undefined;
+  try {
+    const value = await scope.run(rows, fn);
+    usage = ledgerOf(rows);
+    return { value, usage };
+  } finally {
+    onUsage?.(usage ?? ledgerOf(rows));
+  }
+}
 
 function num(value: unknown): number {
   const n = Number(value);
@@ -114,6 +162,7 @@ export function recordGptUsage(input: {
   model: string;
   usage?: OpenAiUsageShape | null;
 }): void {
+  const rows = currentRows();
   const key = `${input.stage}|${input.model}`;
   const row =
     rows.get(key) ??
@@ -143,13 +192,26 @@ export function recordGptUsage(input: {
   rows.set(key, row);
 }
 
-/** Обнулить счёт: подготовка отчёта делает это до первого вызова модели. */
+/**
+ * Обнулить счёт текущей области.
+ *
+ * Подготовке отчёта это больше не нужно — область у неё своя и всегда пустая;
+ * остаётся для тестов и для запасного счёта процесса.
+ */
 export function resetGptUsage(): void {
-  rows.clear();
+  currentRows().clear();
 }
 
-/** Снять счёт и обнулить его. */
+/** Снять счёт текущей области и обнулить её. */
 export function consumeGptUsage(): GptUsageLedger {
+  const rows = currentRows();
+  const ledger = ledgerOf(rows);
+  rows.clear();
+  return ledger;
+}
+
+/** Свести строки в счёт. Сами строки не трогаются. */
+function ledgerOf(rows: Rows): GptUsageLedger {
   const byStage: GptStageUsage[] = [];
   const withoutPrice = new Set<string>();
   const ledger: GptUsageLedger = {
@@ -180,7 +242,6 @@ export function consumeGptUsage(): GptUsageLedger {
     byStage.push({ ...row, costUsd });
   }
   ledger.modelsWithoutPrice = [...withoutPrice];
-  rows.clear();
   return ledger;
 }
 

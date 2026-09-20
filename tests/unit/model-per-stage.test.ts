@@ -48,17 +48,24 @@ describe("таблица «стадия → модель»", () => {
     ] as const) {
       expect(modelForStage(stage), stage).toBe("gpt-5.6-sol");
     }
-    for (const stage of [
-      "link_verdict",
-      "wikipedia_review",
-      "fact_extraction",
-      "theme_clustering",
-      "identity",
-      "auto_analyst",
-    ] as const) {
+    // Чтение страниц и разбор статьи Википедии переехали на Sol (шаг 0120) —
+    // их держит М5, здесь остались стадии короткого извлечения.
+    for (const stage of ["fact_extraction", "theme_clustering", "identity", "auto_analyst"] as const) {
       expect(modelForStage(stage), stage).toBe("gpt-5.6-terra");
     }
     expect(modelForStage("theme_suggestion")).toBe("gpt-5.6-luna");
+  });
+
+  it("М5: дословная цитата длинной страницы — на Sol, короткое извлечение — на Terra", () => {
+    // Измерено на живых прогонах 20.09.2026: аудит снял 11–26 % цитат Terra
+    // против 0,7–2,5 % у прежней модели, у разбора статьи Википедии — 3 и 4
+    // выдуманных фрагмента против нуля. Там, где вход короткий и цитату
+    // проверяет код, Terra держится: извлечение фактов отбросило 0–2 против 1.
+    expect(modelForStage("link_verdict")).toBe("gpt-5.6-sol");
+    expect(modelForStage("wikipedia_review")).toBe("gpt-5.6-sol");
+    for (const stage of ["fact_extraction", "theme_clustering", "identity", "auto_analyst"] as const) {
+      expect(modelForStage(stage), stage).toBe("gpt-5.6-terra");
+    }
   });
 
   it("М2: у каждой стадии есть строка таблицы, у каждой модели — цена", () => {
@@ -83,7 +90,7 @@ describe("таблица «стадия → модель»", () => {
     const bodies: Array<Record<string, unknown>> = [];
     const fetchImpl = fakeFetch(bodies);
     await callOpenAiStrictJsonOnce({
-      stage: "link_verdict",
+      stage: "fact_extraction",
       systemPrompt: "s",
       userPayload: { a: 1 },
       fetchImpl,
