@@ -20,6 +20,7 @@ import {
   checkFormErrors,
   checkFormPayload,
   checkFormProgress,
+  innInput,
   serverFieldErrors,
   type CheckFormValues,
   type FieldErrors,
@@ -290,9 +291,11 @@ export function CheckForm() {
                   name: "inn",
                   type: "text",
                   inputMode: "numeric",
-                  placeholder: "10 или 12 цифр",
+                  // Длину и состав держит innInput, а не maxLength: браузер режет вставленное
+                  // до обработчика, и «ИНН 7707083893» терял две последние цифры. Подсказки
+                  // про «10 или 12 цифр» нет — лишнего не набрать, а о недоборе скажет отказ
                   value: values.inn,
-                  onChange: (e) => update("inn", e.target.value),
+                  onChange: (e) => update("inn", innInput(e.target.value)),
                 }}
               />
               <TextField

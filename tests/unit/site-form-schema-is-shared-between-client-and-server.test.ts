@@ -43,14 +43,19 @@ describe("форма проверки", () => {
   it("ошибки у полей — те же, что в ответе 400 сервера", () => {
     const values = form({ fullName: "Иванов", birthDate: "", inn: "77070838", website: "не сайт", consent: false });
     const errors = checkFormErrors(values);
-    expect(errors).toEqual(serverErrors(SelfCheckFormSchema, checkFormPayload(values)));
+    const server = serverErrors(SelfCheckFormSchema, checkFormPayload(values));
+    // Два поля браузер объясняет точнее сервера — дата по маске и ИНН по длине;
+    // остальные тексты обязаны совпадать со схемой слово в слово.
+    expect({ ...errors, inn: undefined }).toEqual({ ...server, inn: undefined });
     expect(errors).toMatchObject({
       fullName: "Укажите фамилию и имя, а если есть — отчество.",
       birthDate: "Укажите дату рождения.",
-      inn: "ИНН должен содержать 10 или 12 цифр и проходить проверку контрольной суммы.",
+      inn: "ИНН не дописан: у компании в нём 10 цифр, у человека — 12.",
       website: "Укажите адрес сайта, например example.ru.",
       consent: "Для запуска проверки требуется согласие.",
     });
+    // Сервер при этом по-прежнему отвечает своей строкой — форма ничего не «чинит» за него
+    expect(server.inn).toBe("ИНН должен содержать 10 или 12 цифр и проходить проверку контрольной суммы.");
   });
 
   it("заполненная форма ошибок не даёт, и сервер принимает её тело", () => {

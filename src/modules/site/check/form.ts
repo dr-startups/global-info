@@ -7,6 +7,7 @@
  * проверял ровно то, что уйдёт на сервер.
  */
 
+import { isValidInn } from "@/modules/self-check/inn";
 import {
   PREFERRED_TIME_VALUES,
   SelfCheckFormSchema,
@@ -14,6 +15,30 @@ import {
 } from "@/modules/self-check/schemas";
 import { BIRTH_DATE_INCOMPLETE_MESSAGE, birthDateToIso } from "./birth-date";
 import { DEFAULT_PHONE_COUNTRY, phoneComplete, phoneCountry, phoneE164 } from "./phone";
+
+/** Длины ИНН: у компании десять цифр, у человека и ИП — двенадцать. */
+const INN_COMPANY = 10;
+const INN_PERSON = 12;
+
+/**
+ * Что из набранного попадает в поле ИНН: только цифры и не больше двенадцати.
+ *
+ * Номер часто вставляют из письма или выписки — вместе с пробелами и словом
+ * «ИНН». Раньше такая вставка отвергалась схемой, и человек видел отказ там,
+ * где ошибки не делал.
+ */
+export function innInput(value: string): string {
+  return value.replace(/\D/gu, "").slice(0, INN_PERSON);
+}
+
+/** Отказ поля ИНН словами о том, что именно не так; `null` — с номером всё хорошо. */
+function innError(value: string): string | null {
+  const digits = innInput(value);
+  if (digits === "") return null;
+  if (digits.length < INN_COMPANY) return "ИНН не дописан: у компании в нём 10 цифр, у человека — 12.";
+  if (digits.length !== INN_COMPANY && digits.length !== INN_PERSON) return "В ИНН 10 или 12 цифр — проверьте номер.";
+  return isValidInn(digits) ? null : "Проверьте ИНН: контрольная цифра не сходится.";
+}
 
 /** Поле → первый текст отказа. */
 export type FieldErrors = Record<string, string>;
@@ -84,6 +109,10 @@ export function checkFormErrors(values: CheckFormValues): FieldErrors {
   if (errors.birthDate && values.birthDate.trim() !== "" && birthDateToIso(values.birthDate) === null) {
     errors.birthDate = BIRTH_DATE_INCOMPLETE_MESSAGE;
   }
+  // Схема на всякий неверный ИНН отвечает одной строкой — у поля говорим, что именно не так
+  const inn = innError(values.inn);
+  if (inn) errors.inn = inn;
+  else delete errors.inn;
   return errors;
 }
 
