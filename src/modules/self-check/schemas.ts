@@ -8,13 +8,11 @@
  */
 
 import { z } from "zod";
-import { isValidInn } from "./inn";
 
 const FULL_NAME_MESSAGE = "Укажите фамилию, имя и отчество.";
 const BIRTH_DATE_MESSAGE = "Укажите дату рождения.";
 const CONSENT_MESSAGE = "Для запуска проверки требуется согласие.";
-const INN_MESSAGE =
-  "ИНН должен содержать 10 или 12 цифр и проходить проверку контрольной суммы.";
+const INN_MESSAGE = "В ИНН 10 или 12 цифр — проверьте номер.";
 const WEBSITE_MESSAGE = "Укажите адрес сайта, например example.ru.";
 const LEAD_NAME_MESSAGE = "Укажите, как к вам обращаться.";
 const LEAD_CONTACT_MESSAGE = "Укажите контакт выбранным способом.";
@@ -109,7 +107,10 @@ export const SelfCheckFormSchema = z.object({
   ),
   inn: z.preprocess(
     blankToUndefined,
-    z.string().trim().refine(isValidInn, INN_MESSAGE).optional()
+    // Только длина и цифры. Контрольная сумма не проверяется (решение владельца
+    // 20.09.2026): она отвергала бы номер, выданный не по общему алгоритму, а цену
+    // — опечатка попадает в сильные признаки субъекта — владелец принял осознанно.
+    z.string().trim().regex(/^(\d{10}|\d{12})$/u, INN_MESSAGE).optional()
   ),
   employer: optionalText(160),
   position: optionalText(160),

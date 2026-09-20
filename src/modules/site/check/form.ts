@@ -7,7 +7,6 @@
  * проверял ровно то, что уйдёт на сервер.
  */
 
-import { isValidInn } from "@/modules/self-check/inn";
 import {
   PREFERRED_TIME_VALUES,
   SelfCheckFormSchema,
@@ -31,13 +30,20 @@ export function innInput(value: string): string {
   return value.replace(/\D/gu, "").slice(0, INN_PERSON);
 }
 
-/** Отказ поля ИНН словами о том, что именно не так; `null` — с номером всё хорошо. */
+/**
+ * Отказ поля ИНН словами о том, что именно не так; `null` — с номером всё хорошо.
+ *
+ * Контрольная сумма не проверяется — решение владельца 20.09.2026 после
+ * названной цены: номер идёт в сильные признаки различения однофамильцев
+ * (`subject-resolution-classifier`), и опечатка в цифре может привести человеку
+ * чужой материал. Поле отвечает за длину и состав, не больше.
+ */
 function innError(value: string): string | null {
   const digits = innInput(value);
   if (digits === "") return null;
   if (digits.length < INN_COMPANY) return "ИНН не дописан: у компании в нём 10 цифр, у человека — 12.";
   if (digits.length !== INN_COMPANY && digits.length !== INN_PERSON) return "В ИНН 10 или 12 цифр — проверьте номер.";
-  return isValidInn(digits) ? null : "Проверьте ИНН: контрольная цифра не сходится.";
+  return null;
 }
 
 /** Поле → первый текст отказа. */
