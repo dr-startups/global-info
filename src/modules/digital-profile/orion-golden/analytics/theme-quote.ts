@@ -31,7 +31,12 @@ import {
   looksLikeMachineDump,
   looksLikeSearchQuery,
   looksLikeSurfaceBlockHeading,
+  looksLikePlatformNavigation,
+  looksLikeUiCallToAction,
+  PLATFORM_READ_MORE,
 } from "./client-quote-hygiene";
+
+export { looksLikePlatformNavigation } from "./client-quote-hygiene";
 
 /**
  * PDF-46 I.1 — JS `\b` does NOT treat Cyrillic as word chars, so «…Путина в»
@@ -46,13 +51,14 @@ export function hasDanglingTail(text: string): boolean {
 }
 
 /**
- * Обрыв в конце: многоточие поисковика («что отрезано, неизвестно») или
- * многоточие с приклеенной ссылкой площадки «Read more» / «Читать далее» —
- * тизер страницы, который читающая модель взяла за цитату
- * («…of Art Pictures Studio Fyodor...Read more», en.russia.ru).
+ * Обрыв в конце: многоточие поисковика — «что отрезано, неизвестно».
+ *
+ * Кнопка площадки («Read more», «Читать далее») считается обрывом отдельно и
+ * после любого знака, а не только после многоточия: тег-страница Independent
+ * приклеила её прямо к точке — «…divorce case.Read more» (шаг 0121).
  */
-const SERP_TRUNCATED_RE =
-  /(?:\.\.\.|…)\s*(?:read\s+more|читать\s+(?:далее|дальше|полностью)|подробнее|далее)?\s*$/iu;
+const SERP_TRUNCATED_RE = /(?:\.\.\.|…)\s*(?:далее)?\s*$/iu;
+
 
 /** Короче этого фраза — подпись, а не предложение. */
 const MIN_STATEMENT_WORDS = 4;
@@ -160,13 +166,15 @@ export function looksLikeWholeStatement(text: string): boolean {
   // цитату не с начала («producer, actor, founder and co-founder of…»).
   if (/^[«"„(]*\p{Ll}/u.test(t)) return false;
   if (/[,;:]$/u.test(t)) return false;
-  if (SERP_TRUNCATED_RE.test(t)) return false;
+  if (SERP_TRUNCATED_RE.test(t) || PLATFORM_READ_MORE.test(t)) return false;
   if (hasDanglingTail(t)) return false;
   if (
     looksLikeMachineDump(t) ||
     looksLikeCardChrome(t) ||
     looksLikeSearchQuery(t) ||
-    looksLikeSurfaceBlockHeading(t)
+    looksLikeSurfaceBlockHeading(t) ||
+    looksLikeUiCallToAction(t) ||
+    looksLikePlatformNavigation(t)
   ) {
     return false;
   }

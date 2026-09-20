@@ -36,9 +36,12 @@ import {
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
 import {
+  cutGluedChrome,
+  looksLikeCardChrome,
   looksLikeMachineDump,
   looksLikeSearchQuery,
   looksLikeSurfaceBlockHeading,
+  looksLikeUiCallToAction,
   pageQuoteForClient,
 } from "./client-quote-hygiene";
 import { dictionaryHitIsNegated } from "../../config/negated-dictionary-hit";
@@ -60,6 +63,7 @@ import {
   carriesThemeSignal,
   DANGLING_TAIL_RE,
   hasDanglingTail,
+  looksLikePlatformNavigation,
   looksLikeWholeStatement,
   snippetSentencesAboutSubject,
   subjectMaterialText,
@@ -421,6 +425,14 @@ export function quoteForClaim(title: string, budget = 220): string {
     .replace(/(\.\.\.|…)\s*[-–—|·]\s*[^-–—|·]{1,40}$/u, "$1");
   const t = cleanExampleTitle(raw);
   if (!t || t.length < 12 || hasDanglingTail(t) || isIncompleteClientQuote(t)) return "";
+  // Навигация площадки остаётся навигацией и после снятия хвоста издания:
+  // «Биография · Образование · ДП о персоне.» укорачивалось до двух слов меню
+  // и печаталось цитатой (шаг 0121).
+  if (looksLikePlatformNavigation(t) || looksLikePlatformNavigation(raw)) return "";
+  // Кнопка сервиса и интерфейс карточки — не слова источника: «Проверьте
+  // физлицо и исключите риски долгов», «Индивидуальный предприниматель 1
+  // Показать историю.» (шаг 0121).
+  if (looksLikeUiCallToAction(t) || looksLikeCardChrome(t)) return "";
   // Идентификаторы наборов данных — не слова источника: «…источники:
   // ext_gb_coh_psc, us_trade_csl, eu_fsf» стояло в отчёте цитатой трижды.
   if (looksLikeMachineDump(t)) return "";
@@ -892,7 +904,10 @@ export function endsWithSentence(text: string): boolean {
 }
 
 export function cleanExampleTitle(raw: string): string {
-  let t = String(raw ?? "").replace(/\s+/gu, " ").trim();
+  // Приклеенная подпись страницы снимается и здесь (шаг 0121): прежде чистка
+  // стояла только в гигиене цитат страницы, и заголовок доезжал до отчёта
+  // склеенным — «…Сергея Бондарчука-старшегоИсточник: Starface.ru.».
+  let t = cutGluedChrome(String(raw ?? "").replace(/\s+/gu, " ").trim());
   // Source suffix after a pipe: "Заголовок | Дзен" / "… | Forbes.ru".
   t = t.replace(/\s*\|\s*[^|]{1,40}$/u, "").trim();
   // Хвост издания или аккаунта после «·»/«•» — «… · mirov101.», «… • Следствие»

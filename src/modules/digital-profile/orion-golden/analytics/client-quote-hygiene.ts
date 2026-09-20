@@ -114,6 +114,65 @@ export function looksLikeSurfaceBlockHeading(text: string | null | undefined): b
 }
 
 /**
+ * Кнопка площадки «Read more» в конце — обрыв текста (шаг 0121).
+ *
+ * Тег-страница Independent отдала три заголовка подряд и кнопку, приклеенную к
+ * точке: «…to stop ex-wife's divorce case.Read more». Прежний признак ловил её
+ * только после многоточия. «Далее» само по себе сюда не входит: по-русски оно
+ * законно кончает фразу («и так далее»).
+ */
+export const PLATFORM_READ_MORE =
+  /(?:read\s+more|читать\s+(?:далее|дальше|полностью)|подробнее)\s*$/iu;
+
+/**
+ * Призыв интерфейса, а не высказывание о человеке (шаг 0121).
+ *
+ * Отчёты 20.09.2026 цитировали кнопки сервисов проверки: «Проверьте физлицо и
+ * исключите риски долгов и банкротства» (focus.kontur.ru), «Получите информацию
+ * о физлице: задолженности, банкротство, нахождение в розыске…» — словарь видит
+ * «банкротство» и «розыск», читатель не узнаёт о человеке ничего.
+ *
+ * Только повелительное наклонение второго лица и две кнопки-инфинитива
+ * («Показать», «Скрыть»). Прочие инфинитивы не берём намеренно: «Проверить
+ * Потанина попросили депутаты» — законный заголовок, а не кнопка.
+ */
+const UI_CALL_TO_ACTION =
+  /^\s*(?:проверьте|получите|узнайте|закажите|скачайте|оставьте|подпишитесь|смотрите|читайте|перейдите|введите|выберите|добавьте|откройте|показать|скрыть)(?!\p{L})/iu;
+
+export function looksLikeUiCallToAction(text: string | null | undefined): boolean {
+  return UI_CALL_TO_ACTION.test(String(text ?? ""));
+}
+
+/**
+ * Навигация площадки, а не фраза (шаг 0121).
+ *
+ * Сниппет whoiswho.dp.ru начинается меню «Биография · Образование · ДП о
+ * персоне.»: слов хватает, словарь делового профиля видит «Биография», и в
+ * приложение отчёта Собчак уехала строка меню — причём укороченная нашей же
+ * чисткой хвоста издания до «Биография · Образование». Тег-страница Independent
+ * тем же знаком склеила три заголовка подряд.
+ *
+ * Признак — разбиение: три куска и больше, либо два, но оба короткие. Живой
+ * заголовок с одним таким знаком внутри («… / «Компания» · Биографии
+ * предпринимателей России») под правило не подпадает: второй кусок длиннее
+ * трёх слов.
+ */
+const NAV_SEPARATOR_RE = /\s*[·•]\s*/u;
+const MAX_NAV_LABEL_WORDS = 3;
+
+export function looksLikePlatformNavigation(text: string): boolean {
+  const parts = String(text ?? "")
+    .split(NAV_SEPARATOR_RE)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return false;
+  if (parts.length >= 3) return true;
+  return parts.every(
+    (p) => p.split(/\s+/u).filter((w) => /\p{L}/u.test(w)).length <= MAX_NAV_LABEL_WORDS
+  );
+}
+
+/**
  * Похож ли текст на поисковый запрос, а не на заголовок публикации.
  *
  * Признаки: всё в нижнем регистре, нет конечной пунктуации, нет кавычек и
@@ -203,6 +262,13 @@ const CARD_LABEL_RE = new RegExp(
   "gu"
 );
 const MASKED_AMOUNT_RE = /(?:^|\s)X{1,3}(?:\s+X{3})+(?=\s|$)|\bX{3}\s*₽/u;
+/**
+ * Кнопка внутри карточки: «Показать историю», «Смотреть все» (шаг 0121).
+ * Ярлыков полей у такой строки может не быть вовсе — «Индивидуальный
+ * предприниматель 1 Показать историю.» несёт один ярлык и кнопку.
+ */
+const CARD_BUTTON_RE =
+  /(?:^|\s)(?:показать|скрыть|смотреть)\s+(?:истори[юи]|ещё|еще|все|всё|полностью|подробнее)(?!\p{L})/iu;
 // Конец предложения внутри текста — знак и заглавная буква за ним; точка
 // после одиночной буквы («г. Москва», «Ф. С.») — сокращение, не конец.
 const SENTENCE_END_INSIDE_RE = /(?<![\s(]\p{L})[.!?…]\s+\p{Lu}/u;
@@ -211,6 +277,7 @@ export function looksLikeCardChrome(text: string | null | undefined): boolean {
   const body = String(text ?? "").replace(/\s+/gu, " ").trim();
   if (!body) return false;
   if (MASKED_AMOUNT_RE.test(body)) return true;
+  if (CARD_BUTTON_RE.test(body)) return true;
   const labels = body.match(CARD_LABEL_RE)?.length ?? 0;
   if (labels >= 3) return true;
   return labels >= 2 && !SENTENCE_END_INSIDE_RE.test(body);
@@ -236,6 +303,9 @@ export function pageQuoteForClient(text: string | null | undefined): string {
   if (body.length < MIN_PAGE_QUOTE_CHARS) return "";
   if (looksLikeSearchQuery(body) || looksLikeSurfaceBlockHeading(body)) return "";
   if (looksLikeMachineDump(body) || looksLikeCardChrome(body)) return "";
+  // Кнопка площадки и призыв интерфейса — не слова источника (шаг 0121).
+  if (PLATFORM_READ_MORE.test(body) || looksLikeUiCallToAction(body)) return "";
+  if (looksLikePlatformNavigation(body)) return "";
   const tokens = body.split(" ").filter(Boolean);
   if (tokens.length < MIN_PAGE_QUOTE_WORDS) return "";
   const numeric = tokens.filter((t) => NUMERIC_TOKEN.test(t)).length;
