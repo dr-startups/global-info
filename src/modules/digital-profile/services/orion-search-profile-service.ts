@@ -19,7 +19,6 @@ import { organicSearchDepth, type OrganicSearchProvider } from "../providers/sea
  * деки отсюда нельзя — сервис сбора не должен зависеть от слоя отчёта, — но
  * тест сверяет оба числа между собой.
  */
-export const SERP_AUDIT_DEPTH = 20;
 import {
   SUBJECT_QUERY_LIMIT,
   buildSubjectQuerySet,
@@ -102,12 +101,6 @@ export interface OrionProfileRunResult {
   warnings: string[];
 }
 
-function allowsNegativeQueries(subject: OfflinePlanSubject): boolean {
-  const basis = (subject.lawfulBasis ?? "").toUpperCase();
-  if (!basis) return false;
-  if (basis === "CONSENT") return (subject.consentStatus ?? "").toUpperCase() === "GRANTED";
-  return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
-}
 
 function googleReady(): boolean {
   return externalGoogleSerpProvider.status().state === "READY";
@@ -610,108 +603,24 @@ async function buildRegionQuerySet(
   return regionQuerySet(subject, region, capturedAt, suggestions);
 }
 
-/**
- * Субъект, которого хватает для плана запросов без сети: имя, псевдонимы,
- * регионы, страна. Правовое основание — необязательное: без него план идёт без
- * негативных проб, как для субъекта без согласия.
+/*
+ * План запросов без сети переехал в `search-surfaces/offline-orion-query-plan`
+ * (шаг 0137): его импортирует агент Google, а импорт сервиса замкнул бы цикл
+ * через стратегию и реестр агентов. Здесь — реэкспорт, чтобы у вопроса «какие
+ * запросы у аудита» остался один ответ и прежние вызывающие не менялись.
  */
-export type OfflinePlanSubject = Pick<CaseSubjectInfo, "fullName" | "aliases" | "targetRegions" | "location"> &
-  Partial<Pick<CaseSubjectInfo, "lawfulBasis" | "consentStatus">>;
-
-/**
- * Имя, которым субъекта ищут в контуре: в зарубежном — латиницей.
- *
- * Набор строился от кириллического ФИО во всех контурах, и в ОАЭ уходили
- * запросы вида «киркоров филипп бедросович дети». Google с параметрами ОАЭ
- * отвечал на них теми же русскими страницами, что и российский контур:
- * раздел про ОАЭ повторял российский, а то, что о субъекте видно за
- * рубежом, в отчёт не попадало.
- */
-function regionSearchName(subject: OfflinePlanSubject, region: OrionRegionCode): string {
-  return regionProfile(region).language !== "ru" ? latinNameOf(subject) : subject.fullName;
-}
-
-/** Набор запросов контура из уже полученных подсказок — без сети. */
-function regionQuerySet(
-  subject: OfflinePlanSubject,
-  region: OrionRegionCode,
-  capturedAt: string,
-  suggestions: Array<{ text: string; engine: string; region: string; rank: number }>
-): SubjectQuerySet {
-  const profile = regionProfile(region);
-  const latinContour = profile.language !== "ru";
-  const searchName = regionSearchName(subject, region);
-  const variants = (subject.aliases ?? []).filter((a) => !latinContour || !hasCyrillic(a));
-  const parsed = parseSubjectName(searchName);
-  return buildSubjectQuerySet({
-    profile: {
-      fullName: searchName,
-      firstName: parsed.givenName ?? undefined,
-      lastName: parsed.surname ?? undefined,
-      patronymic: parsed.patronymic ?? undefined,
-      variants,
-    },
-    suggestions,
-    region,
-    language: profile.language,
-    capturedAt,
-    limit: SUBJECT_QUERY_LIMIT,
-  });
-}
-
-/**
- * План запросов сбора, построенный без сети.
- *
- * Тот же построитель и те же настройки, что у живого сбора, только без
- * автодополнения Google: на запрос субъекта оно не влияет (имя кладут в набор
- * первым по происхождению, а не по месту), а производные запросы из подсказок
- * в офлайн-план просто не попадают. Это единственный ответ на вопрос «какой
- * из запросов — само ФИО и с каким назначением» для всех, кто читает
- * `dp_search_queries`: там лежит только текст, и без плана назначение
- * пришлось бы угадывать по строке — так таблица ТОП-20 подписывалась
- * запросом «…инн».
- */
-export function offlineOrionQueryPlan(
-  subject: OfflinePlanSubject,
-  regions?: OrionRegionCode[]
-): OrionQuerySpec[] {
-  const capturedAt = new Date(0).toISOString();
-  const querySubject = {
-    fullName: subject.fullName,
-    aliases: subject.aliases,
-    targetRegions: subject.targetRegions,
-    location: subject.location,
-  };
-  const plannedRegions =
-    regions ??
-    buildOrionQueryPlanDetailed(querySubject, { maxPrimaryPerRegion: 1, includeRiskProbes: false }).plan
-      .map((q) => q.region)
-      .filter((r, i, all) => all.indexOf(r) === i);
-  const primaryQueriesByRegion = Object.fromEntries(
-    plannedRegions.map((region) => [region, plannedPrimaryQueries(regionQuerySet(subject, region, capturedAt, []))])
-  ) as Partial<Record<OrionRegionCode, PlannedPrimaryQuery[]>>;
-  return buildOrionQueryPlanDetailed(querySubject, {
-    primaryQueriesByRegion,
-    maxPrimaryPerRegion: providerConfig.orion.maxPrimaryQueriesPerRegion,
-    includeRiskProbes: providerConfig.orion.includeRiskProbes && allowsNegativeQueries(subject),
-    regions,
-  }).plan;
-}
-
-/**
- * Латинское написание имени: готовое из псевдонимов, иначе транслитерация.
- * Псевдоним предпочтительнее — его написал человек, знающий, как субъекта
- * пишут в зарубежных источниках.
- */
-function latinNameOf(subject: OfflinePlanSubject): string {
-  const alias = (subject.aliases ?? [])
-    .map((a) => String(a ?? "").trim())
-    .find((a) => a.length > 0 && !hasCyrillic(a));
-  if (alias) return alias;
-  return hasCyrillic(subject.fullName)
-    ? transliterateRuToEn(subject.fullName)
-    : subject.fullName;
-}
+export {
+  offlineOrionQueryPlan,
+  SERP_AUDIT_DEPTH,
+  type OfflinePlanSubject,
+} from "../search-surfaces/offline-orion-query-plan";
+import {
+  allowsNegativeQueries,
+  regionQuerySet,
+  regionSearchName,
+  SERP_AUDIT_DEPTH,
+  type OfflinePlanSubject,
+} from "../search-surfaces/offline-orion-query-plan";
 
 export async function runOrionSearchProfile(
   caseId: string,

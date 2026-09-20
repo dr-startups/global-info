@@ -4146,7 +4146,16 @@ export function highlightPhrase(input: {
     sidebarQuoteLimit === -1 ? quoteSentences.length : sidebarQuoteLimit;
 
   const compose = (quoteCount: number, withLink: boolean): string => {
-    const quote = quoteSentences.slice(0, quoteCount).join(" ");
+    /*
+     * Чужой текст в кавычках печатается одним способом (шаг 0137).
+     *
+     * Стр. 26 отчёта Галицкого 20.09.2026: «Президент и владелец футбольного
+     * клуба « Краснодар »». Строка собиралась склейкой «${quote}» и общую
+     * чистку не звала: внутренние ёлочки оставались ёлочками, а пробелы
+     * разметки внутри них — пробелами. Тот же дефект, что шаг 0131 чинил в
+     * списке признаков, и ответ на него тот же — `quoteBody`.
+     */
+    const quote = quoteBody(quoteSentences.slice(0, quoteCount).join(" "));
     // Точка внутри кавычек — точка цитаты; своей мы её не дублируем.
     const opening = quote
       ? `${head}: «${quote}»${/[.!?…]$/u.test(quote) ? "" : "."}`

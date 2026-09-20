@@ -13,6 +13,7 @@
  */
 
 import { prisma } from "@/server/prisma/client";
+import type { OfflinePlanSubject } from "../../search-surfaces/offline-orion-query-plan";
 import type { Prisma, SearchEngine } from "@prisma/client";
 import { normalizeUrl } from "../../services/evidence-service";
 import { searchResultDedupHash } from "../../services/search-result-identity";
@@ -42,6 +43,14 @@ function allowsNegativeQueries(subject: CaseSubjectInfo): boolean {
   return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
 }
 
+/** Запрос плана аудита: фраза, регион поисковика, язык и глубина. */
+export type AuditSearchSpec = {
+  query: string;
+  region: string;
+  language: string;
+  limit: number;
+};
+
 export abstract class RealSearchAgentBase implements CaseAgent {
   abstract readonly name: string;
   abstract readonly displayName: string;
@@ -53,6 +62,18 @@ export abstract class RealSearchAgentBase implements CaseAgent {
   protected abstract readonly provider: SearchProvider;
   /** The DB SearchEngine value for stored rows. */
   protected abstract readonly engine: SearchEngine;
+
+  /**
+   * Запросы аудита вместо личного набора (шаг 0137).
+   *
+   * У движка, который собирает позиции органической выдачи, набор запросов —
+   * это план аудита: регионы и глубина у него свои, и второго набора для той
+   * же выдачи не заводится. `null` — прежний личный набор, и остальные агенты
+   * не меняются.
+   */
+  protected auditSearchSpecs(_subject: OfflinePlanSubject): AuditSearchSpec[] | null {
+    return null;
+  }
 
   /** Max distinct person queries per audit (subclasses may cap from config). */
   protected maxQueriesPerAudit(): number | undefined {
@@ -156,18 +177,18 @@ export abstract class RealSearchAgentBase implements CaseAgent {
     };
     try {
       const subject = await loadCaseSubject(ctx.caseId);
-      const specs = buildPersonSearchQueries(
-        {
-          fullName: subject.fullName,
-          aliases: subject.aliases,
-          targetRegions: subject.targetRegions,
-          location: subject.location,
-        },
-        {
+      const planSubject = {
+        fullName: subject.fullName,
+        aliases: subject.aliases,
+        targetRegions: subject.targetRegions,
+        location: subject.location,
+      };
+      const specs: Array<{ query: string; language: string; region?: string; limit?: number }> =
+        this.auditSearchSpecs(planSubject as OfflinePlanSubject) ??
+        buildPersonSearchQueries(planSubject, {
           maxQueries: this.maxQueriesPerAudit(),
           includeNegative: allowsNegativeQueries(subject),
-        }
-      );
+        });
 
       const allResults: SearchProviderResult[] = [];
       let anySuccess = false;
@@ -182,6 +203,9 @@ export abstract class RealSearchAgentBase implements CaseAgent {
           query: spec.query,
           language: spec.language,
           region: spec.region,
+          // Глубина есть только у плана аудита; личный набор её не называет и
+          // остаётся с умолчанием провайдера.
+          ...(typeof spec.limit === "number" ? { limit: spec.limit } : {}),
         });
         if (run.status === "SUCCESS") {
           anySuccess = true;
