@@ -29,6 +29,7 @@ import {
 import { countAdminDecisionsByStatus } from "../evidence/admin-review-decision";
 import { applyAdminDecisionsToJudgments } from "../evidence/apply-admin-decisions-to-judgments";
 import { runGptAutoAnalystDecisions, shouldUseGptAutoAnalyst } from "../evidence/gpt-auto-analyst";
+import { gptUsageLogLine, runWithGptUsage } from "../gpt/gpt-usage";
 import { buildOrionSectionBundles } from "../sections/orion-section-bundle-builder";
 import { buildRiskMatrixFromSections } from "../sections/orion-risk-matrix-from-sections";
 import {
@@ -348,13 +349,36 @@ async function regenerateSectionBasedClientContentAsync(input: {
   let productionDecisions = listAdminReviewDecisions(input.caseId);
   const pendingCount = productionDecisions.decisions.filter((d) => d.status === "PENDING").length;
   if (shouldUseGptAutoAnalyst() && pendingCount > 0) {
-    const auto = await runGptAutoAnalystDecisions({
-      caseId: input.caseId,
-      judgments: input.judgments,
-      manualQueue: input.queue,
-      subject: { fullName: input.inventory.subject.fullName, aliases: input.inventory.subject.aliases },
-      existingDecisionSet: productionDecisions,
-    });
+    /*
+     * Своя область счёта расхода (шаг 0123).
+     *
+     * Авто-аналитик идёт админской проверкой, а не подготовкой отчёта, и его
+     * вызовы оседали в запасном счёте процесса, который никто не снимает, —
+     * потраченных на него денег не называл никто. Счёт кладётся рядом с его
+     * же артефактом решений, а не в `gpt-usage.json` дела: приписать чужому
+     * прогону хуже, чем показать отдельно.
+     */
+    const { value: auto } = await runWithGptUsage(
+      () =>
+        runGptAutoAnalystDecisions({
+          caseId: input.caseId,
+          judgments: input.judgments,
+          manualQueue: input.queue,
+          subject: {
+            fullName: input.inventory.subject.fullName,
+            aliases: input.inventory.subject.aliases,
+          },
+          existingDecisionSet: productionDecisions,
+        }),
+      (usage) => {
+        writeFileSync(
+          join(input.artifactRootDir, "gpt-usage-auto-analyst.json"),
+          `${JSON.stringify({ caseId: input.caseId, ...usage }, null, 2)}\n`,
+          "utf-8"
+        );
+        console.log(gptUsageLogLine(usage));
+      }
+    );
     productionDecisions = auto.decisionSet;
     writeFileSync(
       join(input.artifactRootDir, "gpt-auto-analyst-decisions.json"),

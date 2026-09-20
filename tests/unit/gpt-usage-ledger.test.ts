@@ -233,6 +233,21 @@ describe("счёт расхода по стадиям", () => {
     expect(usage.byStage[0]!.stage).toBe("case_analysis");
   });
 
+  it("У10: админская проверка очереди пишет свой счёт, а не общий", async () => {
+    // Авто-аналитик идёт другим входом, и его вызовы прежде оседали в запасном
+    // счёте процесса, который никто не снимает.
+    const { usage } = await runWithGptUsage(async () => {
+      recordGptUsage({
+        stage: "auto_analyst",
+        model: "gpt-5.6-terra",
+        usage: { input_tokens: 4_000, output_tokens: 400 },
+      });
+    });
+    expect(usage.calls).toBe(1);
+    expect(usage.byStage[0]!.stage).toBe("auto_analyst");
+    expect(usage.costUsd).toBeGreaterThan(0);
+  });
+
   it("У5: неизвестная модель не роняет счёт и называется в артефакте", () => {
     // Модель могли сменить в таблице и забыть цену: числа токенов остаются,
     // стоимость честно неизвестна, а не молча ноль.

@@ -10,7 +10,15 @@
  */
 
 import { digitalProfileConfig } from "../../config";
-import { modelForStage, type GptStage } from "../../config/defaults";
+import {
+  effortForStage,
+  GPT_PROMPT_CACHE_BREAKPOINT,
+  GPT_PROMPT_CACHE_OPTIONS,
+  modelForStage,
+  serviceTierForStage,
+  type GptServiceTier,
+  type GptStage,
+} from "../../config/defaults";
 import { recordGptUsage, type OpenAiUsageShape } from "./gpt-usage";
 import { OpenAiRateLimitError, isOpenAiHttp429 } from "./openai-rate-limit";
 import {
@@ -127,6 +135,15 @@ type FetchLike = (
   init?: RequestInit
 ) => Promise<Response>;
 
+/**
+ * Насколько дольше ждём ответ медленного тарифа.
+ *
+ * Провайдер честно предупреждает: ответы медленнее и бывает отказ «нет
+ * ёмкости». Ждать вечно нельзя — у стадии свой срок, — поэтому ожидание втрое
+ * больше обычного, а дальше тот же вызов идёт обычным тарифом.
+ */
+const FLEX_TIMEOUT_FACTOR = 3;
+
 async function requestOpenAiJson(input: {
   stage: GptStage;
   systemPrompt: string;
@@ -136,6 +153,7 @@ async function requestOpenAiJson(input: {
   apiKey: string;
   model: string;
   timeoutMs: number;
+  tier?: GptServiceTier;
 }): Promise<{ parsed: unknown; text: string; response: OpenAiResponseShape }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), input.timeoutMs);
@@ -150,13 +168,30 @@ async function requestOpenAiJson(input: {
       body: JSON.stringify({
         model: input.model,
         input: [
-          { role: "system", content: [{ type: "input_text", text: input.systemPrompt }] },
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: input.systemPrompt,
+                // Кэшируется ровно системный промпт: он один на все вызовы
+                // стадии и на соседние прогоны (шаг 0123).
+                prompt_cache_breakpoint: GPT_PROMPT_CACHE_BREAKPOINT,
+              },
+            ],
+          },
           {
             role: "user",
             content: [{ type: "input_text", text: JSON.stringify(input.userPayload) }],
           },
         ],
-        ...(isReasoningModel(input.model) ? { reasoning: { effort: "low" } } : {}),
+        // Явный режим выключает неявную точку провайдера: она приходилась на
+        // конец промпта, и каждый вызов платил наценку за запись впустую.
+        prompt_cache_options: GPT_PROMPT_CACHE_OPTIONS,
+        ...(isReasoningModel(input.model)
+          ? { reasoning: { effort: effortForStage(input.stage) } }
+          : {}),
+        ...(input.tier ? { service_tier: input.tier } : {}),
         max_output_tokens: input.maxOutputTokens,
       }),
     });
@@ -259,7 +294,8 @@ export async function callOpenAiStrictJsonOnce(input: {
     finalMaxOutputTokens: firstMax,
   };
 
-  const run = (maxOutputTokens: number) =>
+  const tier = serviceTierForStage(input.stage);
+  const call = (maxOutputTokens: number, useTier: GptServiceTier | undefined) =>
     requestOpenAiJson({
       stage: input.stage,
       systemPrompt: input.systemPrompt,
@@ -268,8 +304,26 @@ export async function callOpenAiStrictJsonOnce(input: {
       fetchImpl,
       apiKey,
       model,
-      timeoutMs: digitalProfileConfig.aiAnalyst.timeoutMs,
+      timeoutMs: digitalProfileConfig.aiAnalyst.timeoutMs * (useTier ? FLEX_TIMEOUT_FACTOR : 1),
+      tier: useTier,
     });
+
+  /*
+   * Медленный тариф не обязан ответить.
+   *
+   * Он отдаёт те же токены вдвое дешевле, но провайдер вправе сказать «нет
+   * ёмкости» или отвечать дольше срока. Любой отказ на нём — не провал вызова:
+   * тот же вызов немедленно идёт обычным тарифом. Иначе экономия оплачивалась
+   * бы непрочитанными страницами, то есть качеством отчёта.
+   */
+  const run = async (maxOutputTokens: number) => {
+    if (!tier) return call(maxOutputTokens, undefined);
+    try {
+      return await call(maxOutputTokens, tier);
+    } catch {
+      return call(maxOutputTokens, undefined);
+    }
+  };
 
   try {
     const first = await run(firstMax);

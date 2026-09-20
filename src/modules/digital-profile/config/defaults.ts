@@ -163,20 +163,76 @@ export type GptStage = (typeof GPT_STAGES)[number];
  * окружении по правилу проекта живут только секреты, а модель секретом не
  * является.
  */
-export const GPT_STAGE_MODELS: Record<GptStage, { model: string; label: string }> = {
-  case_analysis: { model: "gpt-5.6-sol", label: "Анализ дела" },
-  executive_summary: { model: "gpt-5.6-sol", label: "Резюме для руководства" },
-  deck_compose: { model: "gpt-5.6-sol", label: "Композиция деки" },
-  deck_edit: { model: "gpt-5.6-sol", label: "Редактор деки" },
-  slide_copy: { model: "gpt-5.6-sol", label: "Текст слайдов" },
-  link_verdict: { model: "gpt-5.6-sol", label: "Чтение страниц выдачи" },
-  wikipedia_review: { model: "gpt-5.6-sol", label: "Разбор статьи Википедии" },
-  fact_extraction: { model: "gpt-5.6-terra", label: "Извлечение фактов" },
-  theme_clustering: { model: "gpt-5.6-terra", label: "Сведение сюжетов" },
-  identity: { model: "gpt-5.6-terra", label: "Разрешение принадлежности" },
-  auto_analyst: { model: "gpt-5.6-terra", label: "Авто-аналитик очереди" },
-  theme_suggestion: { model: "gpt-5.6-luna", label: "Подсказки тем" },
+export type GptEffort = "low" | "medium" | "high";
+
+/** Медленный тариф: те же токены по цене пакетной обработки. */
+export type GptServiceTier = "flex";
+
+export type GptStageSetup = {
+  model: string;
+  label: string;
+  /**
+   * Усилие рассуждения. Поднято только там, где модель **пишет текст
+   * клиенту** (шаг 0123): у текста слайдов выход 12 057 токенов на 15 вызовов,
+   * из них 3 079 уже рассуждение, и удвоение стоит центы. На чтении усилие
+   * остаётся низким сознательно: там 176 вызовов на прогон, и каждый лишний
+   * токен умножается на это число, а измеренный дефект чтения — выдуманная
+   * цитата, то есть точность воспроизведения, а не длина рассуждения.
+   */
+  effort: GptEffort;
+  /**
+   * Тариф. `flex` отдаёт те же токены вдвое дешевле за счёт задержек и отказов
+   * «нет ёмкости»; отказ не роняет вызов — он немедленно повторяется обычным
+   * тарифом. Стоит у чтения страниц: это ровно та работа, для которой тариф
+   * назван провайдером (массовое обогащение), и потеря одной страницы из ста
+   * двадцати отчёт не ломает.
+   */
+  tier?: GptServiceTier;
 };
+
+export const GPT_STAGE_MODELS: Record<GptStage, GptStageSetup> = {
+  case_analysis: { model: "gpt-5.6-sol", label: "Анализ дела", effort: "medium" },
+  executive_summary: { model: "gpt-5.6-sol", label: "Резюме для руководства", effort: "medium" },
+  deck_compose: { model: "gpt-5.6-sol", label: "Композиция деки", effort: "medium" },
+  deck_edit: { model: "gpt-5.6-sol", label: "Редактор деки", effort: "medium" },
+  slide_copy: { model: "gpt-5.6-sol", label: "Текст слайдов", effort: "medium" },
+  link_verdict: {
+    model: "gpt-5.6-sol",
+    label: "Чтение страниц выдачи",
+    effort: "low",
+    tier: "flex",
+  },
+  wikipedia_review: { model: "gpt-5.6-sol", label: "Разбор статьи Википедии", effort: "low" },
+  fact_extraction: { model: "gpt-5.6-terra", label: "Извлечение фактов", effort: "low" },
+  theme_clustering: { model: "gpt-5.6-terra", label: "Сведение сюжетов", effort: "low" },
+  identity: { model: "gpt-5.6-terra", label: "Разрешение принадлежности", effort: "low" },
+  auto_analyst: { model: "gpt-5.6-terra", label: "Авто-аналитик очереди", effort: "low" },
+  theme_suggestion: { model: "gpt-5.6-luna", label: "Подсказки тем", effort: "low" },
+};
+
+/** Усилие рассуждения стадии. */
+export function effortForStage(stage: GptStage): GptEffort {
+  return GPT_STAGE_MODELS[stage]?.effort ?? "low";
+}
+
+/** Тариф стадии; `undefined` — обычный. */
+export function serviceTierForStage(stage: GptStage): GptServiceTier | undefined {
+  return GPT_STAGE_MODELS[stage]?.tier;
+}
+
+/**
+ * Настройки кэша промпта (шаг 0123).
+ *
+ * Кэш включён у провайдера по умолчанию, и точку разрыва он ставит сам — на
+ * живых прогонах она приходилась на конец промпта: 84 940 токенов из 87 790
+ * оплачены как **запись** кэша (1,25× обычного входа), а прочитано из кэша
+ * ноль. Явный режим выключает неявную точку, а `prompt_cache_breakpoint` на
+ * системном блоке кэширует ровно то, что у всех вызовов стадии одинаково.
+ * Системные промпты проекта — от 1 228 до 2 833 токенов, то есть выше порога
+ * кэширования в 1 024 токена: точка окупается на каждой стадии.
+ */
+export const GPT_PROMPT_CACHE_OPTIONS = { mode: "explicit", ttl: "30m" } as const;
+export const GPT_PROMPT_CACHE_BREAKPOINT = { mode: "explicit" } as const;
 
 /** Модель стадии. Стадии без строки в таблице не существует — она перечислена. */
 export function modelForStage(stage: GptStage): string {
