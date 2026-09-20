@@ -98,6 +98,79 @@ const TRAILING_ELLIPSIS_RE = /\s*(?:\.{3}|…)+\s*$/u;
  * разметки страницы, а не пунктуация источника; многоточие и тире не трогаются:
  * «…» — слова источника (шаг 0104).
  */
+/**
+ * Роль кавычки — по паре, а не по глифу (шаг 0140).
+ *
+ * `“` в русском наборе закрывает пару `„…“`, а в английском открывает `“…”`.
+ * Правило чистки считало его закрывающим всегда и снимало пробел **перед**
+ * ним: на стр. 6 отчёта Фридмана 20.09.2026 это дало «he was“ associated ”with
+ * Putin» — цитату испортил наш же инструмент. Ворота инвариантов на том же
+ * глифе давали ложное срабатывание на правильном «„переизбрали“ себе».
+ *
+ * Ответ один и общий: им пользуются и чистка разметки, и ворота собранной
+ * деки. Незакрытая открывающая в конце строки закрывающей не становится —
+ * чужой текст приходит оборванным, и додумывать за него нельзя.
+ */
+export type QuoteMarkRole = { index: number; char: string; role: "open" | "close" };
+
+const OPENERS = new Set(["«", "„"]);
+const CLOSERS = new Set(["»", "”"]);
+/** Двуликий знак: закрывает русскую пару, открывает английскую. */
+const AMBIGUOUS = "\u201C";
+
+export function quoteMarkRoles(text: string): QuoteMarkRole[] {
+  const out: QuoteMarkRole[] = [];
+  // Глубина «открытых» русских лапок: пока она больше нуля, `“` закрывает.
+  let lowOpen = 0;
+  let highOpen = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (OPENERS.has(ch)) {
+      if (ch === "„") lowOpen += 1;
+      out.push({ index: i, char: ch, role: "open" });
+    } else if (CLOSERS.has(ch)) {
+      out.push({ index: i, char: ch, role: "close" });
+    } else if (ch === AMBIGUOUS) {
+      if (lowOpen > 0) {
+        lowOpen -= 1;
+        out.push({ index: i, char: ch, role: "close" });
+      } else if (highOpen > 0) {
+        highOpen -= 1;
+        out.push({ index: i, char: ch, role: "close" });
+      } else {
+        highOpen += 1;
+        out.push({ index: i, char: ch, role: "open" });
+      }
+    }
+  }
+  return out;
+}
+
+/** Есть ли в строке пробел разметки сразу внутри кавычек. */
+export function markupSpaceInQuotes(text: string): boolean {
+  const value = String(text ?? "");
+  return quoteMarkRoles(value).some(({ index, role }) =>
+    role === "open" ? /\s/u.test(value[index + 1] ?? "") : /\s/u.test(value[index - 1] ?? "")
+  );
+}
+
+/** Снять пробелы разметки сразу внутри кавычек, зная роль каждого знака. */
+function withoutSpaceInsideQuotes(text: string): string {
+  const roles = quoteMarkRoles(text);
+  if (roles.length === 0) return text;
+  const drop = new Set<number>();
+  for (const { index, role } of roles) {
+    if (role === "open") {
+      let j = index + 1;
+      while (j < text.length && /\s/u.test(text[j]!)) drop.add(j++);
+    } else {
+      let j = index - 1;
+      while (j >= 0 && /\s/u.test(text[j]!)) drop.add(j--);
+    }
+  }
+  return [...text].filter((_, i) => !drop.has(i)).join("");
+}
+
 export function withoutSourceMarkup(text: string): string {
   return (
     text
@@ -105,11 +178,11 @@ export function withoutSourceMarkup(text: string): string {
       .replace(/[\u0300-\u036f]/gu, "")
       .replace(/\s+([,;:.!?)])/gu, "$1")
       .replace(/\(\s+/gu, "(")
-      // Пробел внутри ёлочек и лапок — та же разметка страницы: Википедия
-      // отдаёт «« Единая Россия »» (шаг 0115). Прямые кавычки не трогаются:
-      // у них не видно, открывающая это или закрывающая.
-      .replace(/([«„])\s+/gu, "$1")
-      .replace(/\s+([»“])/gu, "$1")
+      // Пробел внутри кавычек — та же разметка страницы: Википедия отдаёт
+      // «« Единая Россия »» (шаг 0115). Роль каждого знака берётся у разбора
+      // пар (шаг 0140), а не у глифа: `“` закрывает русскую пару и открывает
+      // английскую, и правило «пробел перед `“` снять» портило английские
+      // цитаты. Прямые кавычки не трогаются: у них роль не видна вовсе.
       // Потерянный пробел — тоже разметка, а не слова (шаг 0117): ответ Алисы
       // пришёл как «Родился 9мая 1967года», «Бондарчук—советский». Между
       // цифрой и русским словом (две и более буквы: «2х-комнатная» и «3D» не
@@ -131,6 +204,7 @@ export function withoutSourceMarkup(text: string): string {
       .replace(/([а-яё])(?=[$€£]\d)/gu, "$1 ")
       .replace(/(?<![\p{L}])(I{2,3})(?=[а-яё]{4})/gu, "$1 ")
       .replace(/(?<=[\p{L})»“"])—(?=[\p{L}(«„"])/gu, " — ")
+      .replace(/^[\s\S]*$/u, (t) => withoutSpaceInsideQuotes(t))
   );
 }
 
