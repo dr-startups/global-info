@@ -139,8 +139,27 @@ export const PLATFORM_READ_MORE =
 const UI_CALL_TO_ACTION =
   /^\s*(?:проверьте|получите|узнайте|закажите|скачайте|оставьте|подпишитесь|смотрите|читайте|перейдите|введите|выберите|добавьте|откройте|показать|скрыть)(?!\p{L})/iu;
 
+/**
+ * Призыв интерфейса по-английски (шаг 0142).
+ *
+ * Стр. 7 отчёта Фридмана 20.09.2026 цитировала под «Благотворительностью»
+ * интерфейс Getty Images: «Browse 151 mikhail fridman photos and images
+ * available, or start a new search to explore more photos and images. Showing
+ * Editorial results for mikhail fridman.» Предикат призывов знал только
+ * русские глаголы, и англоязычные площадки проходили мимо него целиком.
+ *
+ * Список закрытый и из повелительных глаголов витрины: обычная фраза
+ * материала ими не начинается. Отдельно — обороты, которых в тексте
+ * публикации не бывает вовсе.
+ */
+const UI_CALL_TO_ACTION_EN =
+  /^\s*(?:browse|explore|discover|sign\s+in|sign\s+up|log\s+in|subscribe|download|click|shop|buy\s+now|get\s+started)(?![\p{L}])/iu;
+
+const UI_PHRASE_EN = /\bstart a new search\b|\bshowing\s+[^.]{0,40}\bresults\s+for\b/iu;
+
 export function looksLikeUiCallToAction(text: string | null | undefined): boolean {
-  return UI_CALL_TO_ACTION.test(String(text ?? ""));
+  const value = String(text ?? "");
+  return UI_CALL_TO_ACTION.test(value) || UI_CALL_TO_ACTION_EN.test(value) || UI_PHRASE_EN.test(value);
 }
 
 /**

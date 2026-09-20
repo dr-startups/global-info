@@ -783,24 +783,34 @@ export function resolveExampleQuote(
     ...(truncated ? { truncated: true } : {}),
   });
 
-  // 1. Цитаты прочитанной страницы: целые предложения, сверенные с текстом.
+  /*
+   * 1. Цитаты прочитанной страницы: целые предложения, сверенные с текстом.
+   *
+   * Два прохода, и порядок не случайный (шаг 0142). У обвиняющей темы
+   * сигналом считается и слово негатива (шаг 0115) — иначе криминальный сюжет,
+   * написанный словами обвинения, остался бы без цитаты. Но слово негатива
+   * шире темы: на стр. 13 отчёта Фридмана под «Криминальными материалами»
+   * встали две цитаты про санкции, где о суде нет ни слова. Поэтому сначала
+   * ищется фраза со **своим** словом темы, и только потом — та, что прошла по
+   * слову негатива.
+   */
   const verdict = ctx?.verdict;
   if (verdict && verdict.subjectMatch !== "other") {
-    for (const raw of verdict.quotes ?? []) {
-      const text = pageQuoteForClient(raw);
-      if (!text) continue;
-      // Страница не признана страницей субъекта — цитата обязана назвать его
-      // сама. Имён субъекта нет — судить не по чему, правило молчит.
-      if (verdict.subjectMatch !== "subject" && stems.length > 0 && !textNamesSubject(text, stems)) {
-        continue;
+    const ownWord = (text: string): boolean =>
+      platformSignal || theme.keywords.test(text);
+    for (const pass of [true, false]) {
+      for (const raw of verdict.quotes ?? []) {
+        const text = pageQuoteForClient(raw);
+        if (!text) continue;
+        if (verdict.subjectMatch !== "subject" && stems.length > 0 && !textNamesSubject(text, stems)) {
+          continue;
+        }
+        if (!carries(text) || !looksLikeWholeStatement(text)) continue;
+        if (pass && !ownWord(text)) continue;
+        return example(text, "page");
       }
-      // Целая фраза — и у страницы: читающая модель цитирует и тизеры с
-      // «...Read more», и куски с середины предложения.
-      if (!carries(text) || !looksLikeWholeStatement(text)) continue;
-      return example(text, "page");
     }
   }
-
   // 2. Заголовок — целый, с сигналом, не о другом человеке. Заголовок о
   // другом человеке закрывает материал целиком: его сниппет — о том же.
   const rawTitle = String(item.title ?? "");
