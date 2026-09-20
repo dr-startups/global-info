@@ -404,22 +404,46 @@ def render_serp_extra_table_page(row_count: int) -> tuple[bytes, bytes] | None:
     return base64.b64decode(pages[0]["contentBase64"]), base64.b64decode(out["pdfBase64"])
 
 
-def stage_edge_ink(png: bytes) -> tuple[int, int, tuple[int, int]]:
-    """Чернила в полосе нижней кромки сцены, самый низкий ряд чернил и размер растра.
+#: Толщина кромки сцены вместе с тенью, в рядах растра. Замер на эталоне
+#: 25.08: у здоровой страницы кромку несут семь рядов подряд.
+STAGE_EDGE_BAND_PX = 8
 
-    Полоса кромки задана в пикселях модуля, то есть привязана к размеру
-    эталонной страницы; размер возвращается, чтобы проверка могла его назвать,
-    а не считать совпадение само собой разумеющимся.
+#: Доля высоты, ниже которой начинается колонтитул. Он стоит на каждой
+#: странице ниже сцены и в счёт «самого нижнего на листе» не идёт.
+FURNITURE_FROM_SHARE = 0.92
+
+
+def bottom_edge_ink(rows: list[int], height: int) -> tuple[int, int]:
+    """Чернила в кромке сцены — **там, где сцена кончилась** (шаг 0127).
+
+    Прежде полоса кромки задавалась пикселями от низа листа: сцену тянули до
+    нижнего поля всегда, и «здоровая страница» значило «кромка в полосе
+    962…968». С шага 0127 сцена кончается под содержимым и кромка ездит
+    вместе с ней, поэтому полоса от низа листа отвечала бы «кромки нет» на
+    каждой короткой странице.
+
+    Вопрос проверки от этого не изменился: **самое нижнее на листе, не считая
+    колонтитула, — сплошная кромка сцены, а не строка содержимого.** Таблица,
+    уехавшая за край сцены, закрашивает кромку собой, и самый нижний ряд
+    становится редким — ровно это и ловится порогом.
     """
+    furniture_from = int(height * FURNITURE_FROM_SHARE)
+    content = rows[:furniture_from]
+    lowest = max((y for y, n in enumerate(content) if n > 0), default=0)
+    band = content[max(0, lowest - STAGE_EDGE_BAND_PX + 1) : lowest + 1]
+    return max(band, default=0), lowest
+
+
+def stage_edge_ink(png: bytes) -> tuple[int, int, tuple[int, int]]:
+    """Кромка сцены по растру одной страницы; размер возвращается, чтобы
+    проверка могла его назвать, а не считать совпадение само собой
+    разумеющимся."""
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "page-01.png"
         path.write_bytes(png)
         rows, w, h = _ink_row_counts(path)
-    return (
-        max(rows[STAGE_EDGE_FROM_PX : STAGE_EDGE_TO_PX + 1], default=0),
-        max((y for y, n in enumerate(rows) if n > 0), default=0),
-        (w, h),
-    )
+    band, lowest = bottom_edge_ink(rows, h)
+    return band, lowest, (w, h)
 
 
 def header_left_edges(pdf: bytes, headers: list[str]) -> dict[str, float]:
@@ -630,10 +654,13 @@ def main() -> int:
                 if number not in serp_pages:
                     continue
                 inspected += 1
-                rows, _w, _h = _ink_row_counts(path)
-                if max(rows[STAGE_EDGE_FROM_PX : STAGE_EDGE_TO_PX + 1], default=0) < STAGE_EDGE_INK:
-                    lowest = max((y for y, n in enumerate(rows) if n > 0), default=0)
-                    missing_edge.append(f"{path.name} (самый низкий ряд чернил y={lowest})")
+                rows, _w, page_h = _ink_row_counts(path)
+                band, lowest = bottom_edge_ink(rows, page_h)
+                if band < STAGE_EDGE_INK:
+                    missing_edge.append(
+                        f"{path.name} (кромка {band} при пороге {STAGE_EDGE_INK}, "
+                        f"самый низкий ряд чернил y={lowest})"
+                    )
             check(
                 "нижняя кромка сцены видна на каждой странице таблицы выдачи",
                 not missing_edge and inspected == len(serp_pages) and inspected > 0,

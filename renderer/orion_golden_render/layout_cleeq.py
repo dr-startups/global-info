@@ -121,6 +121,11 @@ def draw_stage(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
         pass
     card = ctx.card(y, h=h, x=x, w=w, fill=WHITE, border=None, radius=0.06)
     disable_shape_shadow(card)
+    # Сцена запоминается: её низ подтянет `fit_stage` после того, как страница
+    # нарисована (шаг 0127). Лист рисует одну сцену; вторая заменяет первую.
+    ctx.stage_card = card
+    ctx.stage_shadow = shadow
+    ctx.stage_marks = []
 
 
 def content_stage(
@@ -168,6 +173,7 @@ def draw_corner_marks(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
         mark.fill.solid()
         mark.fill.fore_color.rgb = ACCENT
         mark.line.fill.background()
+        ctx.stage_marks.append(mark)
 
 
 def draw_level_bars(

@@ -103,6 +103,9 @@ def _draw_deck(
             slide_key=str(slide.get("slideKey") or ""),
         )
         _render_slide(ctx, slide, assets)
+        # Сцена подтягивается к содержимому до подвала: подвал стоит ниже
+        # нижнего поля и в счёт низа содержимого идти не должен (шаг 0127).
+        ctx.fit_stage()
         ctx.footer()
         warnings.extend(ctx.warnings)
     return prs, warnings, str(subject), slides, assets

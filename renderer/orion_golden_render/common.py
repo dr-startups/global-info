@@ -1149,8 +1149,83 @@ class _Ctx:
         # Итог последнего `body`: сколько абзацев подано, сколько нарисовано.
         self.last_body: dict[str, Any] = {"paragraphs": 0, "drawn": 0, "clipped": False}
         self.dark = False
+        # Белая сцена листа и её тень — запоминаются при отрисовке, чтобы
+        # `fit_stage` мог подтянуть их низ к фактическому низу содержимого
+        # (шаг 0127). Уголки выводов двигаются вместе со сценой.
+        self.stage_card: Any = None
+        self.stage_shadow: Any = None
+        self.stage_marks: list[Any] = []
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
+
+    #: Насколько ниже объявленного LibreOffice рисует таблицу.
+    #:
+    #: Высота строки у нас объявленная, а рисует строку LibreOffice по своему
+    #: содержимому и объявленную считает нижней границей. Замер на эталоне-72
+    #: (11 страниц с таблицами, от 4 до 14 строк): разница 230 000…290 000 EMU
+    #: и от числа строк не зависит. Запас взят с полем над измеренным, потому
+    #: что цена ошибки несимметрична: сцена, обрезанная выше таблицы, — это
+    #: страница, у которой содержимое лежит за краем своей плоскости.
+    #:
+    #: Держит это число растровая проверка `smoke_deck_raster_layout.py`: она
+    #: смотрит на отрисованную страницу и нашей меры не знает.
+    TABLE_GROWTH_RESERVE = 400_000
+
+    def fit_stage(self, pad: int = 240_000, min_height: int = 700_000) -> None:
+        """Подтянуть низ белой сцены к фактическому низу содержимого (шаг 0127).
+
+        Сцену рисуют **до** содержимого — иначе она легла бы поверх, — и её
+        высота поэтому всегда была высотой всего поля. На странице с короткой
+        таблицей это давало две трети белого листа: стр. 20 отчёта Абрамовича
+        20.09.2026 — пять строк тем в рамке во всю высоту.
+
+        Содержимого от сжатия не прибавляется, и прибавлять его нечем: пусто
+        честнее выдуманного. Меняется обещание страницы — рамка больше не
+        очерчивает место, в котором ничего нет.
+
+        **Только сжатие.** Сцена никогда не растёт: её высоту задал бюджет
+        листа, и он же остаётся потолком. Низ содержимого берётся по
+        нарисованным фигурам, а не по возвращённому `y`: `y` знает лишь
+        последний вызов, а на листе бывают колонки и подписи у нижнего поля.
+        """
+        card = self.stage_card
+        if card is None:
+            return
+        top = int(card.top)
+        height = int(card.height)
+        # Считаем по `shape_id`, а не по объекту: python-pptx отдаёт при обходе
+        # новую обёртку на ту же фигуру, и сравнение по тождеству промахнулось
+        # бы всегда — сцена считала бы саму себя содержимым и не сжималась
+        # никогда.
+        skip = {int(card.shape_id)}
+        if self.stage_shadow is not None:
+            skip.add(int(self.stage_shadow.shape_id))
+        for mark in self.stage_marks:
+            skip.add(int(mark.shape_id))
+        # Низ содержимого с полем под ним. У таблицы поле своё и больше
+        # обычного: её рисует LibreOffice, и объявленная высота — нижняя
+        # граница. Поля не складываются — иначе под короткой таблицей
+        # копился бы запас на два случая сразу.
+        floor = 0
+        for shape in self.slide.shapes:
+            if int(shape.shape_id) in skip:
+                continue
+            shape_bottom = int(shape.top or 0) + int(shape.height or 0)
+            room = self.TABLE_GROWTH_RESERVE if getattr(shape, "has_table", False) else pad
+            floor = max(floor, shape_bottom + room)
+        if floor <= 0:
+            return
+        wanted = max(min_height, floor - top)
+        if wanted >= height:
+            return
+        delta = height - wanted
+        card.height = Emu(wanted)
+        if self.stage_shadow is not None:
+            self.stage_shadow.height = Emu(max(0, int(self.stage_shadow.height) - delta))
+        for mark in self.stage_marks:
+            # Нижние уголки стоят у низа сцены — они и переезжают.
+            if int(mark.top) > top + height // 2:
+                mark.top = Emu(int(mark.top) - delta)
 
     def footer(self) -> None:
         # Hairline rule + brand line left, page counter right (design v2).

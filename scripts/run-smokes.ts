@@ -165,6 +165,13 @@ export const SMOKES: Smoke[] = [
       "плотность листа: полоса заголовка по факту (700 000 / 950 000) и нижний запас 800 000; список получает место, подвал не задет",
   },
   {
+    name: "stage-fits-content",
+    argv: ["PYTHON", "renderer/smoke_stage_fits_content.py"],
+    tier: "full",
+    about:
+      "белая сцена кончается под содержимым, а не у нижнего поля: короткий лист сжимается, полный — нет, тень и уголки едут со сценой",
+  },
+  {
     name: "sidebar-provenance",
     argv: ["PYTHON", "renderer/smoke_sidebar_provenance.py"],
     tier: "full",
