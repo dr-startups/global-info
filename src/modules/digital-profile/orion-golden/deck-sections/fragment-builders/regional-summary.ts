@@ -10,7 +10,7 @@ import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../../report/i18n/plural-ru";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
 import { looksLikeSurfaceBlockHeading } from "../../analytics/client-quote-hygiene";
-import { quoteForClaim } from "../../analytics/finding-synthesizer";
+import { distinctExampleTitles, quoteForClaim } from "../../analytics/finding-synthesizer";
 import {
   bulletWithFindingId,
   claimText,
@@ -83,10 +83,11 @@ export function uncategorizedBulletForRegion(
    * / Аппарат Губернатора Ямало-Ненецкого...», и читателю из неё не следует
    * ничего. Правило то же, что и в блоках тем: целое или ничего.
    */
-  const titles = examples
-    .map((e) => quoteForClaim(e.title.trim(), EXAMPLE_TITLE_BUDGET))
-    .filter((t) => Boolean(t) && !looksLikeSurfaceBlockHeading(t))
-    .slice(0, 3);
+  const titles = distinctExampleTitles(
+    examples
+      .map((e) => quoteForClaim(e.title.trim(), EXAMPLE_TITLE_BUDGET))
+      .filter((t) => Boolean(t) && !looksLikeSurfaceBlockHeading(t))
+  );
   const examplesNote = titles.length
     ? ` (примеры: ${titles.join(" · ")})`
     : "";

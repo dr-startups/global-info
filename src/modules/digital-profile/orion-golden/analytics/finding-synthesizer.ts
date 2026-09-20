@@ -63,6 +63,7 @@ import {
   carriesThemeSignal,
   DANGLING_TAIL_RE,
   hasDanglingTail,
+  looksLikeBareName,
   looksLikeGeneralization,
   looksLikeIdentityLead,
   looksLikePlatformNavigation,
@@ -674,6 +675,33 @@ function fitSentence(text: string, budget: number): { text: string; truncated: b
  * («После публикации расследования…» → «Расследование…»), а обрывок без
  * маркера печатался целой фразой («На выборах он был единственным»).
  */
+/**
+ * Примеры материалов — различимые и содержательные (шаг 0130).
+ *
+ * Стр. 51 отчёта Мордашова 20.09.2026 печатала «(примеры: Alexey Alexandrovits
+ * Mordaschov · Alexey Aleksandrovich MORDASHOV · Alexey Alexandrovits
+ * Mordaschov)»: первый и третий совпадают дословно, и все три — варианты
+ * написания имени, а не материалы. Стр. 18 — «(примеры: Мордашов, Алексей)».
+ *
+ * Голое имя примером не бывает по той же причине, что и цитатой: читатель из
+ * него не узнаёт ничего. Повтор снимается по нормализованному тексту, чтобы
+ * «MORDASHOV» и «Mordashov» не считались разными.
+ */
+export function distinctExampleTitles(titles: readonly string[], limit = 3): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of titles) {
+    const title = String(raw ?? "").replace(/\s+/gu, " ").trim();
+    if (!title || looksLikeBareName(title)) continue;
+    const key = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(title);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 /**
  * Заголовок, годный в цитату: целая фраза и не о другом человеке (шаг 0125).
  *

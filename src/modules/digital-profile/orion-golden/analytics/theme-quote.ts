@@ -33,6 +33,8 @@ import {
   looksLikeSurfaceBlockHeading,
   looksLikePlatformNavigation,
   looksLikeHeadlineStrip,
+  looksLikePhotoCredit,
+  looksLikePostalAddress,
   looksLikeUiCallToAction,
   PLATFORM_READ_MORE,
 } from "./client-quote-hygiene";
@@ -93,6 +95,25 @@ const SERP_DATE_STAMP_RE = /^\s*\d{1,2}\s+\p{L}{3,10}\.?\s+\d{4}(?:\s*г\.)?\s*[
 const BARE_NAME_CYR_RE = /^[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}$/u;
 const BARE_NAME_LAT_RE = /^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){1,2}$/u;
 
+/**
+ * Фамилия прописными среди обычных слов имени (шаг 0130).
+ *
+ * Санкционные базы пишут так: «Alexey Aleksandrovich MORDASHOV», «Roman
+ * Arkadyevich ABRAMOVICH». Это то же голое имя, но `BARE_NAME_LAT_RE` его не
+ * узнаёт: у неё каждое слово с заглавной и строчными.
+ *
+ * Требуется хотя бы одно слово обычного вида — иначе строка целиком
+ * прописными («EU SANCTIONS LIST») стала бы именем, а это заголовок.
+ */
+function looksLikeShoutedName(text: string): boolean {
+  const tokens = text.split(/\s+/u).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > 3) return false;
+  const nameLike = tokens.every((t) => /^(?:[A-Z][a-z]+|[A-Z]\.?|[A-Z]{2,})$/u.test(t));
+  const mixed = tokens.filter((t) => /^[A-Z][a-z]{2,}$/u.test(t)).length;
+  const shouted = tokens.filter((t) => /^[A-Z]{2,}$/u.test(t)).length;
+  return nameLike && mixed >= 1 && shouted >= 1;
+}
+
 function normalizeForNames(text: string): string {
   return String(text ?? "")
     .normalize("NFD")
@@ -145,7 +166,7 @@ export function looksLikeBareName(text: string): boolean {
     .trim()
     // Анкетная форма с запятой: «Дуров, Павел Валерьевич».
     .replace(/^([А-ЯЁ][а-яё]+),\s+/u, "$1 ");
-  return BARE_NAME_CYR_RE.test(t) || BARE_NAME_LAT_RE.test(t);
+  return BARE_NAME_CYR_RE.test(t) || BARE_NAME_LAT_RE.test(t) || looksLikeShoutedName(t);
 }
 
 /**
@@ -176,7 +197,9 @@ export function looksLikeWholeStatement(text: string): boolean {
     looksLikeSurfaceBlockHeading(t) ||
     looksLikeUiCallToAction(t) ||
     looksLikePlatformNavigation(t) ||
-    looksLikeHeadlineStrip(t)
+    looksLikeHeadlineStrip(t) ||
+    looksLikePostalAddress(t) ||
+    looksLikePhotoCredit(t)
   ) {
     return false;
   }
