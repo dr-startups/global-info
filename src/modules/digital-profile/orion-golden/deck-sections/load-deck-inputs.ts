@@ -802,6 +802,8 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           failed?: number;
           retried?: number;
           byReason?: Record<string, number>;
+          /** Строки выдачи без адреса страницы (шаг 0129). */
+          addressless?: number;
         };
       }>(linkVerdictsPath)
     : null;
@@ -1432,6 +1434,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           failed: Number(linkVerdicts.reading.failed ?? 0),
           retried: Number(linkVerdicts.reading.retried ?? 0),
           byReason: linkVerdicts.reading.byReason ?? {},
+          ...(linkVerdicts.reading.addressless
+            ? { addressless: Number(linkVerdicts.reading.addressless) }
+            : {}),
         }
       : undefined,
     // Same unit as compositeCount (observation rows), not inventory decisions.

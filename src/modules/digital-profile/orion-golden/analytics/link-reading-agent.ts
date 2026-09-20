@@ -58,6 +58,12 @@ export type LinkReadingReport = {
   retried: number;
   /** Сколько отказов какой причины — по ним видно, где чинить. */
   byReason: Record<string, number>;
+  /**
+   * Строки отбора, у которых поисковая система не дала адреса страницы
+   * (шаг 0129). Не «не открылись»: открывать было нечего, и денег на них не
+   * потрачено. Пропуск называется словами, а не прячется в разнице чисел.
+   */
+  addressless?: number;
   /** Первая техническая причина отказа — для разбора прогона. */
   firstFailureDetail?: string;
 };
@@ -106,6 +112,20 @@ export function linkReadingThemesIntro(input: {
    * Молчать о разнице нельзя: читатель видит оба числа на одном листе.
    */
   const themed = input.themedTotal;
+  /*
+   * Строки без адреса страницы — отдельная фраза (шаг 0129).
+   *
+   * Поисковая система вернула позицию и домен, но не адрес. Молчать нельзя:
+   * читатель видит «отобрано 120» на одном листе и «прочитано 66» на другом,
+   * и разницу объясняют две разные причины.
+   */
+  const addressless = input.report?.addressless ?? 0;
+  const addresslessClause =
+    addressless > 0
+      ? ` Ещё ${addressless} ${pluralRu(addressless, "строка", "строки", "строк")} выдачи ` +
+        `${pluralRu(addressless, "вернулась", "вернулись", "вернулись")} без адреса страницы — ` +
+        "поисковая система дала позицию и домен, читать там нечего."
+      : "";
   const themedClause =
     themed !== undefined && report && themed < report.read
       ? `в таблицу вошли ${themed} ${pluralRu(themed, "публикация", "публикации", "публикаций")}, ` +
@@ -123,17 +143,19 @@ export function linkReadingThemesIntro(input: {
   }
   if (report.failed === 0 && report.read === report.requested) {
     const head = `Публикации из ТОП-${topN} прочитаны (${report.read} из ${report.requested})`;
-    return themedClause
+    const body = themedClause
       ? `${head}; ${themedClause}`
       : `${head}, каждая отнесена к теме по её содержанию. Нежелательных публикаций: ${adverseTotal}.`;
+    return `${body}${addresslessClause}`;
   }
   const reasons = unreadReasons(report);
   const tail = reasons ? ` Из непрочитанных: ${reasons}.` : "";
   const head = `Из ${report.requested} отобранных по отчёту страниц прочитано ${report.read}; `;
-  return themedClause
+  const body = themedClause
     ? `${head}${themedClause}${tail}`
     : `${head}каждая прочитанная отнесена к теме по её содержанию, ` +
       `нежелательных публикаций: ${adverseTotal}.${tail}`;
+  return `${body}${addresslessClause}`;
 }
 
 /**

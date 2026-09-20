@@ -55,8 +55,11 @@ describe("выбор ссылок для чтения", () => {
   });
 
   it("предел соблюдается", () => {
+    // Правка фикстуры шага 0129: адреса были корнями сайтов (`https://s1.ru/`),
+    // а корень сайта в очередь больше не попадает — читалась бы витрина.
+    // Предмет теста прежний: сколько строк берёт предел.
     const many = Array.from({ length: 30 }, (_, i) =>
-      item({ inventoryId: `i${i}`, sourceUrl: `https://s${i}.ru/`, rawMetadata: { rank: i + 1 } })
+      item({ inventoryId: `i${i}`, sourceUrl: `https://s${i}.ru/news/${i}`, rawMetadata: { rank: i + 1 } })
     );
     expect(linksToRead(many as never, 10)).toHaveLength(10);
   });

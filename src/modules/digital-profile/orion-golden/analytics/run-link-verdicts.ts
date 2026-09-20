@@ -103,6 +103,50 @@ const READ_PRIORITY: Record<string, number> = {
   LIKELY_SUBJECT: 1,
 };
 
+/**
+ * Адрес страницы или только домен (шаг 0129).
+ *
+ * Topvisor по Google отдаёт позицию, домен и заголовок, но не адрес: в прогоне
+ * Мордашова 20.09.2026 путь был у 34 наблюдений из 403, и все 34 — это
+ * `https://youtube.com/`. Прочитать такой адрес можно, но прочитается витрина
+ * сайта: 47 вердиктов из 120 сняты с корня, **все 47 вернулись `unclear`**, и
+ * 26 из них были куплены. В отчёт витрина попадала основанием выделения.
+ *
+ * Запрос и якорь адресом остаются: `?v=GAjkOhKZrVY` у YouTube — это страница.
+ */
+export function hasPageAddress(url: string | null | undefined): boolean {
+  const raw = String(url ?? "").trim();
+  if (!/^https?:\/\//iu.test(raw)) return false;
+  try {
+    const u = new URL(raw);
+    return u.pathname.replace(/\/+$/u, "") !== "" || u.search !== "" || u.hash !== "";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Сколько строк отбора остались без адреса страницы.
+ *
+ * Считается по тем же правилам, что и очередь, и по тем же материалам: иначе
+ * у одного вопроса будет два ответа. Число попадает в отчёт о чтении, чтобы
+ * пропуск был назван словами, а не спрятан в разнице «отобрано минус
+ * прочитано».
+ */
+export function addresslessRowCount(items: RawInventoryItem[]): number {
+  const seen = new Set<string>();
+  let n = 0;
+  for (const item of items) {
+    const url = String(item.sourceUrl ?? "").trim();
+    if (!/^https?:\/\//iu.test(url)) continue;
+    const key = url.replace(/[#?].*$/u, "").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (!hasPageAddress(url)) n += 1;
+  }
+  return n;
+}
+
 export function linksToRead(
   items: RawInventoryItem[],
   limit = LINK_VERDICT_MAX_LINKS,
@@ -120,6 +164,9 @@ export function linksToRead(
   for (const item of items) {
     const url = String(item.sourceUrl ?? "").trim();
     if (!/^https?:\/\//iu.test(url)) continue;
+    // Витрина сайта не покупается по той же причине, что и страница другого
+    // лица: её вердикт не нужен ни одной странице отчёта (шаг 0129).
+    if (!hasPageAddress(url)) continue;
     // Страница другого лица не покупается: её вердикт не нужен ни одной
     // странице отчёта, а прочитать её стоит денег.
     if (decisionByRef?.get(`inventory:${item.inventoryId}`) === "OTHER_SUBJECT") continue;
@@ -355,7 +402,14 @@ export async function runLinkVerdicts(input: {
   const analyze = input.deps?.analyze ?? analyzeLinkPages;
 
   // Агент чтения: приносит текст, повторяет срывы связи, отвечает за статус.
-  const reading = await readLinks(links.map((l) => l.url), { read });
+  const readingRun = await readLinks(links.map((l) => l.url), { read });
+  // Безадресные строки к отчёту о чтении приклеиваются здесь, а не считаются
+  // агентом: агент знает только то, что ему дали читать (шаг 0129).
+  const addressless = addresslessRowCount(input.items);
+  const reading = {
+    ...readingRun,
+    report: { ...readingRun.report, ...(addressless > 0 ? { addressless } : {}) },
+  };
   const analystInputs: LinkVerdictInput[] = links.map((link, i) => ({
     evidenceRef: `inventory:${link.item.inventoryId}`,
     url: link.url,
