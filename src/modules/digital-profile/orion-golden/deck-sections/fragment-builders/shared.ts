@@ -69,6 +69,7 @@ import {
   clientThemeWhy,
   resolveExampleQuote,
   themeEssenceWord,
+  REPORT_SCOPE_WORDS,
   themeScaleLine,
 } from "../../analytics/finding-synthesizer";
 import { pluralRu } from "../../../report/i18n/plural-ru";
@@ -2125,13 +2126,27 @@ const SYNTHESIZED_CLAIM_RE = /(?:Всего по теме|В корпусе):/u;
  */
 function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string {
   if (!THEME_SCALE_LINE_RE.test(String(f.claim ?? ""))) return "";
-  const regions = scoped.scope?.regions ?? [];
+  return countedScaleLine(f, scoped, scoped.scope?.regions ?? []);
+}
+
+/**
+ * Строка счёта по материалам находки в названных контурах (шаг 0139).
+ *
+ * Пустой список контуров — счёт по всему отчёту. Способ счёта один на оба
+ * случая: иначе региональное и общее числа считались бы по-разному, и это уже
+ * было — «материал» против «наблюдения» на соседних листах.
+ */
+function countedScaleLine(
+  f: Finding,
+  scoped: ScopedFragmentInput,
+  regions: readonly string[]
+): string {
   const subjectContext = subjectContextOf(scoped);
   const adverseByMaterial = new Map<string, boolean>();
   for (const ref of f.evidenceRefs) {
     const e = scoped.evidenceIndex[ref];
     if (!e) continue;
-    if (!regions.some((r) => regionMatches(r, e.region))) continue;
+    if (regions.length > 0 && !regions.some((r) => regionMatches(r, e.region))) continue;
     const key = evidenceMaterialKey(e, ref);
     adverseByMaterial.set(
       key,
@@ -2144,9 +2159,10 @@ function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string
    * Регионов у среза может быть несколько (международный контур собирается из
    * трёх кодов), и тогда называются все — молчать о части нельзя.
    */
-  const scope = regions.length > 0
-    ? `по ${[...new Set(regions.map((r) => regionClientLabelGenitive(String(r))))].join(" и ")}`
-    : undefined;
+  const scope =
+    regions.length > 0
+      ? `по ${[...new Set(regions.map((r) => regionClientLabelGenitive(String(r))))].join(" и ")}`
+      : REPORT_SCOPE_WORDS;
   return themeScaleLine(
     adverseByMaterial.size,
     [...adverseByMaterial.values()].filter(Boolean).length,
@@ -2162,12 +2178,49 @@ function regionalThemeScaleLine(f: Finding, scoped: ScopedFragmentInput): string
  * от того, как оно разложилось. Пустая строка счёта означает «считать в этом
  * регионе нечего» — тогда числа не остаётся вовсе, а не остаётся глобальное.
  */
+/**
+ * Строка счёта всего отчёта — из самой находки (шаг 0139).
+ *
+ * Второго счётчика не заводится: число уже посчитано и напечатано в претензии,
+ * отсюда его и берём.
+ */
+function reportWideScaleLine(f: Finding, scoped: ScopedFragmentInput): string {
+  const printed = String(f.claim ?? "").match(THEME_SCALE_LINE_RE);
+  if (printed) return printed[0].trim();
+  // Претензия прошлого формата строки счёта не несёт вовсе (эталон-72 собран
+  // до её появления). Тогда число считается тем же способом, что и
+  // региональное, только по всему отчёту.
+  const counted = countedScaleLine(f, scoped, []);
+  if (counted) return counted;
+  /*
+   * Ни одна улика находки не доехала до индекса этого среза — пересчитать
+   * нечего. Число у находки всё равно есть: это её собственные улики, и оно
+   * названо охватом отчёта. Блок с цитатами обязан называть свои числа, и
+   * «нечем посчитать» такой обязанности не снимает.
+   */
+  const refs = new Set((f.evidenceRefs ?? []).map((r) => String(r)));
+  return refs.size > 0 ? themeScaleLine(refs.size, 0, REPORT_SCOPE_WORDS) : "";
+}
+
 function withThemeScaleLine(f: Finding, scale: string): Finding {
   const claim = String(f.claim ?? "");
   if (!THEME_SCALE_LINE_RE.test(claim)) return f;
+  /*
+   * Пустой региональный пересчёт **не удаляет** числа блока (шаг 0139).
+   *
+   * Здесь стояло удаление строки счёта: блок оставался с цитатами и «Где
+   * видно», но без своих чисел. Ворота инвариантов нашли это в девяти блоках
+   * эталона-72 и на стр. 14 отчёта Фридмана; ни один тест построителя такого
+   * не видел, потому что смотрел на свой построитель, а не на документ.
+   *
+   * Удалять было незачем. Опасение было верное — печатать на региональной
+   * странице число всего отчёта значит спорить с соседним листом, — но с шага
+   * 0133 строка называет свой охват сама («по отчёту», «по России»), и общий
+   * счёт с названным охватом ложью не является.
+   */
   const next = scale
     ? claim.replace(THEME_SCALE_LINE_RE, scale)
-    : claim.replace(THEME_SCALE_LINE_RE, "").replace(/\n{2,}/gu, "\n").trim();
+    : claim;
   return { ...f, claim: next };
 }
 
@@ -2249,7 +2302,7 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     // Регион страницы, а не «регион не чужой»: запись без региона (карточка
     // комплаенс-базы, неотнесённый пример) не найдена в этом регионе и
     // цитируется там, где живёт. Тот же порог стоит в счёте темы.
-    if (!regions.some((r) => regionMatches(r, e.region))) continue;
+    if (regions.length > 0 && !regions.some((r) => regionMatches(r, e.region))) continue;
     if (e.domain && !seenDomains.has(e.domain) && !isMockClientDomain(e.domain)) {
       seenDomains.add(e.domain);
       domains.push(e.domain);
@@ -2385,7 +2438,21 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
       ...new Set(clientSafeDomains(titleCandidates.slice(0, 2).map((c) => c.domain))),
     ].slice(0, 2);
     const whereLine = anchors.length > 0 ? `Где видно: ${anchors.join(", ")}.` : "";
-    claim = [frame, ...regionalQuotes, scale, whereLine, why].filter(Boolean).join("\n");
+    /*
+     * Блок с цитатами всегда называет свои числа (шаг 0139).
+     *
+     * Здесь стояло `scale` через `.filter(Boolean)`: пустой региональный
+     * пересчёт молча выкидывал строку счёта, и блок оставался с цитатами и
+     * «Где видно», но без чисел. Ворота инвариантов нашли это в девяти блоках
+     * эталона-72 и на стр. 14 отчёта Фридмана; тест построителя такого не
+     * видел, потому что смотрел на свой построитель, а не на документ.
+     *
+     * Пустой пересчёт — не «нуль материалов», а «в этом срезе их не
+     * пересчитать». Тогда печатается счёт всего отчёта: с шага 0133 строка
+     * называет свой охват сама, и спора с соседним листом не возникает.
+     */
+    const printedScale = scale || reportWideScaleLine(f, scoped);
+    claim = [frame, ...regionalQuotes, printedScale, whereLine, why].filter(Boolean).join("\n");
   } else {
     /*
      * Пустой ветке нечего цитировать — значит, в ней нет и обещания цитаты.

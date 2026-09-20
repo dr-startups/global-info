@@ -17,6 +17,7 @@
     "noPlaceholderWithAvailableAsset": true,
     "noInternalCodesInClientText": true,
     "noPromisesOfMissingSections": true,
+    "clientTextInvariants": true,
     "emptySidebarCountZero": true,
     "unexplainedAdverseMarkerCountZero": true,
     "visualCardsResolvedOrLabeled": true,

@@ -10,6 +10,7 @@ import type {
   SectionType,
 } from "./contracts";
 import { REQUIRED_SECTIONS, SECTION_TITLES } from "./contracts";
+import { clientTextIssues } from "./client-text-invariants";
 import type { RendererSlide } from "./deck-assembler";
 import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
@@ -828,6 +829,19 @@ export function validateAssembly(input: {
       `слайд ${p.slide} отправляет читателя в отсутствующий раздел «${SECTION_TITLES[p.section]}»`
     );
   }
+
+  /*
+   * Инварианты клиентского текста — на готовом документе (шаг 0139).
+   *
+   * Проверка построителя видит свой построитель; поверхность из двенадцати
+   * построителей на шесть полей она не видит, и каждый живой прогон находил
+   * дефект одного вида в новом месте. Эти ворота идут по **каждой
+   * напечатанной строке** собранной деки, поэтому построитель, забывший
+   * общую дверь, падает здесь, а не доезжает до клиента.
+   */
+  const textIssues = clientTextIssues(rendererSlides as never);
+  checks.clientTextInvariants = textIssues.length === 0;
+  for (const issue of textIssues) issues.push(`client-text: ${issue}`);
 
   // --- Manual-quality gates (fail closed) ---
 
