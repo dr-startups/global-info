@@ -350,11 +350,19 @@ function buildFromFinding(input: {
  */
 /**
  * Цитаты нет — строка говорит об этом теми же словами, что и региональный блок
- * (`buildClientFacingClaim`). Сиротская претензия живёт только у материала с
- * негативом или признаками существенности, поэтому суть здесь всегда «риска».
+ * (`buildClientFacingClaim`), **и называет источник**. Сиротская претензия
+ * живёт только у материала с негативом или признаками существенности, поэтому
+ * суть здесь всегда «риска».
+ *
+ * Домен обязателен (шаг 0128): на стр. 7 отчёта Мордашова 20.09.2026 под одной
+ * темой дважды подряд стояла эта строка без него — два дословно одинаковых
+ * обрубка, по которым читателю некуда пойти. Региональный блок домен называет
+ * с самого начала; здесь его не было.
  */
-const NO_HEADLINE_LINE =
-  "Отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.";
+function noHeadlineLine(domain: string | undefined): string {
+  const head = "Отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточник";
+  return domain ? `${head} (${domain}).` : `${head}и.`;
+}
 
 function buildOrphanMaterialClaims(input: {
   subjectId: string;
@@ -432,7 +440,7 @@ function buildOrphanMaterialClaims(input: {
       themeLabelRu(ensuredThemes[0]!),
       quote
         ? sourceQuote(quote, sourceAttribution({ url: item?.sourceUrl, domain: domains[0] }))
-        : NO_HEADLINE_LINE,
+        : noHeadlineLine(domains[0]),
     ]
       .filter(Boolean)
       .join("\n");
