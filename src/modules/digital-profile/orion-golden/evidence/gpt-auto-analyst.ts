@@ -256,6 +256,7 @@ async function gptBatchDecisions(input: {
   };
 
   const raw = await callOpenAiStrictJson({
+    stage: "auto_analyst",
     systemPrompt: AUTO_ANALYST_SYSTEM_PROMPT,
     userPayload: payload,
     maxRetries: 2,

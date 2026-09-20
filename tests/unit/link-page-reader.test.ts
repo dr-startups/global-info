@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  LINK_PAGE_MAX_CHARS,
   LINK_READER_USER_AGENT,
   extractPageTitle,
   extractPublishedAt,
@@ -48,6 +49,24 @@ describe("извлечение текста", () => {
     // Дата в теле статьи датой публикации не считается: «12 мая» может быть чем
     // угодно, и назвать это фактом значит его выдумать.
     expect(extractPublishedAt("<p>Встреча прошла 12 мая 2019 года</p>")).toBeUndefined();
+  });
+});
+
+describe("бюджет текста страницы (шаг 0119)", () => {
+  /*
+   * Читателю модели едет не вся страница, а её начало: основание вывода почти
+   * всегда стоит в первых абзацах, а вход чтения — около 70 % всех входных
+   * токенов прогона (81 прочитанная страница на дело). Бюджет снижен с 12 000
+   * до 8 000 знаков; число названо здесь, потому что оно и есть решение.
+   */
+  it("Ч1: длинная страница режется по 8 000 знаков", () => {
+    const long = `<html><body><p>${"Слово ".repeat(4000)}</p></body></html>`;
+    expect(LINK_PAGE_MAX_CHARS).toBe(8_000);
+    expect(extractReadableText(long)).toHaveLength(8_000);
+  });
+
+  it("Ч1б: короткая страница не трогается", () => {
+    expect(extractReadableText(page()).length).toBeLessThan(LINK_PAGE_MAX_CHARS);
   });
 });
 

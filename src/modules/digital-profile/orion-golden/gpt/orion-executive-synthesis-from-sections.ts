@@ -132,7 +132,11 @@ export async function buildExecutiveSynthesisFromSections(input: {
 }): Promise<ExecutiveSynthesisOutput> {
   if (!input.requireAi) throw new Error("gpt55-required");
 
-  const raw = await callOpenAiStrictJson({ systemPrompt: EXEC_SYSTEM, userPayload: input.synthesisInput });
+  const raw = await callOpenAiStrictJson({
+    stage: "executive_summary",
+    systemPrompt: EXEC_SYSTEM,
+    userPayload: input.synthesisInput,
+  });
   const normalized = normalizeExecutiveSynthesis(
     (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>
   );

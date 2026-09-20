@@ -229,6 +229,7 @@ export async function runGptDeckComposer(input: {
         key: "deck-composer",
         run: () =>
           input.caller({
+            stage: "deck_compose",
             systemPrompt: COMPOSER_INSTRUCTIONS,
             userPayload: {
               subject: {

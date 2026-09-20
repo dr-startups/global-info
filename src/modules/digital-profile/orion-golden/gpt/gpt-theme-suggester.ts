@@ -261,6 +261,7 @@ function buildLlmFinding(input: {
 export function defaultGptThemesCaller(): GptJsonCaller {
   return (input) =>
     callOpenAiStrictJson({
+      stage: input.stage,
       systemPrompt: input.systemPrompt,
       userPayload: input.userPayload,
       maxOutputTokens: 4000,
@@ -353,6 +354,7 @@ export async function runGptThemeSuggestion(input: {
           run: async () => {
             callCount += 1;
             return caller({
+              stage: "theme_suggestion",
               systemPrompt: THEME_SYSTEM_PROMPT,
               userPayload: {
                 alreadyConfiguredThemes: getFindingThemes().map((t) => ({

@@ -162,6 +162,7 @@ export async function analyzeLinkPage(
   let raw: unknown;
   try {
     raw = await call({
+      stage: "link_verdict",
       systemPrompt: SYSTEM_PROMPT,
       userPayload: {
         subject: {

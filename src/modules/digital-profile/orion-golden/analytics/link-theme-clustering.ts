@@ -214,6 +214,7 @@ async function resolveThemeGroups(
   const call = deps.call ?? callOpenAiStrictJson;
   try {
     const raw = (await call({
+      stage: "theme_clustering",
       systemPrompt: SYSTEM_PROMPT,
       userPayload: {
         themes: themes.map((t) => ({ n: t.index, тема: t.theme, публикаций: t.count })),

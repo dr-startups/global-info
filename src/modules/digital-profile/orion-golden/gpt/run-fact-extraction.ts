@@ -29,10 +29,14 @@ import {
 } from "./fact-extraction";
 
 /** Same shape the other GPT stages inject, so tests can pass a fake. */
-export type GptJsonCaller = (input: {
-  systemPrompt: string;
-  userPayload: unknown;
-}) => Promise<unknown>;
+/**
+ * Тот же тип, что у остальных стадий: объявлен один раз в `gpt-case-analysis`.
+ * Прежде он был объявлен здесь во второй раз — два ответа на один вопрос, и
+ * при добавлении стадии они разъехались бы молча.
+ */
+import type { GptJsonCaller } from "./gpt-case-analysis";
+
+export type { GptJsonCaller };
 
 /** Materials per call — enough for a theme, small enough to stay cheap. */
 export const FACT_EXTRACTION_MAX_MATERIALS = 12;
@@ -210,6 +214,7 @@ export async function runFactExtraction(input: {
 
     try {
       const raw = await caller({
+        stage: "fact_extraction",
         systemPrompt: FACT_EXTRACTION_SYSTEM_PROMPT,
         userPayload: {
           subjectName: input.subjectName,

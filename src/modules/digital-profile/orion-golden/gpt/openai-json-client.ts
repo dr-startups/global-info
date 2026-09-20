@@ -10,6 +10,8 @@
  */
 
 import { digitalProfileConfig } from "../../config";
+import { modelForStage, type GptStage } from "../../config/defaults";
+import { recordGptUsage, type OpenAiUsageShape } from "./gpt-usage";
 import { OpenAiRateLimitError, isOpenAiHttp429 } from "./openai-rate-limit";
 import {
   OpenAiCallError,
@@ -21,7 +23,8 @@ import {
 interface OpenAiResponseShape {
   status?: string;
   incomplete_details?: { reason?: string };
-  usage?: { output_tokens?: number };
+  /** Счёт токенов: по нему и обрезка ответа, и расход прогона (шаг 0119). */
+  usage?: OpenAiUsageShape;
   output?: Array<{
     content?: Array<{ type?: string; text?: string }>;
   }>;
@@ -64,9 +67,23 @@ function extractText(res: OpenAiResponseShape): string | null {
   return legacy?.trim() ?? null;
 }
 
+/**
+ * Модель с рассуждением: ей едет уровень усилия.
+ *
+ * Линейка 5.6 (`sol`, `terra`, `luna`) и `gpt-6-astra` начинаются с тех же
+ * префиксов, что и прежние — важно, что список растёт вместе с таблицей
+ * стадий: модель, не опознанная здесь, молча ушла бы с усилием по умолчанию
+ * («medium»), то есть дороже, чем решено.
+ */
 function isReasoningModel(model: string): boolean {
   const m = model.trim().toLowerCase();
-  return m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4");
+  return (
+    m.startsWith("gpt-5") ||
+    m.startsWith("gpt-6") ||
+    m.startsWith("o1") ||
+    m.startsWith("o3") ||
+    m.startsWith("o4")
+  );
 }
 
 /**
@@ -111,6 +128,7 @@ type FetchLike = (
 ) => Promise<Response>;
 
 async function requestOpenAiJson(input: {
+  stage: GptStage;
   systemPrompt: string;
   userPayload: unknown;
   maxOutputTokens: number;
@@ -158,6 +176,9 @@ async function requestOpenAiJson(input: {
       });
     }
     const json = (await res.json()) as OpenAiResponseShape;
+    // Запись расхода стоит здесь, а не у вызывающего: повтор при обрезанном
+    // ответе — второй оплаченный вызов, и в счёте он обязан быть вторым.
+    recordGptUsage({ stage: input.stage, model: input.model, usage: json.usage });
     const text = extractText(json) ?? "";
     if (!text) {
       const truncatedEmpty = looksLikeTruncatedOpenAiJson({
@@ -208,6 +229,8 @@ function isTruncationError(err: unknown): boolean {
 
 /** One-shot OpenAI JSON call — no queue retry loop; one §4.5 truncation bump. */
 export async function callOpenAiStrictJsonOnce(input: {
+  /** Стадия конвейера: по ней выбирается модель и на неё относится расход. */
+  stage: GptStage;
   systemPrompt: string;
   userPayload: unknown;
   /** Override config budget (tests / stage-specific). */
@@ -222,7 +245,7 @@ export async function callOpenAiStrictJsonOnce(input: {
     throw new OpenAiCallError("gpt55-required-but-unavailable", { retryable: false });
   }
 
-  const model = digitalProfileConfig.aiAnalyst.model;
+  const model = modelForStage(input.stage);
   const firstMax = Math.max(
     200,
     Math.min(
@@ -238,6 +261,7 @@ export async function callOpenAiStrictJsonOnce(input: {
 
   const run = (maxOutputTokens: number) =>
     requestOpenAiJson({
+      stage: input.stage,
       systemPrompt: input.systemPrompt,
       userPayload: input.userPayload,
       maxOutputTokens,
@@ -295,6 +319,8 @@ export async function callOpenAiStrictJsonOnce(input: {
  * production callers; inject fakes in offline smokes instead.
  */
 export async function callOpenAiStrictJson(input: {
+  /** Стадия конвейера: по ней выбирается модель и на неё относится расход. */
+  stage: GptStage;
   systemPrompt: string;
   userPayload: unknown;
   /** @deprecated Retries are owned by the queue; kept for call-site compat. */
@@ -310,6 +336,7 @@ export async function callOpenAiStrictJson(input: {
         key: "openai-json",
         run: () =>
           callOpenAiStrictJsonOnce({
+            stage: input.stage,
             systemPrompt: input.systemPrompt,
             userPayload: input.userPayload,
             maxOutputTokens: input.maxOutputTokens,

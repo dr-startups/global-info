@@ -14,6 +14,7 @@
  */
 
 import { z } from "zod";
+import type { GptStage } from "../../config/defaults";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { MetricSnapshot } from "../deck-sections/scoped-input";
@@ -26,7 +27,15 @@ import { collapseLegacyRiskWord } from "../client/risk-scale";
 export const GPT_CASE_ANALYSIS_VERSION = "gpt-case-analysis-v1" as const;
 
 /** Strict JSON caller (system prompt + payload → parsed JSON). */
+/**
+ * Вызов модели, который слой отчёта получает снаружи.
+ *
+ * `stage` обязателен (шаг 0119): по нему выбирается модель и на него относится
+ * расход. Подставной вызов в тестах лишнее поле просто не читает, а вот
+ * рабочий путь без стадии не компилируется — модель не выбирается молча.
+ */
 export type GptJsonCaller = (input: {
+  stage: GptStage;
   systemPrompt: string;
   userPayload: unknown;
 }) => Promise<unknown>;
@@ -376,6 +385,7 @@ export async function runGptCaseAnalysis(
           key: "gpt-stage1-single",
           run: () =>
             input.caller({
+              stage: "case_analysis",
               systemPrompt: caseAnalysisSystemPrompt(input.deterministicVerdict),
               userPayload: buildCorpusPayload(corpus),
             }),

@@ -66,7 +66,12 @@ export interface DigitalProfileConfig {
   aiAnalyst: {
     enabled: boolean;
     provider: "openai";
-    model: string;
+    /**
+     * Модели здесь нет: она выбирается под стадию таблицей
+     * `GPT_STAGE_MODELS` (`config/defaults.ts`, шаг 0119). Прежняя переменная
+     * `DIGITAL_PROFILE_AI_ANALYST_MODEL` больше не читается — в окружении по
+     * правилу проекта живут только секреты, а модель секретом не является.
+     */
     timeoutMs: number;
     maxInputItems: number;
     maxOutputTokens: number;
@@ -204,7 +209,6 @@ export const digitalProfileConfig: DigitalProfileConfig = {
       (process.env.DIGITAL_PROFILE_AI_ANALYST_PROVIDER ?? "openai").trim().toLowerCase() === "openai"
         ? "openai"
         : "openai",
-    model: process.env.DIGITAL_PROFILE_AI_ANALYST_MODEL?.trim() || "gpt-5.5",
     timeoutMs: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_TIMEOUT_MS, 60000, 1000, 180000),
     maxInputItems: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_INPUT_ITEMS, 120, 20, 500),
     // REMEDIATION §4.5 — stage-1 default 12000 (was 8000). Reasoning models spend

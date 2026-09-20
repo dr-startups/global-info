@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v207" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v208" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -33,6 +33,12 @@ export const DECK_CONTENT_VERSION = "deck-sections-v207" as const;
  *
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
+ *
+ * 20.09 номер двинут до v208: текст слайдов, композицию и редактора деки
+ * пишет другая модель — `gpt-5.6-sol` вместо `gpt-5.5` (шаг 0119, таблица
+ * `GPT_STAGE_MODELS`). Слова те же, промпт тот же, автор другой: готовые паки
+ * написаны прежней моделью, и без подъёма «Пересобрать отчёт» отдал бы их из
+ * кэша — смена модели не доехала бы до документа вовсе.
  *
  * 19.09 номер двинут до v207: остатки шага 0115 (шаг 0117) — текст ИИ-ответа
  * и цитаты получают потерянные провайдером пробелы («9мая 1967года» →
@@ -739,7 +745,7 @@ export const DECK_CONTENT_VERSION = "deck-sections-v207" as const;
  * повышенного внимания вместо двух. Эталон-72 русских слов этих словарей не
  * содержит вовсе, у него двигается только номер версии в пакетах.
  */
-export const DECK_BUILDER_FINGERPRINT = "e4feae5a988d66c8" as const;
+export const DECK_BUILDER_FINGERPRINT = "a76a4703c3c36872" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -762,7 +768,7 @@ export const DECK_BUILDER_FINGERPRINT = "e4feae5a988d66c8" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v207" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v208" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

@@ -328,6 +328,7 @@ export async function runGptDeckEditorPass(input: {
         key: "deck-editor",
         run: () =>
           input.caller({
+            stage: "deck_edit",
             systemPrompt: EDITOR_INSTRUCTIONS,
             userPayload: {
               subject: {

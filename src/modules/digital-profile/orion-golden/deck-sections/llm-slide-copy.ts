@@ -1038,6 +1038,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       key: p.pack.fragmentKey,
       run: () =>
         input.caller({
+          stage: "slide_copy",
           systemPrompt: p.systemPrompt,
           userPayload: p.userPayload,
         }),
@@ -1113,6 +1114,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
         key: r.item.pack.fragmentKey,
         run: () =>
           input.caller({
+          stage: "slide_copy",
             systemPrompt: REPAIR_INSTRUCTIONS,
             userPayload: {
               fragmentKey: r.item.pack.fragmentKey,

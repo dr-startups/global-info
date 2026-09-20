@@ -342,6 +342,7 @@ export async function runGptCaseAnalysisMapReduce(
             key: "gpt-stage1-single",
             run: () =>
               input.caller({
+          stage: "case_analysis",
                 systemPrompt: caseAnalysisSystemPrompt(input.deterministicVerdict),
                 userPayload: buildCorpusPayload(corpus),
               }),
@@ -373,6 +374,7 @@ export async function runGptCaseAnalysisMapReduce(
       key: `gpt-stage1-map:${batch.key}`,
       run: () =>
         input.caller({
+          stage: "case_analysis",
           systemPrompt: GPT_STAGE1_MAP_SYSTEM_PROMPT,
           userPayload: buildMapBatchPayload(corpus, batch),
         }),
@@ -446,6 +448,7 @@ export async function runGptCaseAnalysisMapReduce(
           key: "gpt-stage1-reduce",
           run: () =>
             input.caller({
+          stage: "case_analysis",
               // Свод тоже получает вычисленный уровень: иначе он предложит свой,
               // и объяснение разойдётся с плашкой по смыслу (шаг 07.9).
               systemPrompt: withRiskLevelLine(

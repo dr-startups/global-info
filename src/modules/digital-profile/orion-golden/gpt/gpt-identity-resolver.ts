@@ -175,6 +175,7 @@ function applyResolutionUpdate(input: {
 export function defaultGptIdentityCaller(): GptJsonCaller {
   return (input) =>
     callOpenAiStrictJson({
+      stage: input.stage,
       systemPrompt: input.systemPrompt,
       userPayload: input.userPayload,
       maxOutputTokens: 4000,
@@ -251,6 +252,7 @@ export async function runGptIdentityResolution(input: {
       };
       callCount += 1;
       const raw = await caller({
+        stage: "identity",
         systemPrompt: IDENTITY_SYSTEM_PROMPT,
         userPayload: payload,
       });

@@ -315,6 +315,7 @@ export async function runWikipediaArticleReview(input: {
       }
       try {
         raw = await call({
+        stage: "wikipedia_review",
         systemPrompt: SYSTEM_PROMPT,
         userPayload: {
           subject: { fullName: input.subject.fullName, aliases: input.subject.aliases ?? [] },

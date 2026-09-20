@@ -98,6 +98,126 @@ export const STRING_DEFAULTS = {
   TOPVISOR_SUGGEST_REGIONS: "yandex-moscow",
 } as const;
 
+/**
+ * Стадии конвейера, на которых работает модель OpenAI.
+ *
+ * Перечисление названо целиком и в одном месте, потому что по нему строятся два
+ * ответа сразу: какая модель идёт на стадию и сколько эта стадия стоила. Стадия
+ * называется в самом вызове клиента, и вызов без неё не компилируется — иначе
+ * модель выбиралась бы молча, а расход не к чему было бы отнести.
+ */
+export const GPT_STAGES = [
+  // Текст, который читает клиент.
+  "case_analysis",
+  "executive_summary",
+  "deck_compose",
+  "deck_edit",
+  "slide_copy",
+  // Извлечение и решения, которые проверяет код.
+  "link_verdict",
+  "wikipedia_review",
+  "fact_extraction",
+  "theme_clustering",
+  "identity",
+  "auto_analyst",
+  // Предложения, которые код принимает только при подтверждении.
+  "theme_suggestion",
+] as const;
+
+export type GptStage = (typeof GPT_STAGES)[number];
+
+/**
+ * Какая модель работает на стадии (решение владельца 20.09.2026).
+ *
+ * До этого модель была одна на всё — `gpt-5.5` из переменной окружения — и
+ * стоила дороже любой из нынешних, кроме флагмана. Стадии же разные и по цене
+ * входа, и по цене ошибки:
+ *
+ * - **`gpt-5.6-sol`** пишет текст, который видит клиент. Это прямой преемник
+ *   5.5 (дешевле на 20 % по входу и на 33 % по выходу) и единственное место,
+ *   где слог решает: на оценке качества документов Sol держит 1748 Elo против
+ *   1593 у Terra.
+ * - **`gpt-5.6-terra`** отвечает структурой, которую проверяет код: цитаты
+ *   сверяет аудит решений, тему назначают словари, принадлежность клампится.
+ *   По тестам Terra отстаёт от Sol на 2–3 пункта при цене вдвое ниже.
+ * - **`gpt-5.6-luna`** предлагает темы, и предложение принимается, только если
+ *   код нашёл слова темы не меньше чем у двух материалов. Luna вчетверо
+ *   дешевле Terra, но на длинном контексте теряет точность (41 % против 90 %),
+ *   поэтому за пределы этой стадии не выходит.
+ *
+ * `gpt-6-astra` в таблице нет сознательно: её преимущество над Sol лежит в
+ * агентных задачах и работе с компьютером, а вход стоит вдвое дороже нашей
+ * прежней модели.
+ *
+ * Здесь же и цена ошибки: сменить модель стадии — один коммит, который
+ * разворачивается пушем. Поэтому таблица живёт в коде, а не в окружении: в
+ * окружении по правилу проекта живут только секреты, а модель секретом не
+ * является.
+ */
+export const GPT_STAGE_MODELS: Record<GptStage, { model: string; label: string }> = {
+  case_analysis: { model: "gpt-5.6-sol", label: "Анализ дела" },
+  executive_summary: { model: "gpt-5.6-sol", label: "Резюме для руководства" },
+  deck_compose: { model: "gpt-5.6-sol", label: "Композиция деки" },
+  deck_edit: { model: "gpt-5.6-sol", label: "Редактор деки" },
+  slide_copy: { model: "gpt-5.6-sol", label: "Текст слайдов" },
+  link_verdict: { model: "gpt-5.6-terra", label: "Чтение страниц выдачи" },
+  wikipedia_review: { model: "gpt-5.6-terra", label: "Разбор статьи Википедии" },
+  fact_extraction: { model: "gpt-5.6-terra", label: "Извлечение фактов" },
+  theme_clustering: { model: "gpt-5.6-terra", label: "Сведение сюжетов" },
+  identity: { model: "gpt-5.6-terra", label: "Разрешение принадлежности" },
+  auto_analyst: { model: "gpt-5.6-terra", label: "Авто-аналитик очереди" },
+  theme_suggestion: { model: "gpt-5.6-luna", label: "Подсказки тем" },
+};
+
+/** Модель стадии. Стадии без строки в таблице не существует — она перечислена. */
+export function modelForStage(stage: GptStage): string {
+  const row = GPT_STAGE_MODELS[stage];
+  if (!row) throw new Error(`gpt-stage-without-model: ${stage}`);
+  return row.model;
+}
+
+/**
+ * Дата, на которую сняты цены ниже.
+ *
+ * Печатается в артефакте учёта рядом с деньгами: цена — не свойство кода, а
+ * состояние прайса провайдера, и число без даты через месяц врёт молча. У
+ * `gpt-5.6-sol` и `gpt-5.6-terra` цены **акционные до 21.11.2026** — после
+ * этой даты таблицу надо снять заново.
+ */
+export const GPT_PRICE_TABLE_DATE = "2026-09-20";
+
+/**
+ * Цена за миллион токенов, доллары (прайс OpenAI на `GPT_PRICE_TABLE_DATE`).
+ *
+ * `cachedInput` — цена входа, попавшего в кэш промпта; провайдер включает такие
+ * токены и в общий счёт входа, поэтому считать их надо вычитанием, а не
+ * сложением. Запись кэша стоит дороже обычного входа в `CACHE_WRITE_MULTIPLIER`
+ * раз — это тоже прайс, а не наша выдумка.
+ *
+ * `gpt-5.5` остаётся в таблице, хотя из конвейера ушла: по ней считается, во
+ * сколько обходился прежний прогон, и без неё сравнивать было бы не с чем.
+ */
+export const GPT_MODEL_PRICES: Record<
+  string,
+  { input: number; cachedInput: number; output: number }
+> = {
+  "gpt-6-astra": { input: 10, cachedInput: 1, output: 50 },
+  "gpt-5.6-sol": { input: 4, cachedInput: 0.4, output: 20 },
+  "gpt-5.6-terra": { input: 2, cachedInput: 0.2, output: 12 },
+  "gpt-5.6-luna": { input: 0.2, cachedInput: 0.02, output: 1.2 },
+  "gpt-5.5": { input: 5, cachedInput: 0.5, output: 30 },
+};
+
+/** Наценка за запись входа в кэш промпта (прайс OpenAI для линейки 5.6). */
+export const CACHE_WRITE_MULTIPLIER = 1.25;
+
+/** Цена модели или `undefined` — цены может не быть, и тогда счёт честно неизвестен. */
+export function priceForModel(
+  model: string
+): { input: number; cachedInput: number; output: number } | undefined {
+  return GPT_MODEL_PRICES[String(model ?? "").trim().toLowerCase()];
+}
+
 export type BooleanSettingName = keyof typeof BOOLEAN_DEFAULTS;
 export type StringSettingName = keyof typeof STRING_DEFAULTS;
 
