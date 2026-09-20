@@ -17,6 +17,7 @@ import type { RemovedSerpRow, ScopedFragmentInput } from "../scoped-input";
 import { clientNamedSearchEngine, evidenceMaterialKey } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
+import { hasPageAddress } from "../../analytics/run-link-verdicts";
 import { clientSafeDomains } from "../../../services/composite-serp-merge";
 import { NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
@@ -794,6 +795,10 @@ export function serpTablePageProse(input: {
   collectedRanks?: number[];
   /** Номера, напечатанные в этой таблице. */
   printedRanks?: number[];
+  /** Сколько напечатанных строк пришли без адреса страницы (шаг 0132). */
+  addresslessRows?: number;
+  /** Сколько строк на листе всего — чтобы отличить «часть» от «все». */
+  printedRows?: number;
   /**
    * Пропущенные номера, которые второе чтение намерило на материале, уже
    * показанном выше под другим номером.
@@ -855,6 +860,26 @@ export function serpTablePageProse(input: {
     })
   );
   parts.push(input.positional ? SERP_RANKS_ARE_POSITIONS : SERP_RANKS_ARE_COLLECTION_ORDER);
+  /*
+   * Адрес страницы отдан не всегда (шаг 0132).
+   *
+   * Topvisor по Google возвращает позицию, домен и заголовок, но не адрес: в
+   * прогоне Мордашова 20.09.2026 путь был у 34 наблюдений из 403. В колонке
+   * «Ссылка» тогда стоит домен, и молчать об этом нельзя — читатель подумает,
+   * что адрес потеряли мы. Оттуда же берётся «Не проверено» в оценке: витрину
+   * сайта читать нечего (шаг 0129).
+   */
+  const addressless = Number(input.addresslessRows ?? 0);
+  const printedRows = Number(input.printedRows ?? 0);
+  if (addressless > 0) {
+    parts.push(
+      addressless >= printedRows && printedRows > 0
+        ? "Адрес страницы поисковая система по этому запросу не отдала: в колонке «Ссылка» указан домен, " +
+          "и содержимое таких строк не проверялось."
+        : `Для ${addressless} ${pluralRu(addressless, "строки", "строк", "строк")} поисковая система не отдала ` +
+          "адрес страницы: в колонке «Ссылка» указан домен, и содержимое таких строк не проверялось."
+    );
+  }
   return { head: parts.join(" ") };
 }
 
@@ -1495,8 +1520,20 @@ export function buildSerpFragment(
           ),
         ].filter((rank) => rank >= 1 && rank <= SERP_TABLE_TOP_N)
       : [];
+    /*
+     * Сколько строк таблицы пришли без адреса страницы (шаг 0132).
+     *
+     * Считается по тем же наблюдениям, что печатает колонка «Ссылка», и тем
+     * же предикатом, что решает, покупать ли чтение (`hasPageAddress`): у
+     * вопроса «есть ли у строки адрес» один ответ на весь продукт.
+     */
+    const addresslessRows = table.displayed.filter((x) =>
+      (x.group.refs ?? []).every((ref) => !hasPageAddress(scoped.evidenceIndex[ref]?.url))
+    ).length;
     const prose = serpTablePageProse({
       engineLabel: serpEngineLabelGenitive(table.engine),
+      addresslessRows,
+      printedRows: table.displayed.length,
       query: table.query,
       queryChosenByUs: table.queryChosenByUs,
       regionMainQuery: table.regionMainQuery,
