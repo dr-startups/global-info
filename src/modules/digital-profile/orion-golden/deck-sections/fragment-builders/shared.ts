@@ -53,6 +53,7 @@ import {
   type ObservationVerdict,
 } from "../../../serp-observation/resolve-observation-highlights";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
+import { isBoilerplateCommentary } from "../boilerplate-commentary";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
 import { quoteBody, sourceQuote } from "../../client/client-quote";
 import { composeBlockLines } from "../../client/block-lines";
@@ -848,8 +849,21 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     return marker ? `${body}${marker}` : body;
   }
 
-  const isWhy = (l: string) =>
-    /^(Для банка|Банки |Это усиливает|Риск в том|Деловой фон|Что делать:)/u.test(l);
+  /*
+   * Присказка темы узнаётся по объявленному списку, а не по началу строки.
+   *
+   * Перечень начал («Для банка|Банки |Это усиливает|Риск в том|Деловой фон»)
+   * не покрывал трёх присказок из десяти — «Само по себе владение…»,
+   * «Для KYC…», «Для международных проверок…». Для этих тем присказка
+   * переживала все сбросы и съедала бюджет, а вместо неё уходили числа: стр. 5
+   * отчёта Алекперова 21.09.2026 встала с четырьмя блоками без строки счёта.
+   *
+   * Это был третий ответ на вопрос «какая строка — присказка»: тот же дефект
+   * тем же способом уже лечили в `clientThemeWhy`. Теперь ответ один —
+   * `isBoilerplateCommentary`, который собирает список из объявлений
+   * построителей. «Что делать:» присказкой не объявлено и остаётся здесь.
+   */
+  const isWhy = (l: string) => isBoilerplateCommentary(l) || /^Что делать:/u.test(l);
   const isWhere = (l: string) => /^Где видно:/u.test(l);
   const isScale = (l: string) => /^(Всего по теме:|В корпусе:)/u.test(l);
   const isQuote = isQuoteLine;

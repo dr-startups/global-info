@@ -254,11 +254,11 @@ export const CLIENT_THEME_WHY: Record<string, string> = {
  * «Для международных проверок…», — и страница офшоров у банка оставалась без
  * единственного предложения о том, зачем ей эта тема.
  */
+export const CLIENT_THEME_WHY_FALLBACK =
+  "Для банка, инвестора или контрагента это сигнал к углублённой проверке.";
+
 export function clientThemeWhy(themeId: string | undefined): string {
-  return (
-    (themeId ? CLIENT_THEME_WHY[themeId] : undefined) ??
-    "Для банка, инвестора или контрагента это сигнал к углублённой проверке."
-  );
+  return (themeId ? CLIENT_THEME_WHY[themeId] : undefined) ?? CLIENT_THEME_WHY_FALLBACK;
 }
 
 /** Охват глобального утверждения: весь корпус отчёта. */

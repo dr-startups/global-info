@@ -330,6 +330,25 @@ function evidenceSentence(types: string[], title: string): string | null {
 }
 
 /**
+ * Строка проверки первоисточников по названию темы или сюжета.
+ *
+ * Спрашивают её двое — тема и сюжет, — и раньше каждый печатал свою: шаг 0144
+ * поправил обёртку у темы, а «»» на стр. 3 отчёта Алекперова 21.09.2026 пришло
+ * от сюжета «Стратегия, показатели и деятельность компании «Лукойл»». Название
+ * само бывает в кавычках, поэтому обёртка ставится через `quoteBody`: он
+ * переводит внутренние ёлочки в лапки, и кавычка в кавычке не возникает.
+ *
+ * Форма важна дословно: `collapseRecommendations` склеивает пункты по форме
+ * предложения и перечисляет в одном все названия. Разойдутся формы — клиент
+ * прочитает два пункта об одном и том же.
+ */
+export function themeSourceCheckLine(title: string): string {
+  return stripInternalLeak(
+    `Сверить первоисточники и статус материалов по теме «${quoteBody(title)}».`
+  );
+}
+
+/**
  * Collapses recommendations that differ only by the theme they name.
  *
  * `new Set` removed exact duplicates only, so eight themes produced eight
@@ -586,13 +605,7 @@ function buildThemeBlock(
      * (пункт CR, живой отчёт 21.08). Подготовка к KYC названа один раз и
      * там, где она общая для отчёта.
      */
-    recommendedChecks: [
-      stripInternalLeak(
-        // Название темы само бывает в кавычках («Стратегия … компании „Лукойл“»),
-        // и обёртка поверх обёртки даёт «»» (шаг 0144). Ответ тот же, что везде.
-        `Сверить первоисточники и статус материалов по теме «${quoteBody(clientTitle)}».`
-      ),
-    ],
+    recommendedChecks: [themeSourceCheckLine(clientTitle)],
     materialityLevel: ceiling,
     evidenceRefs: [...evidenceRefs],
     sourceDomains: [...domains],
@@ -962,9 +975,7 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
   const nextSteps = collapseRecommendations([
     // Форма та же, что у проверок темы: `collapseRecommendations` склеит их в
     // одну строку, перечислив и сюжеты, и оставшиеся темы.
-    ...adversePlots.map((p) =>
-      stripInternalLeak(`Сверить первоисточники и статус материалов по теме «${p.title}».`)
-    ),
+    ...adversePlots.map((p) => themeSourceCheckLine(p.title)),
     ...materialThemes.flatMap((t) => t.recommendedChecks),
     "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
     // Позиция и документы — одно действие подготовки, названное одной строкой:

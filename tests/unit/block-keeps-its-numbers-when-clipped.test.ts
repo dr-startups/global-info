@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { CLIENT_THEME_WHY } from "@/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 import { fitStructuredBullet } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 
 const BLOCK = [
@@ -22,7 +23,9 @@ const BLOCK = [
   "«Вторая цитата темы, которая иллюстрирует тот же сюжет и занимает столько же места в буллете страницы.» — источник (rbc.ru/doc/2)",
   "Всего по теме: 12 материалов по отчёту, с негативным контекстом — 4.",
   "Где видно: kommersant.ru, rbc.ru.",
-  "Для банка или партнёра владение компаниями претензией не является, но состав долей обычно просят подтвердить документами.",
+  // Присказка берётся из таблицы `CLIENT_THEME_WHY` дословно: сброс узнаёт её
+  // по объявленному списку, а не по началу строки (шаг 0145).
+  CLIENT_THEME_WHY.corporate_ownership!,
 ].join("\n");
 
 describe("подгонка блока под бюджет", () => {

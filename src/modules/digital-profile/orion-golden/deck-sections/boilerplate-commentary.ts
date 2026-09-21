@@ -22,7 +22,10 @@
  * печатают второй раз, ссылок «см. стр. N» вычистка не оставляет.
  */
 
-import { CLIENT_THEME_WHY } from "../analytics/finding-synthesizer";
+import {
+  CLIENT_THEME_WHY,
+  CLIENT_THEME_WHY_FALLBACK,
+} from "../analytics/finding-synthesizer";
 import {
   CLIENT_SUMMARY_THEME_WHY,
   CLIENT_SUMMARY_THEME_WHY_FALLBACK,
@@ -39,6 +42,9 @@ import { splitSentences } from "./sentence-split";
  */
 export const BOILERPLATE_COMMENTARY: readonly string[] = [
   ...Object.values(CLIENT_THEME_WHY),
+  // Тема без записи в таблице получает присказку по умолчанию, и она такая же
+  // шаблонная: вне списка она повторялась из страницы в страницу нетронутой.
+  CLIENT_THEME_WHY_FALLBACK,
   ...Object.values(CLIENT_SUMMARY_THEME_WHY),
   CLIENT_SUMMARY_THEME_WHY_FALLBACK,
 ];
