@@ -136,9 +136,24 @@ export function blockingIssues(input: {
   emptyTableSlides?: ReadonlySet<string>;
   /** Страницы, где строка таблицы печатает свой же адрес в другой своей ячейке. */
   ownAddressRowSlides?: ReadonlySet<string>;
+  /**
+   * Страницы, нарушившие инварианты клиентского текста (шаг 0144).
+   *
+   * Ворота 0139 видели нарушения и записывали их, но в блокирующие не
+   * входили: на прогоне Алекперова 21.09.2026 отчёт с шестью нарушениями ушёл
+   * как есть, а `passed: false` остался строчкой в артефакте. Это ровно та
+   * «лампочка вместо ворот», ради ухода от которой `blocking` и заведён.
+   */
+  clientTextSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
   const name = (s: ReadonlySet<string>, limit = 5): string => namedList([...s], limit);
+  const clientText = input.clientTextSlides ?? new Set<string>();
+  if (clientText.size >= SYSTEMIC_DEFECT_PAGES) {
+    out.push(
+      `инварианты клиентского текста нарушены на ${clientText.size} страницах: ${name(clientText)}`
+    );
+  }
   if (input.quoteDefectSlides.size >= SYSTEMIC_DEFECT_PAGES) {
     out.push(
       `цитаты разорваны на ${input.quoteDefectSlides.size} страницах: ${name(input.quoteDefectSlides)}`
@@ -842,6 +857,9 @@ export function validateAssembly(input: {
   const textIssues = clientTextIssues(rendererSlides as never);
   checks.clientTextInvariants = textIssues.length === 0;
   for (const issue of textIssues) issues.push(`client-text: ${issue}`);
+  // Задетые страницы — для порога системности: один спорный блок это вопрос к
+  // формулировке, три и больше — к механизму.
+  const clientTextSlides = new Set(textIssues.map((i) => i.split(".")[0] ?? ""));
 
   // --- Manual-quality gates (fail closed) ---
 
@@ -1451,6 +1469,7 @@ export function validateAssembly(input: {
    * механизма, а не спорную формулировку.
    */
   const blocking = blockingIssues({
+    clientTextSlides,
     quoteDefectSlides,
     codeSlides: new Set(internalCodes.map((f) => f.slide)),
     codes: new Set(internalCodes.map((f) => f.code)),

@@ -10,6 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { quoteBody } from "../client/client-quote";
 import { namesForeignPerson, subjectNameStems } from "./theme-quote";
 import { subjectNameVariants } from "./link-verdict-audit-agent";
 import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
@@ -587,7 +588,9 @@ function buildThemeBlock(
      */
     recommendedChecks: [
       stripInternalLeak(
-        `Сверить первоисточники и статус материалов по теме «${clientTitle}».`
+        // Название темы само бывает в кавычках («Стратегия … компании „Лукойл“»),
+        // и обёртка поверх обёртки даёт «»» (шаг 0144). Ответ тот же, что везде.
+        `Сверить первоисточники и статус материалов по теме «${quoteBody(clientTitle)}».`
       ),
     ],
     materialityLevel: ceiling,

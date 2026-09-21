@@ -858,13 +858,24 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     if (isGist(list[idx] ?? "")) list.splice(idx, 1);
   };
 
-  // PDF-49 — evidence quotes are last to drop (why/where/scale go first).
-  // Previously the 2nd quote was sacrificed before meta, so ФБК/currenttime vanished.
+  /*
+   * Порядок сброса: зачем-важно → где видно → вторая цитата → числа.
+   *
+   * PDF-49 поставил цитаты сбрасываться последними, чтобы вторая цитата не
+   * уходила раньше служебных строк. Но числа блока попали в «служебные» и
+   * уходили третьими: ворота инвариантов нашли четыре таких блока на стр. 5
+   * отчёта Алекперова 21.09.2026 — с цитатой, с рамкой «Найдены материалы…» и
+   * без единого числа.
+   *
+   * Блок, обещающий цитаты, обязан называть их количество: «сколько всего» —
+   * это то, ради чего читатель смотрит на тему. Вторая цитата иллюстрирует,
+   * числа отвечают. Поэтому числа теперь сбрасываются последними (шаг 0144).
+   */
   const droppers: Array<(l: string, all: string[]) => boolean> = [
     (l) => isWhy(l),
     (l) => isWhere(l),
-    (l) => isScale(l),
     (l, all) => isQuote(l) && all.filter(isQuote).indexOf(l) >= 1,
+    (l) => isScale(l),
   ];
   let kept = [...lines];
   for (const pred of droppers) {

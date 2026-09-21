@@ -119,7 +119,14 @@ export function clientTextIssues(slides: readonly PrintedSlide[]): string[] {
       }
       // 3. Цитата с источником обязана быть целой фразой.
       for (const m of text.matchAll(sourcedQuotes())) {
-        const quote = (m[1] ?? "").trim();
+        /*
+         * Наше многоточие в конце — объявленный рез, а не скрытый обрыв
+         * (шаг 0144). Цитату длиннее бюджета продукт режет по границе оборота
+         * и закрывает «…» — так она и печатается. Ворота, судящие её как
+         * обрывок, спорили бы с правилом самого продукта: на стр. 7 отчёта
+         * Алекперова так была помечена законная цитата.
+         */
+        const quote = (m[1] ?? "").trim().replace(/…$/u, "").trim();
         if (!looksLikeWholeStatement(quote)) {
           issues.push(`${where}: цитата не целая фраза — «${quote.slice(0, 60)}»`);
         }
