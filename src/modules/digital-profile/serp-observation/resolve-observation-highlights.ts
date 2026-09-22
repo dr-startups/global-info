@@ -23,8 +23,16 @@ import type { PersistedSerpObservation } from "./types";
  * целиком**, а не только хост, — этим он и отличается от словаря, который
  * адреса не читает вовсе.
  */
+/*
+ * Официальные санкционные реестры негативны сами по себе, на любом языке.
+ *
+ * Британский список, французский реестр заморозки активов (`gels-avoirs`),
+ * санкционная карта ЕС и список ООН добавлены шагом 0149: французский реестр
+ * печатался «Нейтральным» при подтверждённой принадлежности — словарь не
+ * читает «Gel des avoirs», а домена здесь не было.
+ */
 const ADVERSE_DOMAIN_RE =
-  /rucriminal|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
+  /rucriminal|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov|sanctions-list\.service\.gov\.uk|gels-avoirs\.dgtresor\.gouv\.fr|sanctionsmap\.eu|scsanctions\.un\.org/i;
 
 /**
  * Мягкие площадки: биографии, реестры, энциклопедии.

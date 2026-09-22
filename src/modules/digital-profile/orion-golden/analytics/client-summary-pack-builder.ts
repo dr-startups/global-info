@@ -716,6 +716,13 @@ function countReadPlotsWithoutEvidence(
   ).length;
 }
 
+/** Один ли это хост базы: без регистра и ведущего `www.`. */
+function sameDatabaseHost(a: string | null | undefined, b: string): boolean {
+  const host = (d: string | null | undefined) =>
+    String(d ?? "").trim().toLowerCase().replace(/^www\./u, "");
+  return Boolean(host(a)) && host(a) === host(b);
+}
+
 export function buildInternationalDatabases(
   claims: CanonicalClaim[],
   /** Написания имени субъекта — по ним запись узнаётся как запись о нём. */
@@ -750,6 +757,21 @@ export function buildInternationalDatabases(
     const top = list.sort(
       (a, b) => LEVEL_RANK[b.materialityLevel] - LEVEL_RANK[a.materialityLevel]
     )[0]!;
+    /*
+     * Запись базы подписывается заголовком самой записи (шаг 0149).
+     *
+     * Сводная официальная запись (`OFFICIAL_RECORD`) собирает свидетельства СМИ
+     * и реестров, и её заголовок бывает с новостного домена: запись OFAC прогона
+     * Мельниченко печаталась как «запись «Переговоры с Украиной, санкции ЕС,
+     * глобальное потепление…»» — заголовок rtvi.com. Подписывает запись только
+     * карточка самой базы (`DATABASE_STATUS`, её заголовок — имя в записи) или
+     * заголовок, взятый с домена базы. Иначе фраза остаётся нейтральной.
+     */
+    const record = list.find(
+      (c) =>
+        c.originalTitle &&
+        (c.claimKind === "DATABASE_STATUS" || sameDatabaseHost(c.originalDomain, domain))
+    );
     /*
      * Название базы — из провайдера записи, а не из её адреса.
      *
@@ -794,8 +816,8 @@ export function buildInternationalDatabases(
        * называет чужого.
        */
       statusSummary: stripInternalLeak(
-        top.originalTitle && !namesForeignPerson(top.originalTitle, stems)
-          ? `По открытым/импортированным данным есть сигнал, связанный с записью «${top.originalTitle}».`
+        record && !namesForeignPerson(record.originalTitle, stems)
+          ? `По открытым/импортированным данным есть сигнал, связанный с записью «${record.originalTitle}».`
           : "Зафиксирован предварительный сигнал международной или комплаенс-базы; запись требует сверки по идентификаторам."
       ),
       qualification: stripInternalLeak(top.clientQualification || caveatText("databaseSignalCheck")),

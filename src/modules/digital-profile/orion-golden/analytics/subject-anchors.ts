@@ -278,13 +278,41 @@ const EN_MONTHS = [
   "december",
 ];
 
+/**
+ * Сокращённые месяцы: так пишут реестры — OFAC SDN печатает «08 Mar 1972».
+ *
+ * «sept» стоит отдельно: британские источники сокращают сентябрь четырьмя
+ * буквами.
+ */
+const EN_MONTH_ABBR = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+
 function isoParts(iso: string): { y: number; m: number; d: number } | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso ?? "").trim());
   if (!m) return null;
   return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
 }
 
-/** Написания одной даты, которые встречаются в заголовках и сниппетах выдачи. */
+/**
+ * Написания одной даты, которые встречаются в заголовках и сниппетах выдачи.
+ *
+ * Английские — все три порядка, в которых их пишут реестры и энциклопедии
+ * (шаг 0149): «8 March 1972», «08 Mar 1972» (OFAC SDN), «March 8, 1972». Пока
+ * их не было, запись OFAC с датой ровно субъекта оставалась «принадлежность не
+ * подтверждена».
+ */
 export function birthDateForms(iso: string): string[] {
   const p = isoParts(iso);
   if (!p) return [];
@@ -292,22 +320,44 @@ export function birthDateForms(iso: string): string[] {
   const mm = String(p.m).padStart(2, "0");
   const month = RU_MONTHS[p.m - 1] ?? "";
   const enMonth = EN_MONTHS[p.m - 1] ?? "";
+  const enAbbr = EN_MONTH_ABBR[p.m - 1] ?? "";
+  const enNames = [enMonth, enAbbr, `${enAbbr}.`, ...(p.m === 9 ? ["sept", "sept."] : [])];
   return [
     `${dd}.${mm}.${p.y}`,
     `${p.d}.${p.m}.${p.y}`,
     `${dd}/${mm}/${p.y}`,
     `${p.y}-${mm}-${dd}`,
     `${p.d} ${month} ${p.y}`,
-    `${p.d} ${enMonth} ${p.y}`,
+    `${dd} ${month} ${p.y}`,
+    ...enNames.flatMap((name) => [
+      `${p.d} ${name} ${p.y}`,
+      `${dd} ${name} ${p.y}`,
+      `${name} ${p.d}, ${p.y}`,
+      `${name} ${dd}, ${p.y}`,
+    ]),
   ].filter((f) => !/\s{2,}|undefined/.test(f));
 }
 
-/** Своя дата рождения в тексте — в том написании, в котором она найдена. */
+function escapeForRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Своя дата рождения в тексте — в том написании, в котором она найдена.
+ *
+ * Границы — по цифрам (шаг 0149). Пока совпадение искалось подстрокой,
+ * «8 марта 1972» находилось внутри «18 марта 1972», и тёзка, родившийся 18-го,
+ * получал признак субъекта. Буква после года — законное написание
+ * («30.11.1977г.»), поэтому справа запрещена только цифра. Форма, которая
+ * начинается с месяца, не может быть хвостом слова: слева у неё не буква.
+ */
 export function birthDateMatch(text: string, iso: string | null | undefined): string | null {
   if (!iso) return null;
   const hay = norm(text);
   for (const form of birthDateForms(iso)) {
-    if (hay.includes(norm(form))) return form;
+    const body = norm(form);
+    const left = /^\p{L}/u.test(body) ? "(?<!\\p{L})" : "(?<!\\d)";
+    if (new RegExp(`${left}${escapeForRegExp(body)}(?!\\d)`, "u").test(hay)) return form;
   }
   return null;
 }
@@ -319,14 +369,23 @@ export function birthDateMatch(text: string, iso: string | null | undefined): st
  * рождения, и объявлять их чужой датой значило бы выбросить из отчёта
  * материалы о самом субъекте.
  */
-const BIRTH_CUE = /(родил\p{L}*|рожден\p{L}*|дата\s+рождения|born|birth\s*date|г\.?\s*р\.)/giu;
+// «Date of Birth» и «DOB» — так пишут реестры (OFAC SDN, британский список):
+// без них чужая дата в формате реестра чужой не узнавалась (шаг 0149).
+const BIRTH_CUE =
+  /(родил\p{L}*|рожден\p{L}*|дата\s+рождения|born|birth\s*date|date\s+of\s+birth|(?<!\p{L})dob(?!\p{L})|г\.?\s*р\.)/giu;
+
+/** Английский месяц полностью, сокращением или «sept» — с точкой или без. */
+const EN_MONTH_WORD = `(?:${[...EN_MONTHS, "sept", ...EN_MONTH_ABBR].join("|")})\\.?`;
 
 const DATE_RE = new RegExp(
   [
     "\\d{1,2}[.\\/]\\d{1,2}[.\\/]\\d{2,4}",
     "\\d{4}-\\d{2}-\\d{2}",
     `\\d{1,2}\\s+(?:${RU_MONTHS.join("|")})\\s+\\d{4}`,
-    `\\d{1,2}\\s+(?:${EN_MONTHS.join("|")})\\s+\\d{4}`,
+    // Те же три английских порядка, что у своих дат: чужая дата в формате
+    // реестра («16 Jun 1991») иначе не узнавалась бы чужой.
+    `\\d{1,2}\\s+${EN_MONTH_WORD}\\s+\\d{4}`,
+    `${EN_MONTH_WORD}\\s+\\d{1,2},\\s*\\d{4}`,
   ].join("|"),
   "giu"
 );
