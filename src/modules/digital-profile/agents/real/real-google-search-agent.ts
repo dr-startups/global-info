@@ -47,6 +47,10 @@ export function googleAuditSearchSpecs(subject: OfflinePlanSubject): AuditSearch
       // Контур отчёта, а не код региона поисковика: склейка различает строки
       // по нему, и «ae» ей ни о чём не говорит (шаг 0138).
       contour: spec.region,
+      // Назначение и «это само имя» — ответ плана, второго здесь не заводится:
+      // без них таблица Google выбирала запрос счётом материалов (шаг 0146).
+      purpose: spec.purpose,
+      ...(spec.subjectNameQuery ? { subjectNameQuery: true } : {}),
     };
   });
 }

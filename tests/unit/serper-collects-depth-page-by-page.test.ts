@@ -212,11 +212,14 @@ describe("остановка цикла и отказы страниц", () => {
     expect(run.results[9].rank).toBe(11);
   });
 
-  it("короткая страница останавливает цикл", async () => {
+  it("пустая страница останавливает цикл, короткая — нет", async () => {
+    // Шаг 0146: короткой страница бывает и посреди выдачи — у Google на первой
+    // странице часто девять органических строк. Концом выдачи считается
+    // пустая страница; здесь вторая страница пуста, и третьей не бывает.
     const bodies = serperPages([organicPage(urlsOf("p1", 7))]);
     const run = await serperSearch(subjectRequest(20));
     expect(run.status).toBe("SUCCESS");
-    expect(bodies).toHaveLength(1);
+    expect(bodies).toHaveLength(2);
     expect(run.results).toHaveLength(7);
   });
 

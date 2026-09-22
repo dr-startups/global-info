@@ -51,6 +51,18 @@ export type AuditSearchSpec = {
   limit: number;
   /** Контур отчёта («RU», «UAE») — не то же, что код региона поисковика. */
   contour: string;
+  /** Назначение запроса в плане (`subject_lookup`, `business_lookup`, …). */
+  purpose?: string;
+  /** Запрос — само имя субъекта; по нему строится таблица ТОП-20 раздела. */
+  subjectNameQuery?: boolean;
+};
+
+/** То, что строка результата помнит о своём запросе. */
+export type SearchRowOrigin = {
+  query: string;
+  contour?: string;
+  purpose?: string;
+  subjectNameQuery?: boolean;
 };
 
 /**
@@ -68,7 +80,7 @@ export type AuditSearchSpec = {
  */
 export function taggedSearchRows(
   results: readonly SearchProviderResult[],
-  spec: { query: string; contour?: string }
+  spec: SearchRowOrigin
 ): SearchProviderResult[] {
   return results.map((r) => ({
     ...r,
@@ -76,8 +88,47 @@ export function taggedSearchRows(
       ...((r.rawMetadata ?? {}) as Record<string, unknown>),
       query: spec.query,
       ...(spec.contour ? { orionRegion: spec.contour } : {}),
+      // Пометки плана (шаг 0146). Склейка читает ровно эти поля
+      // (`composite-serp-merge`: `rm.queryPurpose`, `rm.subjectNameQuery`), а
+      // писал их только сборщик ORION-профиля: в бандле Мельниченко пометку
+      // «это само имя» несли 20 строк Яндекса и ни одной строки Google, и
+      // таблица Google выбрала запрос счётом материалов.
+      ...(spec.purpose ? { queryPurpose: spec.purpose } : {}),
+      ...(spec.subjectNameQuery ? { subjectNameQuery: true } : {}),
     },
   }));
+}
+
+/**
+ * Хеш записи строки: адрес, движок и — когда строка их знает — запрос и контур.
+ *
+ * Идентичность строки (`searchResultDedupHash`) так и устроена: запрос и
+ * регион входят в хеш там, где строка их знает. С шага 0138 строка базового
+ * сбора их знает, а хеш считался по одному адресу, и `createMany({
+ * skipDuplicates })` молча выбрасывал строку следующего запроса или другого
+ * контура с уже виденным адресом. На прогоне Мельниченко 22.09.2026 у запроса
+ * «Мельниченко Андрей» так не записались позиции 1–7 и 9, а отчёт объявил их
+ * невозвращёнными.
+ *
+ * Строка без запроса и контура сохраняет прежний хеш «движок + адрес»:
+ * повторный сбор старого кейса остаётся идемпотентным.
+ */
+export function searchRowDedupHash(
+  engine: string,
+  normalizedUrl: string,
+  rawMetadata: unknown
+): string {
+  const rm = (rawMetadata ?? {}) as Record<string, unknown>;
+  const text = (v: unknown): string | undefined =>
+    typeof v === "string" && v.trim() ? v : undefined;
+  const query = text(rm.query);
+  const region = text(rm.orionRegion);
+  return searchResultDedupHash({
+    engine,
+    normalizedUrl,
+    ...(query !== undefined ? { query } : {}),
+    ...(region !== undefined ? { region } : {}),
+  });
 }
 
 export abstract class RealSearchAgentBase implements CaseAgent {
@@ -160,8 +211,9 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         normalizedUrl: normUrl,
         // Движок в хеше: один и тот же адрес, найденный обоими поисковиками,
         // это два факта. Хеш по одному адресу вычёркивал строки того агента,
-        // который отработал вторым.
-        dedupHash: searchResultDedupHash({ engine: this.engine, normalizedUrl: normUrl }),
+        // который отработал вторым. Запрос и контур — по той же причине
+        // (шаг 0146).
+        dedupHash: searchRowDedupHash(this.engine, normUrl, r.rawMetadata),
         title: r.title || null,
         snippet: r.snippet || null,
         rank: r.rank,
@@ -212,13 +264,13 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         targetRegions: subject.targetRegions,
         location: subject.location,
       };
-      const specs: Array<{
-        query: string;
-        language: string;
-        region?: string;
-        limit?: number;
-        contour?: string;
-      }> =
+      const specs: Array<
+        SearchRowOrigin & {
+          language: string;
+          region?: string;
+          limit?: number;
+        }
+      > =
         this.auditSearchSpecs(planSubject as OfflinePlanSubject) ??
         buildPersonSearchQueries(planSubject, {
           maxQueries: this.maxQueriesPerAudit(),
@@ -244,9 +296,9 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         });
         if (run.status === "SUCCESS") {
           anySuccess = true;
-          allResults.push(
-            ...taggedSearchRows(run.results, { query: spec.query, contour: spec.contour })
-          );
+          // Спека целиком: копия по полям однажды уже потеряла назначение и
+          // пометку имени (шаги 0137–0138).
+          allResults.push(...taggedSearchRows(run.results, spec));
         } else {
           lastError = run.error ? `${run.error.code}: ${run.error.message}` : run.status;
           lastErrorCode = run.error?.code ?? run.status;

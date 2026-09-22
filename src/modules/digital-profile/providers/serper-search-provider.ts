@@ -171,8 +171,7 @@ export async function serperSearch(request: SearchProviderRequest): Promise<Prov
   const audit: SerpDepthAudit = { requested: limit, perPage: [], repeatedFromEarlierPages: 0 };
   const seenUrls = new Set<string>();
 
-  // Форма цикла та же, что у постраничного сбора Яндекса: страница за
-  // страницей, пока страница полная и глубина не выбрана.
+  // Страница за страницей, пока глубина не выбрана и выдача не кончилась.
   for (let page = 1; page <= pages; page += 1) {
     let raw: unknown;
     try {
@@ -195,11 +194,27 @@ export async function serperSearch(request: SearchProviderRequest): Promise<Prov
     audit.perPage.push(returned);
 
     const rows = normalizeSerperResponse(raw, request, page);
-    audit.repeatedFromEarlierPages += rows.filter((r) => seenUrls.has(r.url)).length;
+    const repeated = rows.filter((r) => seenUrls.has(r.url)).length;
+    audit.repeatedFromEarlierPages += repeated;
     rows.forEach((r) => seenUrls.add(r.url));
     results.push(...rows);
 
-    if (returned < SERPER_PAGE_SIZE) break;
+    /*
+     * Конец выдачи — пустая страница или страница из одних повторов, а не
+     * короткая (шаг 0146).
+     *
+     * Короткой страница бывает и посреди выдачи: у Google на первой странице
+     * часто девять органических строк, десятое место занимает блок. Пока цикл
+     * кончался на неполной странице, основной запрос прогона Мельниченко
+     * 22.09.2026 остался с позициями 1–9 из обещанных двадцати, а соседний
+     * запрос с полной первой страницей получил и вторую десятку. Цена правила —
+     * не больше одного лишнего вызова на запрос.
+     *
+     * Страница из одних повторов значит, что провайдер проигнорировал `page`:
+     * листать дальше — платить за те же строки.
+     */
+    if (returned === 0) break;
+    if (rows.length > 0 && repeated === rows.length) break;
   }
 
   return {
