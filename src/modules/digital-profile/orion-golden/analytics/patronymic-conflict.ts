@@ -198,41 +198,52 @@ function wordsWithOffsets(haystack: string): Array<{ word: string; at: number }>
   return found;
 }
 
+/** Субъект так, как его видят правила именной тройки. */
+type TripleSubject = {
+  lastName: string;
+  lastNameVariants?: string[];
+  patronymics: string[];
+  /**
+   * Имена субъекта. Без них конфликт не выводится вовсе: биография называет
+   * родню по имени-отчеству, и одной фамилии рядом мало.
+   */
+  firstNames?: string[];
+  /** Псевдонимы и транслитерации: там живёт латинская форма отчества. */
+  aliases?: string[];
+};
+
 /**
- * Отчества, стоящие рядом с фамилией субъекта и отличные от его собственных.
+ * Где в тексте стоит именная тройка субъекта: окна фамилии и место имени.
  *
- * Соседство обязательно: в тексте, где упомянут и субъект, и посторонний
- * «Иванов Пётр Сергеевич», чужое отчество не относится к субъекту и конфликтом
- * не является.
+ * Один ответ на двоих — `conflictingPatronymics` ищет в тройке чужое
+ * отчество, `ownPatronymicTripleInText` своё. Разные окна у двух правил
+ * развели бы «чья это тройка» так же, как когда-то разводили алфавиты.
+ * `null` — сравнивать не с чем, и оба правила молчат.
  */
-export function conflictingPatronymics(
+function tripleContext(
   text: string,
-  subject: {
-    lastName: string;
-    lastNameVariants?: string[];
-    patronymics: string[];
-    /**
-     * Имена субъекта. Без них конфликт не выводится вовсе: биография называет
-     * родню по имени-отчеству, и одной фамилии рядом мало.
-     */
-    firstNames?: string[];
-    /** Псевдонимы и транслитерации: там живёт латинская форма отчества. */
-    aliases?: string[];
-  }
-): string[] {
+  subject: TripleSubject
+): {
+  haystack: string;
+  own: Set<string>;
+  nearSurname: (at: number, length: number) => boolean;
+  inSubjectTriple: (at: number) => boolean;
+  ownKeys: string[];
+  givenKeyStems: string[];
+} | null {
   const haystack = norm(text);
-  if (!haystack) return [];
+  if (!haystack) return null;
 
   const own = new Set(
     subject.patronymics.map((p) => baseForm(norm(p))).filter((p) => p.length > 3)
   );
   // Без собственного отчества сравнивать не с чем: молчим, а не гадаем.
-  if (own.size === 0) return [];
+  if (own.size === 0) return null;
 
   const surnames = [subject.lastName, ...(subject.lastNameVariants ?? [])]
     .map(norm)
     .filter((s) => s.length > 2);
-  if (surnames.length === 0) return [];
+  if (surnames.length === 0) return null;
 
   /*
    * Окно строится вокруг слов, а не подстрок.
@@ -251,7 +262,7 @@ export function conflictingPatronymics(
       Math.min(haystack.length, at + word.length + ADJACENCY_CHARS),
     ]);
   }
-  if (windows.length === 0) return [];
+  if (windows.length === 0) return null;
 
   /*
    * Слова ищутся в целом тексте, а окно решает только, засчитывать ли находку.
@@ -285,13 +296,34 @@ export function conflictingPatronymics(
     .map(nameStem)
     .filter(Boolean);
   // Имени субъекта не знаем — выводить конфликт не из чего.
-  if (givenStems.length === 0) return [];
+  if (givenStems.length === 0) return null;
   const givenBefore = new RegExp(
     `(?<!\\p{L})(?:${givenStems.map(escapeRe).join("|")})\\p{L}{0,4}\\s+$`,
     "u"
   );
   const inSubjectTriple = (at: number): boolean =>
     givenBefore.test(haystack.slice(Math.max(0, at - 24), at));
+
+  const ownKeys = ownPatronymicForms(subject);
+  const givenKeyStems = [
+    ...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3)),
+  ]
+    .map((n) => patronymicKey(nameStem(n)))
+    .filter((s) => s.length >= 3);
+  return { haystack, own, nearSurname, inSubjectTriple, ownKeys, givenKeyStems };
+}
+
+/**
+ * Отчества, стоящие рядом с фамилией субъекта и отличные от его собственных.
+ *
+ * Соседство обязательно: в тексте, где упомянут и субъект, и посторонний
+ * «Иванов Пётр Сергеевич», чужое отчество не относится к субъекту и конфликтом
+ * не является.
+ */
+export function conflictingPatronymics(text: string, subject: TripleSubject): string[] {
+  const ctx = tripleContext(text, subject);
+  if (!ctx) return [];
+  const { haystack, own, nearSurname, inSubjectTriple, ownKeys, givenKeyStems } = ctx;
 
   const found = new Set<string>();
   for (const m of haystack.matchAll(PATRONYMIC_RE)) {
@@ -322,12 +354,6 @@ export function conflictingPatronymics(
    * Ключ, порог длины и допуск «своей» формы берутся у строчного правила: это
    * один ответ на вопрос «чьё это отчество», записанный один раз.
    */
-  const ownKeys = ownPatronymicForms(subject);
-  const givenKeyStems = [
-    ...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3)),
-  ]
-    .map((n) => patronymicKey(nameStem(n)))
-    .filter((s) => s.length >= 3);
   if (givenKeyStems.length > 0) {
     const words = wordsWithOffsets(haystack);
     for (let i = 1; i < words.length; i += 1) {
@@ -349,6 +375,45 @@ export function conflictingPatronymics(
     }
   }
   return [...found];
+}
+
+/**
+ * Стоит ли в тексте своя тройка субъекта: имя и его собственное отчество у фамилии.
+ *
+ * Чужое отчество в тройке решает «другой человек», только если своей тройки на
+ * странице нет (шаг 0148). Страница неоднозначности перечисляет однофамильцев —
+ * «Мельниченко, Андрей Игоревич (род. 1972) — … · Мельниченко, Андрей
+ * Леонидович (род. 1992) — …», — и на прогоне Мельниченко 22.09.2026 её
+ * объявили «о другом лице», а приложение напечатало этот ярлык над цитатой о
+ * самом субъекте. Соседнее правило, о чужом имени, эту границу уже знало.
+ */
+export function ownPatronymicTripleInText(text: string, subject: TripleSubject): boolean {
+  const ctx = tripleContext(text, subject);
+  if (!ctx) return false;
+  const { haystack, nearSurname, ownKeys, givenKeyStems } = ctx;
+  /*
+   * Своё отчество узнаётся точно, без допуска вариантов транслитерации.
+   *
+   * Допуск `isOwnVariant` (две правки на длинном слове) принимает «grigorevich»
+   * за «igorevich»: на прогоне Мельниченко реестровая карточка «ИП Мельниченко
+   * Андрей Григорьевич» стала бы страницей о двух людях. Ошибка в эту сторону
+   * прячет тёзку, поэтому сравнение строгое.
+   *
+   * Проход один на оба алфавита: ключ отчества — транслитерация без падежного
+   * окончания (`patronymicKeyBase`), и «Игоревича» с «Igorevich» дают один ключ.
+   */
+  const words = wordsWithOffsets(haystack);
+  return words.some((word, i) => {
+    if (i === 0) return false;
+    const candidate = patronymicKeyBase(word.word);
+    if (candidate.length < MIN_PATRONYMIC_KEY || !PATRONYMIC_KEY_RE.test(candidate)) return false;
+    if (!ownKeys.includes(candidate)) return false;
+    const before = patronymicKey(words[i - 1]!.word);
+    return (
+      givenKeyStems.some((s) => before.startsWith(s) && before.length <= s.length + 4) &&
+      nearSurname(word.at, word.word.length)
+    );
+  });
 }
 
 /**

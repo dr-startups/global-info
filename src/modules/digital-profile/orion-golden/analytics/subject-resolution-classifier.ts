@@ -25,6 +25,7 @@
 import { createHash } from "node:crypto";
 import {
   conflictingPatronymics,
+  ownPatronymicTripleInText,
   foreignGivenNamesInTriple,
   foreignPatronymicsInQueryLine,
 } from "./patronymic-conflict";
@@ -452,6 +453,14 @@ export function classifySubjectRelevance(
   const derivedPatronymicConflicts = conflictingPatronymics(text, subject);
   conflictingIdentifiers.push(...derivedPatronymicConflicts);
   /*
+   * Чужое отчество решает «другой человек», только если своей тройки на
+   * странице нет (шаг 0148). Страница неоднозначности, где названы и субъект, и
+   * его тёзки, — страница о нескольких людях: чужое отчество остаётся сигналом
+   * и уводит её в смешанные признаки, а не в исключение.
+   */
+  const patronymicDecides =
+    derivedPatronymicConflicts.length > 0 && !ownPatronymicTripleInText(text, subject);
+  /*
    * На поверхностях-строках чужое отчество распознаётся в обоих алфавитах.
    *
    * «viktor feliksovich vekselberg ofac» — санкционная подсказка о другом
@@ -548,7 +557,7 @@ export function classifySubjectRelevance(
       confidence = 0.85;
     }
   } else if (
-    (derivedPatronymicConflicts.length > 0 ||
+    (patronymicDecides ||
       queryLinePatronymicConflicts.length > 0 ||
       derivedGivenNameConflicts.length > 0) &&
     !matchedStrong &&
@@ -567,7 +576,7 @@ export function classifySubjectRelevance(
      */
     decision = "OTHER_SUBJECT";
     reasonCode =
-      derivedPatronymicConflicts.length > 0
+      patronymicDecides
         ? "patronymic_conflict"
         : queryLinePatronymicConflicts.length > 0
           ? "suggestion_foreign_patronymic"
