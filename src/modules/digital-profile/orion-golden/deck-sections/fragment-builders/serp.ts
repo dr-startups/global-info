@@ -1195,9 +1195,25 @@ export function buildSerpFragment(
     .map(([engine, groups]) => {
       // В счёт идёт каждая пара «материал — запрос», а не один запрос на
       // материал: запасное правило считает, сколько материала показал запрос.
-      const { query, markedByData } = mainSerpTableQuery(
-        groups.flatMap((g) => queriesOfRefs(g.engineRefs))
-      );
+      const engineQueries = groups.flatMap((g) => queriesOfRefs(g.engineRefs));
+      /*
+       * Основной запрос раздела — первый ответ и для таблицы движка (шаг 0147).
+       *
+       * Пока запрос таблицы выбирался по строкам одного движка, движок без
+       * пометки решал счётом материалов: на прогоне Мельниченко 22.09.2026
+       * пометку несли только строки Яндекса, у Google «Мельниченко Андрей» дал
+       * десять материалов против девяти у полного имени, и таблица показала
+       * короткое имя, объявив, что по основному запросу строк нет. Строки
+       * были. Есть у движка хоть одна строка основного запроса — таблица
+       * строится на нём; нет — движок выбирает сам, и оговорка ниже верна.
+       */
+      const engineHasRegionMain =
+        regionMain.query !== null &&
+        engineQueries.some((q) => sameSerpQuery(q.query, regionMain.query));
+      const { query, markedByData } =
+        regionMain.markedByData && engineHasRegionMain
+          ? regionMain
+          : mainSerpTableQuery(engineQueries);
       /*
        * Почему в этой таблице такой запрос — вопрос один, и ответов на него
        * ровно два, взаимоисключающих: либо в разделе пометки нет вовсе и выбор
@@ -1213,6 +1229,9 @@ export function buildSerpFragment(
       const regionIsMarked = regionMain.markedByData;
       const showsOtherQuery = Boolean(query) && !sameSerpQuery(query, regionMain.query);
       const queryChosenByUs = Boolean(query) && !regionIsMarked && !markedByData;
+      // Оговорка «по основному запросу нет ни одной строки» верна по
+      // построению: другой запрос таблица показывает только в ветке, где у
+      // движка строк основного запроса нет (`engineHasRegionMain` выше).
       const regionMainQuery = regionIsMarked && showsOtherQuery ? regionMain.query : null;
       const scopedGroups = groups.filter((g) => groupInQuery(g.engineRefs, query));
       /*
