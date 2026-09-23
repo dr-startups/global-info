@@ -133,12 +133,24 @@ export interface ThemeRow {
   fraction: number;
   /** Строки скрытых заголовков — ровно то, что честно сказать о материале. */
   hidden: string[];
+  /** Раскрыта при загрузке: у экрана должно быть видно, что за строками стоит. */
+  openAtLoad: boolean;
+  /**
+   * Порядок строк в появлении результата, с нуля внутри темы; `null` — тема при
+   * загрузке закрыта, и её строки показываются сразу, когда их раскроют.
+   */
+  revealLines: number[] | null;
 }
 
 /**
  * Темы результата строками. Заголовков находок ручка не отдаёт, поэтому в
  * раскрытой теме стоят не выдуманные заголовки, а прямая фраза о том, что
  * заголовок скрыт; фразы разные, чтобы строки не читались одной повторённой.
+ *
+ * В появлении результата участвуют только строки темы, раскрытой при загрузке.
+ * Раньше строки нумеровались сквозь все темы, и строка четвёртой темы ждала
+ * своей очереди 2–3 с после того, как её раскрыли: тема стояла пустой (замечание
+ * владельца 23.09.2026). Номер строки не зависит от соседних тем.
  */
 export function themeRows(result: ResultJson): ThemeRow[] {
   if (result.verdict !== "NEGATIVE_FOUND") return [];
@@ -153,18 +165,24 @@ export function themeRows(result: ResultJson): ThemeRow[] {
       : [{ id: "no-theme", label: RESULT_TEXT.noTheme, level: null, count: result.materialsFound }];
   const max = Math.max(...groups.map((group) => group.count), 1);
   let line = 0;
-  return groups.map((group) => ({
-    id: group.id,
-    label: group.label,
-    levelText: group.level ? `${riskWord(group.level)} уровень` : null,
-    tone: group.level ?? "none",
-    countText: materialsText(group.count),
-    fraction: group.count / max,
-    hidden: Array.from(
+  return groups.map((group, index) => {
+    const hidden = Array.from(
       { length: Math.min(group.count, MAX_BARS) },
       () => RESULT_TEXT.hiddenTitles[line++ % RESULT_TEXT.hiddenTitles.length]!
-    ),
-  }));
+    );
+    const openAtLoad = index === 0;
+    return {
+      id: group.id,
+      label: group.label,
+      levelText: group.level ? `${riskWord(group.level)} уровень` : null,
+      tone: group.level ?? "none",
+      countText: materialsText(group.count),
+      fraction: group.count / max,
+      hidden,
+      openAtLoad,
+      revealLines: openAtLoad ? hidden.map((_, i) => i) : null,
+    };
+  });
 }
 
 export interface AnsweredView {

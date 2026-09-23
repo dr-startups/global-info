@@ -37,16 +37,19 @@ const NO_RESULT: ResultJson = {
   checkedAt: null,
 };
 
-function Themes({ result }: { result: ResultJson }) {
+/**
+ * `onSettle` — человек сам раскрыл тему: появление результата кончилось, и
+ * ничего больше не проигрывается заново (иначе строки темы, раскрытой в первые
+ * секунды, стояли пустыми, пока не подойдёт их очередь в появлении).
+ */
+function Themes({ result, onSettle }: { result: ResultJson; onSettle: () => void }) {
   const rows = themeRows(result);
-  let line = 0;
   return (
     <>
       <div className="site-themes">
         {rows.map((row, index) => (
-          // Первая тема раскрыта: у экрана должно быть видно, что за строками стоит
-          <details className={`site-theme ${VERDICT_TONE_CLASS[row.tone]}`} key={row.id} open={index === 0}>
-            <summary>
+          <details className={`site-theme ${VERDICT_TONE_CLASS[row.tone]}`} key={row.id} open={row.openAtLoad}>
+            <summary onClick={onSettle}>
               <span className="site-theme__name">{row.label}</span>
               {row.levelText ? <span className="site-theme__level">{row.levelText}</span> : null}
               <span className="site-theme__count">{row.countText}</span>
@@ -59,8 +62,12 @@ function Themes({ result }: { result: ResultJson }) {
             </summary>
             <div className="site-theme__body">
               <ul className="site-finding__list">
-                {row.hidden.map((text) => (
-                  <li key={text} style={vars({ "--i": line++ })}>
+                {row.hidden.map((text, line) => (
+                  <li
+                    key={text}
+                    className={row.revealLines ? "is-staged" : undefined}
+                    style={row.revealLines ? vars({ "--i": row.revealLines[line]! }) : undefined}
+                  >
                     <Blurred text={text} label={RESULT_TEXT.hiddenMaterial} />
                   </li>
                 ))}
@@ -82,11 +89,14 @@ function Themes({ result }: { result: ResultJson }) {
 export function ResultScreen({
   status,
   reveal,
+  onSettle,
   onLead,
   headingRef,
 }: {
   status: PublicStatusJson;
   reveal: boolean;
+  /** Человек сам раскрыл тему — появление результата кончилось. */
+  onSettle: () => void;
   onLead: () => void;
   headingRef: Ref<HTMLHeadingElement>;
 }) {
@@ -156,7 +166,7 @@ export function ResultScreen({
 
       <div className="site-result__details">
         {negative ? (
-          <Themes result={result} />
+          <Themes result={result} onSettle={onSettle} />
         ) : (
           <Board
             meter={answered.fraction}

@@ -157,6 +157,9 @@
   --site-gutter: 16px;
   --site-control-h: 48px;
   --site-focus: 0 0 0 2px var(--site-surface), 0 0 0 4px var(--site-accent);
+  /* Поле под ореол размытого текста (blur 0.18em на 15px — видимый ореол ≈ 7px):
+     строка скрытого заголовка и раскрытая тема оставляют его по бокам одним числом */
+  --site-blur-bleed: 8px;
 }
 
 @media (min-width: 640px) {
@@ -3775,9 +3778,17 @@ html:has(.site-drawer[open]) {
   padding-bottom: var(--site-s-5);
 }
 
+/* Обрезка раскрытия нужна анимации высоты, но размытым строкам она срезала ореол по бокам и сверху
+   первой строки (замечание владельца 23.09.2026). Область обрезки шире содержимого отрицательным
+   полем с равным отступом: текст не сдвигается, у закрытой темы высота прежняя. Сверху хватает 4px —
+   до верха строки ореол не доходит на половину интерлиньяжа. */
 .site-theme::details-content {
   block-size: 0;
   overflow: hidden;
+  margin-inline: calc(-1 * var(--site-blur-bleed));
+  padding-inline: var(--site-blur-bleed);
+  margin-block-start: -4px;
+  padding-block-start: 4px;
   transition: block-size var(--site-dur-slow) var(--site-ease-out), content-visibility var(--site-dur-slow) allow-discrete;
 }
 
@@ -3844,13 +3855,15 @@ html:has(.site-drawer[open]) {
 }
 
 /* Строка не в фокусе занимает строку текста: она обрезается по ширине колонки, а не переносится —
-   размытая строка в два ряда читается как мусор. Поля по бокам прячут края размытия под обрезку. */
+   размытая строка в два ряда читается как мусор. Режется только по горизонтали: overflow: hidden
+   срезал ореол сверху и снизу у каждой строки, и строки читались полосами с ровными краями
+   (замечание владельца 23.09.2026). Поля по бокам — под ореол целиком. */
 .site-finding__list li {
   display: flex;
   align-items: center;
-  overflow: hidden;
-  padding-inline: 5px;
-  margin-inline: -5px;
+  overflow-x: clip;
+  padding-inline: var(--site-blur-bleed);
+  margin-inline: calc(-1 * var(--site-blur-bleed));
 }
 
 .site-finding__list .site-blur {
@@ -4666,7 +4679,7 @@ html:has(.site-drawer[open]) {
     animation-delay: calc(600ms + var(--i, 0) * 90ms);
   }
 
-  .site-result.is-revealing .site-finding__list .site-blur {
+  .site-result.is-revealing .site-finding__list li.is-staged .site-blur {
     animation: site-wz-fade 320ms var(--site-ease-out) backwards;
     animation-delay: calc(760ms + var(--i, 0) * 70ms);
   }

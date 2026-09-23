@@ -9,7 +9,7 @@
  * (`createStatusPoller`).
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { track } from "@/modules/site/analytics";
 import { siteApi, type ApiRefusal } from "@/modules/site/api";
 import { createStatusPoller } from "@/modules/site/check/polling";
@@ -196,6 +196,11 @@ export function CheckWizard({ publicId }: { publicId: string }) {
   const isResult = screen.startsWith("result-");
   // Появление результата — один раз за визит: вернувшийся с заявки видит его сразу.
   const reveal = isResult && !seen.current.has(`reveal:${screen}`);
+  // Появление кончается, когда человек сам раскрывает тему. Отметка «показано»
+  // лежит в ref, и после появления экран результата ничто не перерисовывало:
+  // класс появления оставался, и строки раскрытой темы ждали своей очереди в нём.
+  // Перерисовка по щелчку снимает класс — `reveal` к этому моменту уже `false`.
+  const [, settleReveal] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     if ((screen === "persona" || screen === "persona-empty") && !seen.current.has("persona_shown")) {
@@ -267,7 +272,15 @@ export function CheckWizard({ publicId }: { publicId: string }) {
       case "result-negative":
       case "result-clean":
       case "result-insufficient":
-        return <ResultScreen status={status!} reveal={reveal} onLead={() => setView("lead")} headingRef={heading} />;
+        return (
+          <ResultScreen
+            status={status!}
+            reveal={reveal}
+            onSettle={settleReveal}
+            onLead={() => setView("lead")}
+            headingRef={heading}
+          />
+        );
       case "lead":
         return (
           <LeadScreen
