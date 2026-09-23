@@ -15,6 +15,10 @@ import type { ComplianceScreeningResult } from "@/modules/digital-profile/compli
  * (`pickWikipediaCandidate`) отвечает на обратный — «какая из них наш
  * субъект». Отбор здесь был бы вторым ответом на вопрос принадлежности,
  * вынесенным из-под глаз оператора.
+ *
+ * Статьи не о людях (страница фамилии, область, награда) отсеивает провайдер
+ * (`persona-panel-offers-only-people-with-the-name.test.ts`): источник здесь
+ * подменён и отдаёт уже только тёзок.
  */
 
 const SUBJECT = {
@@ -25,15 +29,6 @@ const SUBJECT = {
 };
 
 const RU_CANDIDATES = [
-  {
-    title: "Петровы",
-    pageId: 15,
-    snippet: "русская фамилия",
-    url: "https://ru.wikipedia.org/wiki/Петровы",
-    lead: "Петровы — русская фамилия.",
-    leadRequested: true,
-    langlinkTitle: null,
-  },
   {
     title: "Петров, Иван Иванович (предприниматель)",
     pageId: 11,
@@ -219,10 +214,8 @@ describe("панель показывает тёзок, а не выбирает
     const wiki = snapshot.cards.filter(
       (c): c is PersonaWikipediaCard => c.source === "wikipedia"
     );
-    // Первым идёт то, что вернул поиск, — страница-дизамбигуация «Петровы»,
-    // которую отбор задвинул бы вниз или отбросил.
+    // Порядок — тот, что вернул поиск: тёзки не переставляются под «нашего».
     expect(wiki.map((c) => c.title)).toEqual([
-      "Петровы",
       "Петров, Иван Иванович (предприниматель)",
       "Петров, Иван Иванович (футболист)",
       "Петров, Иван Иванович (хоккеист)",
@@ -267,7 +260,7 @@ describe("панель показывает тёзок, а не выбирает
       .map((c) => c.title);
     expect(titles).toContain("Петров, Иван Иванович (предприниматель)");
     expect(titles).toContain("Ivan Petrov (businessman)");
-    expect(titles).toHaveLength(7);
+    expect(titles).toHaveLength(6);
   });
 
   it("панель знаний — отдельная карточка, а готовый ответ поисковика карточкой не становится", async () => {

@@ -275,6 +275,10 @@ interface LanglinksApiResponse {
   query?: { pages?: Array<{ langlinks?: Array<{ lang?: string; title?: string }> }> };
 }
 
+interface PagepropsApiResponse {
+  query?: { pages?: Array<{ title?: string; pageprops?: { disambiguation?: string } }> };
+}
+
 /** Адрес статьи в её языковом разделе — в одной форме на весь модуль. */
 function articleUrl(language: string, title: string): string {
   return `https://${language}.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
@@ -408,6 +412,31 @@ export class WikipediaProvider {
     }
   }
 
+  /**
+   * Какие из заголовков — страницы неоднозначности, по признаку самой Википедии.
+   *
+   * Заголовок «Потанин, Владимир» проходит `isMatch` — фамилия и имя в нём
+   * есть, — а сама страница перечисляет тёзок и о человеке не рассказывает
+   * (живая проверка 23.09.2026). Признак берётся у Википедии одним запросом на
+   * раздел, а не угадывается по заголовку. Сбой запроса ничего не отсеивает:
+   * лишняя карточка-список безопаснее, чем панель без единой статьи.
+   */
+  private async disambiguationTitles(language: string, titles: string[]): Promise<Set<string>> {
+    if (titles.length === 0) return new Set();
+    try {
+      const raw = (await fetchJson(
+        apiUrl(language, { action: "query", prop: "pageprops", ppprop: "disambiguation", titles: titles.join("|") })
+      )) as PagepropsApiResponse;
+      return new Set(
+        (raw.query?.pages ?? [])
+          .filter((page) => page.pageprops?.disambiguation !== undefined)
+          .map((page) => String(page.title ?? ""))
+      );
+    } catch {
+      return new Set();
+    }
+  }
+
   /** Поиск кандидатов раздела — в одной форме на весь модуль. */
   private async searchCandidates(
     language: string,
@@ -427,11 +456,16 @@ export class WikipediaProvider {
   /**
    * Кто ещё носит это имя — вход панели выбора персоны.
    *
-   * `pickWikipediaCandidate` здесь намеренно не применяется: он отвечает на
-   * обратный вопрос («какая из статей — наш субъект») и возвращает одну.
-   * Отбор на этом пути был бы вторым ответом на вопрос принадлежности,
-   * вынесенным из-под глаз оператора, — а спрашивают панель ровно потому, что
-   * машине этот вопрос не доверяют. Порядок кандидатов — тот, что дал поиск.
+   * Карточкой становится только статья о человеке: в заголовке названы фамилия
+   * и имя (`isMatch`), и это не страница неоднозначности. Поиск полнотекстовый и
+   * возвращает любую статью, где имя встречается в тексте: на живом прогоне
+   * 23.09.2026 панель предложила с кнопкой «Это я» страницу фамилии, область
+   * рождения, награду и федерацию (решение владельца — только статьи о людях).
+   * Отбор проходит до запроса лида, и чужие статьи не стоят запросов.
+   *
+   * `pickWikipediaCandidate` здесь по-прежнему не применяется: он отвечает на
+   * другой вопрос («какая из статей — наш субъект») и возвращает одну, а кто из
+   * полных тёзок посетитель, решает он сам. Порядок — тот, что дал поиск.
    */
   async listNamesakeCandidates(params: {
     language: string;
@@ -444,7 +478,12 @@ export class WikipediaProvider {
     const { language, terms } = params;
     const leadCount = Math.max(0, params.leadCount ?? 3);
     const query = queryForLanguage(language, terms);
-    const found = await this.searchCandidates(language, query);
+    const named = (await this.searchCandidates(language, query)).filter((c) => isMatch(c.title, terms));
+    const lists = await this.disambiguationTitles(
+      language,
+      named.map((c) => c.title)
+    );
+    const found = named.filter((c) => !lists.has(c.title));
 
     const candidates: WikipediaNamesakeCandidate[] = [];
     for (const [i, candidate] of found.entries()) {

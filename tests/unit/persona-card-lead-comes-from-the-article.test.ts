@@ -103,6 +103,11 @@ function routeWikipedia(url: string): Response {
       },
     });
   }
+  if (params.get("prop") === "pageprops") {
+    // Страниц неоднозначности среди кандидатов этого теста нет.
+    const pages = (params.get("titles") ?? "").split("|").map((title) => ({ title }));
+    return json({ query: { pages } });
+  }
   throw new Error(`неизвестный запрос Википедии: ${url}`);
 }
 
@@ -174,11 +179,13 @@ describe("лид карточки тёзки", () => {
       terms: ["Петров Иван Иванович"],
       leadCount: 3,
     });
-    expect(result.candidates).toHaveLength(5);
+    // Страница фамилии «Петровы» карточкой не становится (только статьи о людях,
+    // решение владельца 23.09.2026): кандидатов четыре, хвост — хоккеист.
+    expect(result.candidates).toHaveLength(4);
     expect(result.candidates.slice(0, 3).map((c) => c.leadRequested)).toEqual([true, true, true]);
-    expect(result.candidates.slice(3).map((c) => c.leadRequested)).toEqual([false, false]);
-    expect(result.candidates[4]?.lead).toBeNull();
-    expect(result.candidates[4]?.snippet).toBe("фамилия");
+    expect(result.candidates.slice(3).map((c) => c.leadRequested)).toEqual([false]);
+    expect(result.candidates[3]?.lead).toBeNull();
+    expect(result.candidates[3]?.snippet).toBe("хоккеист");
     expect(calls.filter((u) => u.includes("prop=extracts"))).toHaveLength(3);
   });
 
@@ -192,7 +199,7 @@ describe("лид карточки тёзки", () => {
     });
     expect(result.candidates[0]?.langlinkTitle).toBe("Ivan Petrov (businessman)");
     expect(result.candidates[1]?.langlinkTitle).toBeNull();
-    expect(result.candidates[4]?.langlinkTitle).toBeNull();
+    expect(result.candidates[3]?.langlinkTitle).toBeNull();
     expect(calls.filter((u) => u.includes("prop=langlinks"))).toHaveLength(3);
   });
 
