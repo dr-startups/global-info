@@ -9,19 +9,30 @@
  * нет — только то, что относится к посетителю: какие темы показать и что
  * значит «данных недостаточно».
  *
- * Страниц лёгкий прогон не читает и тёзок не отсеивает: материал судится по
- * заголовку и сниппету выдачи. Об этом говорит дисклеймер экрана результата.
+ * Страниц лёгкий прогон не читает: материал судится по заголовку и сниппету
+ * выдачи. Принадлежность субъекту — тоже ответом отчёта (классификатор
+ * принадлежности), поэтому полного тёзку с тем же ФИО он не отличает; об этом
+ * говорит дисклеймер экрана результата.
  */
 
 import type { ThemeDef } from "@/modules/digital-profile/config/finding-themes";
 import { getFindingThemes } from "@/modules/digital-profile/config/finding-themes";
 import { resolveItemAdverse } from "@/modules/digital-profile/orion-golden/analytics/item-adverse";
 import { riskFor, themesFor } from "@/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import {
+  buildSubjectResolution,
+  type SubjectIdentity,
+} from "@/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
 import { serpMaterialKey } from "@/modules/digital-profile/serp-observation/material-key";
 
-/** Версия правила вердикта: пишется в запись рядом с результатом. */
-export const LIGHT_VERDICT_SOURCE = "light-verdict-v1";
+/**
+ * Версия правила вердикта: пишется в запись рядом с результатом.
+ *
+ * v2 — считаются только материалы о субъекте: запись v1 по тому же делу могла
+ * назвать негативом чужие материалы, и различать их надо по записи.
+ */
+export const LIGHT_VERDICT_SOURCE = "light-verdict-v2";
 
 export type SelfCheckVerdict = "NEGATIVE_FOUND" | "CLEAN" | "INSUFFICIENT_DATA";
 
@@ -35,6 +46,8 @@ export interface LightVerdictInput {
   providers: ReadonlyArray<{ providerId: string; status: string; runtime?: string }>;
   /** Последний скрининг по каждой базе (`resolveComplianceScreenings`). */
   screenings: ReadonlyArray<{ provider: string; status: string }>;
+  /** Кого проверяем — профиль дела, тот же, что у классификатора отчёта. */
+  subject: SubjectIdentity;
 }
 
 export interface VerdictTheme {
@@ -152,6 +165,40 @@ function isAdverseMaterial(item: RawInventoryItem): boolean {
 }
 
 /**
+ * Материалы о субъекте — ответом классификатора принадлежности отчёта.
+ *
+ * Первый живой прогон 23.09.2026: непубличный человек получил «критический»
+ * уровень по материалам о людях с другим отчеством и по служебным страницам
+ * «Внимание, розыск!» без ФИО — вердикт спрашивал «негатив ли это», но не «о нём
+ * ли это». Решение владельца: в счёт идёт материал, где названы фамилия и имя, а
+ * отчество, если названо, совпадает. Это ровно `SUBJECT_MATCH` классификатора: и
+ * в отчёте на показатели «о субъекте» влияет только он, а одна фамилия выше
+ * `LIKELY_SUBJECT` не поднимается. Своего сопоставления имён здесь нет — был бы
+ * второй ответ на вопрос, о ком материал.
+ *
+ * Запись комплаенса отсюда не судится: её имя и дату рождения сверяет база, и
+ * совпадение остаётся у аналитика в `PENDING` (`isSanctionsHit`).
+ */
+function subjectMaterialRefs(items: readonly RawInventoryItem[], subject: SubjectIdentity): Set<string> {
+  const judged = items.filter((item) => item.evidenceType !== "compliance_hit");
+  if (judged.length === 0) return new Set();
+  const resolution = buildSubjectResolution({
+    caseId: judged[0].caseId,
+    datasetId: LIGHT_VERDICT_SOURCE,
+    subject,
+    items: judged,
+    sourceHashes: [],
+  });
+  return new Set(
+    resolution.items.filter((r) => r.decision === "SUBJECT_MATCH").map((r) => r.evidenceRef)
+  );
+}
+
+function isAboutSubject(item: RawInventoryItem, subjectRefs: ReadonlySet<string>): boolean {
+  return item.evidenceType === "compliance_hit" || subjectRefs.has(`inventory:${item.inventoryId}`);
+}
+
+/**
  * Ключ материала. Запись без адреса материалом ни с кем не делится — то же
  * правило, что у ключа материала аналитики (`item-adverse.ts`): иначе три базы с
  * одним именем стали бы одним совпадением.
@@ -195,7 +242,10 @@ export function lightVerdict(input: LightVerdictInput): LightVerdict {
   const negative = new Set<string>();
   // Тема → материалы темы, у каждого — негативен ли он.
   const byTheme = new Map<string, { theme: ThemeDef; materials: Map<string, boolean> }>();
+  const subjectRefs = subjectMaterialRefs(input.items, input.subject);
   for (const item of input.items) {
+    // Чужой материал не входит ни в негатив, ни в знаменатель темы.
+    if (!isAboutSubject(item, subjectRefs)) continue;
     const key = materialKey(item);
     const adverse = isAdverseMaterial(item);
     // Тема без базового уровня (деловой профиль) описывает, а не предупреждает:

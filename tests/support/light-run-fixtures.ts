@@ -13,6 +13,7 @@ import type { CompositeObservation } from "@/modules/digital-profile/services/co
 import { adaptDatabaseProfileToInventoryItem } from "@/modules/digital-profile/services/compliance-inventory-adapter";
 import { adaptWikipediaCheckToInventoryItem } from "@/modules/digital-profile/services/evidence-supplement-adapter";
 import type { PersonaGateInput } from "@/modules/digital-profile/services/subject-persona-check";
+import { subjectIdentityFromProfile } from "@/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
 import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/types";
 
 export const FIXTURE_BASE_ROWS: CompositeObservation[] = [
@@ -68,6 +69,16 @@ export const personaDecided = {
 // ---------------------------------------------------------------------------
 // Материалы вердикта
 // ---------------------------------------------------------------------------
+
+/**
+ * Субъект материалов ниже. Вердикт считает только материалы о нём — ответом
+ * классификатора принадлежности, — поэтому фикстура, которая проверяет темы и
+ * уровни, называет его по имени: одна фамилия в счёт не идёт.
+ */
+export const FIXTURE_SUBJECT = subjectIdentityFromProfile({
+  displayName: "Иванов Иван Иванович",
+  fullNameRu: { lastName: "Иванов", firstName: "Иван", patronymic: "Иванович" },
+});
 
 let seq = 0;
 
@@ -151,15 +162,15 @@ export const CRIMINAL = observation(
   "https://lenta.ru/news/2025/03/12/ivanov/"
 );
 export const COURT_BANKRUPTCY = observation(
-  "Арбитражный суд признал Иванова И. И. банкротом",
+  "Арбитражный суд признал Иванова Ивана Ивановича банкротом",
   "https://kommersant.ru/doc/7000001"
 );
 export const POLITICS = observation(
-  "Депутата Иванова обвинили в коррупции",
+  "Депутата Ивана Иванова обвинили в коррупции",
   "https://ria.ru/20250312/ivanov.html"
 );
 export const UNTHEMED_ADVERSE = observation(
-  "Скандал вокруг Иванова",
+  "Скандал вокруг Ивана Иванова",
   "https://ria.ru/20250313/skandal.html"
 );
 

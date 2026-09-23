@@ -6,6 +6,7 @@ import {
   BUSINESS,
   COURT_BANKRUPTCY,
   CRIMINAL,
+  FIXTURE_SUBJECT,
   NEUTRAL,
   POLITICS,
   SCREENED,
@@ -30,7 +31,7 @@ import {
  */
 
 function input(items: RawInventoryItem[], over: Partial<LightVerdictInput> = {}): LightVerdictInput {
-  return { items, providers: ALL_ANSWERED, screenings: SCREENED, ...over };
+  return { items, providers: ALL_ANSWERED, screenings: SCREENED, subject: FIXTURE_SUBJECT, ...over };
 }
 
 function withStatus(providerId: string, status: string) {
@@ -96,7 +97,7 @@ describe("чисто", () => {
       findingsTotal: 0,
       partial: false,
       sourcesChecked: ["search", "surfaces", "open_sources", "sanctions"],
-      source: "light-verdict-v1",
+      source: "light-verdict-v2",
     });
   });
 

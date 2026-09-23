@@ -82,8 +82,17 @@ async function verdictFromStand(caseId: string): Promise<LightVerdict> {
   const { resolveComplianceScreenings } = await import(
     "../../src/modules/digital-profile/services/compliance-inventory-adapter"
   );
+  const { resolveJobSubjectProfile } = await import(
+    "../../src/modules/digital-profile/services/job-subject-profile"
+  );
+  const { subjectIdentityFromProfile } = await import(
+    "../../src/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier"
+  );
   const job = await loadUnifiedCollectionJob(caseId);
   if (!job) fail("У дела нет прогона: сначала дождитесь, пока проверка дойдёт до результата.");
+  // Принадлежность материала субъекту — тем же профилем, что у продакшн-пути.
+  const profile = await resolveJobSubjectProfile({ caseId });
+  if (!profile) fail("У дела нет профиля субъекта: его пишет создание проверки с сайта.");
   const screenings = await resolveComplianceScreenings({
     caseId,
     prisma: { complianceScreeningRun: prisma.complianceScreeningRun } as never,
@@ -98,6 +107,7 @@ async function verdictFromStand(caseId: string): Promise<LightVerdict> {
     items: await itemsFromSearchResults(caseId, job.baseReportRunId ?? `${caseId}-base`),
     providers,
     screenings,
+    subject: subjectIdentityFromProfile(profile),
   };
   return lightVerdict(input);
 }

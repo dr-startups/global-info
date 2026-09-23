@@ -3,7 +3,7 @@ import { recordLightVerdict } from "@/modules/self-check/light-run";
 import type { LightVerdictInput } from "@/modules/self-check/verdict";
 import type { UnifiedCollectionJob } from "@/modules/digital-profile/services/unified-collection-types";
 import { TEST_NOW, fakeDb, selfCheckRow } from "../support/self-check-fakes";
-import { ALL_ANSWERED, CRIMINAL, NEUTRAL, SCREENED, serpItems } from "../support/light-run-fixtures";
+import { ALL_ANSWERED, CRIMINAL, FIXTURE_SUBJECT, NEUTRAL, SCREENED, serpItems } from "../support/light-run-fixtures";
 
 /**
  * Шаг вердикта пишет результат в запись проверки — и только туда, где его ждут.
@@ -29,6 +29,7 @@ const NEGATIVE: LightVerdictInput = {
   items: serpItems(NEUTRAL, CRIMINAL),
   providers: ALL_ANSWERED,
   screenings: SCREENED,
+  subject: FIXTURE_SUBJECT,
 };
 
 function setup(check: ReturnType<typeof selfCheckRow> | null, input: LightVerdictInput = NEGATIVE) {
@@ -61,7 +62,7 @@ describe("запись вердикта", () => {
       sourcesJson: ["search", "surfaces", "open_sources", "sanctions"],
       verdictAt: TEST_NOW,
       runFinishedAt: TEST_NOW,
-      verdictSource: "light-verdict-v1",
+      verdictSource: "light-verdict-v2",
       blockedReason: null,
     });
   });

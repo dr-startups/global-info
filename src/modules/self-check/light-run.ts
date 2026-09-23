@@ -219,14 +219,22 @@ export async function reconcileSelfCheckRun(
  * Материалы вердикта — живым путём подготовки отчёта: наблюдения слияния по
  * манифесту базового сбора (без обогащения), совпадения комплаенса, проверки
  * Википедии. Демо-строки туда не попадают, как и в отчёт.
+ *
+ * Субъект — тем же порядком, что у шага слияния полного конвейера: профиль дела
+ * (у проверки с сайта его пишет создание проверки), иначе сборка из дела и
+ * собранных наблюдений. Без субъекта вердикт не выносится: судить, о ком
+ * материал, было бы не по чему, а «всё чужое» дало бы ложное «чисто».
  */
 export async function loadLightVerdictInput(job: UnifiedCollectionJob): Promise<LightVerdictInput> {
-  const [store, merge, prepare, compliance, supplement] = await Promise.all([
+  const [store, merge, prepare, compliance, supplement, profiles, bootstrap, classifier] = await Promise.all([
     import("@/modules/digital-profile/services/unified-collection-job-store"),
     import("@/modules/digital-profile/services/composite-serp-merge"),
     import("@/modules/digital-profile/services/canonical-report-prepare"),
     import("@/modules/digital-profile/services/compliance-inventory-adapter"),
     import("@/modules/digital-profile/services/evidence-supplement-adapter"),
+    import("@/modules/digital-profile/services/job-subject-profile"),
+    import("@/modules/digital-profile/services/job-subject-profile-bootstrap"),
+    import("@/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier"),
   ]);
   const manifest = await store.readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
@@ -265,10 +273,23 @@ export async function loadLightVerdictInput(job: UnifiedCollectionJob): Promise<
     caseId: job.caseId,
     prisma: { complianceScreeningRun: prisma.complianceScreeningRun } as never,
   });
+  const profile =
+    (await profiles.resolveJobSubjectProfile({ caseId: job.caseId })) ??
+    (
+      await bootstrap.bootstrapSubjectProfileFromCollection({
+        caseId: job.caseId,
+        baseReportRunId: reportRunId,
+        enrichmentRunId: null,
+        observations: merged.observations,
+        prisma,
+      })
+    )?.profile;
+  if (!profile) throw new Error("SUBJECT_PROFILE_MISSING: no subject profile for the light verdict");
   return {
     items: [...serpItems, ...complianceItems, ...wikipediaItems],
     providers: job.actualProviders,
     screenings,
+    subject: classifier.subjectIdentityFromProfile(profile),
   };
 }
 
