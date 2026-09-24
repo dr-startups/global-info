@@ -43,12 +43,12 @@ const SCOPED = {
 
 const SANCTIONS_SELECTED: PersonaDecisionRecord = {
   decision: "PERSONA_SELECTED",
-  selected: {
+  selected: [{
     source: "opensanctions",
     title: "Umar Nazarovich Kremlev",
     url: "https://www.opensanctions.org/entities/NK-7fQ2/",
     datesOfBirth: ["1982-06-05"],
-  },
+  }],
   sources: [
     { source: "wikipedia", status: "SUCCESS" },
     { source: "knowledge_graph", status: "SUCCESS" },
@@ -60,7 +60,7 @@ const SANCTIONS_SELECTED: PersonaDecisionRecord = {
 
 const WITHOUT_PERSONA: PersonaDecisionRecord = {
   decision: "APPROVED_WITHOUT_PERSONA",
-  selected: null,
+  selected: [],
   sources: [
     { source: "wikipedia", status: "SUCCESS" },
     { source: "knowledge_graph", status: "SUCCESS" },
@@ -72,7 +72,7 @@ const WITHOUT_PERSONA: PersonaDecisionRecord = {
 
 const ALL_SOURCES_FAILED: PersonaDecisionRecord = {
   decision: "APPROVED_WITHOUT_PERSONA",
-  selected: null,
+  selected: [],
   sources: [
     { source: "wikipedia", status: "FAILED" },
     { source: "knowledge_graph", status: "NOT_CONFIGURED" },
@@ -142,12 +142,12 @@ describe("выбранная персона печатается проверя�
     const text = sheetText(
       personaSlide({
         ...SANCTIONS_SELECTED,
-        selected: {
+        selected: [{
           source: "wikipedia",
           title: "Кремлёв, Умар Назарович",
           url: "https://ru.wikipedia.org/wiki/Кремлёв,_Умар_Назарович",
           datesOfBirth: [],
-        },
+        }],
       })
     );
     expect(text).toContain("статья Википедии");
@@ -158,7 +158,7 @@ describe("выбранная персона печатается проверя�
     const text = sheetText(
       personaSlide({
         ...SANCTIONS_SELECTED,
-        selected: { source: "knowledge_graph", title: "Умар Кремлёв", url: null, datesOfBirth: [] },
+        selected: [{ source: "knowledge_graph", title: "Умар Кремлёв", url: null, datesOfBirth: [] }],
       })
     );
     expect(text).toContain("панель знаний Google");
@@ -217,7 +217,7 @@ describe("абзац листа влезает на лист", () => {
    */
   const WORST: PersonaDecisionRecord = {
     decision: "APPROVED_WITHOUT_PERSONA",
-    selected: null,
+    selected: [],
     sources: [
       { source: "wikipedia", status: "OFFLINE" },
       { source: "knowledge_graph", status: "OFFLINE" },
@@ -322,7 +322,7 @@ describe("сноска листа верна во всех четырёх сос
     expect(personaSlide(SANCTIONS_SELECTED).content.sourceNote).toMatch(/по указанному адресу/u);
     const noAddress: PersonaDecisionRecord = {
       ...SANCTIONS_SELECTED,
-      selected: { source: "knowledge_graph", title: "Умар Кремлёв", url: null, datesOfBirth: [] },
+      selected: [{ source: "knowledge_graph", title: "Умар Кремлёв", url: null, datesOfBirth: [] }],
     };
     for (const record of [noAddress, WITHOUT_PERSONA, ALL_SOURCES_FAILED, null]) {
       expect(
@@ -373,7 +373,7 @@ describe("напечатанный абзац листа равен отданн
 
   const WORST: PersonaDecisionRecord = {
     decision: "APPROVED_WITHOUT_PERSONA",
-    selected: null,
+    selected: [],
     sources: [
       { source: "wikipedia", status: "OFFLINE" },
       { source: "knowledge_graph", status: "OFFLINE" },
@@ -385,12 +385,12 @@ describe("напечатанный абзац листа равен отданн
 
   const THREE_DATES: PersonaDecisionRecord = {
     decision: "PERSONA_SELECTED",
-    selected: {
+    selected: [{
       source: "opensanctions",
       title: "Umar Nazarovich Kremlev",
       url: "https://www.opensanctions.org/entities/NK-7fQ2/",
       datesOfBirth: ["1982-06-05", "1982-06-06", "1983-01-01"],
-    },
+    }],
     sources: [{ source: "opensanctions", status: "SUCCESS" }],
     cardCount: 3,
     decidedAt: "2026-08-20T09:00:00.000Z",

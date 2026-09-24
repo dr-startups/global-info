@@ -99,12 +99,14 @@ describe("снимок решения о персоне для отчёта", ()
       })
     );
     expect(record?.decision).toBe("PERSONA_SELECTED");
-    expect(record?.selected).toEqual({
-      source: "opensanctions",
-      title: "Umar Nazarovich Kremlev",
-      url: "https://www.opensanctions.org/entities/NK-7fQ2/",
-      datesOfBirth: ["1982-06-05"],
-    });
+    expect(record?.selected).toEqual([
+      {
+        source: "opensanctions",
+        title: "Umar Nazarovich Kremlev",
+        url: "https://www.opensanctions.org/entities/NK-7fQ2/",
+        datesOfBirth: ["1982-06-05"],
+      },
+    ]);
   });
 
   it("дата рождения берётся только структурная — лид статьи в снимок не едет", () => {
@@ -115,7 +117,7 @@ describe("снимок решения о персоне для отчёта", ()
         decidedAt: new Date("2026-08-20T09:00:00.000Z"),
       })
     );
-    expect(record?.selected?.datesOfBirth).toEqual([]);
+    expect(record?.selected[0]?.datesOfBirth).toEqual([]);
     // Прозаический лид «(род. 5 июня 1982…)» не разбирается и не пересказывается:
     // неверно разобранная дата рядом с именем — тихая ложь о человеке.
     expect(JSON.stringify(record)).not.toContain("род. 5 июня 1982");
@@ -142,7 +144,7 @@ describe("снимок решения о персоне для отчёта", ()
       })
     );
     expect(record?.decision).toBe("APPROVED_WITHOUT_PERSONA");
-    expect(record?.selected).toBeNull();
+    expect(record?.selected).toEqual([]);
     expect(record?.cardCount).toBe(2);
     expect(record?.sources).toEqual([
       { source: "wikipedia", status: "SUCCESS" },
@@ -188,7 +190,7 @@ describe("артефакт решения о персоне на входе де
     expect(loadDeckInputsFromAnalyticsDir(dir).personaDecision).toBeNull();
   });
 
-  it("записанное решение доезжает до входов деки целиком", () => {
+  it("артефакт прежнего вида (одна карточка объектом) доезжает до входов деки списком", () => {
     const record = {
       decision: "PERSONA_SELECTED",
       selected: {
@@ -207,6 +209,6 @@ describe("артефакт решения о персоне на входе де
       note: "Оператор выбрал персону до начала сбора.",
       record,
     });
-    expect(loadDeckInputsFromAnalyticsDir(dir).personaDecision).toEqual(record);
+    expect(loadDeckInputsFromAnalyticsDir(dir).personaDecision).toEqual({ ...record, selected: [record.selected] });
   });
 });

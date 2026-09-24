@@ -114,6 +114,17 @@ export function personaTrailRows(
   });
 }
 
+/**
+ * Отметка «Это я» на карточке: повторное нажатие снимает.
+ *
+ * Карточек одного человека бывает несколько — статья Википедии и запись
+ * санкционной базы у публичного лица (предложение владельца 24.09.2026), —
+ * поэтому нажатие отмечает, а запускает проверку отдельная кнопка.
+ */
+export function togglePickedCard(picked: readonly string[], cardId: string): string[] {
+  return picked.includes(cardId) ? picked.filter((id) => id !== cardId) : [...picked, cardId];
+}
+
 const sentence = (text: string) => (/[.!?…]$/u.test(text) ? text : `${text}.`);
 
 /**

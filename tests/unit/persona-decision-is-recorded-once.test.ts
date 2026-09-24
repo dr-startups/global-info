@@ -167,18 +167,22 @@ describe("решение записывается один раз и целик�
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: WIKI_CARD.cardId,
+      selectedCardIds: [WIKI_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma, now: () => new Date("2026-08-27T11:00:00.000Z") },
     });
     expect(decided.decision).toBe("PERSONA_SELECTED");
     expect(decided.decidedBy).toBe("operator-1");
     expect(decided.decidedAt).toEqual(new Date("2026-08-27T11:00:00.000Z"));
-    const selected = decided.selectedPersonaJson as {
-      source: string;
-      anchors: { articles: Array<{ language: string; title: string; url: string }> };
-      card: { cardId: string };
-    };
+    const selected = (
+      decided.selectedPersonaJson as {
+        cards: Array<{
+          source: string;
+          anchors: { articles: Array<{ language: string; title: string; url: string }> };
+          card: { cardId: string };
+        }>;
+      }
+    ).cards[0]!;
     expect(selected.source).toBe("wikipedia");
     // Обязательство перед второй половиной: заголовки и адреса обоих языков.
     expect(selected.anchors.articles.map((a) => a.language)).toEqual(["ru", "en"]);
@@ -196,13 +200,12 @@ describe("решение записывается один раз и целик�
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: SANCTIONS_CARD.cardId,
+      selectedCardIds: [SANCTIONS_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma },
     });
     expect(decided.selectedPersonaJson).toMatchObject({
-      source: "opensanctions",
-      anchors: { profileId: "NK-abc" },
+      cards: [{ source: "opensanctions", anchors: { profileId: "NK-abc" } }],
     });
   });
 
@@ -242,7 +245,7 @@ describe("решение записывается один раз и целик�
         caseId: CASE_ID,
         checkId: row.id,
         decision: "PERSONA_SELECTED",
-        selectedCardId: WIKI_CARD.cardId,
+        selectedCardIds: [WIKI_CARD.cardId],
         decidedBy: "operator-2",
         deps: { prisma },
       })
@@ -262,7 +265,7 @@ describe("решение записывается один раз и целик�
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: WIKI_CARD.cardId,
+      selectedCardIds: [WIKI_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma, now: () => new Date("2026-08-27T11:00:00.000Z") },
     });
@@ -270,7 +273,7 @@ describe("решение записывается один раз и целик�
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: WIKI_CARD.cardId,
+      selectedCardIds: [WIKI_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma, now: () => new Date("2026-08-27T11:05:00.000Z") },
     });
@@ -308,7 +311,7 @@ describe("решение записывается один раз и целик�
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: WIKI_CARD.cardId,
+      selectedCardIds: [WIKI_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma },
     });
@@ -317,7 +320,7 @@ describe("решение записывается один раз и целик�
         caseId: CASE_ID,
         checkId: row.id,
         decision: "PERSONA_SELECTED",
-        selectedCardId: SANCTIONS_CARD.cardId,
+        selectedCardIds: [SANCTIONS_CARD.cardId],
         decidedBy: "operator-1",
         deps: { prisma },
       })
@@ -347,7 +350,7 @@ describe("решение записывается один раз и целик�
         caseId: CASE_ID,
         checkId: row.id,
         decision: "PERSONA_SELECTED",
-        selectedCardId: "wikipedia:ru:Кого-не-показывали",
+        selectedCardIds: ["wikipedia:ru:Кого-не-показывали"],
         decidedBy: "operator-1",
         deps: { prisma },
       })
@@ -385,7 +388,7 @@ describe("автовыбора нет", () => {
       caseId: CASE_ID,
       checkId: row.id,
       decision: "PERSONA_SELECTED",
-      selectedCardId: WIKI_CARD.cardId,
+      selectedCardIds: [WIKI_CARD.cardId],
       decidedBy: "operator-1",
       deps: { prisma },
     });

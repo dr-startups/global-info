@@ -102,7 +102,7 @@ export function SubjectPersonaPanel({ caseId }: { caseId: string }) {
         await decidePersonaCheck(caseId, {
           checkId,
           decision,
-          selectedCardId: cardId ?? null,
+          selectedCardIds: cardId ? [cardId] : [],
         });
         await reload();
         setMessage({

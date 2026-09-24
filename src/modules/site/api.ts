@@ -80,7 +80,7 @@ export const siteApi = {
     call<{ publicId: string; status: string } | { existingPublicId: string }>("POST", "/api/self-check", body),
   status: (publicId: string) => call<PublicStatusJson>("GET", checkPath(publicId)),
   persona: (publicId: string) => call<PersonaPanelJson>("POST", `${checkPath(publicId)}/persona`),
-  decide: (publicId: string, body: { decision: string; selectedCardId?: string }) =>
+  decide: (publicId: string, body: { decision: string; selectedCardIds?: string[] }) =>
     call<{ decision: string; decidedAt: string }>("POST", `${checkPath(publicId)}/persona/decision`, body),
   run: (publicId: string) => call<{ status: string; nextPollMs: number }>("POST", `${checkPath(publicId)}/run`),
   lead: (publicId: string, body: Record<string, string>) =>

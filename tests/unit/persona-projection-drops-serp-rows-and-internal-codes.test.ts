@@ -188,7 +188,7 @@ describe("проекция панели персоны", () => {
     );
     expect(decided.decision).toEqual({
       decision: "PERSONA_SELECTED",
-      selectedCardId: "opensanctions:NK-abc",
+      selectedCardIds: ["opensanctions:NK-abc"],
       decidedAt: new Date("2026-09-14T10:05:00Z"),
     });
     expect(JSON.stringify(decided)).not.toContain("self-check:check-1");

@@ -16,12 +16,13 @@ import {
 } from "@/modules/digital-profile/orion-golden/client/risk-scale";
 import type { LightRunView } from "./light-run";
 import { RUN_STAGE_LABELS, type RunStage } from "./run-stages";
-import type {
-  PersonaCard,
-  PersonaCheckRow,
-  PersonaPanelSnapshot,
-  PersonaSourceFetchStatus,
-  PersonaSourceName,
+import {
+  selectedCardIdsOf,
+  type PersonaCard,
+  type PersonaCheckRow,
+  type PersonaPanelSnapshot,
+  type PersonaSourceFetchStatus,
+  type PersonaSourceName,
 } from "@/modules/digital-profile/services/subject-persona-check";
 
 // ---------------------------------------------------------------------------
@@ -60,7 +61,8 @@ export interface PublicPersonaPanel {
   sources: Array<{ source: PersonaSourceName; status: PublicSourceStatus }>;
   decision: null | {
     decision: string;
-    selectedCardId: string | null;
+    /** Отмеченные карточки одного человека; пусто — решение без персоны. */
+    selectedCardIds: string[];
     decidedAt: Date | string | null;
   };
 }
@@ -116,8 +118,6 @@ export function publicPersonaCard(card: PersonaCard): PublicPersonaCard {
 export function publicPersonaPanel(row: PersonaCheckRow): PublicPersonaPanel {
   const snapshot = row.personasJson as PersonaPanelSnapshot | null;
   const cards = Array.isArray(snapshot?.cards) ? snapshot.cards : [];
-  const selected =
-    (row.selectedPersonaJson as { card?: { cardId?: string } } | null)?.card?.cardId ?? null;
   return {
     checkId: row.id,
     cards: cards.map(publicPersonaCard),
@@ -126,7 +126,7 @@ export function publicPersonaPanel(row: PersonaCheckRow): PublicPersonaPanel {
       status: SOURCE_STATUS[s.status] ?? "unavailable",
     })),
     decision: row.decision
-      ? { decision: row.decision, selectedCardId: selected, decidedAt: row.decidedAt }
+      ? { decision: row.decision, selectedCardIds: selectedCardIdsOf(row), decidedAt: row.decidedAt }
       : null,
   };
 }

@@ -413,6 +413,21 @@ export type ComplianceScreeningRecord = {
  */
 export const PERSONA_DECISION_ARTIFACT = "persona-decision.json";
 
+/** Отмеченная карточка — то, чем читатель может проверить выбор. */
+export type PersonaSelectedCard = {
+  /** `wikipedia` | `knowledge_graph` | `opensanctions`. */
+  source: string;
+  title: string;
+  /** Адрес карточки; null — источник его не дал. */
+  url: string | null;
+  /**
+   * Структурная дата рождения записи — единственная, которую можно печатать.
+   * Дата из прозаического лида статьи сюда не разбирается: неверно
+   * разобранная дата рядом с именем это тихая ложь о человеке.
+   */
+  datesOfBirth: string[];
+};
+
 /**
  * Решение оператора о том, о ком собираем, — снимок для отчёта.
  *
@@ -424,20 +439,12 @@ export const PERSONA_DECISION_ARTIFACT = "persona-decision.json";
  */
 export type PersonaDecisionRecord = {
   decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
-  /** Выбранная карточка; null — решение принято без персоны. */
-  selected: {
-    /** `wikipedia` | `knowledge_graph` | `opensanctions`. */
-    source: string;
-    title: string;
-    /** Адрес карточки; null — источник его не дал. */
-    url: string | null;
-    /**
-     * Структурная дата рождения записи — единственная, которую можно печатать.
-     * Дата из прозаического лида статьи сюда не разбирается: неверно
-     * разобранная дата рядом с именем это тихая ложь о человеке.
-     */
-    datesOfBirth: string[];
-  } | null;
+  /**
+   * Отмеченные карточки одного человека; пусто — решение принято без персоны.
+   * Артефакт до 24.09.2026 нёс одну карточку объектом (или null) — его
+   * приводит к списку загрузчик деки (`load-deck-inputs.ts`).
+   */
+  selected: PersonaSelectedCard[];
   /** Состояние источников панели на момент решения. */
   sources: Array<{ source: string; status: string }>;
   /** Сколько различимых карточек панель показала оператору. */

@@ -138,16 +138,30 @@ export type SelfCheckForm = z.output<typeof SelfCheckFormSchema>;
 
 export const PERSONA_DECISION_VALUES = ["PERSONA_SELECTED", "APPROVED_WITHOUT_PERSONA"] as const;
 
+/** Больше карточек панель не показывает; предел отсекает мусорное тело. */
+const MAX_PICKED_CARDS = 20;
+
+/**
+ * Решение посетителя: отмеченные карточки одного человека — одна или несколько
+ * (статья и запись санкционной базы у публичного лица). Прежнее тело с одной
+ * `selectedCardId` читается списком из одной: страница старой версии, открытая
+ * в окне выката, отправляет его.
+ */
 export const SelfCheckPersonaDecisionSchema = z
   .object({
     decision: z.enum(PERSONA_DECISION_VALUES),
+    selectedCardIds: z.array(z.string().trim().min(1).max(1000)).max(MAX_PICKED_CARDS).optional(),
     selectedCardId: z.preprocess(blankToUndefined, z.string().max(1000).optional()),
   })
+  .transform((v) => ({
+    decision: v.decision,
+    selectedCardIds: v.selectedCardIds ?? (v.selectedCardId ? [v.selectedCardId] : []),
+  }))
   .superRefine((v, ctx) => {
-    if (v.decision === "PERSONA_SELECTED" && !v.selectedCardId) {
+    if (v.decision === "PERSONA_SELECTED" && v.selectedCardIds.length === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["selectedCardId"],
+        path: ["selectedCardIds"],
         message: "Отметьте карточку, которая про вас.",
       });
     }

@@ -44,14 +44,20 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   if (!DECISIONS.includes(decision)) {
     throw new ValidationError(`decision must be one of ${DECISIONS.join(", ")}`);
   }
-  const selectedCardId =
-    typeof body.selectedCardId === "string" ? body.selectedCardId.trim() : null;
+  // Карточек может быть несколько (одна персона в разных источниках); прежнее
+  // тело с одной `selectedCardId` читается списком из одной — окно выката.
+  const selectedCardIds = (
+    Array.isArray(body.selectedCardIds) ? body.selectedCardIds : [body.selectedCardId]
+  )
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim())
+    .filter(Boolean);
 
   const row = await recordPersonaDecision({
     caseId: id,
     checkId,
     decision,
-    selectedCardId,
+    selectedCardIds,
     decidedBy: user.id,
   });
   await recordAudit({
@@ -61,7 +67,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     metadata: {
       checkId: row.id,
       decision: row.decision,
-      selectedCardId,
+      selectedCardIds,
       // Пустая панель — валидное состояние решения, и причина пустоты по
       // каждому источнику остаётся в снимке строки.
       fetchStatus: row.fetchStatus,

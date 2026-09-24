@@ -1625,7 +1625,8 @@ export function decidePersonaCheck(
   input: {
     checkId: string;
     decision: "PERSONA_SELECTED" | "APPROVED_WITHOUT_PERSONA";
-    selectedCardId?: string | null;
+    /** Отмеченные карточки; оператор отмечает одну. */
+    selectedCardIds?: string[];
   }
 ): Promise<{
   checkId: string;

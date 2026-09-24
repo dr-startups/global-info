@@ -21,6 +21,7 @@ import type {
   SurfaceCollectionHint,
   ComplianceScreeningRecord,
   PersonaDecisionRecord,
+  PersonaSelectedCard,
 } from "./scoped-input";
 import {
   clientNamedSearchEngine,
@@ -605,6 +606,17 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
+/**
+ * Отмеченные карточки артефакта решения — списком.
+ *
+ * Артефакт до 24.09.2026 нёс одну карточку объектом, а решение без персоны —
+ * `null`; прогоны того времени пересобираются тем же загрузчиком.
+ */
+function selectedCardsOfArtifact(selected: unknown): PersonaSelectedCard[] {
+  if (Array.isArray(selected)) return selected as PersonaSelectedCard[];
+  return selected && typeof selected === "object" ? [selected as PersonaSelectedCard] : [];
+}
+
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
 /**
@@ -1174,7 +1186,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       // Признак — данные: решением считается только записанное слово решения.
       personaDecision =
         record?.decision === "PERSONA_SELECTED" || record?.decision === "APPROVED_WITHOUT_PERSONA"
-          ? record
+          ? { ...record, selected: selectedCardsOfArtifact(record.selected) }
           : null;
     } catch {
       // Нечитаемый артефакт — не повод потерять остальной вход деки.

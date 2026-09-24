@@ -6,11 +6,13 @@
  * (`buildSelfCheckPersona`), и мастер переходит от поиска прямо к ожиданию.
  *
  * Кандидаты — картотека: карточка с язычком источника, бумагой и сиреневой
- * кромкой действия. Нажатие «Это я» само запускает проверку — отдельной кнопки
- * подтверждения нет, поэтому подпись называет оба действия. Выбранная карточка
- * вынимается из ряда (контур и жёсткая тень), остальные уходят из фокуса: видно,
- * по какому выбору пошла проверка, и второй раз не нажать. Вымарки чёрным нет —
- * скрытое на сайте показывается расфокусом (владелец 19.09.2026).
+ * кромкой действия. «Это я» на карточке — отметка: карточек одного человека
+ * бывает несколько (статья и запись санкционной базы у публичного лица —
+ * предложение владельца 24.09.2026), поэтому проверку запускает отдельная кнопка
+ * под картотекой. Отмеченная карточка вынимается из ряда (контур и жёсткая
+ * тень); на запуске остальные уходят из фокуса: видно, по какому выбору пошла
+ * проверка. Вымарки чёрным нет — скрытое на сайте показывается расфокусом
+ * (владелец 19.09.2026).
  */
 
 import { useState, type Ref } from "react";
@@ -39,39 +41,22 @@ const PROBE_ROWS: SourceRow[] = PERSONA_SOURCE_ROWS.map((row) => ({
   tone: "asking",
 }));
 
-function PickButton({
-  label,
-  variant,
-  busy,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  variant: "accent" | "secondary";
-  busy: boolean;
-  disabled: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button variant={variant} busy={busy} disabled={disabled} onClick={onClick}>
-      {label}
-    </Button>
-  );
-}
-
 function IdCard({
   card,
-  busy,
-  onPick,
+  picked,
+  deciding,
+  onToggle,
 }: {
   card: PersonaCardJson;
-  busy: string | null;
-  onPick: (card: PersonaCardJson) => void;
+  picked: boolean;
+  /** Проверка запускается — отметки больше не меняются. */
+  deciding: boolean;
+  onToggle: (card: PersonaCardJson) => void;
 }) {
   const text = personaCardText(card);
   const match = personaCardMatchNote(card);
   return (
-    <article className={`site-idcard${busy === card.cardId ? " is-picked" : ""}`}>
+    <article className={`site-idcard${picked ? " is-picked" : ""}`}>
       <p className="site-idcard__tab">
         <span className="site-tag">{cardSourceLabel(card.source)}</span>
       </p>
@@ -94,13 +79,9 @@ function IdCard({
           ) : null}
         </div>
         <div className="site-idcard__foot">
-          <PickButton
-            label={PERSONA_TEXT.pick}
-            variant="accent"
-            busy={busy === card.cardId}
-            disabled={busy !== null && busy !== card.cardId}
-            onClick={() => onPick(card)}
-          />
+          <Button variant={picked ? "accent" : "secondary"} pressed={picked} disabled={deciding} onClick={() => onToggle(card)}>
+            {picked ? PERSONA_TEXT.unpick : PERSONA_TEXT.pick}
+          </Button>
           {card.url ? (
             <a className="site-card__link" href={card.url} target="_blank" rel="noopener noreferrer">
               {PERSONA_TEXT.openArticle}
@@ -118,19 +99,25 @@ function IdCard({
 export function PersonaScreen({
   panel,
   fullName,
+  picked,
   busy,
-  onPick,
+  onToggle,
+  onStart,
   onNone,
   headingRef,
 }: {
   panel: PersonaPanelJson;
   fullName: string;
-  busy: string | null;
-  onPick: (card: PersonaCardJson) => void;
+  /** Отмеченные карточки — одного человека их может быть несколько. */
+  picked: readonly string[];
+  /** Идёт запуск: `picked` — по отмеченным, `none` — без персоны. */
+  busy: "picked" | "none" | null;
+  onToggle: (card: PersonaCardJson) => void;
+  onStart: () => void;
   onNone: () => void;
   headingRef: Ref<HTMLHeadingElement>;
 }) {
-  const picked = panel.cards.find((card) => card.cardId === busy);
+  const deciding = busy !== null;
   return (
     <section className="site-screen site-persona is-active site-enter" aria-labelledby="persona-title">
       <div className="site-persona__top">
@@ -146,9 +133,15 @@ export function PersonaScreen({
       {/* Где искали — до выбора: на телефоне рассказ идёт «что искали → что нашли → выбор» */}
       <Trail query={fullName} rows={personaTrailRows(panel.sources, panel.cards)} />
 
-      <div className={`site-idcards${busy ? " is-deciding" : ""}`}>
+      <div className={`site-idcards${deciding ? " is-deciding" : ""}`}>
         {panel.cards.map((card) => (
-          <IdCard key={card.cardId} card={card} busy={busy} onPick={onPick} />
+          <IdCard
+            key={card.cardId}
+            card={card}
+            picked={picked.includes(card.cardId)}
+            deciding={deciding}
+            onToggle={onToggle}
+          />
         ))}
         <div className={`site-idcard site-idcard--none${busy === "none" ? " is-picked" : ""}`}>
           <p className="site-idcard__tab" aria-hidden="true" />
@@ -160,19 +153,32 @@ export function PersonaScreen({
               <p className="site-idcard__text">{PERSONA_TEXT.noneText}</p>
             </div>
             <div className="site-idcard__foot">
-              <PickButton
-                label={PERSONA_TEXT.noneButton}
-                variant="secondary"
-                busy={busy === "none"}
-                disabled={busy !== null && busy !== "none"}
-                onClick={onNone}
-              />
+              <Button variant="secondary" busy={busy === "none"} disabled={deciding} onClick={onNone}>
+                {PERSONA_TEXT.noneButton}
+              </Button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Запуск — после картотеки: отмечают все карточки о себе, потом начинают */}
+      <div className="site-actions">
+        <Button
+          variant="accent"
+          large
+          arrow
+          busy={busy === "picked"}
+          disabled={picked.length === 0 || deciding}
+          onClick={onStart}
+        >
+          {PERSONA_TEXT.start}
+        </Button>
+        <p className="site-hint" aria-live="polite">
+          {PERSONA_TEXT.pickedCount(picked.length)}
+        </p>
+      </div>
       <p className="site-visually-hidden" role="status">
-        {picked ? PERSONA_TEXT.picked(picked.title) : busy === "none" ? PERSONA_TEXT.pickedNone : ""}
+        {busy === "picked" ? PERSONA_TEXT.picked(picked.length) : busy === "none" ? PERSONA_TEXT.pickedNone : ""}
       </p>
 
       <div className="site-note site-note--tip">

@@ -1,6 +1,6 @@
 /**
  * POST /api/self-check/[publicId]/persona/decision — «Это я» или «Среди них
- * меня нет». Тело: `{ decision, selectedCardId? }`.
+ * меня нет». Тело: `{ decision, selectedCardIds? }` — отмеченные карточки одного человека.
  */
 
 import type { NextRequest } from "next/server";

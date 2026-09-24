@@ -13,7 +13,8 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { track } from "@/modules/site/analytics";
 import { siteApi, type ApiRefusal } from "@/modules/site/api";
 import { createStatusPoller } from "@/modules/site/check/polling";
-import type { PersonaCardJson, PersonaPanelJson, PublicStatusJson, RunJson } from "@/modules/site/check/types";
+import type { PersonaPanelJson, PublicStatusJson, RunJson } from "@/modules/site/check/types";
+import { togglePickedCard } from "@/modules/site/check/persona-view";
 import { wizardScreen, wizardStep, type Refusal, type WizardScreen } from "@/modules/site/check/wizard-state";
 import { RUN_STAGE_LABELS } from "@/modules/self-check/run-stages";
 import { SERVICE_SCREENS } from "@/modules/site/content/check";
@@ -41,7 +42,9 @@ export function CheckWizard({ publicId }: { publicId: string }) {
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [panel, setPanel] = useState<PersonaPanelJson | null>(null);
   const [view, setView] = useState<"lead" | "thanks" | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"picked" | "none" | "start" | null>(null);
+  // Отмеченные «Это я» карточки — выбор до решения; в данных их ещё нет.
+  const [picked, setPicked] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const seen = useRef(new Set<string>());
@@ -158,13 +161,16 @@ export function CheckWizard({ publicId }: { publicId: string }) {
   }, [publicId, reload, refuse]);
 
   const decide = useCallback(
-    async (card: PersonaCardJson | null) => {
+    async (cardIds: readonly string[]) => {
       if (busy) return;
-      const decision = card ? "PERSONA_SELECTED" : "APPROVED_WITHOUT_PERSONA";
-      setBusy(card?.cardId ?? "none");
+      const decision = cardIds.length > 0 ? "PERSONA_SELECTED" : "APPROVED_WITHOUT_PERSONA";
+      setBusy(cardIds.length > 0 ? "picked" : "none");
       setNotice(null);
       track("persona_decided", { decision });
-      const res = await siteApi.decide(publicId, card ? { decision, selectedCardId: card.cardId } : { decision });
+      const res = await siteApi.decide(
+        publicId,
+        cardIds.length > 0 ? { decision, selectedCardIds: [...cardIds] } : { decision }
+      );
       // Другое решение уже записано (второй браузер, двойной клик) — идём по записанному.
       if (!res.ok && !(res.status === 409 && res.reason === "PERSONA_DECISION_ALREADY_RECORDED")) {
         setBusy(null);
@@ -251,9 +257,11 @@ export function CheckWizard({ publicId }: { publicId: string }) {
           <PersonaScreen
             panel={panel!}
             fullName={status?.subject?.fullName ?? ""}
-            busy={busy}
-            onPick={(card) => void decide(card)}
-            onNone={() => void decide(null)}
+            picked={picked}
+            busy={busy === "picked" || busy === "none" ? busy : null}
+            onToggle={(card) => setPicked((current) => togglePickedCard(current, card.cardId))}
+            onStart={() => void decide(picked)}
+            onNone={() => void decide([])}
             headingRef={heading}
           />
         );

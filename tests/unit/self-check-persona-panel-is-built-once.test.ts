@@ -200,7 +200,7 @@ describe("решение посетителя", () => {
       caseId: "case-1",
       actorId: "self-check:check-1",
       ipAddress: "203.0.113.7",
-      metadata: { decision: "PERSONA_SELECTED", selectedCardId: CARD_ID },
+      metadata: { decision: "PERSONA_SELECTED", selectedCardIds: [CARD_ID] },
     });
   });
 

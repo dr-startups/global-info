@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v155" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v156" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` **при названном ниже номере
@@ -566,8 +566,16 @@ export const DECK_CONTENT_VERSION = "deck-sections-v155" as const;
  * python (`python-pptx`, `PyMuPDF`, `Pillow`) без рендера (`SKIP_RENDER=1`):
  * тот же прогон на прежнем коде воспроизвёл закоммиченные пакеты байт в байт,
  * кроме `generatedAt`.
+ *
+ * 24.09 номер двинут до v156. Лист «Кого проверяли» называет все отмеченные
+ * карточки одного человека: `selected` снимка решения — список (статья и
+ * запись санкционной базы у публичного лица). Одна карточка — прежний текст
+ * дословно; несколько — «оператор отметил карточки одного человека», по
+ * строке на карточку, поимённо две, остальные числом (мера бюджета карточки).
+ * Дифф эталонов: у report-72 и золотого кейса одна карточка либо решения нет —
+ * содержимое не изменилось, двигаются номер версии и отметки пересборки.
  */
-export const DECK_BUILDER_FINGERPRINT = "81fd3a3d3c525271" as const;
+export const DECK_BUILDER_FINGERPRINT = "9915b9c128440d61" as const;
 
 /**
  * Номер версии, при котором снят отпечаток выше.
@@ -590,7 +598,7 @@ export const DECK_BUILDER_FINGERPRINT = "81fd3a3d3c525271" as const;
  * Значение отпечатка сменилось на v144 без подъёма номера ровно по этой
  * причине: изменилась формула, а не исходники построителей.
  */
-export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v155" as const;
+export const FINGERPRINT_TAKEN_AT_VERSION = "deck-sections-v156" as const;
 
 /** Объявленное исключение из правила «отпечаток сдвинулся — сдвинулся и номер». */
 export type FingerprintVersionException = {

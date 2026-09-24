@@ -695,11 +695,30 @@ function db(deps?: PersonaStoreDeps): PersonaCheckPrisma {
 }
 
 /** Якоря выбранной карточки — обязательство перед последующим сбором. */
-interface PersonaSelectionSnapshot {
+interface PersonaSelectionEntry {
   source: PersonaSourceName;
   anchors: Record<string, unknown>;
   /** Карточка целиком — такой, какой её видел оператор. */
   card: PersonaCard;
+}
+
+/**
+ * Снимок выбора — все карточки, отмеченные как один человек.
+ *
+ * У публичного лица статья Википедии и запись OpenSanctions бывают об одном
+ * человеке (предложение владельца 24.09.2026): выбор одной терял вторую.
+ * Строки, решённые до этого, хранят одну карточку прежним видом
+ * (`PersonaSelectionEntry` без обёртки) — их читает тот же `selectedCardsOf`.
+ */
+interface PersonaSelectionSnapshot {
+  cards: PersonaSelectionEntry[];
+}
+
+/** Отмеченные карточки записанного решения — в обоих видах записи. */
+function selectedCardsOf(row: PersonaCheckRow): PersonaCard[] {
+  const stored = row.selectedPersonaJson as Partial<PersonaSelectionSnapshot & PersonaSelectionEntry> | null;
+  if (Array.isArray(stored?.cards)) return stored.cards.map((entry) => entry.card).filter(Boolean);
+  return stored?.card ? [stored.card] : [];
 }
 
 function anchorsOf(card: PersonaCard): Record<string, unknown> {
@@ -718,10 +737,14 @@ function anchorsOf(card: PersonaCard): Record<string, unknown> {
   return { title: card.title, description: card.description, imageUrl: card.imageUrl };
 }
 
-/** Какая карточка выбрана записанным решением; null — решение без карточки. */
-function selectedCardIdOf(row: PersonaCheckRow): string | null {
-  const selected = row.selectedPersonaJson as PersonaSelectionSnapshot | null;
-  return selected?.card?.cardId ?? null;
+/** Идентификаторы отмеченных карточек — для ответа ручки; читатель тот же. */
+export function selectedCardIdsOf(row: PersonaCheckRow): string[] {
+  return selectedCardsOf(row).map((card) => card.cardId);
+}
+
+/** Набор отмеченных карточек — порядок отметок ответа не меняет. */
+function cardIdSet(ids: readonly string[]): string {
+  return [...new Set(ids)].sort().join("\n");
 }
 
 function cardsOf(personasJson: unknown): PersonaCard[] {
@@ -791,18 +814,14 @@ export function personaDecisionForReport(
   if (!row?.decision) return null;
   const decision = row.decision as PersonaDecision;
   const snapshot = row.personasJson as PersonaPanelSnapshot | null;
-  const selectedCard = (row.selectedPersonaJson as PersonaSelectionSnapshot | null)?.card ?? null;
   return {
     decision,
-    selected: selectedCard
-      ? {
-          source: selectedCard.source,
-          title: cardTitle(selectedCard),
-          url: cardUrl(selectedCard),
-          datesOfBirth:
-            selectedCard.source === "opensanctions" ? selectedCard.datesOfBirth : [],
-        }
-      : null,
+    selected: selectedCardsOf(row).map((card) => ({
+      source: card.source,
+      title: cardTitle(card),
+      url: cardUrl(card),
+      datesOfBirth: card.source === "opensanctions" ? card.datesOfBirth : [],
+    })),
     sources: (snapshot?.sources ?? []).map((s) => ({ source: s.source, status: s.status })),
     cardCount: cardsOf(row.personasJson).length,
     decidedAt: row.decidedAt ? new Date(row.decidedAt).toISOString() : null,
@@ -820,11 +839,13 @@ export async function recordPersonaDecision(input: {
   caseId: string;
   checkId: string;
   decision: PersonaDecision;
-  selectedCardId?: string | null;
+  /** Отмеченные карточки — одна или несколько карточек одного человека. */
+  selectedCardIds?: readonly string[] | null;
   decidedBy?: string | null;
   deps?: PersonaStoreDeps;
 }): Promise<PersonaCheckRow> {
   const client = db(input.deps);
+  const wanted = input.decision === "PERSONA_SELECTED" ? [...new Set(input.selectedCardIds ?? [])] : [];
   const row = await client.subjectPersonaCheck.findFirst({
     where: { id: input.checkId, caseId: input.caseId },
   });
@@ -840,7 +861,7 @@ export async function recordPersonaDecision(input: {
      */
     const sameAnswer =
       row.decision === input.decision &&
-      selectedCardIdOf(row) === (input.selectedCardId ?? null);
+      cardIdSet(selectedCardsOf(row).map((card) => card.cardId)) === cardIdSet(wanted);
     if (sameAnswer) return row;
     throw new ConflictError(`persona check ${row.id} already decided (${row.decision})`, {
       reason: "PERSONA_DECISION_ALREADY_RECORDED",
@@ -849,11 +870,17 @@ export async function recordPersonaDecision(input: {
 
   let selected: PersonaSelectionSnapshot | null = null;
   if (input.decision === "PERSONA_SELECTED") {
-    const card = cardsOf(row.personasJson).find((c) => c.cardId === input.selectedCardId);
-    if (!card) {
+    if (wanted.length === 0) {
+      throw new ValidationError("persona decision names no card");
+    }
+    const panel = cardsOf(row.personasJson);
+    const cards = wanted.map((id) => panel.find((c) => c.cardId === id));
+    if (cards.some((card) => !card)) {
       throw new ValidationError("selected persona card is not part of this panel snapshot");
     }
-    selected = { source: card.source, anchors: anchorsOf(card), card };
+    selected = {
+      cards: (cards as PersonaCard[]).map((card) => ({ source: card.source, anchors: anchorsOf(card), card })),
+    };
   }
 
   return client.subjectPersonaCheck.update({

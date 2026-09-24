@@ -66,7 +66,7 @@ export interface PersonaPanelJson {
   checkId: string;
   cards: PersonaCardJson[];
   sources: PersonaSourceJson[];
-  decision: null | { decision: string; selectedCardId: string | null; decidedAt: string | null };
+  decision: null | { decision: string; selectedCardIds: string[]; decidedAt: string | null };
 }
 
 /** Что статическая страница узнаёт у `GET /api/site/config`. */

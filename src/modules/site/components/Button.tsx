@@ -55,6 +55,8 @@ export function Button(
      * `aria-busy`, спиннер показывает CSS, и кнопка не прыгает по ширине.
      */
     busy?: boolean;
+    /** Кнопка-отметка: нажата или нет (`aria-pressed`); у обычной кнопки поля нет. */
+    pressed?: boolean;
     onClick?: () => void;
   }
 ) {
@@ -66,6 +68,7 @@ export function Button(
       type={props.type ?? "button"}
       disabled={props.disabled}
       aria-busy={props.busy || undefined}
+      aria-pressed={props.pressed}
       onClick={props.onClick}
     >
       {waits ? <span className="site-spinner" aria-hidden="true" /> : null}

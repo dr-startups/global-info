@@ -4,7 +4,7 @@
  */
 
 import type { SectionType } from "../contracts";
-import type { PersonaDecisionRecord, ScopedFragmentInput } from "../scoped-input";
+import type { PersonaDecisionRecord, PersonaSelectedCard, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../../report/i18n/plural-ru";
 import { clientAddress } from "../../client/client-address";
@@ -110,23 +110,35 @@ function sourcesClause(record: PersonaDecisionRecord): string {
  * означал бы, что «блока нет» читается и как «решения не было», и как
  * «страница потерялась».
  */
+/**
+ * Сколько отмеченных карточек лист называет поимённо; остальные — числом. Две —
+ * по замеру: три карточки с длинными адресами и тремя датами рождения давали 840
+ * знаков при бюджете карточки 998 и требуемом запасе в четверть.
+ */
+const PERSONA_CARDS_ON_SHEET = 2;
+
+/** Карточка словами: заголовок, источник, адрес или его отсутствие, дата рождения записи. */
+function personaCardClause(card: PersonaSelectedCard): { text: string; hasAddress: boolean } {
+  const sourceLabel = PERSONA_CARD_LABELS[card.source] ?? "источник карточки не назван";
+  const address = clientAddress(card.url ?? undefined);
+  // Адрес называется либо его отсутствие: молчание читается как «адрес есть,
+  // просто не привели», и проверить выбор становится нечем.
+  const addressPart = address
+    ? `, ${address}`
+    : "; адреса карточки источник не дал, и открыть её по ссылке нельзя";
+  const birthPart =
+    card.datesOfBirth.length > 0
+      ? `, дата рождения записи ${enumerateRu(card.datesOfBirth, card.datesOfBirth.length)}`
+      : "";
+  return { text: `«${card.title}» — ${sourceLabel}${addressPart}${birthPart}`, hasAddress: Boolean(address) };
+}
+
 function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
-  if (record?.decision === "PERSONA_SELECTED" && record.selected) {
-    const card = record.selected;
-    const sourceLabel = PERSONA_CARD_LABELS[card.source] ?? "источник карточки не назван";
-    const address = clientAddress(card.url ?? undefined);
-    // Адрес называется либо его отсутствие: молчание читается как «адрес есть,
-    // просто не привели», и проверить выбор становится нечем.
-    const addressPart = address
-      ? `, ${address}`
-      : "; адреса карточки источник не дал, и открыть её по ссылке нельзя";
-    const birthPart =
-      card.datesOfBirth.length > 0
-        ? `, дата рождения записи ${enumerateRu(card.datesOfBirth, card.datesOfBirth.length)}`
-        : "";
+  if (record?.decision === "PERSONA_SELECTED" && record.selected.length === 1) {
+    const card = personaCardClause(record.selected[0]!);
     return {
       narrative: [
-        `Перед началом сбора оператор выбрал карточку «${card.title}» — ${sourceLabel}${addressPart}${birthPart}.`,
+        `Перед началом сбора оператор выбрал карточку ${card.text}.`,
         "Отчёт целиком собран по этой персоне.",
       ].join("\n"),
       bullets: [NAMESAKE_WARNING, PER_MATERIAL_NOTE],
@@ -135,7 +147,36 @@ function personaSheet(record: PersonaDecisionRecord | undefined): PersonaSheet {
         " Расхождение — повод пересобрать отчёт по другой персоне, а не работать с его выводами.",
       // Утверждение об адресе стоит только там, где адрес есть: на общей сноске
       // шаблона оно было бы ложью на трёх состояниях листа из четырёх.
-      sourceNote: address ? "Карточка выбранной персоны открывается по указанному адресу." : undefined,
+      sourceNote: card.hasAddress ? "Карточка выбранной персоны открывается по указанному адресу." : undefined,
+    };
+  }
+
+  // Несколько карточек одного человека (статья и запись санкционной базы у
+  // публичного лица — предложение владельца 24.09.2026). Лист называет первые
+  // поимённо, строкой на карточку, а остальные числом: ёмкость карточки листа
+  // мерянная, и молча срезанная карточка хуже названного числа.
+  if (record?.decision === "PERSONA_SELECTED" && record.selected.length > 1) {
+    const cards = record.selected.map(personaCardClause);
+    const named = cards.slice(0, PERSONA_CARDS_ON_SHEET);
+    const rest = cards.length - named.length;
+    return {
+      narrative: [
+        "Перед началом сбора оператор отметил карточки одного человека:",
+        ...named.map((card, i) => `${card.text}${i === named.length - 1 && rest === 0 ? "." : ";"}`),
+        rest > 0
+          ? `ещё ${rest} ${pluralRu(rest, "карточка отмечена", "карточки отмечены", "карточек отмечено")} тем же решением.`
+          : "",
+        "Отчёт целиком собран по этой персоне.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      bullets: [NAMESAKE_WARNING, PER_MATERIAL_NOTE],
+      whatToCheck:
+        "Открыть карточки по указанным адресам и убедиться, что все они описывают проверяемое лицо." +
+        " Расхождение — повод пересобрать отчёт по другой персоне, а не работать с его выводами.",
+      sourceNote: named.some((card) => card.hasAddress)
+        ? "Карточки выбранной персоны открываются по указанным адресам."
+        : undefined,
     };
   }
 

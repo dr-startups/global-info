@@ -523,7 +523,7 @@ async function startWhenNothingToClarify(
 ): Promise<void> {
   if (panel.cards.length > 0 || row.decision) return;
   const d = resolveDeps(deps);
-  await recordVisitorDecision(check, row, "APPROVED_WITHOUT_PERSONA", null, ctx, d, "NO_CANDIDATES");
+  await recordVisitorDecision(check, row, "APPROVED_WITHOUT_PERSONA", [], ctx, d, "NO_CANDIDATES");
   const decided = await d.db.selfCheck.findUnique({ where: { id: check.id } });
   if (!decided) return;
   try {
@@ -551,7 +551,7 @@ async function recordVisitorDecision(
   check: SelfCheck,
   latest: PersonaCheckRow,
   decision: PersonaDecision,
-  selectedCardId: string | null,
+  selectedCardIds: readonly string[],
   ctx: { ip: string },
   d: Resolved,
   automatic: "NO_CANDIDATES" | null = null
@@ -560,7 +560,7 @@ async function recordVisitorDecision(
     caseId: latest.caseId,
     checkId: latest.id,
     decision,
-    selectedCardId,
+    selectedCardIds,
     decidedBy: selfCheckActor(check.id),
     deps: personaStore(d),
   });
@@ -577,7 +577,7 @@ async function recordVisitorDecision(
       metadata: {
         personaCheckId: row.id,
         decision: row.decision,
-        selectedCardId,
+        selectedCardIds,
         ...(automatic ? { automatic } : {}),
       },
     },
@@ -603,7 +603,7 @@ export async function decideSelfCheckPersona(
   if (!latest) {
     throw new ConflictError("persona panel is not built yet", { reason: "PERSONA_PANEL_NOT_BUILT" });
   }
-  const row = await recordVisitorDecision(check, latest, input.decision, input.selectedCardId ?? null, ctx, d);
+  const row = await recordVisitorDecision(check, latest, input.decision, input.selectedCardIds, ctx, d);
   return { decision: String(row.decision), decidedAt: row.decidedAt };
 }
 
