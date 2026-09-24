@@ -42,14 +42,12 @@ import { domainOf } from "./types";
 import { resolveSearchDepth } from "./search-depth";
 import type { ProviderCapabilities } from "../search-surfaces/types";
 
-const MAX_PER_PAGE = 10;
-
 /**
  * Потолок глубины на один запрос.
  *
- * API отдаёт по десять результатов на страницу и листается постранично, так что
- * глубина ограничена не форматом ответа, а здравым смыслом: пять страниц — это
- * уже вдвое глубже, чем смотрит человек. Аудит просит двадцать.
+ * API отдаёт до ста групп на страницу (`groupSpec.groupsOnPage`), так что глубина
+ * ограничена не форматом ответа, а здравым смыслом: пятьдесят — это уже вдвое
+ * глубже, чем смотрит человек. Аудит просит двадцать.
  */
 const YANDEX_MAX_RESULTS_PER_QUERY = 50;
 
@@ -90,12 +88,17 @@ export class YandexSearchProvider implements SearchProvider {
   }
 
   /** Calls the v2 endpoint for one page and returns the decoded XML string. */
-  private async fetchPageXml(request: SearchProviderRequest, page: number): Promise<string> {
+  private async fetchPageXml(
+    request: SearchProviderRequest,
+    page: number,
+    groupsOnPage: number
+  ): Promise<string> {
     const cfg = providerConfig.yandex;
     const body = buildYandexV2Body({
       queryText: request.query,
       folderId: cfg.folderId ?? "",
       page,
+      groupsOnPage,
       searchType: toSearchType(request.region ?? cfg.region),
       localization: toLocalization(request.language ?? cfg.localization),
     });
@@ -131,23 +134,20 @@ export class YandexSearchProvider implements SearchProvider {
     const results: SearchProviderResult[] = [];
 
     try {
-      let page = request.page && request.page > 1 ? request.page - 1 : 0; // 0-based
-      while (results.length < limit) {
-        const xml = await this.fetchPageXml(request, page);
-        const error = firstTag(xml, "error");
-        if (error) {
-          // Yandex signals quota/auth issues via <error code="...">.
-          const isRate = /limit|quota|too many/i.test(error);
-          throw Object.assign(new Error(stripTags(error)), { __yandex: true, isRate });
-        }
-        const mapped = this.normalize(xml, request).map((r) => ({
-          ...r,
-          rank: results.length + r.rank,
-        }));
-        results.push(...mapped);
-        if (mapped.length < MAX_PER_PAGE) break;
-        page += 1;
+      // Вся глубина — одним запросом. Страницы по десять стоили по запросу каждая и
+      // приходили от разных реплик: живая проверка 24.09.2026 получила на второй
+      // странице два адреса из первой — восемнадцать разных результатов вместо
+      // двадцати и места 11–20 из чужого ранжирования. Короткий ответ — всё, что
+      // есть у Яндекса по запросу, и второго запроса за ним нет.
+      const page = request.page && request.page > 1 ? request.page - 1 : 0; // 0-based
+      const xml = await this.fetchPageXml(request, page, limit);
+      const error = firstTag(xml, "error");
+      if (error) {
+        // Yandex signals quota/auth issues via <error code="...">.
+        const isRate = /limit|quota|too many/i.test(error);
+        throw Object.assign(new Error(stripTags(error)), { __yandex: true, isRate });
       }
+      results.push(...this.normalize(xml, request));
     } catch (err) {
       if (err && typeof err === "object" && "__yandex" in err) {
         const e = err as unknown as { message: string; isRate: boolean };

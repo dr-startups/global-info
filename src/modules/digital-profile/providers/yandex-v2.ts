@@ -81,6 +81,11 @@ export interface YandexV2BodyInput {
   folderId: string;
   /** 0-based page index. */
   page?: number;
+  /**
+   * Results (groups) per page — the whole requested depth in one paid request.
+   * Omitted: the API default, ten.
+   */
+  groupsOnPage?: number;
   searchType: YandexSearchType;
   localization: YandexLocalization;
 }
@@ -93,6 +98,17 @@ export function buildYandexV2Body(input: YandexV2BodyInput): Record<string, unkn
       queryText: input.queryText,
       page: String(Math.max(0, input.page ?? 0)),
     },
+    // Grouping mode and docs-per-group are the ones the API applies on its own
+    // (`mode="deep" docs-in-group="1"` in the response): only the page size changes.
+    ...(input.groupsOnPage
+      ? {
+          groupSpec: {
+            groupMode: "GROUP_MODE_DEEP",
+            groupsOnPage: String(input.groupsOnPage),
+            docsInGroup: "1",
+          },
+        }
+      : {}),
     folderId: input.folderId,
     l10n: input.localization,
     responseFormat: "FORMAT_XML",

@@ -42,7 +42,7 @@ describe("глубина зависит от назначения запроса
   });
 });
 
-/** Ответ Яндекса на одну страницу: десять документов — значит, есть следующая. */
+/** Ответ Яндекса на одну страницу. */
 function yandexPageResponse(count: number): string {
   const docs = Array.from(
     { length: count },
@@ -61,20 +61,25 @@ function yandexPageResponse(count: number): string {
  * вызов.
  */
 describe("глубина доезжает до тела запроса", () => {
-  it("Яндекс листает вторую страницу и на пробе", async () => {
-    // Двадцать у Яндекса — это две страницы по десять: просьба видна тем, что
-    // адаптер идёт за второй страницей.
+  it("Яндекс просит двадцать и на пробе", async () => {
+    // Двадцать у Яндекса — одна страница на двадцать групп (`groupsOnPage`): просьба
+    // видна в теле единственного запроса.
     vi.stubEnv("YANDEX_SEARCH_API_KEY", "AQVNoffline0000testkey1234567890abcd");
     vi.stubEnv("YANDEX_SEARCH_FOLDER_ID", "b1goffline0000test");
     vi.resetModules();
     const pages: string[] = [];
+    const groupsOnPage: string[] = [];
     globalThis.fetch = (async (_url: string, init: { body?: string }) => {
-      const body = JSON.parse(String(init?.body ?? "{}")) as { query?: { page?: string } };
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        query?: { page?: string };
+        groupSpec?: { groupsOnPage?: string };
+      };
       pages.push(String(body.query?.page ?? ""));
+      groupsOnPage.push(String(body.groupSpec?.groupsOnPage ?? ""));
       return {
         status: 200,
         ok: true,
-        text: async () => yandexPageResponse(10),
+        text: async () => yandexPageResponse(Number(body.groupSpec?.groupsOnPage ?? 10)),
       } as unknown as Response;
     }) as typeof globalThis.fetch;
     const { yandexSearchProvider } = await import(
@@ -94,7 +99,8 @@ describe("глубина доезжает до тела запроса", () => {
       ...(depth === undefined ? {} : { limit: depth }),
     });
     expect(run.status).toBe("SUCCESS");
-    expect(pages).toEqual(["0", "1"]);
+    expect(pages).toEqual(["0"]);
+    expect(groupsOnPage).toEqual(["20"]);
     expect(run.results.length).toBe(20);
   });
 });
