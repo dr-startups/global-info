@@ -97,6 +97,13 @@ export const TEXT_DEFAULTS = {
   SITE_YANDEX_VERIFICATION: "",
   /** Код подтверждения в Google Search Console; пусто — метатег не выводится. */
   SITE_GOOGLE_VERIFICATION: "",
+  /**
+   * User-Agent запросов к Википедии. Правила Wikimedia требуют настоящий контакт:
+   * с заглушкой `admin@example.com` клиента ограничивают сильнее (решение
+   * владельца о контакте — 24.09.2026).
+   */
+  DIGITAL_PROFILE_WIKIPEDIA_USER_AGENT:
+    "GlobalInfo-DigitalProfile/1.0 (compliance audit; contact: anton.kovalenko10@mail.ru)",
 } as const;
 
 /**

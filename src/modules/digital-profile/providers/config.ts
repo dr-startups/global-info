@@ -10,7 +10,7 @@
  *    never a fake call).
  */
 
-import { boolSetting, stringSetting } from "../config/defaults";
+import { boolSetting, stringSetting, textSetting } from "../config/defaults";
 import type { AvailabilityStatus } from "./types";
 import { getProviderCapabilities } from "./capabilities";
 import { secretDefect, secretDefectMessage, type SecretDefect } from "./secret-shape";
@@ -130,9 +130,7 @@ export const providerConfig: ProviderConfig = {
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
-    userAgent:
-      envStr(process.env.DIGITAL_PROFILE_WIKIPEDIA_USER_AGENT) ??
-      "GlobalInfo-DigitalProfile/1.0 (compliance audit; contact: admin@example.com)",
+    userAgent: textSetting("DIGITAL_PROFILE_WIKIPEDIA_USER_AGENT"),
     minRequestIntervalMs: Number(process.env.DIGITAL_PROFILE_WIKIPEDIA_MIN_INTERVAL_MS ?? 250),
   },
   google: {

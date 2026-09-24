@@ -5378,9 +5378,12 @@ PENDING, единственный носитель правила «совпад
 запрос `fetchJson` пишет строку `{"event":"wikipedia_request","lang","kind",
 "status","ms","attempt"}` — без заголовка и поисковых слов, это имя человека, — и
 причину покажет журнал следующего живого прогона. Кандидат в причины — заглушка
-контакта в `User-Agent` (`admin@example.com`): правила Wikimedia требуют настоящий
-контакт, без него запросы ограничивают сильнее, а ответ 429 `fetchJson` честно
-выжидает. Закреплено `persona-panel-keeps-what-wikipedia-answered.test.ts`.
+контакта в `User-Agent` (`admin@example.com`) до 24.09.2026: правила Wikimedia требуют
+настоящий контакт, без него запросы ограничивают сильнее, а ответ 429 `fetchJson` честно
+выжидает. Теперь значение — `TEXT_DEFAULTS.DIGITAL_PROFILE_WIKIPEDIA_USER_AGENT` в
+`config/defaults.ts` с контактом владельца (переменная окружения его заменяет).
+Закреплено `persona-panel-keeps-what-wikipedia-answered.test.ts` и
+`wikipedia-user-agent-names-a-contact.test.ts`.
 
 **Панель зовёт `screenPerson` напрямую и находок не рождает** — находки
 принадлежат скринингу прогона и уходят аналитику как `PENDING`.
