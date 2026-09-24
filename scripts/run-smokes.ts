@@ -172,6 +172,13 @@ export const SMOKES: Smoke[] = [
       "белая сцена кончается под содержимым, а не у нижнего поля: короткий лист сжимается, полный — нет, тень едет со сценой",
   },
   {
+    name: "divider-photo",
+    argv: ["PYTHON", "renderer/smoke_divider_photo.py"],
+    tier: "full",
+    about:
+      "разделитель региона печатает фото раздела: ч/б, затемнённое, в пределах полей, заголовок левее панели; нет файла фото — полосы бренда",
+  },
+  {
     name: "sidebar-provenance",
     argv: ["PYTHON", "renderer/smoke_sidebar_provenance.py"],
     tier: "full",

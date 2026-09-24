@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import functools
 import io
 import re
+from pathlib import Path
 from typing import Any
 
 from pptx.dml.color import RGBColor
@@ -11,11 +13,10 @@ from pptx.enum.text import MSO_ANCHOR
 from pptx.util import Emu, Pt
 
 try:
-    from PIL import Image, ImageEnhance, ImageFilter
+    from PIL import Image, ImageEnhance
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore
     ImageEnhance = None  # type: ignore
-    ImageFilter = None  # type: ignore
 
 from .common import (
     ACCENT,
@@ -154,80 +155,75 @@ TOC_ROW_GAP = 120_000
 TOC_BOTTOM_RESERVE = 225_000
 
 
-#: Панель снимка выдачи на разделителе (шаг 0151): правая часть листа в
-#: пределах боковых полей (правый край — как у полос обложки) и выше низа сцены.
-#: Растровая проверка не терпит чернил ближе 288 000 EMU к краю листа и ниже
-#: `INK_BOTTOM`, а угол листа, по которому она берёт фон, остаётся тёмным.
+#: Панель фото на разделителе (шаг 0151): правая часть листа в пределах боковых
+#: полей (правый край — как у полос обложки) и выше низа сцены. Растровая
+#: проверка не терпит чернил ближе 288 000 EMU к краю листа и ниже `INK_BOTTOM`,
+#: а угол листа, по которому она берёт фон, остаётся тёмным.
 DIVIDER_PHOTO_X = 6_900_000
 DIVIDER_PHOTO_RIGHT = 11_350_000
 DIVIDER_PHOTO_TOP = 380_000
 DIVIDER_PHOTO_BOTTOM = 6_380_000
-#: Снимок на разделителе — фактура раздела, а не материал для чтения: размыт до
-#: нечитаемого (иначе имена и адреса выдачи спорят с титулом) и затемнён так, что
-#: белый фон выдачи уходит в серый ~#434343 и белый титул рядом читается.
-DIVIDER_PHOTO_BRIGHTNESS = 0.26
-DIVIDER_PHOTO_BLUR_PX = 2.4
+#: Фото разделителей регионов — решение владельца на тесте 24.09.2026: одно на
+#: все разделы регионов, как фото раздела у эталона-ориентира. Файл лежит в
+#: пакете рендерера и едет в его образ вместе с кодом; нет файла — полосы бренда.
+DIVIDER_PHOTO_PATH = Path(__file__).resolve().parent / "assets" / "divider-photo.webp"
+#: Фото ч/б и затемнено, но остаётся фотографией: заголовок стоит рядом, а не
+#: поверх, и глушить снимок до фактуры незачем — серые средние тона на чернилах.
+DIVIDER_PHOTO_BRIGHTNESS = 0.6
+DIVIDER_PHOTO_CONTRAST = 1.1
 
 
-def _divider_photo_png(slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> bytes | None:
-    """Снимок выдачи региона разделителя — ч/б, затемнённый, под размер панели.
-
-    Регион — первая часть ключа раздела (`RU_PROFILE` → `ru`), снимок — первый
-    ассет вида `serp_snapshot` с тем же префиксом: так их называет приложение
-    (`ru_provider_serp_…`, `uae_provider_serp_…`). Снимка с байтами нет — `None`,
-    и разделитель рисует полосы бренда: пустое честнее выдуманного.
-    """
-    if Image is None or ImageEnhance is None or ImageFilter is None:
+def _divider_photo_jpeg() -> bytes | None:
+    """Фото разделителя — ч/б, затемнённое, кадрированное под панель; нет файла — `None`."""
+    path = DIVIDER_PHOTO_PATH
+    if Image is None or ImageEnhance is None or not path.is_file():
         return None
-    region = str(slide.get("sectionKey") or "").split("_", 1)[0].lower()
-    if not region:
+    return _prepared_divider_photo(str(path), path.stat().st_mtime_ns)
+
+
+@functools.lru_cache(maxsize=4)
+def _prepared_divider_photo(path: str, _mtime_ns: int) -> bytes | None:
+    """Подготовка фото — одна на процесс: дека рисует разделитель и в мере, и в выводе."""
+    try:
+        with Image.open(path) as src:
+            im = src.convert("L")
+    except Exception:  # noqa: BLE001
         return None
-    prefix = f"{region}_"
+    iw, ih = im.size
+    if iw <= 0 or ih <= 0:
+        return None
     ratio = (DIVIDER_PHOTO_RIGHT - DIVIDER_PHOTO_X) / (DIVIDER_PHOTO_BOTTOM - DIVIDER_PHOTO_TOP)
-    for ref, asset in assets.items():
-        if not str(ref).startswith(prefix) or str(asset.get("kind") or "") != "serp_snapshot":
-            continue
-        raw = _resolve_image_bytes(asset)
-        if not raw:
-            continue
-        try:
-            im = Image.open(io.BytesIO(raw)).convert("L")
-        except Exception:  # noqa: BLE001
-            continue
-        iw, ih = im.size
-        if iw <= 0 or ih <= 0:
-            continue
-        # Кадр — сверху: там строка поиска и первые результаты, узнаваемая часть.
-        if iw / ih > ratio:
-            cw = int(ih * ratio)
-            left = (iw - cw) // 2
-            im = im.crop((left, 0, left + cw, ih))
-        else:
-            im = im.crop((0, 0, iw, int(iw / ratio)))
-        width_px = 900
-        im = im.resize((width_px, max(1, int(width_px / ratio))))
-        im = im.filter(ImageFilter.GaussianBlur(radius=DIVIDER_PHOTO_BLUR_PX))
-        im = ImageEnhance.Brightness(im).enhance(DIVIDER_PHOTO_BRIGHTNESS)
-        buf = io.BytesIO()
-        im.convert("RGB").save(buf, "PNG")
-        return buf.getvalue()
-    return None
+    # Кадр по центру: панель вертикальная, а фото раздела обычно горизонтальное.
+    if iw / ih > ratio:
+        cw = int(ih * ratio)
+        left = (iw - cw) // 2
+        im = im.crop((left, 0, left + cw, ih))
+    else:
+        ch = int(iw / ratio)
+        top = (ih - ch) // 2
+        im = im.crop((0, top, iw, top + ch))
+    width_px = 900
+    im = im.resize((width_px, max(1, int(width_px / ratio))), Image.Resampling.LANCZOS)
+    im = ImageEnhance.Contrast(im).enhance(DIVIDER_PHOTO_CONTRAST)
+    im = ImageEnhance.Brightness(im).enhance(DIVIDER_PHOTO_BRIGHTNESS)
+    buf = io.BytesIO()
+    im.convert("RGB").save(buf, "JPEG", quality=88)
+    return buf.getvalue()
 
 
-def _draw_divider_art(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> bool:
-    """Правая часть тёмного разделителя; `True`, если стоит снимок выдачи.
+def _draw_divider_art(ctx: _Ctx) -> bool:
+    """Правая часть тёмного разделителя; `True`, если стоит фото.
 
-    Шаг 0151: разделитель-обложка — затемнённый снимок выдачи своего региона
-    панелью справа, как фото раздела у эталона-ориентира, но из наших же данных.
-    Имя `orion_bg_*` — инспектор геометрии считает панель фоном, и титул поверх
-    неё пересечением не считается.
+    Шаг 0151: разделитель-обложка — ч/б затемнённое фото панелью справа, как у
+    эталона-ориентира. Имя `orion_bg_*` — инспектор геометрии считает панель
+    фоном, и соседний титул пересечением с ней не считается.
 
-    Снимка нет — полосы бренда (шаг 0150) в правом верхнем поле: над титулом
+    Фото нет — полосы бренда (шаг 0150) в правом верхнем поле: над титулом
     (hero — с y = 2 250 000, обычный — с 2 800 000), кончаются на 1 860 000.
     Правый край — 11 350 000, как у обложки. `decor` в имени — инспектор
     геометрии считает полосу оформлением, а не блоком.
     """
-    photo = _divider_photo_png(slide, assets)
+    photo = _divider_photo_jpeg()
     if photo:
         pic = ctx.slide.shapes.add_picture(
             io.BytesIO(photo),
@@ -597,7 +593,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.dark_bg()
         # Графика — в обеих ветках: и hero, и обычный разделитель пустовали
         # справа и сверху одинаково.
-        has_photo = _draw_divider_art(ctx, slide, assets)
+        has_photo = _draw_divider_art(ctx)
         if variant == "hero":
             # Разделитель cleeq: зелёный столб, серая засечка, крупный титул
             # капсом (шаг 0151).
@@ -618,9 +614,9 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             accent.fill.fore_color.rgb = ART_GREY
             accent.line.fill.background()
             text_x = MARGIN_X + 420_000
-            # Снимок стоит справа — текст держится левее панели: лид поверх
-            # фактуры читался бы хуже титула. Высота лида растёт в той же мере,
-            # в какой сузилась колонка, — ёмкость остаётся прежней.
+            # Фото стоит справа — текст держится левее панели: поверх фото лид
+            # читался бы хуже титула. Высота лида растёт в той же мере, в какой
+            # сузилась колонка, — ёмкость остаётся прежней.
             text_w = DIVIDER_PHOTO_X - 250_000 - text_x if has_photo else CONTENT_W - 420_000
             hero_title = _safe(title).upper()
             size = FS_COVER
@@ -653,8 +649,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
             return
         if has_photo:
-            # Титул держится левее панели снимка: поверх фактуры он читался бы
-            # хуже. Капс 36 pt в две строки не встал — ступень ниже.
+            # Титул держится левее панели фото: поверх фото он читался бы хуже.
+            # Капс 36 pt в две строки не встал — ступень ниже.
             width = DIVIDER_PHOTO_X - 250_000 - MARGIN_X
             caps = _safe(title).upper()
             size = FS_COVER
