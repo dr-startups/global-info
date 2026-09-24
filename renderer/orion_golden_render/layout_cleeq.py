@@ -96,6 +96,11 @@ TILE_PAD_BOTTOM = 63_500
 #: Горизонтальное поле плитки до текстовой рамки плюс её собственный отступ.
 TILE_PAD_X = 140_000
 TILE_TEXT_INSET = 91_440
+#: Полоса тона над числом (шаг 0150): лежит в верхнем поле плитки и кончается
+#: на 52 000 — до текстовой рамки (`TILE_PAD_TOP`) остаётся 24 200 EMU, так что
+#: ни высота плитки, ни положение числа от неё не зависят.
+TILE_STRIPE_TOP = 22_000
+TILE_STRIPE_H = 30_000
 
 
 def draw_stage(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
@@ -356,6 +361,26 @@ def _metric_tile(
     tone = str(metric.get("tone") or "neutral")
     value, label, size = _metric_texts(metric)
     ctx.card(y, h=h, x=x, w=w, fill=WHITE, border=None, radius=0.1)
+    # Плитки ряда различаются смыслом (всего, о субъекте, негатив), а на белом
+    # их различал только цвет цифры. Полоса того же цвета, что число, — один
+    # ответ на вопрос «какого тона плитка».
+    stripe_w = w - 2 * TILE_PAD_X
+    if stripe_w > 0:
+        stripe = ctx.slide.shapes.add_shape(
+            5, Emu(x + TILE_PAD_X), Emu(y + TILE_STRIPE_TOP), Emu(stripe_w), Emu(TILE_STRIPE_H)
+        )
+        try:
+            stripe.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            stripe.name = f"orion_decor_tile_accent_p{ctx.page}"
+        except Exception:  # noqa: BLE001
+            pass
+        stripe.fill.solid()
+        stripe.fill.fore_color.rgb = tone_value_color(tone)
+        stripe.line.fill.background()
+        disable_shape_shadow(stripe)
     box = ctx.slide.shapes.add_textbox(
         Emu(x + TILE_PAD_X), Emu(y + TILE_PAD_TOP), Emu(w - 2 * TILE_PAD_X), Emu(h - TILE_PAD_TOP - TILE_PAD_BOTTOM)
     )

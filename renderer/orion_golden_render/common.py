@@ -1361,6 +1361,41 @@ class _Ctx:
             shape.line.width = Pt(0.75)
         return shape
 
+    #: Полоса тона у левого края плашки (шаг 0150): ширина и отступ от края.
+    #: Полоса целиком лежит в левом поле карточки — самое узкое поле 60 000 у
+    #: короткой плашки, а полоса кончается на 54 000, — поэтому текст не
+    #: сдвигается и не перекрывается. Тоньше 80 000 EMU и с `decor` в имени:
+    #: инспектор геометрии считает её оформлением, а не блоком.
+    CARD_ACCENT_BAR_W = 36_000
+    CARD_ACCENT_BAR_INSET = 18_000
+    CARD_ACCENT_BAR_VPAD = 60_000
+
+    def card_accent_bar(self, card, color: RGBColor) -> None:
+        """Цветная полоса у левого края карточки — тон плашки."""
+        height = int(card.height) - 2 * self.CARD_ACCENT_BAR_VPAD
+        if height <= 0:
+            return
+        bar = self.slide.shapes.add_shape(
+            5,
+            Emu(int(card.left) + self.CARD_ACCENT_BAR_INSET),
+            Emu(int(card.top) + self.CARD_ACCENT_BAR_VPAD),
+            Emu(self.CARD_ACCENT_BAR_W),
+            Emu(height),
+        )
+        try:
+            bar.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            bar.name = f"orion_decor_card_accent_p{self.page}"
+        except Exception:  # noqa: BLE001
+            pass
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = color
+        bar.line.fill.background()
+        # Тень по умолчанию размыла бы тонкую полосу в серое пятно.
+        disable_shape_shadow(bar)
+
     def body(
         self,
         text: str,
@@ -1583,12 +1618,17 @@ class _Ctx:
         рекомендации занимает полосу во всю ширину и не сообщает ничего —
         отсутствие карточки честнее (шаг 13, D3).
         """
-        fill = {
-            "accent": ACCENT_SOFT,
-            "warn": WARN_BG,
-            "risk": RISK_BG,
-            "good": GOOD_BG,
-        }.get(tone, CARD_BG)
+        # Плашка статуса cleeq (шаг 0150): белая карточка, тон несёт полоса у
+        # левого края. Сплошная заливка тоном красила карточку целиком, и три
+        # плашки подряд («Статус сбора», «Что это означает», «Что проверить»)
+        # читались пёстрой стопкой. Карточка без тона остаётся как была.
+        accent_bar = {
+            "accent": ACCENT,
+            "warn": TONE_WARN,
+            "risk": TONE_RISK,
+            "good": TONE_GOOD,
+        }.get(tone)
+        fill = CARD_BG
         # Design v2: card titles pick up the tone colour instead of flat navy.
         title_color = {
             "accent": TONE_GOOD,
@@ -1659,7 +1699,9 @@ class _Ctx:
         else:
             body_h = full_body_h
         h = max(min_h, min(budget, 2 * pad + title_h + body_h + 30_000))
-        self.card(y, h=h, x=x, w=width, fill=fill)
+        card = self.card(y, h=h, x=x, w=width, fill=fill)
+        if accent_bar is not None:
+            self.card_accent_bar(card, accent_bar)
         cy = y + pad
         if title_s:
             box = self.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(inner_w), Emu(max(title_h, 160_000)))

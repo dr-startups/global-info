@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
+from pptx.enum.text import MSO_ANCHOR
 from pptx.util import Emu, Pt
 
 try:
@@ -49,6 +50,7 @@ from .common import (
     _resolve_image_bytes,
     _safe,
     _safe_preserve_breaks,
+    disable_shape_shadow,
     record_text_layout,
 )
 from .executive import (
@@ -124,6 +126,55 @@ def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
         shape.fill.solid()
         shape.fill.fore_color.rgb = color
         shape.line.fill.background()
+        try:
+            shape.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
+
+
+#: Высота полосы на разделителе: меньше 10 % листа (731 520 EMU), иначе ручная
+#: визуальная проверка сочла бы полосу пустой карточкой.
+DIVIDER_BAND_H = 260_000
+
+#: Карточки содержания (шаг 0150): потолок высоты ряда, чтобы два-три раздела
+#: не раздувались на весь лист, и отбивка между карточками.
+TOC_ROW_MAX_H = 1_000_000
+TOC_ROW_GAP = 120_000
+#: Низ последней карточки — выше низа сцены остальных страниц (105 000 над
+#: границей контента) ещё на 120 000: у карточки мягкая тень LibreOffice, а
+#: растровая проверка не терпит чернил ниже `INK_BOTTOM`.
+TOC_BOTTOM_RESERVE = 225_000
+
+
+def _draw_divider_art(ctx: _Ctx) -> None:
+    """Полосы бренда в правом верхнем поле тёмного разделителя (шаг 0150).
+
+    Разделитель — тёмный лист с титулом и лидом слева; правая половина и верх
+    пустовали. Приём тот же, что у обложки без портрета, но полосы ниже ростом
+    и стоят над титулом: заголовок hero начинается с y = 2 250 000, обычный —
+    с 2 800 000, а полосы кончаются на 1 860 000 и текста не касаются.
+
+    Правый край — 11 350 000, как у обложки: растровая проверка считает
+    дефектом чернила ближе 288 000 EMU к краю листа. `decor` в имени —
+    инспектор геометрии считает полосу оформлением, а не блоком.
+    """
+    right = 11_350_000
+    bands = [
+        (7_300_000, 520_000, ACCENT),
+        (8_400_000, 880_000, VIOLET),
+        (9_300_000, 1_240_000, CYAN),
+        (8_000_000, 1_600_000, ACCENT),
+    ]
+    for index, (x, y, color) in enumerate(bands, start=1):
+        shape = ctx.slide.shapes.add_shape(5, Emu(x), Emu(y), Emu(right - x), Emu(DIVIDER_BAND_H))
+        try:
+            shape.name = f"orion_decor_divider_band_{index}_p{ctx.page}"
+        except Exception:  # noqa: BLE001
+            pass
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = color
+        shape.line.fill.background()
+        disable_shape_shadow(shape)
         try:
             shape.adjustments[0] = 0.5
         except Exception:  # noqa: BLE001
@@ -354,22 +405,29 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_toc":
-        # Содержание cleeq: мятный лист, белая сцена, зелёные и фиолетовые
-        # номера разделов, названия чернилами по волосяным линейкам.
+        # Содержание cleeq (шаг 0150): мятный лист и по белой карточке на
+        # раздел — номер зелёным или фиолетовым, название чернилами. Карточки
+        # делят высоту листа поровну: при прежнем потолке ряда 560 000 пять
+        # разделов занимали верхнюю половину листа, и нижняя пустовала. Белой
+        # сцены под карточками нет — белое на белом не читается как отдельный
+        # блок (то же правило, что у `orion_golden_executive_card`).
         ctx.light_bg()
         y = ctx.title("Содержание отчёта", 320_000, NAVY, FS_TITLE)
         entries = [
             _clip_words(b, 110)
             for b in (bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"])
         ][:10]
-        stage_top = y + 80_000
-        stage_bottom = content_stage(ctx, stage_top)
-        row_h = min(560_000, max(380_000, (stage_bottom - stage_top - 280_000) // max(1, len(entries))))
-        ry = stage_top + 120_000
+        top = y + 80_000
+        bottom = CONTENT_BOTTOM - TOC_BOTTOM_RESERVE
+        count = max(1, len(entries))
+        row_h = min(TOC_ROW_MAX_H, (bottom - top - TOC_ROW_GAP * (count - 1)) // count)
+        ry = top
         for i, entry in enumerate(entries, start=1):
+            ctx.card(ry, h=row_h)
             num = ctx.slide.shapes.add_textbox(
-                Emu(MARGIN_X + 60_000), Emu(ry), Emu(700_000), Emu(row_h)
+                Emu(MARGIN_X + 180_000), Emu(ry), Emu(700_000), Emu(row_h)
             )
+            num.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
             nr = num.text_frame.paragraphs[0].add_run()
             nr.text = f"{i:02d}"
             nr.font.name = FONT
@@ -377,30 +435,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             nr.font.size = Pt(FS_LEAD)
             nr.font.color.rgb = alternating_color(i - 1)
             box = ctx.slide.shapes.add_textbox(
-                Emu(MARGIN_X + 820_000),
-                Emu(ry + 40_000),
-                Emu(CONTENT_W - 900_000),
-                Emu(row_h - 60_000),
+                Emu(MARGIN_X + 940_000),
+                Emu(ry),
+                Emu(CONTENT_W - 1_120_000),
+                Emu(row_h),
             )
             tf = box.text_frame
             tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             r = tf.paragraphs[0].add_run()
             r.text = entry
             r.font.name = FONT
             r.font.bold = True
             r.font.size = Pt(FS_SUBTITLE)
             r.font.color.rgb = NAVY
-            rule = ctx.slide.shapes.add_shape(
-                1,
-                Emu(MARGIN_X + 60_000),
-                Emu(ry + row_h - 40_000),
-                Emu(CONTENT_W - 120_000),
-                Emu(9_000),
-            )
-            rule.fill.solid()
-            rule.fill.fore_color.rgb = CARD_BORDER
-            rule.line.fill.background()
-            ry += row_h
+            ry += row_h + TOC_ROW_GAP
         return
 
     if template == "orion_golden_executive_dashboard":
@@ -465,6 +514,9 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
 
     if template == "orion_golden_region_divider":
         ctx.dark_bg()
+        # Графика — в обеих ветках: и hero, и обычный разделитель пустовали
+        # справа и сверху одинаково.
+        _draw_divider_art(ctx)
         if variant == "hero":
             # Разделитель cleeq: зелёный столб, фиолетовая засечка, крупный титул.
             bar = ctx.slide.shapes.add_shape(

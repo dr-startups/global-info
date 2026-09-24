@@ -1133,10 +1133,13 @@ def _add_search_table(
         if kind == "header":
             for c in range(cols):
                 label = str(payload[c]) if c < len(payload) else ""
-                # Шапка таблицы — зелёная полоса cleeq. Текст на ней чернилами,
-                # а не белым: белое по #24D875 даёт контраст 1,8:1, то есть
-                # заголовок столбца пришлось бы угадывать.
-                paint(tbl.cell(r_idx, c), label, bold=True, color=NAVY, bg=ACCENT, size=FS_CAPTION)
+                # Шапка таблицы — чернила cleeq с белым текстом (шаг 0150).
+                # Ярко-зелёная полоса #24D875 спорила с красной подсветкой
+                # негативных строк и первой тянула на себя взгляд; белое по
+                # #101510 читается с контрастом около 18:1, а зелёный остаётся
+                # акцентам страницы. Кегль и высота строки прежние — замер
+                # таблицы от цвета не зависит.
+                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=FS_CAPTION)
         elif kind == "group":
             merged = tbl.cell(r_idx, 0)
             merged.merge(tbl.cell(r_idx, cols - 1))
