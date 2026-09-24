@@ -15,7 +15,7 @@
   * С1 — короткое содержимое: сцена кончается заметно выше `CONTENT_BOTTOM`;
   * С2 — сцена всё равно ниже последней нарисованной фигуры (ничего не срезано);
   * С3 — полный лист: сцена остаётся во всю высоту, как прежде;
-  * С4 — тень и уголки сцены двигаются вместе с ней, ниже сцены чернил нет.
+  * С4 — тень сцены двигается вместе с ней, ниже сцены чернил нет.
 
 Сеть и база не нужны. Нужен python-pptx.
 
@@ -147,22 +147,21 @@ def shadow_follows() -> None:
     _, ctx = fresh("p20_shadow")
     ctx.light_bg()
     y = ctx.title("Комплаенс — сводка баз данных")
-    content_stage(ctx, y, corner_marks=True)
+    content_stage(ctx, y)
     ctx.body("Проверено баз: 3. Совпадений: 1.", y, max_h=500_000)
     ctx.fit_stage()
     card = stage_card(ctx)
     shadow = getattr(ctx, "stage_shadow", None)
     if card is None or shadow is None:
-        check("С4: тень и уголки следуют за сценой", False, "сцена или тень не запомнены")
+        check("С4: тень следует за сценой", False, "сцена или тень не запомнены")
         return
     stage_bottom = int(card.top) + int(card.height)
     shadow_bottom = int(shadow.top) + int(shadow.height)
-    marks = getattr(ctx, "stage_marks", [])
-    marks_ok = all(int(m.top) + int(m.height) <= shadow_bottom for m in marks)
+    # Уголков сцены больше нет (шаг 0151) — за сценой следует только тень.
     check(
-        "С4: тень и уголки следуют за сценой, ниже сцены чернил нет",
-        shadow_bottom <= CONTENT_BOTTOM and shadow_bottom - stage_bottom < 200_000 and marks_ok,
-        f"низ сцены {stage_bottom}, низ тени {shadow_bottom}, уголков {len(marks)}",
+        "С4: тень следует за сценой, ниже сцены чернил нет",
+        shadow_bottom <= CONTENT_BOTTOM and shadow_bottom - stage_bottom < 200_000,
+        f"низ сцены {stage_bottom}, низ тени {shadow_bottom}",
     )
 
 

@@ -108,7 +108,7 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
             ctx, metrics, MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
         )
         y = metrics_bottom + 140_000
-    content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None, corner_marks=True)
+    content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None)
     # Абзац резюме рисуется **одним блоком**: подзаголовок («Главные основания»,
     # «Ограничения») узнаётся по соседям — одиночный абзац озаглавливать нечем, —
     # а жирным печатается только первый абзац, вывод. Прежде каждый абзац шёл

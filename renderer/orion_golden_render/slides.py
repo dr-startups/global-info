@@ -685,13 +685,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 ctx, metrics, MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
             )
             y = metrics_bottom + 140_000
-        # Уголки — метка «сцены выводов» в языке cleeq.
-        content_stage(
-            ctx,
-            y,
-            top=metrics_bottom + 40_000 if metrics else None,
-            corner_marks=True,
-        )
+        content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None)
         # Рекомендация печатается один раз — под «Действие». Проза находки кладёт
         # её и последним абзацем страницы; дословный повтор из абзаца снимается,
         # и блок действия после этого обязан напечататься (см. ниже).

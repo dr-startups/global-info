@@ -132,7 +132,6 @@ def draw_stage(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
     # нарисована (шаг 0127). Лист рисует одну сцену; вторая заменяет первую.
     ctx.stage_card = card
     ctx.stage_shadow = shadow
-    ctx.stage_marks = []
 
 
 def content_stage(
@@ -141,7 +140,6 @@ def content_stage(
     *,
     bottom: int | None = None,
     top: int | None = None,
-    corner_marks: bool = False,
 ) -> int:
     """Сцена вокруг обычной текстовой колонки; возвращает её низ.
 
@@ -162,25 +160,11 @@ def content_stage(
         return y
     left = MARGIN_X - STAGE_BLEED
     width = CONTENT_W + 2 * STAGE_BLEED
+    # Зелёных уголков по краям сцены сводок больше нет (шаг 0151, решение
+    # владельца на тесте 24.09.2026): в ч/б-стиле четыре чёрточки читались
+    # артефактом, а не меткой.
     draw_stage(ctx, left, top, width, height)
-    if corner_marks:
-        draw_corner_marks(ctx, left, top, width, height)
     return top + height
-
-
-def draw_corner_marks(ctx: _Ctx, x: int, y: int, w: int, h: int) -> None:
-    """Зелёные уголки по краям сцены выводов."""
-    for cx, cy in (
-        (x + 40_000, y + 40_000),
-        (x + w - 120_000, y + 40_000),
-        (x + 40_000, y + h - 120_000),
-        (x + w - 120_000, y + h - 120_000),
-    ):
-        mark = ctx.slide.shapes.add_shape(1, Emu(cx), Emu(cy), Emu(80_000), Emu(14_000))
-        mark.fill.solid()
-        mark.fill.fore_color.rgb = ACCENT
-        mark.line.fill.background()
-        ctx.stage_marks.append(mark)
 
 
 def draw_level_bars(

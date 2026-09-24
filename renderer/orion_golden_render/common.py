@@ -1160,10 +1160,9 @@ class _Ctx:
         self.dark = False
         # Белая сцена листа и её тень — запоминаются при отрисовке, чтобы
         # `fit_stage` мог подтянуть их низ к фактическому низу содержимого
-        # (шаг 0127). Уголки выводов двигаются вместе со сценой.
+        # (шаг 0127).
         self.stage_card: Any = None
         self.stage_shadow: Any = None
-        self.stage_marks: list[Any] = []
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
 
@@ -1209,8 +1208,6 @@ class _Ctx:
         skip = {int(card.shape_id)}
         if self.stage_shadow is not None:
             skip.add(int(self.stage_shadow.shape_id))
-        for mark in self.stage_marks:
-            skip.add(int(mark.shape_id))
         # Низ содержимого с полем под ним. У таблицы поле своё и больше
         # обычного: её рисует LibreOffice, и объявленная высота — нижняя
         # граница. Поля не складываются — иначе под короткой таблицей
@@ -1231,10 +1228,6 @@ class _Ctx:
         card.height = Emu(wanted)
         if self.stage_shadow is not None:
             self.stage_shadow.height = Emu(max(0, int(self.stage_shadow.height) - delta))
-        for mark in self.stage_marks:
-            # Нижние уголки стоят у низа сцены — они и переезжают.
-            if int(mark.top) > top + height // 2:
-                mark.top = Emu(int(mark.top) - delta)
 
     def footer(self) -> None:
         # Hairline rule + brand line left, page counter right (design v2).
