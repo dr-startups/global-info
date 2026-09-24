@@ -595,33 +595,18 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         # справа и сверху одинаково.
         has_photo = _draw_divider_art(ctx)
         if variant == "hero":
-            # Разделитель cleeq: зелёный столб, серая засечка, крупный титул
-            # капсом (шаг 0151).
-            bar = ctx.slide.shapes.add_shape(
-                5, Emu(MARGIN_X), Emu(2_200_000), Emu(140_000), Emu(2_200_000)
-            )
-            bar.fill.solid()
-            bar.fill.fore_color.rgb = ACCENT
-            bar.line.fill.background()
-            try:
-                bar.adjustments[0] = 0.5
-            except Exception:  # noqa: BLE001
-                pass
-            accent = ctx.slide.shapes.add_shape(
-                5, Emu(MARGIN_X + 220_000), Emu(2_200_000), Emu(90_000), Emu(700_000)
-            )
-            accent.fill.solid()
-            accent.fill.fore_color.rgb = ART_GREY
-            accent.line.fill.background()
-            text_x = MARGIN_X + 420_000
+            # Разделитель cleeq: крупный титул капсом (шаг 0151) с той же
+            # засечкой, что у обычного разделителя и у заголовков листов.
+            text_x = MARGIN_X + ctx.TITLE_MARK_INDENT
             # Фото стоит справа — текст держится левее панели: поверх фото лид
             # читался бы хуже титула. Высота лида растёт в той же мере, в какой
             # сузилась колонка, — ёмкость остаётся прежней.
-            text_w = DIVIDER_PHOTO_X - 250_000 - text_x if has_photo else CONTENT_W - 420_000
+            text_w = DIVIDER_PHOTO_X - 250_000 - text_x if has_photo else CONTENT_W - ctx.TITLE_MARK_INDENT
             hero_title = _safe(title).upper()
             size = FS_COVER
             if _wrapped_line_count(hero_title, text_w, size, bold=True) > 2:
                 size = FS_TITLE
+            ctx.title_mark(2_250_000, size)
             lines = _wrapped_line_count(hero_title, text_w, size, bold=True)
             title_h = int(lines * size * EMU_PER_PT * 1.2)
             box = ctx.slide.shapes.add_textbox(

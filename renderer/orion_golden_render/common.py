@@ -1305,9 +1305,33 @@ class _Ctx:
         self.dark = False
         fill = self.slide.background.fill
         fill.solid()
-        # Мятный лист cleeq вместо белого: белые карточки на нём читаются как
+        # Светлый лист cleeq вместо белого: белые карточки на нём читаются как
         # отдельные плоскости, а не как продолжение фона.
         fill.fore_color.rgb = PAGE_BG
+
+    #: Отступ текста заголовка от левого поля: засечка и воздух после неё.
+    TITLE_MARK_INDENT = 200_000
+
+    def title_mark(self, y: int, size: int) -> None:
+        """Зелёная засечка cleeq у первой строки заголовка кеглем `size`, рамка
+        которого начинается на `y`.
+
+        Одна на всех: её рисуют заголовки светлых листов и оба варианта
+        разделителя. У варианта hero были свой столб и серая засечка — рядом с
+        одной полоской у ОАЭ они читались лишним (владелец с теста, 24.09.2026:
+        «пусть как у ОАЭ будет одна полоска»).
+        """
+        bar_h = int(size * EMU_PER_PT * 1.15)
+        bar = self.slide.shapes.add_shape(
+            5, Emu(MARGIN_X), Emu(y + 40_000), Emu(70_000), Emu(bar_h)
+        )
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = ACCENT
+        bar.line.fill.background()
+        try:
+            bar.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
 
     def title(
         self,
@@ -1338,19 +1362,9 @@ class _Ctx:
         # (разделитель со снимком выдачи, шаг 0151).
         text_w = CONTENT_W if width is None else width
         if accent:
-            bar_h = int(size * EMU_PER_PT * 1.15)
-            bar = self.slide.shapes.add_shape(
-                5, Emu(MARGIN_X), Emu(y + 40_000), Emu(70_000), Emu(bar_h)
-            )
-            bar.fill.solid()
-            bar.fill.fore_color.rgb = ACCENT
-            bar.line.fill.background()
-            try:
-                bar.adjustments[0] = 0.5
-            except Exception:  # noqa: BLE001
-                pass
-            text_x = MARGIN_X + 200_000
-            text_w = text_w - 200_000
+            self.title_mark(y, size)
+            text_x = MARGIN_X + self.TITLE_MARK_INDENT
+            text_w = text_w - self.TITLE_MARK_INDENT
         # Полоса заголовка — по факту (шаг 0114, решение 4(б)): однострочный
         # заголовок отдаёт содержимому 250 000 EMU, которые прежде пустовали под
         # ним; двухстрочный оставляет прежние 950 000. Строки меряются тем же
