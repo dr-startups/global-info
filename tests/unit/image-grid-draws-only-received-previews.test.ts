@@ -18,8 +18,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildCanonicalVisualAssets } from "@/modules/digital-profile/services/canonical-visual-assets";
+import sharp from "sharp";
 import {
   buildImageGridSvg,
+  portraitCachePath,
   previewCachePath,
   svgToPngBase64,
   type ImageGridItem,
@@ -30,6 +32,16 @@ import type { RawInventoryItem } from "@/modules/digital-profile/orion-golden/ty
 const TILE_PNG = await svgToPngBase64(
   '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#3355aa"/></svg>'
 );
+/** Другие байты — чтобы по обложке было видно, из какого кэша она прочитана. */
+const PORTRAIT_PNG = await svgToPngBase64(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#aa5533"/></svg>'
+);
+/** Оригинал картинки из выдачи — крупный, как на настоящих площадках. */
+const BIG_PHOTO = (
+  await sharp({ create: { width: 1600, height: 1200, channels: 3, background: { r: 51, g: 85, b: 119 } } })
+    .png()
+    .toBuffer()
+).toString("base64");
 
 function imageResponse(base64: string): Response {
   const bytes = new Uint8Array(Buffer.from(base64, "base64"));
@@ -221,12 +233,14 @@ describe("не показанное названо с причиной и нег
 });
 
 describe("кэш превью — не сеть", () => {
-  it("при NETWORK_CALLS=0 плитка берётся из кэша без единого запроса", async () => {
+  it("при NETWORK_CALLS=0 плитка и портрет берутся из кэша без единого запроса", async () => {
     const dir = mkdtempSync(join(tmpdir(), "preview-cache-"));
     try {
       const rows = [imageRow(0)];
       mkdirSync(dir, { recursive: true });
       writeFileSync(previewCachePath(dir, rows[0]!.imageUrl!), TILE_PNG, "utf8");
+      // У портрета обложки свой кэш — крупная версия той же картинки (шаг 0151).
+      writeFileSync(portraitCachePath(dir, rows[0]!.imageUrl!), PORTRAIT_PNG, "utf8");
       expect(process.env.NETWORK_CALLS).toBe("0");
 
       const { visuals, fetchImpl } = await buildRuGrid({
@@ -241,9 +255,9 @@ describe("кэш превью — не сеть", () => {
       expect(meta?.hasImage).toBe(true);
       expect(meta?.visibleItems).toHaveLength(1);
       expect(meta?.notShown).toBeUndefined();
-      // Байты обложки — ровно те, что лежали в кэше: доказательство, что кэш
-      // прочитан, а не что плитка нарисовалась заглушкой.
-      expect(visuals.assets.find((a) => a.assetRef === "cover_portrait")?.imageData).toBe(TILE_PNG);
+      // Байты обложки — ровно те, что лежали в кэше портрета: доказательство,
+      // что кэш прочитан, а не что обложка нарисовалась превью плитки.
+      expect(visuals.assets.find((a) => a.assetRef === "cover_portrait")?.imageData).toBe(PORTRAIT_PNG);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -312,5 +326,40 @@ describe("обложка берёт портрет из нарисованног
     const rows = Array.from({ length: 3 }, (_, i) => imageRow(i));
     const { visuals } = await buildRuGrid({ rows, withPreview: new Set([0, 1, 2]) });
     expect(visuals.assets.find((a) => a.assetRef === "cover_portrait")).toBeUndefined();
+  });
+});
+
+describe("портрет обложки — та же картинка крупно", () => {
+  /**
+   * Превью плитки ужато до 320×200, и обложка, растягивая его до 11 см листа,
+   * печатала мыльное лицо (тест 24.09.2026). Портрет — та же картинка того же
+   * адреса в полном размере; своего поиска ради обложки по-прежнему нет.
+   */
+  async function portraitOf(fetchImpl: (url: string) => Promise<Response>) {
+    const rows = [imageRow(0)];
+    const visuals = await buildCanonicalVisualAssets({
+      subjectName: "Anders Holmström",
+      items: rows,
+      subjectDecisionByRef: { "inventory:img-0": "SUBJECT_MATCH" },
+      previewFetch: { fetchImpl: vi.fn(fetchImpl) as unknown as typeof fetch },
+    });
+    const portrait = visuals.assets.find((a) => a.assetRef === "cover_portrait");
+    const meta = await sharp(Buffer.from(String(portrait?.imageData), "base64")).metadata();
+    return { portrait, width: meta.width ?? 0 };
+  }
+
+  it("обложка берёт крупную версию картинки, а не превью плитки", async () => {
+    const { portrait, width } = await portraitOf(async () => imageResponse(BIG_PHOTO));
+    expect(portrait?.evidenceRefs).toEqual(["inventory:img-0"]);
+    expect(width).toBeGreaterThanOrEqual(900);
+  });
+
+  it("крупная версия не пришла — обложка берёт превью, а не пустоту", async () => {
+    let calls = 0;
+    const { portrait, width } = await portraitOf(async () =>
+      ++calls === 1 ? imageResponse(BIG_PHOTO) : deniedResponse()
+    );
+    expect(portrait?.evidenceRefs).toEqual(["inventory:img-0"]);
+    expect(width).toBeLessThanOrEqual(320);
   });
 });

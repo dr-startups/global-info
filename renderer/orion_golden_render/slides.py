@@ -412,17 +412,16 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
 
     if template == "orion_golden_cover":
         # Обложка cleeq: чернильный лист, словесный знак, зелёный надзаголовок,
-        # имя субъекта крупно, метаданные и чип. Справа — портрет субъекта из
-        # выдачи, а если превью нет, абстрактные полосы бренда.
+        # имя субъекта крупно, метаданные и строка-подпись. Справа — портрет
+        # субъекта из выдачи, а если превью нет, абстрактные полосы бренда.
+        #
+        # Полотна под подписями больше нет (шаг 0151): портрет стоит правее
+        # 6 830 000 EMU, а полотно кончалось на 6 200 000 — подписи оно не
+        # прикрывало, зато его тень по умолчанию печаталась вертикальной
+        # полосой посреди листа (тест 24.09.2026).
         ctx.dark_bg()
         portrait = _first_visual_asset(list(refs), assets) or primary
-        if _embed_cover_portrait(ctx, portrait):
-            # Полотно слева, чтобы подпись читалась поверх плитки портрета.
-            veil = ctx.slide.shapes.add_shape(1, Emu(0), Emu(0), Emu(6_200_000), Emu(SLIDE_H))
-            veil.fill.solid()
-            veil.fill.fore_color.rgb = COVER_BG
-            veil.line.fill.background()
-        else:
+        if not _embed_cover_portrait(ctx, portrait):
             _draw_cleeq_cover_art(ctx)
         brand = ctx.slide.shapes.add_textbox(
             Emu(MARGIN_X), Emu(420_000), Emu(4_800_000), Emu(320_000)
@@ -472,20 +471,12 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             w=5_800_000,
             font_size=FS_SUBTITLE,
         )
-        # Чип держится над границей контентной области: ниже неё чернил быть не
-        # должно, и растровая проверка ловит это по отрисованной странице.
-        chip = ctx.slide.shapes.add_shape(
-            5, Emu(MARGIN_X), Emu(5_760_000), Emu(3_400_000), Emu(320_000)
-        )
-        chip.fill.solid()
-        chip.fill.fore_color.rgb = RGBColor(0x22, 0x22, 0x22)
-        chip.line.fill.background()
-        try:
-            chip.adjustments[0] = 0.5
-        except Exception:  # noqa: BLE001
-            pass
+        # Строка-подпись — зелёным по листу, без серой подложки (решение
+        # владельца, тест 24.09.2026): подложка читалась отдельной кнопкой.
+        # Строка держится над границей контентной области: ниже неё чернил быть
+        # не должно, и растровая проверка ловит это по отрисованной странице.
         chip_t = ctx.slide.shapes.add_textbox(
-            Emu(MARGIN_X + 120_000), Emu(5_810_000), Emu(3_100_000), Emu(240_000)
+            Emu(MARGIN_X), Emu(5_810_000), Emu(3_400_000), Emu(240_000)
         )
         ctr = chip_t.text_frame.paragraphs[0].add_run()
         ctr.text = "Аудит · стратегия · конфиденциально"

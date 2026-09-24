@@ -8,11 +8,18 @@
  * изображение», и отличить запрет площадки от нашей ошибки было нельзя.
  */
 
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import {
   PREVIEW_USER_AGENT,
   openGraphImage,
+  portraitCachePath,
+  previewCachePath,
   tryFetchImagePreview,
+  tryFetchPortraitImage,
   type PreviewFailureReason,
 } from "@/modules/digital-profile/orion-golden/assets/media-asset-svg";
 
@@ -142,6 +149,16 @@ describe("страница вместо картинки", () => {
     expect(openGraphImage("<html><head></head></html>", "https://a.ru/")).toBeUndefined();
   });
 
+  it("по объявленной картинке ходим ровно один раз (портрет — тоже)", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (u: string) => {
+      calls.push(u);
+      return response({ type: "text/html", body: new TextEncoder().encode(page) });
+    });
+    await tryFetchPortraitImage("https://example.org/a/b", { fetchImpl: fetchImpl as never });
+    expect(calls).toEqual(["https://example.org/a/b", "https://example.org/img/cover.jpg"]);
+  });
+
   it("по объявленной картинке ходим ровно один раз", async () => {
     const calls: string[] = [];
     const fetchImpl = vi.fn(async (u: string) => {
@@ -158,5 +175,83 @@ describe("страница вместо картинки", () => {
     // Первый запрос — страница, второй — объявленная картинка; дальше не идём.
     expect(calls).toEqual(["https://example.org/a/b", "https://example.org/img/cover.jpg"]);
     expect(reasons).toEqual(["not_an_image"]);
+  });
+});
+
+/** Настоящий PNG заданного размера — размер результата судит sharp, а не подпись. */
+async function pngOf(width: number, height: number): Promise<Uint8Array> {
+  const buf = await sharp({
+    create: { width, height, channels: 3, background: { r: 40, g: 90, b: 160 } },
+  })
+    .png()
+    .toBuffer();
+  return new Uint8Array(buf);
+}
+
+async function sizeOf(base64: string | undefined): Promise<[number, number]> {
+  const meta = await sharp(Buffer.from(String(base64), "base64")).metadata();
+  return [meta.width ?? 0, meta.height ?? 0];
+}
+
+describe("портрет обложки — та же картинка крупно", () => {
+  /**
+   * Обложка брала превью плитки: картинка ужималась до 320×200 и на листе
+   * растягивалась до 11 см — на тесте 24.09.2026 портрет вышел мыльным. Портрет
+   * — та же картинка того же адреса, ужатая до 1200 по длинной стороне.
+   */
+  it("портрет крупнее превью плитки: до 1200 по длинной стороне", async () => {
+    const body = await pngOf(1600, 1000);
+    const fetchImpl = vi.fn(async () => response({ type: "image/png", body }));
+    const preview = await tryFetchImagePreview("https://example.org/a.png", { fetchImpl: fetchImpl as never });
+    const portrait = await tryFetchPortraitImage("https://example.org/a.png", { fetchImpl: fetchImpl as never });
+    expect(await sizeOf(preview)).toEqual([320, 200]);
+    expect(await sizeOf(portrait)).toEqual([1200, 750]);
+  });
+
+  it("маленький оригинал не растягивается: увеличение — дело вёрстки, а не выборки", async () => {
+    const body = await pngOf(200, 150);
+    const fetchImpl = vi.fn(async () => response({ type: "image/png", body }));
+    const portrait = await tryFetchPortraitImage("https://example.org/small.png", { fetchImpl: fetchImpl as never });
+    expect(await sizeOf(portrait)).toEqual([200, 150]);
+  });
+
+  it("кэш портрета свой: превью того же адреса его не подменяет и не затирает", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "portrait-cache-"));
+    try {
+      const url = "https://example.org/a.png";
+      expect(portraitCachePath(dir, url)).not.toBe(previewCachePath(dir, url));
+      const body = await pngOf(1600, 1000);
+      const fetchImpl = vi.fn(async () => response({ type: "image/png", body }));
+      await tryFetchPortraitImage(url, { fetchImpl: fetchImpl as never, cacheDir: dir });
+      expect(existsSync(portraitCachePath(dir, url))).toBe(true);
+      expect(existsSync(previewCachePath(dir, url))).toBe(false);
+      // Второй раз — с диска, без запроса.
+      const again = await tryFetchPortraitImage(url, { fetchImpl: fetchImpl as never, cacheDir: dir });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(await sizeOf(again)).toEqual([1200, 750]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("без сети — ни запроса, ни портрета", async () => {
+    const prev = process.env.NETWORK_CALLS;
+    process.env.NETWORK_CALLS = "0";
+    const realFetch = vi.fn(async () => response({ type: "image/png" }));
+    vi.stubGlobal("fetch", realFetch);
+    try {
+      const reasons: PreviewFailureReason[] = [];
+      const out = await tryFetchPortraitImage("https://example.org/a.png", {
+        allowNetwork: true,
+        onFailure: (_u, r) => reasons.push(r),
+      });
+      expect(out).toBeUndefined();
+      expect(reasons).toEqual(["offline"]);
+      expect(realFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      if (prev === undefined) delete process.env.NETWORK_CALLS;
+      else process.env.NETWORK_CALLS = prev;
+    }
   });
 });

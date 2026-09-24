@@ -2254,6 +2254,16 @@ def _rounded_portrait_png(
         im = im.crop((left, top, left + side, top + side)).resize(
             (size_px, size_px), Image.Resampling.LANCZOS
         )
+        if side < size_px:
+            # Кадр меньше портрета — растягивается (превью плитки, если крупная
+            # выборка не пришла, шаг 0151). Увеличение сглаживает контуры; лёгкая
+            # нерезкая маска возвращает им чёткость. Крупный кадр её не получает:
+            # резкость поверх полного разрешения даёт ореолы, а не детали.
+            from PIL import ImageFilter
+
+            alpha = im.getchannel("A")
+            im = im.convert("RGB").filter(ImageFilter.UnsharpMask(radius=2, percent=70, threshold=3))
+            im.putalpha(alpha)
         radius = max(8, int(size_px * radius_ratio))
         mask = Image.new("L", (size_px, size_px), 0)
         ImageDraw.Draw(mask).rounded_rectangle(

@@ -63,10 +63,17 @@ export function previewCachePath(cacheDir: string, url: string): string {
   return join(cacheDir, `${createHash("sha256").update(url).digest("hex").slice(0, 32)}.b64`);
 }
 
-function readPreviewCache(cacheDir: string | undefined, url: string): string | undefined {
-  if (!cacheDir) return undefined;
-  const path = previewCachePath(cacheDir, url);
-  if (!existsSync(path)) return undefined;
+/**
+ * Где лежит портрет обложки этого адреса — та же картинка крупно (шаг 0151).
+ * Кэш свой: превью плитки того же адреса не должно ни подменить портрет, ни
+ * затереть его.
+ */
+export function portraitCachePath(cacheDir: string, url: string): string {
+  return join(cacheDir, `${createHash("sha256").update(url).digest("hex").slice(0, 32)}.portrait.b64`);
+}
+
+function readImageCache(path: string | undefined): string | undefined {
+  if (!path || !existsSync(path)) return undefined;
   try {
     const raw = readFileSync(path, "utf8").trim();
     return raw.length > 0 ? raw : undefined;
@@ -75,15 +82,45 @@ function readPreviewCache(cacheDir: string | undefined, url: string): string | u
   }
 }
 
-function writePreviewCache(cacheDir: string | undefined, url: string, b64: string): void {
-  if (!cacheDir || !b64) return;
+function writeImageCache(cacheDir: string | undefined, path: string | undefined, b64: string): void {
+  if (!cacheDir || !path || !b64) return;
   try {
     mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(previewCachePath(cacheDir, url), b64, "utf8");
+    writeFileSync(path, b64, "utf8");
   } catch {
     // Cache is best-effort — never fail the grid.
   }
 }
+
+/** Во что превращается скачанная картинка и где лежит результат. */
+type ImageEncoding = {
+  encode: (buf: Buffer) => Promise<Buffer>;
+  cachePath: (cacheDir: string, url: string) => string;
+};
+
+/** Плитка сетки изображений: картинка ужимается до 320×200. */
+const PREVIEW_ENCODING: ImageEncoding = {
+  encode: (buf) => sharp(buf).rotate().resize(320, 200, { fit: "inside" }).png().toBuffer(),
+  cachePath: previewCachePath,
+};
+
+/**
+ * Длинная сторона портрета обложки. Портрет на листе — квадрат 4 000 000 EMU
+ * (≈11 см), и рендерер режет его в 900 px; из 320×200 превью плитки лицо
+ * выходило мыльным (тест 24.09.2026). Больше оригинала картинка не растёт —
+ * увеличивать нечего, это дело вёрстки.
+ */
+export const PORTRAIT_MAX_PX = 1200;
+
+const PORTRAIT_ENCODING: ImageEncoding = {
+  encode: (buf) =>
+    sharp(buf)
+      .rotate()
+      .resize(PORTRAIT_MAX_PX, PORTRAIT_MAX_PX, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 90 })
+      .toBuffer(),
+  cachePath: portraitCachePath,
+};
 
 /**
  * Fetch one image preview. Disk cache first; without network permission →
@@ -103,8 +140,9 @@ function writePreviewCache(cacheDir: string | undefined, url: string, b64: strin
  * Потолок размера превью.
  *
  * Два мегабайта отсекали обычные снимки с современных сайтов: в отчёте 73 одна
- * плитка пустовала именно поэтому. Картинка всё равно сразу ужимается до
- * 320×200, поэтому потолок нужен только против явно аномальных файлов.
+ * плитка пустовала именно поэтому. Картинка всё равно сразу ужимается — до
+ * 320×200 для плитки, до `PORTRAIT_MAX_PX` для портрета обложки, — поэтому
+ * потолок нужен только против явно аномальных файлов.
  */
 const MAX_PREVIEW_BYTES = 8_000_000;
 
@@ -146,17 +184,41 @@ export type PreviewFailureReason =
   | "decode_failed"
   | "network";
 
+type ImageFetchOptions = Pick<
+  ImagePreviewFetchOptions,
+  "timeoutMs" | "fetchImpl" | "cacheDir" | "allowNetwork"
+> & {
+  /** Причина отказа — чтобы пустая плитка не была немой. */
+  onFailure?: (url: string, reason: PreviewFailureReason) => void;
+  /** Глубина перехода по `og:image`; больше одного шага не делаем. */
+  depth?: number;
+};
+
 export async function tryFetchImagePreview(
   url: string | undefined,
-  opts?: Pick<
-    ImagePreviewFetchOptions,
-    "timeoutMs" | "fetchImpl" | "cacheDir" | "allowNetwork"
-  > & {
-    /** Причина отказа — чтобы пустая плитка не была немой. */
-    onFailure?: (url: string, reason: PreviewFailureReason) => void;
-    /** Глубина перехода по `og:image`; больше одного шага не делаем. */
-    depth?: number;
-  }
+  opts?: ImageFetchOptions
+): Promise<string | undefined> {
+  return fetchEncodedImage(url, opts, PREVIEW_ENCODING);
+}
+
+/**
+ * Портрет обложки — та же картинка того же адреса, но крупно (шаг 0151).
+ *
+ * Своего поиска ради обложки нет: это повторная выборка уже выбранной картинки
+ * в полном размере, по тем же правилам — кэш, запрет сети, `og:image` на один
+ * шаг, потолок размера. Отказ — `undefined`, и обложка берёт превью плитки.
+ */
+export async function tryFetchPortraitImage(
+  url: string | undefined,
+  opts?: ImageFetchOptions
+): Promise<string | undefined> {
+  return fetchEncodedImage(url, opts, PORTRAIT_ENCODING);
+}
+
+async function fetchEncodedImage(
+  url: string | undefined,
+  opts: ImageFetchOptions | undefined,
+  encoding: ImageEncoding
 ): Promise<string | undefined> {
   const depth = opts?.depth ?? 0;
   if (!url || !/^https?:\/\//i.test(url)) return undefined;
@@ -164,7 +226,8 @@ export async function tryFetchImagePreview(
     opts?.onFailure?.(url, reason);
     return undefined;
   };
-  const cached = readPreviewCache(opts?.cacheDir, url);
+  const cachePath = opts?.cacheDir ? encoding.cachePath(opts.cacheDir, url) : undefined;
+  const cached = readImageCache(cachePath);
   if (cached) return cached;
   /*
    * Разрешение спрашивается один раз и здесь: запрет сети живёт в самой
@@ -201,12 +264,11 @@ export async function tryFetchImagePreview(
       if (!/html/i.test(type) || depth > 0) return fail("not_an_image");
       const declared = openGraphImage(buf.toString("utf8").slice(0, 512_000), url);
       if (!declared) return fail("not_an_image");
-      return await tryFetchImagePreview(declared, { ...opts, depth: 1 });
+      return await fetchEncodedImage(declared, { ...opts, depth: 1 }, encoding);
     }
     if (buf.length > MAX_PREVIEW_BYTES) return fail("too_large");
-    const png = await sharp(buf).rotate().resize(320, 200, { fit: "inside" }).png().toBuffer();
-    const b64 = png.toString("base64");
-    writePreviewCache(opts?.cacheDir, url, b64);
+    const b64 = (await encoding.encode(buf)).toString("base64");
+    writeImageCache(opts?.cacheDir, cachePath, b64);
     return b64;
   } catch (err) {
     return fail(err instanceof Error && /decode|unsupported/i.test(err.message) ? "decode_failed" : "network");

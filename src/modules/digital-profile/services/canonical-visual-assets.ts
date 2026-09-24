@@ -52,6 +52,7 @@ import {
   buildSurfacePanelSvg,
   fetchImagePreviewsWithBudget,
   svgToPngBase64,
+  tryFetchPortraitImage,
   type ImageGridItem,
   type ImagePreviewFetchOptions,
   type PreviewFailureReason,
@@ -1046,9 +1047,10 @@ export async function buildCanonicalVisualAssets(input: {
   /**
    * Портрет обложки — лицо проверяемого, а не первая картинка выдачи.
    *
-   * Своего поиска ради обложки не делается: берётся уже собранное превью. Но
-   * берётся оно только у строки, о которой решение говорит «о субъекте», и
-   * только у ненегативной. В отчёте 85 обложку занял профиль сотрудника РНИМУ
+   * Своего поиска ради обложки не делается: берётся картинка уже собранной
+   * строки (крупно — повторной выборкой того же адреса, шаг 0151). Но берётся
+   * она только у строки, о которой решение говорит «о субъекте», и только у
+   * ненегативной. В отчёте 85 обложку занял профиль сотрудника РНИМУ
    * — однофамилец-офтальмолог, стоявший в сетке первым, — при том что
    * фотографии самого судьи лежали в той же сетке. Чужое лицо на первой
    * странице обесценивает отчёт целиком, поэтому пустая обложка (графика
@@ -1168,12 +1170,32 @@ export async function buildCanonicalVisualAssets(input: {
         (d) => isConfirmedRow(d.row) && !d.item.highlight
       );
       if (portraitIndex >= 0) {
+        const chosen = drawnItems[portraitIndex]!;
+        /*
+         * Портрет — та же картинка, что на плитке, но крупно (шаг 0151).
+         *
+         * Превью плитки ужато до 320×200, и обложка, растягивая его до 11 см
+         * листа, печатала мыльное лицо (тест 24.09.2026). Своего поиска ради
+         * обложки по-прежнему нет: это повторная выборка того же адреса в
+         * полном размере, со своим кэшем и по тем же правилам сети. Не пришла —
+         * обложка берёт превью плитки, как раньше. Отказ крупной выборки в
+         * счёт отказов плиток не идёт: плитка своё превью получила.
+         */
+        const chosenUrl = urlOf(chosen.row);
+        const full = chosenUrl
+          ? await tryFetchPortraitImage(chosenUrl, {
+              timeoutMs: previewOpts.timeoutMs,
+              fetchImpl: previewOpts.fetchImpl,
+              cacheDir: previewOpts.cacheDir,
+              allowNetwork: previewOpts.allowNetwork,
+            })
+          : undefined;
         push({
           assetRef: "cover_portrait",
           kind: "cover_portrait",
           title: "Портрет субъекта",
           caption: "Фото из поисковой выдачи",
-          imageData: drawnItems[portraitIndex]!.item.previewBase64,
+          imageData: full ?? chosen.item.previewBase64,
           evidenceRefs: [visibleItems[portraitIndex]!.ref],
         });
         coverPortraitPushed = true;
