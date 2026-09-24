@@ -67,6 +67,8 @@ export const FindingThemesConfigJsonSchema = z.object({
   /** Необязательно: старый файл переопределения читается как «нет подмножества». */
   strongAdversePatterns: z.string().min(1).optional(),
   strongAdverseFlags: z.string().optional(),
+  /** Необязательно: без него — сильные слова, суженные умолчанием для карточек реестров. */
+  registryCardAdversePatterns: z.string().min(1).optional(),
   adverseFlags: z.string().default("iu"),
   unverifiedDomains: z.string().min(1),
   unverifiedDomainsFlags: z.string().default("iu"),
@@ -95,6 +97,8 @@ export type CompiledFindingThemesConfig = {
   adversePatterns: RegExp;
   /** Подмножество `adversePatterns`, работающее и на мягких площадках. */
   strongAdversePatterns: RegExp;
+  /** Подмножество `strongAdversePatterns` для карточек реестров компаний. */
+  registryCardAdversePatterns: RegExp;
   unverifiedDomains: RegExp;
   authoritativeDomains: RegExp;
   reputableDomains: RegExp;
@@ -349,14 +353,15 @@ export function unclosedAbbreviations(source: string): string[] {
 function strongSubsetOfAdverse(
   adverseSource: string,
   strongSource: string,
-  strongWasSupplied: boolean
+  strongWasSupplied: boolean,
+  names: { subset: string; of: string } = { subset: "strongAdversePatterns", of: "adversePatterns" }
 ): string {
   const general = new Set(topLevelAlternatives(adverseSource));
   const strong = topLevelAlternatives(strongSource);
   const outside = strong.filter((alt) => !general.has(alt));
   if (strongWasSupplied && outside.length > 0) {
     throw new FindingThemesConfigError(
-      `strongAdversePatterns не подмножество adversePatterns: вне общего словаря ${outside.join(", ")}`
+      `${names.subset} не подмножество ${names.of}: вне общего словаря ${outside.join(", ")}`
     );
   }
   const inside = strong.filter((alt) => general.has(alt));
@@ -364,7 +369,7 @@ function strongSubsetOfAdverse(
     // Пустое выражение совпадает с любой строкой — мягкие площадки покраснели
     // бы целиком. Такой файл чинит человек, а не умолчание.
     throw new FindingThemesConfigError(
-      "strongAdversePatterns пуст: adversePatterns не знает ни одного сильного слова"
+      `${names.subset} пуст: ${names.of} не знает ни одного сильного слова`
     );
   }
   return inside.join("|");
@@ -642,6 +647,19 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       "санкц|sanction|уголов|criminal|арест|arrest|мошенн|fraud|коррупц|corrupt|компромат|" +
       "нападени|избие|побо(?:и|ев|ям|ями|ях)(?!\\p{L})|насил(?!у(?!\\p{L}))",
     strongAdverseFlags: "iu",
+    /*
+     * Слова, которые краснят карточку реестра компаний, — сильные без санкций.
+     *
+     * Сниппет карточки — шаблон площадки, одинаковый у любого предпринимателя:
+     * «Проверка по 40+ санкционным спискам» у Контур.Фокуса, меню «Риски и
+     * санкции; Банкротство» у «Моего дела». Санкции там — рубрика, а не сведение,
+     * и живой прогон 23.09.2026 дал из таких карточек тему санкций человеку,
+     * которого OpenSanctions не нашёл. Происшествие («арестован», «уголовное
+     * дело») краснит карточку по-прежнему; санкции лица отвечает скрининг.
+     */
+    registryCardAdversePatterns:
+      "уголов|criminal|арест|arrest|мошенн|fraud|коррупц|corrupt|компромат|" +
+      "нападени|избие|побо(?:и|ев|ям|ями|ях)(?!\\p{L})|насил(?!у(?!\\p{L}))",
     unverifiedDomains: "rucriminal|sledstvie|compromat|kompromat",
     unverifiedDomainsFlags: "iu",
     authoritativeDomains: "\\.gov|nalog\\.ru|kad\\.arbitr|wikipedia\\.org",
@@ -783,6 +801,27 @@ export function compileFindingThemesConfig(
       ),
       withUnicode(cfg.strongAdverseFlags ?? cfg.adverseFlags),
       "strongAdversePatterns"
+    ),
+    // Карточка реестра — мягкая площадка, у которой и санкции рубрика: подмножество
+    // сильных слов, проверенное так же, как сильные слова проверяются общим словарём.
+    registryCardAdversePatterns: compileRegex(
+      withWordStart(
+        strongSubsetOfAdverse(
+          strongSubsetOfAdverse(
+            cfg.adversePatterns,
+            cfg.strongAdversePatterns ?? defaults.strongAdversePatterns!,
+            cfg.strongAdversePatterns !== undefined
+          ),
+          cfg.registryCardAdversePatterns ?? defaults.registryCardAdversePatterns!,
+          // Строго — только когда файл назвал и сильные слова: слова карточки
+          // меряются по ним, а унаследованные сильные слова суженны, и отвергать
+          // файл за чужое сужение было бы наказанием за умолчание.
+          cfg.registryCardAdversePatterns !== undefined && cfg.strongAdversePatterns !== undefined,
+          { subset: "registryCardAdversePatterns", of: "strongAdversePatterns" }
+        )
+      ),
+      withUnicode(cfg.strongAdverseFlags ?? cfg.adverseFlags),
+      "registryCardAdversePatterns"
     ),
     unverifiedDomains: compileRegex(
       cfg.unverifiedDomains,
@@ -933,4 +972,9 @@ export function getAdversePatterns(): RegExp {
 /** Слова негатива, работающие и на мягких площадках, — подмножество общего словаря. */
 export function getStrongAdversePatterns(): RegExp {
   return resolveFindingThemesConfig().strongAdversePatterns;
+}
+
+/** Слова негатива, работающие на карточке реестра компаний, — подмножество сильных. */
+export function getRegistryCardAdversePatterns(): RegExp {
+  return resolveFindingThemesConfig().registryCardAdversePatterns;
 }

@@ -97,7 +97,7 @@ describe("чисто", () => {
       findingsTotal: 0,
       partial: false,
       sourcesChecked: ["search", "surfaces", "open_sources", "sanctions"],
-      source: "light-verdict-v2",
+      source: "light-verdict-v3",
     });
   });
 

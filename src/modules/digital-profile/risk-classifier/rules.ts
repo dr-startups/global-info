@@ -9,8 +9,8 @@
 import {
   allNegativeKeywords,
   bankruptcyKeywords,
-  corporateRegistryDomains,
   criminalAllegationKeywords,
+  isCorporateRegistryDomain,
   legalDisputeDict,
   matchesAny,
   neutralSafeDomains,
@@ -85,7 +85,7 @@ const SEARCH_KEYWORD_RULES: KeywordRule[] = [
 
 function isRegistryContext(r: LoadedSearchResult): boolean {
   const domain = domainOf(r.url);
-  if (corporateRegistryDomains.some((d) => domain.includes(d))) return true;
+  if (isCorporateRegistryDomain(domain)) return true;
   const text = `${r.title ?? ""} ${r.snippet ?? ""}`.toLowerCase();
   return matchesAny(text, weakRegistryTerms).length >= 2;
 }

@@ -31,8 +31,11 @@ import { serpMaterialKey } from "@/modules/digital-profile/serp-observation/mate
  *
  * v2 — считаются только материалы о субъекте: запись v1 по тому же делу могла
  * назвать негативом чужие материалы, и различать их надо по записи.
+ * v3 — подпись служебного блока выдачи («Картинки по запросу …») и шаблон
+ * карточки реестра компаний негативом не считаются: запись v2 могла дать тему
+ * санкций человеку, которого скрининг не нашёл (живой прогон 23.09.2026).
  */
-export const LIGHT_VERDICT_SOURCE = "light-verdict-v2";
+export const LIGHT_VERDICT_SOURCE = "light-verdict-v3";
 
 export type SelfCheckVerdict = "NEGATIVE_FOUND" | "CLEAN" | "INSUFFICIENT_DATA";
 

@@ -3,8 +3,14 @@
  * Reuses Stage S1 theme-grouper; no LLM, no CAPTCHA/proxy.
  */
 
-import { getAdversePatterns, getStrongAdversePatterns } from "../config/finding-themes";
+import {
+  getAdversePatterns,
+  getRegistryCardAdversePatterns,
+  getStrongAdversePatterns,
+} from "../config/finding-themes";
 import { dictionaryHitIsNegated } from "../config/negated-dictionary-hit";
+import { isCorporateRegistryDomain } from "../risk-classifier/dictionaries";
+import { looksLikeSurfaceBlockHeading } from "./surface-block-heading";
 import { buildConsistentThemeGrouping } from "../serp-snapshot/snapshot-consistency";
 import type { LoadedResult, ResultView, SerpEngine, SerpLanguage, ThemeGrouping } from "../serp-snapshot/types";
 import type { PersistedSerpObservation } from "./types";
@@ -241,14 +247,24 @@ export type AdverseRowInput = {
  *    нежелательная с дословной цитатой ставит её. Нежелательный вывод без
  *    цитаты решения не приносит — то же правило, по которому он понижается в
  *    самом аудите решений, — и ответ отдаётся словарю;
- * 2. **список негативных площадок.** Санкционный реестр и агрегатор компромата
+ * 2. **подпись служебного блока выдачи** («Картинки по запросу "… суд"») — не
+ *    материал: она повторяет нашу же пробу, и слово пробы в заголовке ничего о
+ *    человеке не утверждает (`surface-block-heading.ts`);
+ * 3. **список негативных площадок.** Санкционный реестр и агрегатор компромата
  *    негативны сами по себе: слов словаря в их заголовках может не быть вовсе;
- * 3. **словарь `adversePatterns` из конфига** — по заголовку и сниппету; на
+ * 4. **словарь `adversePatterns` из конфига** — по заголовку и сниппету; на
  *    мягких площадках работает только его сильное подмножество
  *    (`strongAdversePatterns`). Совпадение, рядом с которым стоит отрицание или
  *    опровержение («уголовное дело прекращено», «санкции сняты»), снимается —
  *    тем же предикатом, каким его снимает тема материала
- *    (`config/negated-dictionary-hit.ts`).
+ *    (`config/negated-dictionary-hit.ts`). **Карточка реестра компаний**
+ *    (`isCorporateRegistryDomain`) судится как мягкая площадка — сильным
+ *    подмножеством, — и санкции на ней не слово, а рубрика: сниппет карточки —
+ *    шаблон площадки («Проверка по 40+ санкционным спискам» у Контур.Фокуса, меню
+ *    «Риски и санкции; Банкротство» у «Моего дела»), одинаковый у любого
+ *    предпринимателя. Живой прогон 23.09.2026 дал из таких карточек тему санкций
+ *    человеку, которого OpenSanctions не нашёл. Происшествие («арестован»,
+ *    «уголовное дело») краснит карточку по-прежнему.
  *
  * **Словарь читает текст, а домен отвечает списком, и это разные вопросы.**
  * Платят за смешение разделом сайта в адресе: у словаря есть левая граница, и
@@ -269,6 +285,7 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
     if (verdict.tone === "neutral" || verdict.tone === "supportive") return false;
     if (verdict.tone === "adverse" && verdict.quoted) return true;
   }
+  if (looksLikeSurfaceBlockHeading(row.title)) return false;
   const url = String(row.url ?? "");
   const domain = String(row.domain ?? "") || domainOf(url);
   if (ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domain)) return true;
@@ -278,10 +295,13 @@ export function resolveRowAdverse(row: AdverseRowInput, verdict?: ObservationVer
   // скандалы» в оглавлении энциклопедии — жанр.
   //
   // Спрашивается имя хоста, а не весь адрес; почему именно так — сказано один
-  // раз, у `SOFT_PROFILE_DOMAIN_RE`.
-  const dictionary = SOFT_PROFILE_DOMAIN_RE.test(domain)
-    ? getStrongAdversePatterns()
-    : getAdversePatterns();
+  // раз, у `SOFT_PROFILE_DOMAIN_RE`. Карточка реестра компаний — мягкая
+  // площадка, у которой и санкции рубрика шаблона (`registryCardAdversePatterns`).
+  const dictionary = isCorporateRegistryDomain(domain)
+    ? getRegistryCardAdversePatterns()
+    : SOFT_PROFILE_DOMAIN_RE.test(domain)
+      ? getStrongAdversePatterns()
+      : getAdversePatterns();
   return dictionary.test(text) && !dictionaryHitIsNegated(text, dictionary);
 }
 

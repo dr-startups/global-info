@@ -12,9 +12,9 @@ import {
   bankruptcyDict,
   biographyHints,
   corporateHints,
-  corporateRegistryDomains,
   criminalDict,
   investigationDict,
+  isCorporateRegistryDomain,
   legalDisputeDict,
   matchesAny,
   newsDomainHints,
@@ -140,10 +140,6 @@ function hits(text: string, dict: ClassifierThemeDict): { strong: string[]; weak
   return { strong: matchesAny(text, dict.strong), weak: matchesAny(text, dict.weak) };
 }
 
-function isRegistryDomain(domain: string): boolean {
-  return corporateRegistryDomains.some((d) => domain.includes(d));
-}
-
 function hasOnlyWeakRegistrySignals(text: string): boolean {
   const weak = matchesAny(text, weakRegistryTerms);
   const legal = hits(text, legalDisputeDict);
@@ -181,8 +177,8 @@ export function classifySearchResultRecord(input: ClassifyResultInput): ResultCl
   const identityConfidence = assessIdentityMatch(rawText, subject);
 
   // --- Corporate registry / business directory rows (before namesake guard) ---
-  if (isRegistryDomain(domain) || hasOnlyWeakRegistrySignals(text)) {
-    if (isRegistryDomain(domain) || matchesAny(text, weakRegistryTerms).length >= 2) {
+  if (isCorporateRegistryDomain(domain) || hasOnlyWeakRegistrySignals(text)) {
+    if (isCorporateRegistryDomain(domain) || matchesAny(text, weakRegistryTerms).length >= 2) {
       return neutralClass(
         "CORPORATE_REGISTRY",
         "LOW",

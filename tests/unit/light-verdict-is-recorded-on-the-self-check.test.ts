@@ -62,7 +62,7 @@ describe("запись вердикта", () => {
       sourcesJson: ["search", "surfaces", "open_sources", "sanctions"],
       verdictAt: TEST_NOW,
       runFinishedAt: TEST_NOW,
-      verdictSource: "light-verdict-v2",
+      verdictSource: "light-verdict-v3",
       blockedReason: null,
     });
   });

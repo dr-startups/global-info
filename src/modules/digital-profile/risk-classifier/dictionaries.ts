@@ -265,7 +265,28 @@ export const corporateRegistryDomains = [
   "zachestnyibiznes.ru",
   "companies.rbc.ru",
   "tbank.ru/business",
+  // Карточка ИП на «Моём деле» — меню «Риски и санкции; Банкротство» на каждой
+  // странице: живой прогон 23.09.2026 дал из двух таких карточек тему санкций.
+  "moedelo.org",
 ];
+
+/**
+ * Площадка реестра компаний — один ответ на проект: классификатор риска и
+ * предикат негатива строки спрашивают его, а не сверяют список сами.
+ *
+ * Имя списка совпадает с хостом только по границам меток: `norusprofile.ru` —
+ * не `rusprofile.ru`. Подстрока без границы уже делала чужие хосты мягкими у
+ * списка мягких площадок (`soft-platform-is-the-publisher`), и второй список не
+ * должен повторять ту же вольность.
+ */
+export function isCorporateRegistryDomain(domain: string | null | undefined): boolean {
+  const host = String(domain ?? "").toLowerCase();
+  if (!host) return false;
+  return corporateRegistryDomains.some((entry) => {
+    const name = entry.toLowerCase();
+    return host === name || host.endsWith(`.${name}`) || host.startsWith(`${name}.`) || host.includes(`.${name}.`);
+  });
+}
 
 /** Weak registry/business terms that must not alone imply legal/adverse risk. */
 export const weakRegistryTerms = [
