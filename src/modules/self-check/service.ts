@@ -36,6 +36,7 @@ import {
   subjectInputHash,
   type PersonaCheckPrisma,
   type PersonaCheckRow,
+  type PersonaDecision,
   type PersonaStoreDeps,
 } from "@/modules/digital-profile/services/subject-persona-check";
 import { CreateDigitalProfileCaseSchema } from "@/modules/digital-profile/validation/case-schemas";
@@ -437,7 +438,12 @@ export async function buildSelfCheckPersona(
 
   // Панель стоит денег: собранная однажды отдаётся, а не собирается заново.
   const latest = await loadLatestPersonaCheck(caseId, store);
-  if (latest) return publicPersonaPanel(latest);
+  if (latest) {
+    const built = publicPersonaPanel(latest);
+    // Пустая панель, собранная до автозапуска и оставшаяся без решения.
+    await startWhenNothingToClarify(check, latest, built, ctx, deps);
+    return built;
+  }
 
   if (!(await claimPersonaBuild(d, check.id))) {
     throw new ConflictError("persona panel is being built", { reason: "PERSONA_BUILD_IN_PROGRESS" });
@@ -489,13 +495,100 @@ export async function buildSelfCheckPersona(
     },
     auditClient(d.db)
   );
+  await startWhenNothingToClarify(check, row, panel, ctx, deps);
   return panel;
 }
 
 /**
- * Решение посетителя пишет сервис ворот персоны — тот же, что решение
- * оператора, — и открывает те же ворота оркестратора. «Переголосовать» нельзя
- * так же, как оператору: другой ответ по той же панели — 409.
+ * Уточнять нечего — проверка запускается сама.
+ *
+ * Панель без карточек показывала экран «Уточнять нечего» с одной кнопкой: выбирать
+ * на нём нечего, и нажатие было лишним шагом между формой и проверкой (решение
+ * владельца 24.09.2026) — в том числе когда карточек нет из-за молчания источника.
+ * Решает сервер, который знает, что карточек нет: закрытая вкладка проверку не
+ * останавливает, и второго ответа на «запускать ли» у браузера нет.
+ *
+ * «Выбирать было не из чего» — данные: то же решение и ноль карточек панели (по
+ * ним же пишет отчёт); аудит называет, что решение записал сервис.
+ *
+ * Прогон не стартовал — запись остаётся `PERSONA_DECIDED`, и мастер показывает
+ * запуск с кнопкой: панель посетитель получает в любом случае.
+ */
+async function startWhenNothingToClarify(
+  check: SelfCheck,
+  row: PersonaCheckRow,
+  panel: PublicPersonaPanel,
+  ctx: { ip: string },
+  deps: SelfCheckDeps
+): Promise<void> {
+  if (panel.cards.length > 0 || row.decision) return;
+  const d = resolveDeps(deps);
+  await recordVisitorDecision(check, row, "APPROVED_WITHOUT_PERSONA", null, ctx, d, "NO_CANDIDATES");
+  const decided = await d.db.selfCheck.findUnique({ where: { id: check.id } });
+  if (!decided) return;
+  try {
+    await startSelfCheckRun(decided, ctx, deps);
+  } catch (err) {
+    const reason = err instanceof ConflictError ? (err.details as { reason?: string } | undefined)?.reason : null;
+    // Второй запрос успел раньше — прогон уже идёт, это не отказ.
+    if (reason === "RUN_ALREADY_STARTED") return;
+    console.warn(
+      JSON.stringify({
+        event: "self_check_auto_run_failed",
+        caseId: row.caseId,
+        reason: reason ?? (err instanceof Error ? err.message : String(err)),
+      })
+    );
+  }
+}
+
+/**
+ * Решение по панели — посетителя или записанное сервисом за него. Пишет сервис
+ * ворот персоны — тот же, что решение оператора, — и открывает те же ворота
+ * оркестратора.
+ */
+async function recordVisitorDecision(
+  check: SelfCheck,
+  latest: PersonaCheckRow,
+  decision: PersonaDecision,
+  selectedCardId: string | null,
+  ctx: { ip: string },
+  d: Resolved,
+  automatic: "NO_CANDIDATES" | null = null
+): Promise<PersonaCheckRow> {
+  const row = await recordPersonaDecision({
+    caseId: latest.caseId,
+    checkId: latest.id,
+    decision,
+    selectedCardId,
+    decidedBy: selfCheckActor(check.id),
+    deps: personaStore(d),
+  });
+  await d.db.selfCheck.updateMany({
+    where: { id: check.id, status: { in: ["CREATED", "PERSONA_PENDING"] } },
+    data: { status: "PERSONA_DECIDED" },
+  });
+  await recordAudit(
+    {
+      caseId: latest.caseId,
+      action: "SELF_CHECK_PERSONA_DECIDED",
+      actorId: selfCheckActor(check.id),
+      ipAddress: ctx.ip,
+      metadata: {
+        personaCheckId: row.id,
+        decision: row.decision,
+        selectedCardId,
+        ...(automatic ? { automatic } : {}),
+      },
+    },
+    auditClient(d.db)
+  );
+  return row;
+}
+
+/**
+ * Решение посетителя. «Переголосовать» нельзя так же, как оператору: другой
+ * ответ по той же панели — 409.
  */
 export async function decideSelfCheckPersona(
   check: SelfCheck,
@@ -506,34 +599,11 @@ export async function decideSelfCheckPersona(
   const d = resolveDeps(deps);
   const caseId = openCaseId(check);
   const input = parseOrThrow(SelfCheckPersonaDecisionSchema, body);
-  const store = personaStore(d);
-  const latest = await loadLatestPersonaCheck(caseId, store);
+  const latest = await loadLatestPersonaCheck(caseId, personaStore(d));
   if (!latest) {
     throw new ConflictError("persona panel is not built yet", { reason: "PERSONA_PANEL_NOT_BUILT" });
   }
-  const selectedCardId = input.selectedCardId ?? null;
-  const row = await recordPersonaDecision({
-    caseId,
-    checkId: latest.id,
-    decision: input.decision,
-    selectedCardId,
-    decidedBy: selfCheckActor(check.id),
-    deps: store,
-  });
-  await d.db.selfCheck.updateMany({
-    where: { id: check.id, status: { in: ["CREATED", "PERSONA_PENDING"] } },
-    data: { status: "PERSONA_DECIDED" },
-  });
-  await recordAudit(
-    {
-      caseId,
-      action: "SELF_CHECK_PERSONA_DECIDED",
-      actorId: selfCheckActor(check.id),
-      ipAddress: ctx.ip,
-      metadata: { personaCheckId: row.id, decision: row.decision, selectedCardId },
-    },
-    auditClient(d.db)
-  );
+  const row = await recordVisitorDecision(check, latest, input.decision, input.selectedCardId ?? null, ctx, d);
   return { decision: String(row.decision), decidedAt: row.decidedAt };
 }
 

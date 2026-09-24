@@ -114,16 +114,6 @@ export function personaTrailRows(
   });
 }
 
-/**
- * Сколько источников ответило — корешок панели поиска. Не подключённый источник
- * в знаменатель не идёт: спрашивать его было нечем, и «2 из 3» превратило бы
- * настройку стенда в неудачу проверки.
- */
-export function personaAnswered(rows: readonly PersonaTrailRow[]): { answered: number; total: number } {
-  const asked = rows.filter((row) => row.tone !== "off");
-  return { answered: asked.filter((row) => row.tone !== "warn").length, total: asked.length };
-}
-
 const sentence = (text: string) => (/[.!?…]$/u.test(text) ? text : `${text}.`);
 
 /**

@@ -2064,36 +2064,25 @@ html:has(.site-drawer[open]) {
    (на телефоне — дочитал и нажал), а на широком экране сетка возвращает их в левую колонку, под
    подводку. Соседняя колонка занимает обе строки, поэтому кнопки стоят под текстом и при высоком
    блоке справа. Строк промежутка нет: без кнопок вторая строка пуста, и промежуток сетки добавил
-   бы невидимые 24 px. Правило одно на служебный экран и на «Уточнять нечего»: это один приём. */
+   бы невидимые 24 px. */
 @media (min-width: 1024px) {
-  .site-screen--service,
-  .site-screen--tail {
+  .site-screen--service {
     grid-template-rows: auto 1fr;
     row-gap: 0;
   }
 
-  .site-screen--service > .site-screen__head,
-  .site-screen--tail > .site-screen__head {
+  .site-screen--service > .site-screen__head {
     grid-area: 1 / 1;
   }
 
-  .site-screen--service > .site-screen__aside,
-  .site-screen--tail > .site-board {
+  .site-screen--service > .site-screen__aside {
     grid-area: 1 / 2 / 3 / 3;
   }
 
-  .site-screen--service > .site-screen__actions,
-  .site-screen--tail > .site-screen__actions {
+  .site-screen--service > .site-screen__actions {
     grid-area: 2 / 1;
     margin-top: var(--site-s-5);
-  }
-
-  .site-screen--service > .site-screen__actions {
     align-self: start;
-  }
-
-  .site-screen--tail > .site-screen__actions {
-    align-self: end;
   }
 }
 
@@ -2298,30 +2287,6 @@ html:has(.site-drawer[open]) {
 .site-board__seek .site-seek__word {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.site-board__foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 10px;
-  padding: var(--site-s-3) var(--site-s-5);
-  border-top: 1px dashed var(--site-field-line-hover);
-  border-radius: 0 0 var(--site-r-4) var(--site-r-4);
-  background: var(--site-paper-2);
-  font-size: var(--site-text-sm);
-  color: var(--site-ink-2);
-}
-
-/* Две стороны, как у шапки доски: иначе «ответили 2 из 3» переносится на вторую строку */
-.site-board__foot--sides {
-  justify-content: space-between;
-}
-
-.site-board__foot b {
-  color: var(--site-ink);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Строки источников ----------

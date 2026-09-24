@@ -19,7 +19,7 @@ import { RUN_STAGE_LABELS } from "@/modules/self-check/run-stages";
 import { SERVICE_SCREENS } from "@/modules/site/content/check";
 import { LeadScreen } from "./LeadScreen";
 import { ServiceScreen, WizardBand, WizardFrame } from "./parts";
-import { PersonaEmptyScreen, PersonaLoadingScreen, PersonaScreen, StartScreen } from "./PersonaScreens";
+import { PersonaLoadingScreen, PersonaScreen, StartScreen } from "./PersonaScreens";
 import { ResultScreen } from "./ResultScreen";
 import { ThanksScreen } from "./ThanksScreen";
 import { WaitingScreen } from "./WaitingScreen";
@@ -81,7 +81,9 @@ export function CheckWizard({ publicId }: { publicId: string }) {
       if (!alive) return;
       if (res.ok) {
         setPanel(res.data);
-        if (statusCode === "CREATED") void loadStatus();
+        // Статус перечитывается всегда: без карточек сервер уже записал решение и
+        // запустил проверку, и экран — ожидание, а не выбор.
+        void loadStatus();
         return;
       }
       if (res.status === 409 && res.reason === "PERSONA_BUILD_IN_PROGRESS") {
@@ -203,7 +205,7 @@ export function CheckWizard({ publicId }: { publicId: string }) {
   const [, settleReveal] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
-    if ((screen === "persona" || screen === "persona-empty") && !seen.current.has("persona_shown")) {
+    if (screen === "persona" && !seen.current.has("persona_shown")) {
       seen.current.add("persona_shown");
       track("persona_shown", { cards: panel?.cards.length ?? 0 });
     }
@@ -255,18 +257,16 @@ export function CheckWizard({ publicId }: { publicId: string }) {
             headingRef={heading}
           />
         );
-      case "persona-empty":
+      case "start":
         return (
-          <PersonaEmptyScreen
-            panel={panel!}
-            fullName={status?.subject?.fullName ?? ""}
-            busy={busy}
-            onNone={() => void decide(null)}
+          <StartScreen
+            panel={panel}
+            nothingToClarify={status?.persona?.cardsCount === 0}
+            busy={busy !== null}
+            onStart={() => void start()}
             headingRef={heading}
           />
         );
-      case "start":
-        return <StartScreen panel={panel} busy={busy !== null} onStart={() => void start()} headingRef={heading} />;
       case "waiting":
         return <WaitingScreen run={status?.run ?? NO_RUN} publicId={publicId} headingRef={heading} />;
       case "result-negative":
@@ -326,7 +326,7 @@ export function CheckWizard({ publicId }: { publicId: string }) {
     }
   }
 
-  const editable = screen === "persona" || screen === "persona-empty" || screen === "persona-loading";
+  const editable = screen === "persona" || screen === "persona-loading";
 
   return (
     <WizardFrame band={<WizardBand subject={status?.subject ?? null} step={step} editable={editable} />}>

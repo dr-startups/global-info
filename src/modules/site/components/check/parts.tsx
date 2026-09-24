@@ -138,7 +138,6 @@ export function Board({
   count,
   head,
   children,
-  foot,
 }: {
   meter?: number;
   title?: string;
@@ -146,7 +145,6 @@ export function Board({
   /** Шапка доски до её тела — например, строка поиска. */
   head?: ReactNode;
   children?: ReactNode;
-  foot?: ReactNode;
 }) {
   return (
     <div className="site-board site-ticks">
@@ -163,7 +161,6 @@ export function Board({
         </div>
       ) : null}
       {children}
-      {foot}
     </div>
   );
 }

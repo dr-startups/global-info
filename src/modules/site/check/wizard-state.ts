@@ -16,7 +16,6 @@ export type WizardScreen =
   | "loading"
   | "persona-loading"
   | "persona"
-  | "persona-empty"
   | "start"
   | "waiting"
   | "result-negative"
@@ -87,8 +86,9 @@ export function wizardScreen(input: WizardInput): WizardScreen {
     case "CREATED":
       return "persona-loading";
     case "PERSONA_PENDING":
-      if (!input.panel) return "persona-loading";
-      return input.panel.cards.length > 0 ? "persona" : "persona-empty";
+      // Пустая панель — ещё поиск: проверку без карточек запускает сервер, и свежий
+      // статус скажет «идёт проверка». Экрана «Уточнять нечего» нет — выбирать не из чего.
+      return input.panel && input.panel.cards.length > 0 ? "persona" : "persona-loading";
     case "PERSONA_DECIDED":
       return "start";
     case "RUNNING":
@@ -112,7 +112,6 @@ export function wizardScreen(input: WizardInput): WizardScreen {
 const STEP: Readonly<Partial<Record<WizardScreen, number>>> = {
   "persona-loading": 2,
   persona: 2,
-  "persona-empty": 2,
   start: 2,
   waiting: 3,
   failed: 3,

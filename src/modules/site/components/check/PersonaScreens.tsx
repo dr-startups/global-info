@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Уточнение: поиск упоминаний, «Кто из них вы?», «Уточнять нечего», запуск после
- * записанного решения.
+ * Уточнение: поиск упоминаний, «Кто из них вы?», запуск после записанного решения.
+ * Экрана «Уточнять нечего» нет: без карточек проверку запускает сервер
+ * (`buildSelfCheckPersona`), и мастер переходит от поиска прямо к ожиданию.
  *
  * Кандидаты — картотека: карточка с язычком источника, бумагой и сиреневой
  * кромкой действия. Нажатие «Это я» само запускает проверку — отдельной кнопки
@@ -15,7 +16,6 @@
 import { useState, type Ref } from "react";
 import {
   cardSourceLabel,
-  personaAnswered,
   personaCardMatchNote,
   personaCardText,
   personaLedger,
@@ -185,62 +185,6 @@ export function PersonaScreen({
   );
 }
 
-export function PersonaEmptyScreen({
-  panel,
-  fullName,
-  busy,
-  onNone,
-  headingRef,
-}: {
-  panel: PersonaPanelJson;
-  fullName: string;
-  busy: string | null;
-  onNone: () => void;
-  headingRef: Ref<HTMLHeadingElement>;
-}) {
-  const rows = personaTrailRows(panel.sources, panel.cards);
-  const answered = personaAnswered(rows);
-  return (
-    <section
-      className="site-screen site-screen--split site-screen--aside-wide site-screen--even site-screen--tail is-active site-enter"
-      aria-labelledby="persona-empty-title"
-    >
-      <div className="site-screen__head">
-        <h1 className="site-screen__title" id="persona-empty-title" tabIndex={-1} ref={headingRef}>
-          {PERSONA_TEXT.emptyTitle}
-        </h1>
-        <p className="site-screen__lead">{PERSONA_TEXT.emptyLead}</p>
-      </div>
-
-      <Board
-        head={
-          <div className="site-board__seek">
-            <SeekBar query={fullName} />
-          </div>
-        }
-        foot={
-          <p className="site-board__foot site-board__foot--sides">
-            <span>{PERSONA_TEXT.ledgerTitle}</span>
-            <span>
-              ответили <b>{answered.answered}</b> из {answered.total}
-            </span>
-          </p>
-        }
-      >
-        <SourceRows rows={rows} label={PERSONA_TEXT.ledgerTitle} />
-      </Board>
-
-      {/* В разметке кнопка после панели: телефон читает «что искали → что нашли → действие»,
-          а на широком экране сетка ставит её на нижнюю кромку панели */}
-      <div className="site-actions site-screen__actions">
-        <Button variant="accent" large arrow busy={busy !== null} disabled={busy !== null} onClick={onNone}>
-          {PERSONA_TEXT.start}
-        </Button>
-      </div>
-    </section>
-  );
-}
-
 export function PersonaLoadingScreen({
   fullName,
   headingRef,
@@ -281,11 +225,14 @@ export function PersonaLoadingScreen({
 
 export function StartScreen({
   panel,
+  nothingToClarify,
   busy,
   onStart,
   headingRef,
 }: {
   panel: PersonaPanelJson | null;
+  /** Карточек не было — решение записал сервер, и выбора посетитель не делал. */
+  nothingToClarify: boolean;
   busy: boolean;
   onStart: () => void;
   headingRef: Ref<HTMLHeadingElement>;
@@ -297,9 +244,11 @@ export function StartScreen({
     >
       <div className="site-screen__head">
         <h1 className="site-screen__title" id="start-title" tabIndex={-1} ref={headingRef}>
-          {PERSONA_TEXT.decidedTitle}
+          {nothingToClarify ? PERSONA_TEXT.notStartedTitle : PERSONA_TEXT.decidedTitle}
         </h1>
-        <p className="site-screen__lead">{PERSONA_TEXT.decidedLead}</p>
+        <p className="site-screen__lead">
+          {nothingToClarify ? PERSONA_TEXT.notStartedLead : PERSONA_TEXT.decidedLead}
+        </p>
         <div className="site-actions">
           <Button variant="accent" large arrow busy={busy} disabled={busy} onClick={onStart}>
             {PERSONA_TEXT.start}

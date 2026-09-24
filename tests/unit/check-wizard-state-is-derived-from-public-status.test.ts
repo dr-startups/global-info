@@ -96,10 +96,10 @@ describe("экран по статусу проверки", () => {
     expect(wizardScreen(input({ status: status({ status: "PERSONA_PENDING" }) }))).toBe("persona-loading");
   });
 
-  it("панель с карточками — «Кто из них вы?», без карточек — «Уточнять нечего»", () => {
+  it("панель с карточками — «Кто из них вы?», без карточек — ещё поиск: проверку запускает сервер", () => {
     const pending = status({ status: "PERSONA_PENDING" });
     expect(wizardScreen(input({ status: pending, panel: { cards: [{}, {}] } }))).toBe("persona");
-    expect(wizardScreen(input({ status: pending, panel: { cards: [] } }))).toBe("persona-empty");
+    expect(wizardScreen(input({ status: pending, panel: { cards: [] } }))).toBe("persona-loading");
   });
 
   it("решение записано, прогон не запущен — запуск", () => {
@@ -147,7 +147,6 @@ describe("шаг степпера", () => {
   it.each<[WizardScreen, number]>([
     ["persona-loading", 2],
     ["persona", 2],
-    ["persona-empty", 2],
     ["start", 2],
     ["waiting", 3],
     ["failed", 3],
