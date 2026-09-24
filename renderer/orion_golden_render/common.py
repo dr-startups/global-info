@@ -137,21 +137,30 @@ from .geometry import CONTENT_BOTTOM, CONTENT_W, FOOTER_Y, MARGIN_X, SLIDE_H, SL
 # system v2». Смена палитры не трогает ни сбор, ни клиентский текст: это
 # именно те токены, которыми красят фон, карточки и акценты.
 #
-# Основной зелёный #24D875, чернила #101510, фиолетовый #AE7AFF,
-# мятный лист #F6F8F4.
+# Основной зелёный #24D875, чернила #101510.
+#
+# Шаг 0151 — «ч/б + зелёный cleeq»: лист и служебные тона нейтральные серые
+# вместо мятных, фирменный акцент один — зелёный; красный остаётся только за
+# негативом. Фиолетовый и голубой из употребления выведены (токены остались для
+# совместимости импортов): три акцента на листе читались пестротой, а у
+# эталона-ориентира вся строгость держится на ч/б и одном цвете.
 COVER_BG = RGBColor(0x10, 0x15, 0x10)
-PAGE_BG = RGBColor(0xF6, 0xF8, 0xF4)
+#: Почти белый, а не белый: белая сцена отличается от листа по тени, как и
+#: прежде на мятном, — растровая проверка кромки сцены держится на том же.
+PAGE_BG = RGBColor(0xF7, 0xF7, 0xF7)
 NAVY = RGBColor(0x10, 0x15, 0x10)
 TITLE_COLOR = RGBColor(0xF7, 0xF9, 0xF5)
 BODY_COLOR = RGBColor(0x10, 0x15, 0x10)
-MUTED_COLOR = RGBColor(0x5B, 0x66, 0x5E)
+MUTED_COLOR = RGBColor(0x6B, 0x6B, 0x6B)
 ACCENT = RGBColor(0x24, 0xD8, 0x75)
 VIOLET = RGBColor(0xAE, 0x7A, 0xFF)
 CYAN = RGBColor(0x5B, 0xC8, 0xFF)
 CARD_BG = RGBColor(0xFF, 0xFF, 0xFF)
-CARD_BORDER = RGBColor(0xD8, 0xE3, 0xDA)
+#: Нейтральная рамка. Пустое деление шкалы степени красится ею же, и растровая
+#: проверка ждёт его цвет в пределах ±26 от #D8E3DA — #DADADA в них укладывается.
+CARD_BORDER = RGBColor(0xDA, 0xDA, 0xDA)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-ACCENT_SOFT = RGBColor(0xE0, 0xFB, 0xEC)
+ACCENT_SOFT = RGBColor(0xF0, 0xF0, 0xF0)
 VIOLET_SOFT = RGBColor(0xF0, 0xEE, 0xFF)
 WARN_BG = RGBColor(0xFC, 0xF4, 0xF1)
 RISK_BG = RGBColor(0xFF, 0xF1, 0xF0)
@@ -163,9 +172,9 @@ METRIC_ACCENT = RGBColor(0x24, 0xD8, 0x75)
 #: Акцент заголовка. Имя осталось прежним, чтобы не переписывать два десятка
 #: мест ради переименования краски: теперь это зелёный cleeq, а не золото.
 GOLD = ACCENT
-DARK_RULE = RGBColor(0x24, 0x2C, 0x24)
-COVER_SUBTITLE = RGBColor(0xC8, 0xD4, 0xCA)
-STAGE_SHADOW = RGBColor(0xE4, 0xEB, 0xE4)
+DARK_RULE = RGBColor(0x2A, 0x2A, 0x2A)
+COVER_SUBTITLE = RGBColor(0xCC, 0xCC, 0xCC)
+STAGE_SHADOW = RGBColor(0xE4, 0xE4, 0xE4)
 
 #: Маркер пункта — квадрат cleeq вместо точки. Глиф есть в Inter (U+25AA), и
 #: ширина у него та же, что у «•», поэтому замер строки не меняется.
@@ -1258,6 +1267,41 @@ class _Ctx:
         r.font.size = Pt(FS_CAPTION)
         r.font.color.rgb = MUTED_COLOR
 
+    #: Метка раздела (шаг 0151): рамка над заголовком. Самый высокий заголовок
+    #: листа начинается с y = 240 000 (резюме, матрица), и рамка кончается раньше
+    #: — пересечения с ним нет ни на одном листе; кегль — подписи, шкала не растёт.
+    SECTION_TAG_TOP = 90_000
+    SECTION_TAG_H = 130_000
+    SECTION_TAG_W = 4_000_000
+
+    def section_tag(self, label: str) -> None:
+        """Метка раздела справа сверху: «РОССИЯ · ЯНДЕКС» — где читатель находится."""
+        text = _safe(label).upper()
+        if not text or self.dark:
+            return
+        box = self.slide.shapes.add_textbox(
+            Emu(MARGIN_X + CONTENT_W - self.SECTION_TAG_W),
+            Emu(self.SECTION_TAG_TOP),
+            Emu(self.SECTION_TAG_W),
+            Emu(self.SECTION_TAG_H),
+        )
+        try:
+            box.name = f"orion_section_tag_p{self.page}"
+        except Exception:  # noqa: BLE001
+            pass
+        tf = box.text_frame
+        tf.word_wrap = False
+        tf.margin_top = Emu(0)
+        tf.margin_bottom = Emu(0)
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.RIGHT
+        r = p.add_run()
+        r.text = text
+        r.font.name = FONT
+        r.font.bold = True
+        r.font.size = Pt(FS_CAPTION)
+        r.font.color.rgb = MUTED_COLOR
+
     def dark_bg(self) -> None:
         self.dark = True
         fill = self.slide.background.fill
@@ -1277,10 +1321,17 @@ class _Ctx:
         text: str,
         y: int = 280000,
         color: RGBColor = TITLE_COLOR,
-        size: int = FS_TITLE,
+        size: int = FS_SECTION,
         *,
         accent: bool = True,
+        width: int | None = None,
     ) -> int:
+        # Шаг 0151: заголовок — капсом и одним кеглем на всех светлых листах
+        # (прежде 26 или 22 pt — по тому, какой ветке достался лист). Верхний
+        # регистр ставится до замера: капс шире, и полоса заголовка обязана
+        # считаться по тому, что будет нарисовано. Сравнение полей с текстом
+        # листа идёт без регистра (`normalizeForCompare`), капс его не задевает.
+        text = _safe(text).upper()
         # Зелёная засечка cleeq у первой строки заголовка.
         #
         # Отступ заголовка от неё увеличен со 165 000 до 200 000 EMU, а сама
@@ -1290,7 +1341,9 @@ class _Ctx:
         # сдвигать содержимое вниз ради воздуха нельзя — это выдавило бы блок
         # за нижнюю границу листа.
         text_x = MARGIN_X
-        text_w = CONTENT_W
+        # Ширина — вся колонка, если вызывающий не держит справа что-то своё
+        # (разделитель со снимком выдачи, шаг 0151).
+        text_w = CONTENT_W if width is None else width
         if accent:
             bar_h = int(size * EMU_PER_PT * 1.15)
             bar = self.slide.shapes.add_shape(
@@ -1304,7 +1357,7 @@ class _Ctx:
             except Exception:  # noqa: BLE001
                 pass
             text_x = MARGIN_X + 200_000
-            text_w = CONTENT_W - 200_000
+            text_w = text_w - 200_000
         # Полоса заголовка — по факту (шаг 0114, решение 4(б)): однострочный
         # заголовок отдаёт содержимому 250 000 EMU, которые прежде пустовали под
         # ним; двухстрочный оставляет прежние 950 000. Строки меряются тем же
@@ -2039,7 +2092,9 @@ class _Ctx:
                     marker.font.name = FONT
                     marker.font.bold = True
                     marker.font.size = Pt(size_pt)
-                    marker.font.color.rgb = ACCENT if bi % 2 == 0 else VIOLET
+                    # Один акцент на листе (шаг 0151): зелёный, без чередования
+                    # с фиолетовым.
+                    marker.font.color.rgb = ACCENT
                 else:
                     _set_paragraph_indent(p, _line_indent(layout), 0)
                 for run in layout.runs:
@@ -2214,7 +2269,7 @@ def _rounded_portrait_png(
 
 
 def _embed_cover_portrait(ctx: _Ctx, asset: dict[str, Any] | None) -> bool:
-    """Портрет субъекта на обложке: квадрат в зелёной и фиолетовой рамке."""
+    """Портрет субъекта на обложке: квадрат в зелёной и серой рамке (шаг 0151)."""
     raw = _resolve_image_bytes(asset)
     if not raw:
         return False
@@ -2224,7 +2279,8 @@ def _embed_cover_portrait(ctx: _Ctx, asset: dict[str, Any] | None) -> bool:
     side = 4_000_000
     left = 7_050_000
     top = 1_450_000
-    for pad, color in ((220_000, VIOLET), (110_000, ACCENT)):
+    # Внешняя рамка — серая вместо фиолетовой: на обложке один акцент, зелёный.
+    for pad, color in ((220_000, RGBColor(0x4A, 0x4A, 0x4A)), (110_000, ACCENT)):
         d = side + pad * 2
         frame = ctx.slide.shapes.add_shape(5, Emu(left - pad), Emu(top - pad), Emu(d), Emu(d))
         frame.fill.background()

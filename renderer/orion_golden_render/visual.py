@@ -420,14 +420,15 @@ def _tone_fill(tone: str) -> RGBColor:
 
 
 def _tone_value_color(tone: str) -> RGBColor:
-    # Нейтральная метрика окрашена брендовым зелёным: цифра — то, ради чего
-    # плитку смотрят, и она обязана быть заметнее подписи под ней.
+    # Шаг 0151: цифра крупная, и нейтральная — чернилами. Зелёный #24D875 на
+    # белом даёт контраст 1,8:1: крупная цифра, ради которой плитку смотрят,
+    # читалась бы хуже подписи под ней. Фирменный зелёный остался в полосе
+    # плитки (`layout_cleeq._tile_stripe_color`); смысловые тоны — у цифры.
     return {
         "risk": TONE_RISK,
         "warn": TONE_WARN,
         "good": TONE_GOOD,
-        "neutral": METRIC_ACCENT,
-    }.get(tone, METRIC_ACCENT)
+    }.get(tone, NAVY)
 
 
 def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, width: int, cols: int = 2) -> int:

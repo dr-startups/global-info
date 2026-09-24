@@ -90,8 +90,13 @@ def p5_title_box_ends_inside_its_band() -> None:
     """
     prs, ctx = fresh()
     next_y = ctx.title("Резюме")
+    # Заголовок рисуется капсом (шаг 0151) — рамка ищется без учёта регистра.
     box = next(
-        (sh for sh in prs.slides[0].shapes if getattr(sh, "has_text_frame", False) and "Резюме" in sh.text_frame.text),
+        (
+            sh
+            for sh in prs.slides[0].shapes
+            if getattr(sh, "has_text_frame", False) and "резюме" in sh.text_frame.text.lower()
+        ),
         None,
     )
     bottom = int(box.top) + int(box.height) if box is not None else -1

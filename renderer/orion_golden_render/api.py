@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,55 @@ from .slides import _render_slide
 
 #: Версия формы вердикта мерного прогона: меняется форма — меняется строка.
 BULLET_MEASURE_VERSION = "orion-bullet-measure-v1"
+
+#: Листы без метки раздела (шаг 0151): обложка, содержание и тёмные
+#: разделители называют раздел сами.
+_NO_SECTION_TAG = frozenset({"orion_golden_cover", "orion_golden_toc", "orion_golden_region_divider"})
+
+
+def _toc_sections(deck: dict[str, Any]) -> list[tuple[int, int | None, str]]:
+    """Разделы оглавления деки: первая страница, последняя (если названа), имя.
+
+    Метка раздела берёт имя отсюда же, откуда его печатает содержание, — один
+    ответ на «как называется раздел». «Цифровой профиль — Россия — стр. 9–31»
+    даёт «Россия»: первая часть — общая для регионов и метку не различает.
+    """
+    sections: list[tuple[int, int | None, str]] = []
+    for entry in deck.get("toc") or []:
+        if not isinstance(entry, dict):
+            continue
+        title = str(entry.get("title") or "")
+        try:
+            start = int(entry.get("pageNumber") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not title or start <= 0:
+            continue
+        head, _sep, pages = title.partition(" — стр.")
+        match = re.search(r"(\d+)\s*[–-]\s*(\d+)", pages)
+        end = int(match.group(2)) if match else None
+        name = head.split(" — ")[-1].strip()
+        if name:
+            sections.append((start, end, name))
+    return sections
+
+
+def _section_tag(slide: dict[str, Any], page: int, sections: list[tuple[int, int | None, str]]) -> str:
+    """Текст метки раздела листа; пусто — метки нет.
+
+    Только раздел: поисковую систему лист выдачи называет в заголовке сам
+    («Россия — Яндекс: …»), а в нагрузку рендерера она отдельным полем не едет.
+    """
+    if str(slide.get("template") or "") in _NO_SECTION_TAG:
+        return ""
+    label = ""
+    for index, (start, end, name) in enumerate(sections):
+        last = end
+        if last is None and index + 1 < len(sections):
+            last = sections[index + 1][0] - 1
+        if page >= start and (last is None or page <= last):
+            label = name
+    return label
 
 
 def _draw_deck(
@@ -94,6 +144,7 @@ def _draw_deck(
     client_text_contract = resolve_contract(payload.get("clientTextContract"))
 
     warnings: list[str] = [f"client-text-contract:{client_text_contract.get('version')}"]
+    sections = _toc_sections(deck)
     for idx, slide in enumerate(slides, start=1):
         ctx = _Ctx(
             prs,
@@ -107,6 +158,11 @@ def _draw_deck(
         # нижнего поля и в счёт низа содержимого идти не должен (шаг 0127).
         ctx.fit_stage()
         ctx.footer()
+        try:
+            page = int(slide.get("pageNumber") or idx)
+        except (TypeError, ValueError):
+            page = idx
+        ctx.section_tag(_section_tag(slide, page, sections))
         warnings.extend(ctx.warnings)
     return prs, warnings, str(subject), slides, assets
 

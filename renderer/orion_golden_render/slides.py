@@ -11,9 +11,11 @@ from pptx.enum.text import MSO_ANCHOR
 from pptx.util import Emu, Pt
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageFilter
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore
+    ImageEnhance = None  # type: ignore
+    ImageFilter = None  # type: ignore
 
 from .common import (
     ACCENT,
@@ -29,7 +31,7 @@ from .common import (
     CONTENT_W,
     COVER_BG,
     COVER_SUBTITLE,
-    CYAN,
+    EMU_PER_PT,
     FONT,
     FS_BODY,
     FS_CAPTION,
@@ -40,7 +42,6 @@ from .common import (
     NAVY,
     SLIDE_H,
     TONE_RISK,
-    VIOLET,
     WHITE,
     _Ctx,
     _clip_words,
@@ -50,6 +51,7 @@ from .common import (
     _resolve_image_bytes,
     _safe,
     _safe_preserve_breaks,
+    _wrapped_line_count,
     disable_shape_shadow,
     record_text_layout,
 )
@@ -103,6 +105,12 @@ METRICS_NARRATIVE_MAX_H_NO_TILES = 1_700_000
 VERBATIM_TEMPLATE_IDS = frozenset({"ai-overview"})
 
 
+#: Серые полос бренда на тёмном листе (шаг 0151): вместо фиолетового и голубого
+#: — на листе один акцент, зелёный.
+ART_GREY = RGBColor(0x4A, 0x4A, 0x4A)
+ART_GREY_DARK = RGBColor(0x2E, 0x2E, 0x2E)
+
+
 def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
     """Абстрактные полосы бренда справа — обложка без портрета субъекта.
 
@@ -116,10 +124,10 @@ def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
     right = 11_350_000
     bands = [
         (7_100_000, 520_000, right - 7_100_000, 2_300_000, ACCENT),
-        (7_900_000, 1_450_000, right - 7_900_000, 2_400_000, VIOLET),
-        (8_700_000, 2_500_000, right - 8_700_000, 1_700_000, CYAN),
+        (7_900_000, 1_450_000, right - 7_900_000, 2_400_000, ART_GREY),
+        (8_700_000, 2_500_000, right - 8_700_000, 1_700_000, ART_GREY_DARK),
         (7_450_000, 3_800_000, right - 7_450_000, 1_150_000, ACCENT),
-        (8_900_000, 4_600_000, right - 8_900_000, 1_450_000, VIOLET),
+        (8_900_000, 4_600_000, right - 8_900_000, 1_450_000, ART_GREY),
     ]
     for x, y, w, h, color in bands:
         shape = ctx.slide.shapes.add_shape(5, Emu(x), Emu(y), Emu(w), Emu(h))
@@ -146,23 +154,98 @@ TOC_ROW_GAP = 120_000
 TOC_BOTTOM_RESERVE = 225_000
 
 
-def _draw_divider_art(ctx: _Ctx) -> None:
-    """Полосы бренда в правом верхнем поле тёмного разделителя (шаг 0150).
+#: Панель снимка выдачи на разделителе (шаг 0151): правая часть листа в
+#: пределах боковых полей (правый край — как у полос обложки) и выше низа сцены.
+#: Растровая проверка не терпит чернил ближе 288 000 EMU к краю листа и ниже
+#: `INK_BOTTOM`, а угол листа, по которому она берёт фон, остаётся тёмным.
+DIVIDER_PHOTO_X = 6_900_000
+DIVIDER_PHOTO_RIGHT = 11_350_000
+DIVIDER_PHOTO_TOP = 380_000
+DIVIDER_PHOTO_BOTTOM = 6_380_000
+#: Снимок на разделителе — фактура раздела, а не материал для чтения: размыт до
+#: нечитаемого (иначе имена и адреса выдачи спорят с титулом) и затемнён так, что
+#: белый фон выдачи уходит в серый ~#434343 и белый титул рядом читается.
+DIVIDER_PHOTO_BRIGHTNESS = 0.26
+DIVIDER_PHOTO_BLUR_PX = 2.4
 
-    Разделитель — тёмный лист с титулом и лидом слева; правая половина и верх
-    пустовали. Приём тот же, что у обложки без портрета, но полосы ниже ростом
-    и стоят над титулом: заголовок hero начинается с y = 2 250 000, обычный —
-    с 2 800 000, а полосы кончаются на 1 860 000 и текста не касаются.
 
-    Правый край — 11 350 000, как у обложки: растровая проверка считает
-    дефектом чернила ближе 288 000 EMU к краю листа. `decor` в имени —
-    инспектор геометрии считает полосу оформлением, а не блоком.
+def _divider_photo_png(slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> bytes | None:
+    """Снимок выдачи региона разделителя — ч/б, затемнённый, под размер панели.
+
+    Регион — первая часть ключа раздела (`RU_PROFILE` → `ru`), снимок — первый
+    ассет вида `serp_snapshot` с тем же префиксом: так их называет приложение
+    (`ru_provider_serp_…`, `uae_provider_serp_…`). Снимка с байтами нет — `None`,
+    и разделитель рисует полосы бренда: пустое честнее выдуманного.
     """
+    if Image is None or ImageEnhance is None or ImageFilter is None:
+        return None
+    region = str(slide.get("sectionKey") or "").split("_", 1)[0].lower()
+    if not region:
+        return None
+    prefix = f"{region}_"
+    ratio = (DIVIDER_PHOTO_RIGHT - DIVIDER_PHOTO_X) / (DIVIDER_PHOTO_BOTTOM - DIVIDER_PHOTO_TOP)
+    for ref, asset in assets.items():
+        if not str(ref).startswith(prefix) or str(asset.get("kind") or "") != "serp_snapshot":
+            continue
+        raw = _resolve_image_bytes(asset)
+        if not raw:
+            continue
+        try:
+            im = Image.open(io.BytesIO(raw)).convert("L")
+        except Exception:  # noqa: BLE001
+            continue
+        iw, ih = im.size
+        if iw <= 0 or ih <= 0:
+            continue
+        # Кадр — сверху: там строка поиска и первые результаты, узнаваемая часть.
+        if iw / ih > ratio:
+            cw = int(ih * ratio)
+            left = (iw - cw) // 2
+            im = im.crop((left, 0, left + cw, ih))
+        else:
+            im = im.crop((0, 0, iw, int(iw / ratio)))
+        width_px = 900
+        im = im.resize((width_px, max(1, int(width_px / ratio))))
+        im = im.filter(ImageFilter.GaussianBlur(radius=DIVIDER_PHOTO_BLUR_PX))
+        im = ImageEnhance.Brightness(im).enhance(DIVIDER_PHOTO_BRIGHTNESS)
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "PNG")
+        return buf.getvalue()
+    return None
+
+
+def _draw_divider_art(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> bool:
+    """Правая часть тёмного разделителя; `True`, если стоит снимок выдачи.
+
+    Шаг 0151: разделитель-обложка — затемнённый снимок выдачи своего региона
+    панелью справа, как фото раздела у эталона-ориентира, но из наших же данных.
+    Имя `orion_bg_*` — инспектор геометрии считает панель фоном, и титул поверх
+    неё пересечением не считается.
+
+    Снимка нет — полосы бренда (шаг 0150) в правом верхнем поле: над титулом
+    (hero — с y = 2 250 000, обычный — с 2 800 000), кончаются на 1 860 000.
+    Правый край — 11 350 000, как у обложки. `decor` в имени — инспектор
+    геометрии считает полосу оформлением, а не блоком.
+    """
+    photo = _divider_photo_png(slide, assets)
+    if photo:
+        pic = ctx.slide.shapes.add_picture(
+            io.BytesIO(photo),
+            Emu(DIVIDER_PHOTO_X),
+            Emu(DIVIDER_PHOTO_TOP),
+            width=Emu(DIVIDER_PHOTO_RIGHT - DIVIDER_PHOTO_X),
+            height=Emu(DIVIDER_PHOTO_BOTTOM - DIVIDER_PHOTO_TOP),
+        )
+        try:
+            pic.name = f"orion_bg_divider_p{ctx.page}"
+        except Exception:  # noqa: BLE001
+            pass
+        return True
     right = 11_350_000
     bands = [
         (7_300_000, 520_000, ACCENT),
-        (8_400_000, 880_000, VIOLET),
-        (9_300_000, 1_240_000, CYAN),
+        (8_400_000, 880_000, ART_GREY),
+        (9_300_000, 1_240_000, ART_GREY_DARK),
         (8_000_000, 1_600_000, ACCENT),
     ]
     for index, (x, y, color) in enumerate(bands, start=1):
@@ -179,6 +262,7 @@ def _draw_divider_art(ctx: _Ctx) -> None:
             shape.adjustments[0] = 0.5
         except Exception:  # noqa: BLE001
             pass
+    return False
 
 
 #: Сколько места держится под рекомендацией и футнотом, когда над ними стоит
@@ -369,10 +453,16 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ntf = name_box.text_frame
         ntf.word_wrap = True
         nr = ntf.paragraphs[0].add_run()
-        nr.text = _safe(hero)
+        # Имя капсом (шаг 0151). Рамка держит две строки 36 pt; капс шире, и
+        # длинное ФИО в три строки легло бы на подзаголовок — тогда ступень ниже.
+        name_text = _safe(hero).upper()
+        name_size = FS_COVER
+        if _wrapped_line_count(name_text, 5_900_000, name_size, bold=True) > 2:
+            name_size = FS_TITLE
+        nr.text = name_text
         nr.font.name = FONT
         nr.font.bold = True
-        nr.font.size = Pt(FS_COVER)
+        nr.font.size = Pt(name_size)
         nr.font.color.rgb = WHITE
         ctx.body(
             narrative or "Конфиденциально. Подготовлено для внутреннего использования клиента.",
@@ -388,7 +478,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             5, Emu(MARGIN_X), Emu(5_760_000), Emu(3_400_000), Emu(320_000)
         )
         chip.fill.solid()
-        chip.fill.fore_color.rgb = RGBColor(0x1A, 0x24, 0x1A)
+        chip.fill.fore_color.rgb = RGBColor(0x22, 0x22, 0x22)
         chip.line.fill.background()
         try:
             chip.adjustments[0] = 0.5
@@ -412,7 +502,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         # сцены под карточками нет — белое на белом не читается как отдельный
         # блок (то же правило, что у `orion_golden_executive_card`).
         ctx.light_bg()
-        y = ctx.title("Содержание отчёта", 320_000, NAVY, FS_TITLE)
+        y = ctx.title("Содержание отчёта", 320_000, NAVY, FS_SECTION)
         entries = [
             _clip_words(b, 110)
             for b in (bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"])
@@ -516,9 +606,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.dark_bg()
         # Графика — в обеих ветках: и hero, и обычный разделитель пустовали
         # справа и сверху одинаково.
-        _draw_divider_art(ctx)
+        has_photo = _draw_divider_art(ctx, slide, assets)
         if variant == "hero":
-            # Разделитель cleeq: зелёный столб, фиолетовая засечка, крупный титул.
+            # Разделитель cleeq: зелёный столб, серая засечка, крупный титул
+            # капсом (шаг 0151).
             bar = ctx.slide.shapes.add_shape(
                 5, Emu(MARGIN_X), Emu(2_200_000), Emu(140_000), Emu(2_200_000)
             )
@@ -533,30 +624,52 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 5, Emu(MARGIN_X + 220_000), Emu(2_200_000), Emu(90_000), Emu(700_000)
             )
             accent.fill.solid()
-            accent.fill.fore_color.rgb = VIOLET
+            accent.fill.fore_color.rgb = ART_GREY
             accent.line.fill.background()
             text_x = MARGIN_X + 420_000
-            text_w = CONTENT_W - 420_000
-            box = ctx.slide.shapes.add_textbox(Emu(text_x), Emu(2_250_000), Emu(text_w), Emu(1_100_000))
+            # Снимок стоит справа — текст держится левее панели: лид поверх
+            # фактуры читался бы хуже титула. Высота лида растёт в той же мере,
+            # в какой сузилась колонка, — ёмкость остаётся прежней.
+            text_w = DIVIDER_PHOTO_X - 250_000 - text_x if has_photo else CONTENT_W - 420_000
+            hero_title = _safe(title).upper()
+            size = FS_COVER
+            if _wrapped_line_count(hero_title, text_w, size, bold=True) > 2:
+                size = FS_TITLE
+            lines = _wrapped_line_count(hero_title, text_w, size, bold=True)
+            title_h = int(lines * size * EMU_PER_PT * 1.2)
+            box = ctx.slide.shapes.add_textbox(
+                Emu(text_x), Emu(2_250_000), Emu(text_w), Emu(max(1_100_000, title_h))
+            )
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
             r = p.add_run()
-            r.text = _safe(title)
+            r.text = hero_title
             r.font.name = FONT
             r.font.bold = True
-            r.font.size = Pt(FS_COVER)
+            r.font.size = Pt(size)
             r.font.color.rgb = WHITE
             if narrative:
+                lead_y = max(3_500_000, 2_250_000 + title_h + 150_000)
                 ctx.body(
                     narrative,
-                    3_500_000,
-                    max_h=1_500_000,
+                    lead_y,
+                    max_h=min(2_700_000, DIVIDER_PHOTO_BOTTOM - lead_y) if has_photo else 1_500_000,
                     color=COVER_SUBTITLE,
                     font_size=FS_SUBTITLE,
                     x=text_x,
                     w=text_w,
                 )
+            return
+        if has_photo:
+            # Титул держится левее панели снимка: поверх фактуры он читался бы
+            # хуже. Капс 36 pt в две строки не встал — ступень ниже.
+            width = DIVIDER_PHOTO_X - 250_000 - MARGIN_X
+            caps = _safe(title).upper()
+            size = FS_COVER
+            if _wrapped_line_count(caps, width - 200_000, size, bold=True) > 2:
+                size = FS_TITLE
+            ctx.title(title, 2800000, WHITE, size, width=width)
             return
         ctx.title(title, 2800000, WHITE, FS_COVER)
         return

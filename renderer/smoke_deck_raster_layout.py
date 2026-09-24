@@ -44,6 +44,7 @@ from smoke_search_table_layout import (  # noqa: E402
 )
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from orion_golden_render.common import FONT, TYPE_SCALE_PT  # noqa: E402
+from orion_golden_render.layout_cleeq import METRIC_VALUE_SHAPE  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
     INK_BOTTOM,
     SLIDE_H,
@@ -954,17 +955,31 @@ def main() -> int:
                             runs_by_page.setdefault(idx, []).append(
                                 (pt, shape.name or "?")
                             )
-        first_level_shapes = count_first_level(runs_by_page)
+        # Ключевые цифры плиток — своя роль (ADR-0151, изменение ADR-0008 п.3):
+        # крупная цифра не спорит с заголовком за первый уровень, её место —
+        # плитка. Первый уровень считается по остальному тексту листа; шкала и
+        # «не больше четырёх ступеней» держат цифры наравне со всем текстом.
+        text_runs_by_page = {
+            page: [run for run in runs if not str(run[1]).startswith(METRIC_VALUE_SHAPE)]
+            for page, runs in runs_by_page.items()
+        }
+        first_level_shapes = count_first_level(text_runs_by_page)
+        value_sizes = {
+            page: {run[0] for run in runs if str(run[1]).startswith(METRIC_VALUE_SHAPE)}
+            for page, runs in runs_by_page.items()
+        }
+        pages_with_values = {page: sizes for page, sizes in value_sizes.items() if sizes}
         off = sorted(p for p in used if p not in TYPE_SCALE_PT)
         check(
             "в деке нет кеглей вне шкалы",
             not off,
             f"вне шкалы: {off}" if off else f"использовано ступеней: {sorted(used)}",
         )
-        # Иерархия: на странице ровно один элемент первого уровня — лид или
-        # ключевая цифра, остальное заведомо тише (ADR-0008, п.3). Свойство
-        # соблюдается на всех 45 страницах эталона; проверка держит его,
-        # чтобы следующая правка шаблона не вернула «всё одинаково важно».
+        # Иерархия: на странице ровно один элемент первого уровня, остальное
+        # заведомо тише (ADR-0008, п.3). Ключевые цифры плиток в счёт не идут —
+        # у них своя роль (ADR-0151); первым уровнем листа остаётся заголовок.
+        # Проверка держит свойство, чтобы следующая правка шаблона не вернула
+        # «всё одинаково важно».
         offenders = [pg for pg, shapes in first_level_shapes.items() if len(shapes) != 1]
         check(
             "на каждой странице ровно один элемент первого уровня",
@@ -978,6 +993,17 @@ def main() -> int:
             "две фигуры первого уровня считаются нарушением",
             len(synthetic[1]) == 2,
             f"найдено фигур: {sorted(synthetic[1])}",
+        )
+        # Крупные цифры — решение владельца (шаг 0151): на листах с плитками
+        # цифра эталонной деки стоит крупнее заголовка. Если она вернётся к
+        # мелкой, проверка скажет об этом, а не пропустит молча.
+        small = sorted(page for page, sizes in pages_with_values.items() if max(sizes) < 26.0)
+        check(
+            "ключевые цифры плиток крупнее заголовка",
+            bool(pages_with_values) and not small,
+            f"листов с плитками: {len(pages_with_values)}, мелкие цифры на: {small}"
+            if pages_with_values
+            else "листов с плитками нет — проверять нечего",
         )
 
         widest = max(per_page.items(), key=lambda kv: len(kv[1])) if per_page else (0, set())

@@ -37,13 +37,15 @@ from .common import (
     FONT,
     FS_BODY,
     FS_CAPTION,
+    FS_COVER,
     FS_LEAD,
+    FS_TITLE,
     MARGIN_X,
     MUTED_COLOR,
     STAGE_SHADOW,
+    TONE_GOOD,
     TONE_RISK,
     TONE_WARN,
-    VIOLET,
     WHITE,
     _Ctx,
     _clip_words,
@@ -255,13 +257,14 @@ def render_metric_rows(
     высокой плитке, не ниже `METRIC_ROW_MIN_H`. Рисуются **все** поданные
     метрики: резюме прежде резало `metrics[:4]` и молча теряло пятую.
 
-    Число — `FS_LEAD` (20 pt), подпись — `FS_CAPTION`: на странице уже стоят
-    заголовок 22 pt, текст 11 и подпись 9, а шкала кеглей разрешает не больше
-    четырёх ступеней на страницу и ровно один элемент первого уровня (держит
-    `smoke_deck_raster_layout.py`). Прежний герой 26 pt был этим первым
-    уровнем; теперь им, как на остальных страницах, служит заголовок. Ряд в
-    600 000 EMU иначе недостижим: число 26 pt — это строка 31,5 pt, и вместе с
-    подписью и полями плитка не уложилась бы в 47,2 pt.
+    Число — крупно (шаг 0151, решение владельца): один кегль на страницу,
+    крупнейшая ступень из `METRIC_VALUE_STEPS`, при которой каждое число встаёт
+    в одну строку своей плитки (`_page_value_size`). Один кегль — потому что
+    шкала разрешает не больше четырёх ступеней на странице: заголовок 22, текст
+    11, подпись 9 и числа. Крупная цифра — отдельная роль (рамки
+    `orion_metric_value_*`), и правило «один элемент первого уровня» считается
+    без неё (ADR-0151, изменение ADR-0008 п.3). Высота ряда по-прежнему по
+    содержимому, `METRIC_ROW_MIN_H` — пол.
     """
     items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))]
     if not items:
@@ -284,11 +287,69 @@ def render_metric_rows(
             dropped_bullets=len(items) - len(shown),
         )
     rows = [shown] if len(shown) <= METRICS_PER_ROW else [shown[: (len(shown) + 1) // 2], shown[(len(shown) + 1) // 2 :]]
+    value_size = _page_value_size(
+        [(m, w) for index, row in enumerate(rows) for m, w in zip(row, _metric_row_widths(len(row), width, hero=index == 0))]
+    )
     for index, row in enumerate(rows):
         if index:
             y += METRIC_GAP
-        y = _render_metric_row(ctx, row, x, y, width, hero=index == 0, tone_value_color=tone_value_color)
+        y = _render_metric_row(
+            ctx, row, x, y, width, hero=index == 0, tone_value_color=tone_value_color, value_size=value_size
+        )
     return y
+
+
+#: Ступени кегля ключевой цифры плитки, от крупной к мелкой (шаг 0151). Все —
+#: из шкалы: 36 — титул обложки, 26 — крупный заголовок, 20 — прежняя цифра.
+METRIC_VALUE_STEPS: tuple[float, ...] = (float(FS_COVER), float(FS_TITLE), float(FS_LEAD))
+#: Значение длиннее — фраза («Данные не собраны»), а не цифра: оно идёт кеглем
+#: текста и в выбор ступени не входит.
+METRIC_VALUE_MAX_CHARS = 10
+#: Имя рамки ключевой цифры — её роль. По нему растровая проверка отличает цифру
+#: плитки от текста листа: правило «один элемент первого уровня» считается без
+#: цифр (ADR-0151). Один ответ для рендерера и проверки.
+METRIC_VALUE_SHAPE = "orion_metric_value"
+
+
+def _metric_text_width(w: int) -> int:
+    """Ширина текста плитки — рамка без горизонтальных отступов."""
+    return max(120_000, w - 2 * TILE_PAD_X - 2 * TILE_TEXT_INSET)
+
+
+def _page_value_size(tiles: list[tuple[dict[str, Any], int]]) -> float:
+    """Крупнейшая ступень, при которой каждое число страницы — в одну строку.
+
+    Мера — тот же перенос, которым текст рисуется: число, разорванное между
+    строками, читалось бы хуже прежнего мелкого.
+    """
+    values = [
+        _clip_words(_safe(m.get("value")), 36)
+        for m, _w in tiles
+    ]
+    for step in METRIC_VALUE_STEPS:
+        if all(
+            _wrapped_line_count(value, _metric_text_width(w), step, True) <= 1
+            for value, (_m, w) in zip(values, tiles)
+            if len(value) <= METRIC_VALUE_MAX_CHARS
+        ):
+            return step
+    return METRIC_VALUE_STEPS[-1]
+
+
+#: Полоса тона плитки (шаг 0150): цвет смысла, фирменный зелёный — у акцентной
+#: метрики. Нейтральная — светло-серая: у неё нет тона, но плитки ряда должны
+#: читаться одним рядом. Число красится отдельно (`_tone_value_color`) — у
+#: крупной цифры свои требования к контрасту.
+TILE_STRIPE_NEUTRAL = RGBColor(0xBD, 0xBD, 0xBD)
+
+
+def _tile_stripe_color(tone: str) -> RGBColor:
+    return {
+        "risk": TONE_RISK,
+        "warn": TONE_WARN,
+        "good": TONE_GOOD,
+        "accent": ACCENT,
+    }.get(tone, TILE_STRIPE_NEUTRAL)
 
 
 def _metric_row_widths(count: int, width: int, *, hero: bool) -> list[int]:
@@ -314,35 +375,38 @@ def _render_metric_row(
     *,
     hero: bool,
     tone_value_color,
+    value_size: float,
 ) -> int:
     widths = _metric_row_widths(len(row), width, hero=hero)
-    row_h = max([METRIC_ROW_MIN_H, *(_metric_tile_height(m, w) for m, w in zip(row, widths))])
+    row_h = max([METRIC_ROW_MIN_H, *(_metric_tile_height(m, w, value_size) for m, w in zip(row, widths))])
     left = x
     for metric, tile_w in zip(row, widths):
-        _metric_tile(ctx, metric, left, y, tile_w, row_h, tone_value_color=tone_value_color)
+        _metric_tile(
+            ctx, metric, left, y, tile_w, row_h, tone_value_color=tone_value_color, value_size=value_size
+        )
         left += tile_w + METRIC_GAP
     return y + row_h
 
 
-def _metric_texts(metric: dict[str, Any]) -> tuple[str, str, float]:
+def _metric_texts(metric: dict[str, Any], value_size: float) -> tuple[str, str, float]:
     """Значение, подпись и кегль значения — одни на замер и на вывод."""
     value = _clip_words(_safe(metric.get("value")), 36)
     label = _clip_words(_safe(metric.get("label")), 40)
     # Длинное значение — это не цифра, а фраза вроде «Данные не собраны»:
     # крупным кеглем она не помещается и распадается на три строки.
-    size = FS_LEAD if len(value) <= 10 else FS_BODY
+    size = value_size if len(value) <= METRIC_VALUE_MAX_CHARS else FS_BODY
     return value, label, float(size)
 
 
-def _metric_tile_height(metric: dict[str, Any], w: int) -> int:
+def _metric_tile_height(metric: dict[str, Any], w: int, value_size: float) -> int:
     """Высота плитки по содержимому — тем же переносом, которым текст рисуется.
 
     Ширина текста — рамка без горизонтальных отступов: на узкой плитке
     отступы съедают заметную долю, и мера по полной ширине рамки обещала бы
     одну строку там, где вёрстка даёт две.
     """
-    value, label, size = _metric_texts(metric)
-    text_w = max(120_000, w - 2 * TILE_PAD_X - 2 * TILE_TEXT_INSET)
+    value, label, size = _metric_texts(metric, value_size)
+    text_w = _metric_text_width(w)
     value_h = _wrapped_line_count(value, text_w, size, True) * font_line_step_emu(size, 1.0, True)
     label_h = _wrapped_line_count(label, text_w, FS_CAPTION) * font_line_step_emu(FS_CAPTION, 1.0)
     return TILE_PAD_TOP + value_h + int(1 * 12_700) + label_h + TILE_PAD_BOTTOM
@@ -357,13 +421,13 @@ def _metric_tile(
     h: int,
     *,
     tone_value_color,
+    value_size: float,
 ) -> None:
     tone = str(metric.get("tone") or "neutral")
-    value, label, size = _metric_texts(metric)
+    value, label, size = _metric_texts(metric, value_size)
     ctx.card(y, h=h, x=x, w=w, fill=WHITE, border=None, radius=0.1)
-    # Плитки ряда различаются смыслом (всего, о субъекте, негатив), а на белом
-    # их различал только цвет цифры. Полоса того же цвета, что число, — один
-    # ответ на вопрос «какого тона плитка».
+    # Плитки ряда различаются смыслом (всего, о субъекте, негатив). Полоса —
+    # цвет смысла, одна карта тонов на все плитки (`_tile_stripe_color`).
     stripe_w = w - 2 * TILE_PAD_X
     if stripe_w > 0:
         stripe = ctx.slide.shapes.add_shape(
@@ -378,12 +442,18 @@ def _metric_tile(
         except Exception:  # noqa: BLE001
             pass
         stripe.fill.solid()
-        stripe.fill.fore_color.rgb = tone_value_color(tone)
+        stripe.fill.fore_color.rgb = _tile_stripe_color(tone)
         stripe.line.fill.background()
         disable_shape_shadow(stripe)
     box = ctx.slide.shapes.add_textbox(
         Emu(x + TILE_PAD_X), Emu(y + TILE_PAD_TOP), Emu(w - 2 * TILE_PAD_X), Emu(h - TILE_PAD_TOP - TILE_PAD_BOTTOM)
     )
+    # Имя — роль ключевой цифры: растровая проверка считает «один элемент
+    # первого уровня» без таких рамок (шаг 0151).
+    try:
+        box.name = f"{METRIC_VALUE_SHAPE}_p{ctx.page}"
+    except Exception:  # noqa: BLE001
+        pass
     tf = box.text_frame
     tf.word_wrap = True
     # Вертикальные отступы рамки — ноль: высота плитки посчитана от полей
@@ -528,5 +598,10 @@ def render_action_block(
 
 
 def alternating_color(index: int) -> RGBColor:
-    """Чередование зелёного и фиолетового у маркеров — ритм страницы cleeq."""
-    return ACCENT if index % 2 == 0 else VIOLET
+    """Цвет номера или маркера в ряду.
+
+    Шаг 0151: чередования больше нет — на листе один акцент, зелёный. Функция
+    оставлена одним ответом для всех рядов (номера содержания, маркеры): если
+    ритм когда-нибудь вернётся, он вернётся здесь, а не в каждом вызове.
+    """
+    return ACCENT

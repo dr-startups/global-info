@@ -5,12 +5,16 @@
 
 - до шести метрик — один ряд; второй ряд ради одной-трёх плиток стоил листу
   860 000 EMU, и на странице региона из-за него уезжал блок тем;
-- ряд не выше, чем нужно содержимому: подписи в одну строку — 600 000 EMU;
+- ряд не выше, чем нужно содержимому: подписи в одну строку — плитка ровно по
+  крупной цифре и строке подписи (шаг 0151; до него — пол 600 000 при цифре
+  20 pt);
 - подпись в две строки лежит **внутри** плитки — прежде она ложилась на нижний
   край по арифметике (62,2 pt содержимого в плитке 61,4 pt);
 - резюме печатает все свои метрики: `metrics[:4]` молча терял пятую;
 - шкала кеглей страницы: не больше четырёх ступеней и один элемент первого
-  уровня (ADR-0008) — число плитки 20 pt, первым уровнем становится заголовок;
+  уровня — заголовок; ключевые цифры плиток — своя роль и в счёт первого
+  уровня не идут (ADR-0151, изменение ADR-0008 п.3), на листе они одним
+  кеглем из ступеней `METRIC_VALUE_STEPS`;
 - лишние метрики называются потерей, а не срезаются молча.
 
 Геометрия «внутри плитки» проверяется чужим прибором — вёрсткой LibreOffice:
@@ -38,14 +42,23 @@ from smoke_counters import print_tap_counters  # noqa: E402
 from orion_golden_render import render_orion_golden  # noqa: E402
 from orion_golden_render.common import (  # noqa: E402
     CONTENT_W,
+    FS_BODY,
+    FS_CAPTION,
     MARGIN_X,
     SLIDE_H,
     SLIDE_W,
     _Ctx,
+    font_line_step_emu,
     get_bullet_measure,
     get_layout_telemetry,
     reset_bullet_measure,
     reset_layout_telemetry,
+)
+from orion_golden_render.layout_cleeq import (  # noqa: E402
+    METRIC_VALUE_SHAPE,
+    METRIC_VALUE_STEPS,
+    TILE_PAD_BOTTOM,
+    TILE_PAD_TOP,
 )
 from orion_golden_render.slides import _render_slide  # noqa: E402
 
@@ -56,6 +69,16 @@ EMU_PER_PT = 12_700
 ROW_GAP = 80_000
 #: Обвязка плиток до шага: два ряда по 780 000 и отбивка между ними.
 OLD_TWO_ROW_CHROME = 780_000 + ROW_GAP + 780_000
+#: Строка подписи плитки.
+CAPTION_LINE = font_line_step_emu(FS_CAPTION, 1.0)
+#: Плитка с подписью в одну строку при крупнейшей цифре (шаг 0151): поле сверху,
+#: строка цифры, отбивка в 1 pt, строка подписи, поле снизу — та же арифметика,
+#: что у `_metric_tile_height`. Что подпись при этом лежит внутри плитки, судит
+#: не она, а вёрстка LibreOffice (П3/П7).
+ONE_LINE_TILE = TILE_PAD_TOP + font_line_step_emu(METRIC_VALUE_STEPS[0], 1.0, True) + 12_700 + CAPTION_LINE + TILE_PAD_BOTTOM
+#: Верх абзаца под одним рядом плиток с крупной цифрой: ряд с 1 230 000, его
+#: высота и отбивка до абзаца. Два ряда давали 3 010 000.
+ONE_ROW_PARAGRAPH_TOP_MAX = 2_400_000
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -162,14 +185,26 @@ def narrative_top(slide: Any) -> int | None:
     return int(found[0].top) if found else None
 
 
-def font_sizes(slide: Any) -> dict[float, set[int]]:
-    """Кегль → фигуры, которые его несут (по порядковому номеру фигуры)."""
+def font_sizes(slide: Any, *, values: bool | None = None) -> dict[float, set[int]]:
+    """Кегль → фигуры, которые его несут (по порядковому номеру фигуры).
+
+    `values=None` — весь текст листа; `False` — без рамок ключевых цифр;
+    `True` — только жирные прогоны рамок цифр, то есть сами цифры (подпись под
+    цифрой в той же рамке — обычный текст).
+    """
     out: dict[float, set[int]] = {}
     for index, sh in enumerate(slide.shapes):
         if not getattr(sh, "has_text_frame", False):
             continue
+        is_value = str(sh.name or "").startswith(METRIC_VALUE_SHAPE)
+        if values is False and is_value:
+            continue
+        if values is True and not is_value:
+            continue
         for para in sh.text_frame.paragraphs:
             for run in para.runs:
+                if values is True and not run.font.bold:
+                    continue
                 if run.font.size is not None and (run.text or "").strip():
                     out.setdefault(round(run.font.size.pt, 2), set()).add(index)
     return out
@@ -182,8 +217,8 @@ def p1_one_row_up_to_six() -> None:
     check("П1а: пять метрик лежат одним рядом", len(tiles) == 5 and len(tops) == 1, f"плиток {len(tiles)}, верхи рядов {tops}")
     top = narrative_top(slide)
     check(
-        "П1б: абзац под плитками начинается не ниже 2 310 000 — было 3 010 000 при втором ряде",
-        top is not None and top <= 2_310_000,
+        "П1б: абзац под одним рядом плиток начинается не ниже 2 400 000 — было 3 010 000 при втором ряде",
+        top is not None and top <= ONE_ROW_PARAGRAPH_TOP_MAX,
         f"верх абзаца {top}",
     )
 
@@ -196,7 +231,11 @@ def p2_short_captions_row_is_600k() -> None:
     widths = [int(c.width) for c in cards if c is not None]
     hero_w = int(CONTENT_W * 0.34)
     tile_w = (CONTENT_W - hero_w - ROW_GAP - 2 * ROW_GAP) // 3
-    check("П2а: подписи в одну строку — ряд 600 000 EMU", heights == [600_000], f"высоты плиток {heights}")
+    check(
+        f"П2а: подписи в одну строку — ряд ровно по крупной цифре и строке подписи ({ONE_LINE_TILE} EMU)",
+        heights == [ONE_LINE_TILE],
+        f"высоты плиток {heights}",
+    )
     check(
         "П2б: ширины четырёх плиток прежние — первая 34 % ряда",
         widths == [hero_w, tile_w, tile_w, tile_w],
@@ -260,11 +299,20 @@ def p6_type_scale_of_the_page() -> None:
         ("профиль, семь метрик", draw(region(SEVEN), page=10)),
     ):
         sizes = font_sizes(slide)
-        top = max(sizes) if sizes else 0
+        text = font_sizes(slide, values=False)
+        top = max(text) if text else 0
         check(
-            f"П6: {name} — кегли из {{22, 20, 11, 9}}, первый уровень один",
-            set(sizes) <= {22.0, 20.0, 11.0, 9.0} and len(sizes.get(top, ())) == 1 and top == 22.0,
-            f"кегли {sorted(sizes)}, фигур первого уровня {len(sizes.get(top, ()))}",
+            f"П6: {name} — текст листа из {{22, 11, 9}}, первый уровень один — заголовок",
+            set(text) <= {22.0, 11.0, 9.0} and len(text.get(top, ())) == 1 and top == 22.0,
+            f"кегли текста {sorted(text)}, фигур первого уровня {len(text.get(top, ()))}",
+        )
+        # Значение-фраза («Россия · ОАЭ») идёт кеглем текста, в ступень цифр
+        # оно не входит.
+        numbers = {size for size in font_sizes(slide, values=True) if size != FS_BODY}
+        check(
+            f"П6: {name} — цифры плиток одним кеглем из ступеней {sorted(METRIC_VALUE_STEPS, reverse=True)}, на листе не больше четырёх кеглей",
+            len(numbers) == 1 and numbers <= set(METRIC_VALUE_STEPS) and len(sizes) <= 4,
+            f"кегли цифр {sorted(numbers)}, всего кеглей на листе {sorted(sizes)}",
         )
 
 
@@ -373,9 +421,9 @@ def p3_p7_captions_stay_inside_the_tile() -> None:
         heights = sorted({int(c.height) for c in cards if c is not None})
         if tag == "П3":
             check(
-                "П3в: ряд с подписью в две строки выше пола, но не выше прежних 780 000",
-                bool(heights) and 600_000 < heights[-1] <= 780_000 and len(rows) == 1,
-                f"высоты плиток {heights}, рядов {len(rows)}",
+                "П3в: ряд с подписью в две строки выше однострочного ровно на строку подписи, не больше",
+                bool(heights) and ONE_LINE_TILE < heights[-1] <= ONE_LINE_TILE + CAPTION_LINE and len(rows) == 1,
+                f"высоты плиток {heights} при однострочной {ONE_LINE_TILE} и строке подписи {CAPTION_LINE}, рядов {len(rows)}",
             )
         else:
             check(
