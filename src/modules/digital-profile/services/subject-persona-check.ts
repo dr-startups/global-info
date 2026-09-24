@@ -508,26 +508,28 @@ export async function buildPersonaPanel(input: {
   const serperImpl = deps.serper;
   const openSanctionsImpl = deps.openSanctions;
 
+  // Разделы — одновременно и каждый под своим бюджетом. По очереди под общим
+  // бюджетом медленный раздел съедал время соседа, а истёкший бюджет выбрасывал и
+  // уже пришедший ответ: живой прогон 24.09.2026 показал публичному лицу со
+  // статьями в обоих разделах панель без Википедии (TIMEOUT после 20 с).
   const wikipediaTask = offlineDenied(wikipediaImpl)
     ? null
-    : withBudget(budgetMs, async () => {
-        const impl =
-          wikipediaImpl ?? ((params) => wikipediaProvider.listNamesakeCandidates(params));
-        const results: WikipediaNamesakeResult[] = [];
-        for (const [i, language] of languages.entries()) {
-          results.push(
-            await impl({
+    : Promise.all(
+        languages.map((language, i) =>
+          withBudget(budgetMs, () => {
+            const impl =
+              wikipediaImpl ?? ((params) => wikipediaProvider.listNamesakeCandidates(params));
+            return impl({
               language,
               terms,
               leadCount: PERSONA_PANEL_LEADS_PER_LANGUAGE,
               // Ссылка спрашивается один раз, из первого раздела во второй:
               // склейка симметрична, а вызов стоит времени.
               langlinkTo: i === 0 ? languages[1] ?? null : null,
-            })
-          );
-        }
-        return results;
-      });
+            });
+          })
+        )
+      );
 
   const serperTask = offlineDenied(serperImpl)
     ? null
@@ -579,11 +581,18 @@ export async function buildPersonaPanel(input: {
   ]);
 
   // --- Википедия
-  if (wikipediaOutcome?.status === "SUCCESS") {
-    cards.push(...wikipediaCards(wikipediaOutcome.value));
+  // Ответил хоть один раздел — источник ответил (то же правило, что у Serper в
+  // `serperSlice`). Не ответил ни один — «не дождались», если хоть один раздел не
+  // уложился в бюджет, иначе первый отказ.
+  type SilentSection = Exclude<SourceOutcome<WikipediaNamesakeResult>, { status: "SUCCESS" }>;
+  const answeredSections = (wikipediaOutcome ?? []).flatMap((o) => (o.status === "SUCCESS" ? [o.value] : []));
+  const silentSections = (wikipediaOutcome ?? []).filter((o): o is SilentSection => o.status !== "SUCCESS");
+  if (wikipediaOutcome && (answeredSections.length > 0 || silentSections.length === 0)) {
+    cards.push(...wikipediaCards(answeredSections));
     sources.push(sourceAnswered("wikipedia"));
   } else {
-    sources.push(sourceSilent("wikipedia", wikipediaOutcome, budgetMs));
+    const silent = silentSections.find((o) => o.status === "TIMEOUT") ?? silentSections[0] ?? null;
+    sources.push(sourceSilent("wikipedia", silent, budgetMs));
   }
 
   // --- Панель знаний Google

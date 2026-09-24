@@ -202,6 +202,29 @@ export function retryAfterMs(res: Response, attempt: number): number {
 const MAX_RETRY_WAIT_MS = 8_000;
 const MAX_RETRIES = 2;
 
+/**
+ * Строка журнала на каждый запрос к Википедии.
+ *
+ * Панель «Это вы?» на живых прогонах 23 и 24.09.2026 дважды не дождалась
+ * Википедию за 20 с, а тот же путь вне сайта занимал 2,5 с — и узнать, какой
+ * запрос стоял, было не из чего. В строке только раздел, вид запроса, статус и
+ * время: заголовок статьи и поисковые слова — это имя человека.
+ */
+function logWikipediaRequest(url: string, attempt: number, startedAt: number, status: number | string): void {
+  let lang = "";
+  let kind = "other";
+  try {
+    const u = new URL(url);
+    lang = u.hostname.split(".")[0] ?? "";
+    kind = u.pathname.includes("/page/summary/")
+      ? "summary"
+      : (u.searchParams.get("list") ?? u.searchParams.get("prop") ?? u.searchParams.get("action") ?? "other");
+  } catch {
+    // Кривой адрес журналируется видом «other» — строка важнее разбора.
+  }
+  console.info(JSON.stringify({ event: "wikipedia_request", lang, kind, status, ms: Date.now() - startedAt, attempt }));
+}
+
 async function fetchJson(url: string): Promise<unknown> {
   /*
    * 429 — это «подожди», а не «не получилось».
@@ -219,16 +242,26 @@ async function fetchJson(url: string): Promise<unknown> {
     await throttle();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
     try {
-      const res = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": providerConfig.wikipedia.userAgent,
-          "Api-User-Agent": providerConfig.wikipedia.userAgent,
-        },
-      });
-      if (res.ok) return assertNoApiError(await res.json());
+      let res: Response;
+      let body: unknown;
+      try {
+        res = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json",
+            "User-Agent": providerConfig.wikipedia.userAgent,
+            "Api-User-Agent": providerConfig.wikipedia.userAgent,
+          },
+        });
+        if (res.ok) body = await res.json();
+      } catch (err) {
+        logWikipediaRequest(url, attempt, startedAt, err instanceof Error ? err.name : "ERROR");
+        throw err;
+      }
+      logWikipediaRequest(url, attempt, startedAt, res.status);
+      if (res.ok) return assertNoApiError(body);
       const worthRetry = res.status === 429 || res.status === 503 || res.status === 502;
       if (!worthRetry || attempt >= MAX_RETRIES) {
         throw new Error(`HTTP ${res.status}`);
@@ -356,8 +389,8 @@ export class WikipediaProvider {
    * Текст статьи одним вызовом: вводная секция либо статья целиком.
    *
    * Разбору статьи нужны разделы, а панели — только первая строка. Полный
-   * текст крупной персоналии весит сотни килобайт, и панель тянет шесть таких
-   * подряд под общим бюджетом в двадцать секунд: цена запроса — причина, по
+   * текст крупной персоналии весит сотни килобайт, и панель тянет до трёх таких
+   * на раздел под бюджетом в двадцать секунд: цена запроса — причина, по
    * которой источник не успевал ответить, а не симптом.
    *
    * Отказ здесь проверку не роняет: статья без текста — валидное состояние, и
