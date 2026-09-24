@@ -23,6 +23,24 @@ def _soffice_bin() -> str | None:
     return None
 
 
+# Windows builds of LibreOffice ship the MAR updater (Update/Enabled is true in
+# main.xcd). Every conversion starts on a fresh profile, and on a fresh profile the
+# updater runs first: it rewrites the installation through its maintenance service
+# (25.2.3.2 silently became 25.2.4.3) and the start converts nothing — exit code 0,
+# no PDF, and the caller falls back to PowerPoint. Linux packages have no updater.
+_NO_MAR_UPDATER_XCU = """<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Update/Update"><prop oor:name="Enabled" oor:op="fuse"><value>false</value></prop></item>
+</oor:items>
+"""
+
+
+def _disable_mar_updater(profile: str) -> None:
+    user_dir = Path(profile) / "user"
+    user_dir.mkdir(parents=True, exist_ok=True)
+    (user_dir / "registrymodifications.xcu").write_text(_NO_MAR_UPDATER_XCU, encoding="utf-8")
+
+
 def _convert_with_powerpoint(pptx_path: str, pdf_path: str) -> None:
     """Windows fallback: PowerPoint COM SaveAs PDF (ppSaveAsPDF = 32)."""
     try:
@@ -58,9 +76,14 @@ def convert_to_pdf(pptx_path: str, pdf_path: str, timeout: int = 120) -> None:
     if soffice:
         with tempfile.TemporaryDirectory() as tmp:
             profile = os.path.join(tmp, "profile")
+            if os.name == "nt":
+                _disable_mar_updater(profile)
             cmd = [
                 soffice,
-                f"-env:UserInstallation=file://{profile}",
+                # A real file URI. On Linux it is the same string as f"file://{profile}";
+                # on Windows that form (file://C:\...) is not a URL and LibreOffice
+                # exits with code 1 before converting anything.
+                f"-env:UserInstallation={Path(profile).as_uri()}",
                 "--headless",
                 "--norestore",
                 "--convert-to",
